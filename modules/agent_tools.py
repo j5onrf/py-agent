@@ -67,7 +67,12 @@ def run_tool(name: str, args: Dict[str, Any], workspace: str, confirm_gate_fn: O
     full = _safe_path(workspace, raw_path) if raw_path else ""
 
     def _gate(reason: str) -> bool:
-        return confirm_gate_fn(reason) if confirm_gate_fn else True
+        if confirm_gate_fn:
+            return confirm_gate_fn(reason)
+        # In non-interactive/bridge mode, strictly deny out-of-bounds access
+        if "OUT-OF-BOUNDS" in reason:
+            return False
+        return not gates_active
 
     # 1. IPython Kernel Execution
     if name == "exec_python":

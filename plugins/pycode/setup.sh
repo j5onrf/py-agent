@@ -24,7 +24,7 @@ if ! command -v pnpm &>/dev/null; then
 fi
 
 # 3. Setup ~/.pycode directory and default settings.json
-echo -e "\033[1;36m[pycode-setup]\033[0m Preparing PyCode XDG config directory..."
+echo -e "\033[1;36m[pycode-setup]\033[0m Preparing PyCode data directory..."
 mkdir -p "${HOME}/.pycode/userdata"
 export T3CODE_HOME="${HOME}/.pycode"
 
@@ -33,6 +33,7 @@ if [ ! -f "$SETTINGS_FILE" ]; then
     echo -e "\033[1;36m[pycode-setup]\033[0m Pre-seeding default settings.json..."
     cat << 'EOF' > "$SETTINGS_FILE"
 {
+  "chatGlow": true,
   "enableLegacyTokenStreaming": true,
   "enableProviderUpdateChecks": false,
   "providerInstances": {

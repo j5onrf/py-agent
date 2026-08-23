@@ -24,6 +24,8 @@ import agent_core as core
 import agent_tools as tools
 import agent_skills as skills
 import agent_cloud
+import agent_tts as tts
+import agent_voice as voice
 
 BASE_PROMPT_CHAT = "### Conversational Guidelines:\n- Role: Active, natural, and highly articulate conversational assistant.\n- Tone: Professional, warm, objective, and intellectually engaging.\n\n"
 BASE_PROMPT_AGENT = "Active local project workspace developer agent.\nIf <context> is provided, answer directly using only its facts. Otherwise, answer normally.\n\n"
@@ -96,6 +98,11 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
 
     clean_name = profile_name if profile_name not in ("default", "init") else "init"
     profile_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
+    
+    # Clean startup greeting directive for GUI sessions
+    if profile_content:
+        profile_content = profile_content.replace('Reply ONLY with: "Workspace loaded. Awaiting instructions."', "Execute the requested action immediately.")
+
     sys_prompt = (BASE_PROMPT_AGENT + f"\n\n### Active Skill/Role Instructions:\n{profile_content}\n") if (clean_name == "init" and profile_content) else (profile_content or BASE_PROMPT_AGENT)
     sys_prompt += f"\n\n### ACTIVE PROJECT WORKSPACE:\nYour active project root directory is: {workspace}\n"
     sys_prompt += "Capabilities: read_symbol, trace_symbol, blast_radius, find_symbol, architecture_overview, read_file, write_file, list_dir, run_command.\n\n"
@@ -128,8 +135,12 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: List[Dict[str,
 
     safe_name = core.workspace_safe_name(workspace)
     is_agent, profile_name, is_yolo = detect_workspace_mode(workspace)
-    if is_yolo:
+    
+    # YOLO only active in workspace agent mode, strictly OFF in plain chat mode
+    if is_agent and is_yolo:
         os.environ["AI_CONFIRM_GATES"] = "0"
+    else:
+        os.environ["AI_CONFIRM_GATES"] = "1"
 
     # Read state directly from .state.json
     st = core.get_state()
@@ -282,6 +293,13 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: List[Dict[str,
         try:
             core.run_mod("ai-agent-sessions", "log-turn", safe_name, user_text, accumulated_ans)
             core.background_tpm_update(user_text, accumulated_ans, safe_name, workspace)
+        except Exception:
+            pass
+
+    # Speak response out loud via Kokoro / PipeWire if TTS is enabled in .state.json
+    if tts.is_tts_enabled() and accumulated_ans:
+        try:
+            tts.speak_response(accumulated_ans)
         except Exception:
             pass
 

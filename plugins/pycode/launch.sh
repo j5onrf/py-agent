@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# PyCode Launcher (Native Desktop App by Default / Browser Tab with 'web')
+# PyCode Launcher (Cross-Platform Desktop App by Default / Browser Tab with 'web')
 # ==============================================================================
 
 set -eo pipefail
@@ -13,11 +13,15 @@ BRIDGE_PY="$PLUGIN_DIR/bridge.py"
 TARGET_WORKSPACE="${AI_WORKSPACE_PATH:-$(pwd)}"
 TARGET_WORKSPACE=$(cd "$TARGET_WORKSPACE" 2>/dev/null && pwd -P || echo "$TARGET_WORKSPACE")
 
+# Isolate all runtime data & configuration in ~/.pycode
 export AI_WORKSPACE_PATH="$TARGET_WORKSPACE"
 export PYAGENT_BRIDGE="$BRIDGE_PY"
 export T3CODE_HOME="$HOME/.pycode"
 export T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD="true"
 export T3_AUTO_BOOTSTRAP_PROJECT_FROM_CWD="true"
+
+# Ensure runtime directories exist
+mkdir -p "$T3CODE_HOME/userdata"
 
 # Ensure bridge script is executable
 chmod +x "$BRIDGE_PY" 2>/dev/null || true
