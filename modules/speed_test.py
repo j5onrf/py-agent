@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Precise token generation & TPS speed test statistics tracker"""
 
-import sys, time, os
-from typing import Optional
+import sys
+import time
 
 _state = {"start": None, "t_start": None, "t_end": None, "t_chars": 0, "a_chars": 0, "in_think": False}
 
@@ -27,7 +27,7 @@ def count_token(content: str, is_thinking: bool = False) -> None:
         _state["a_chars"] += len(content)
 
 
-def end(actual_out_tokens: Optional[int] = None, is_local: bool = False, resolved_model: Optional[str] = None, active_model: Optional[str] = None) -> None:
+def end(actual_out_tokens: int | None = None, is_local: bool = False, resolved_model: str | None = None, active_model: str | None = None) -> None:
     """Calculates and prints token statistics, then cleanly resets state."""
     if _state["start"] is None: return
     elapsed = max(0.001, time.time() - _state["start"])

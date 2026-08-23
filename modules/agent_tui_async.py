@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Asynchronous uvloop background services for Local-AI Agent TUI"""
 
-import asyncio, json, os
+import asyncio
+import json
+import os
 
 
 async def run_async_cmd(cmd: list[str], cwd: str) -> str:

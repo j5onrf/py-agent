@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
 """Offline/Online Spellchecker Module - LanguageTool API & phonetic edit-distance."""
 
-import os, sys, re, json, shutil, difflib, urllib.parse as urlparse, urllib.request as urlreq
-from typing import Set, Dict, Tuple, List, Callable, Optional
+import difflib
+import json
+import os
+import re
+import shutil
+import sys
+import urllib.parse as urlparse
+import urllib.request as urlreq
+from collections.abc import Callable
 
-TYPO_OVERRIDES: Dict[str, str] = {
+TYPO_OVERRIDES: dict[str, str] = {
     "hellow": "hello", "helow": "hello", "helo": "hello",
     "howre": "how are", "wru": "where are you", "hru": "how are you",
     "youa": "you", "trainted": "trained"
 }
-PROTECTED_WORDS: Set[str] = frozenset({"hello", "hi", "hey", "how", "here", "you", "who", "there"})
-DEV_TERMS: Set[str] = frozenset({
+PROTECTED_WORDS: set[str] = frozenset({"hello", "hi", "hey", "how", "here", "you", "who", "there"})
+DEV_TERMS: set[str] = frozenset({
     "auth", "git", "bash", "zsh", "cli", "tui", "yaml", "json", "ast", "llm",
     "api", "url", "cmd", "args", "uuid", "md", "txt", "db", "sqlite", "epoxy", "wttr"
 })
@@ -19,9 +26,9 @@ RE_WORD_BOUNDARIES: re.Pattern = re.compile(r'(\b[a-zA-Z]+\b)')
 RE_WHITESPACE: re.Pattern = re.compile(r'(\s+)')
 
 
-def load_system_dictionary() -> Set[str]:
+def load_system_dictionary() -> set[str]:
     """Loads system word dictionary with development and TUI command word exceptions."""
-    embedded: Set[str] = {
+    embedded: set[str] = {
         "the", "be", "to", "of", "and", "a", "in", "that", "have", "i", "it", "for", "not", "on", "with", "he", "as", "you",
         "do", "at", "this", "but", "his", "by", "from", "they", "we", "say", "her", "she", "or", "an", "will", "my", "one",
         "all", "would", "there", "their", "what", "so", "up", "out", "if", "about", "who", "get", "which", "go", "me", "when",
@@ -29,10 +36,10 @@ def load_system_dictionary() -> Set[str]:
         "could", "them", "see", "other", "than", "then", "now", "look", "only", "come", "its", "over", "think", "also", "back",
         "after", "use", "two", "how", "our", "work", "first", "well", "way", "even", "new", "want", "because", "any", "these",
         "give", "day", "most", "us", "lazy", "quick", "brown", "fox", "jumps", "dog", "cat", "mat", "sit", "sits", "book",
-        "read", "reads", "spelling", "grammar", "here", "there", "where", "why", "when", "how", "who", "what", "which", "whose",
-        "am", "is", "are", "was", "were", "been", "being", "have", "has", "had", "having", "do", "does", "did", "doing",
+        "read", "reads", "spelling", "grammar", "here", "where", "why", "whose",
+        "am", "is", "are", "was", "were", "been", "being", "has", "had", "having", "does", "did", "doing",
         "write", "writes", "written", "writing", "code", "coder", "coding", "program", "programming", "python", "script",
-        "sentence", "errors", "error", "correct", "correction", "spelled", "spelling", "hello", "hi", "hey", *DEV_TERMS
+        "sentence", "errors", "error", "correct", "correction", "spelled", "hello", "hi", "hey", *DEV_TERMS
     }
     for path in ("/usr/share/dict/words", "/etc/dictionaries-common/words", "/usr/dict/words"):
         if os.path.exists(path):
@@ -43,10 +50,10 @@ def load_system_dictionary() -> Set[str]:
     return embedded
 
 
-DICT_WORDS: Set[str] = load_system_dictionary()
+DICT_WORDS: set[str] = load_system_dictionary()
 
 
-def edits1(word: str) -> Set[str]:
+def edits1(word: str) -> set[str]:
     """Generates all edit-distance-1 permutations for a given word."""
     L = 'abcdefghijklmnopqrstuvwxyz'
     s = [(word[:i], word[i:]) for i in range(len(word) + 1)]
@@ -72,7 +79,7 @@ def _match_case(original: str, replacement: str) -> str:
     return replacement.upper() if original.isupper() else (replacement.capitalize() if original[0].isupper() else replacement)
 
 
-def _transform_words(query: str, mapper: Callable[[str], Optional[str]]) -> Tuple[str, bool]:
+def _transform_words(query: str, mapper: Callable[[str], str | None]) -> tuple[str, bool]:
     chunks, changed = RE_WORD_BOUNDARIES.split(query), False
     res = []
     for chunk in chunks:
@@ -84,12 +91,12 @@ def _transform_words(query: str, mapper: Callable[[str], Optional[str]]) -> Tupl
     return "".join(res), changed
 
 
-def apply_static_overrides(query: str) -> Tuple[str, bool]:
+def apply_static_overrides(query: str) -> tuple[str, bool]:
     """Applies hardcoded static typo corrections on query patterns."""
     return _transform_words(query, lambda w: _match_case(w, TYPO_OVERRIDES[w.lower()]) if w.lower() in TYPO_OVERRIDES else None)
 
 
-def check_query_spelling_offline(query: str) -> Tuple[str, bool]:
+def check_query_spelling_offline(query: str) -> tuple[str, bool]:
     """Runs high-speed local dictionary edit-distance corrections."""
     return _transform_words(query, lambda w: (c if (c := correct_word(w)) != w else None))
 
@@ -112,7 +119,7 @@ def _get_prio(w: str, orig: str) -> int:
     return 1 if sorted(w_low) == sorted(orig_low) else 2 if len(w_low) - len(orig_low) == 1 else 3 if len(w_low) == len(orig_low) else 4
 
 
-def check_query_spelling(query: str, get_key_fn: Callable[[], str]) -> Tuple[str, str]:
+def check_query_spelling(query: str, get_key_fn: Callable[[], str]) -> tuple[str, str]:
     """Runs spellcheck verification pipelines with fast local timeout handling."""
     orig_input = query
     query, changed_static = apply_static_overrides(query)

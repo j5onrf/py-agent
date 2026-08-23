@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
 """UI Module - Spinners, session boxes, and interactive menus"""
 
-import os, sys, threading, time, select, re, json, urllib.request as urlreq
-from typing import Optional, Callable, Tuple, Any
+import json
+import os
+import re
+import select
+import sys
+import threading
+import time
+import urllib.request as urlreq
+from collections.abc import Callable
+from typing import Any
 
+from rich.box import DOUBLE, HEAVY, HORIZONTALS, ROUNDED
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-from rich.box import DOUBLE, ROUNDED, HEAVY, HORIZONTALS
 
 try: import tty, termios
 except ImportError: pass
@@ -32,13 +40,13 @@ class InlineSpinner:
                 with self._lock: msg = self.message
                 sys.stderr.write(f"\r\x1b[K\033[1;32m{char}\033[0m \033[36m{msg}\033[0m \033[2m{elapsed:.1f}s\033[0m")
                 sys.stderr.flush()
-            except (IOError, OSError): pass
+            except OSError: pass
             idx += 1
             time.sleep(0.08)
         try:
             sys.stderr.write("\r\x1b[2K\r")
             sys.stderr.flush()
-        except (IOError, OSError): pass
+        except OSError: pass
 
     def update(self, message: str) -> None:
         with self._lock: self.message = message
@@ -51,7 +59,7 @@ class InlineSpinner:
             self.thread = threading.Thread(target=self._spin, daemon=True)
             self.thread.start()
 
-    def stop(self, done_msg: Optional[str] = None, *args: Any, **kwargs: Any) -> None:
+    def stop(self, done_msg: str | None = None, *args: Any, **kwargs: Any) -> None:
         if self.active:
             self.active = False
             elapsed = time.time() - self.start_time if getattr(self, 'start_time', None) else 0.0
@@ -65,7 +73,7 @@ class InlineSpinner:
                     sys.stderr.write("\r\x1b[2K\r")
                 sys.stderr.write("\033[?25h")
                 sys.stderr.flush()
-            except (IOError, OSError): pass
+            except OSError: pass
 
 
 def _read_fd(fd: int) -> str:
@@ -109,7 +117,7 @@ def get_local_model_name() -> str:
 def draw_session_box(
     workspace_path: str, home_dir: str, is_agent: bool, db_turns: int, tpm_count: int,
     memory_active: bool, active_system_prompt: str, clean_name: str,
-    sub_id: Optional[int] = None, box_style: int = 1
+    sub_id: int | None = None, box_style: int = 1
 ) -> None:
     """Renders the system initialization box with customizable style presets (1-5)."""
     display_dir = workspace_path.replace(home_dir, "~", 1) if workspace_path.startswith(home_dir) else workspace_path
@@ -157,7 +165,7 @@ def draw_session_box(
     try:
         sys.stderr.write("\033[?25h")
         sys.stderr.flush()
-    except (IOError, OSError): pass
+    except OSError: pass
 
 
 def confirm_tool(tool: str) -> bool:
@@ -174,7 +182,7 @@ def confirm_tool(tool: str) -> bool:
 
 
 def run_interactive_selection(
-    intent: str, jaccard_search_fn: Callable[[str], Optional[str]], clean_tool_prefix_fn: Callable[[str], str],
+    intent: str, jaccard_search_fn: Callable[[str], str | None], clean_tool_prefix_fn: Callable[[str], str],
     print_stock_error_fn: Callable[[str], None], ensure_mysys_exists_fn: Callable[[], None]
 ) -> None:
     if RE_UNSAFE_SHELL_CHARS.search(intent) or not (matched_base := jaccard_search_fn(intent)):
@@ -282,7 +290,7 @@ def show_help() -> None:
     ), "\n")
 
 
-def select_workspace_profile(workspace_name: str) -> Tuple[str, bool]:
+def select_workspace_profile(workspace_name: str) -> tuple[str, bool]:
     """Renders the workspace profile selector menu with minimal confirmation for YOLO mode."""
     options = [
         ("default",        "Default Assistant", "~120t", "Agents"),

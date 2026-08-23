@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Token Usage & Spend Ledger Manager"""
 
-import os, json, time
-from typing import Optional, Dict, Any
+import json
+import os
+import time
+from typing import Any
 
 LEDGER_PATH: str = os.path.expanduser("~/.config/py-agent/.spend_ledger.json")
 
 # Model pricing per 1M tokens (input / output)
-PRICING_MAP: Dict[str, Dict[str, float]] = {
+PRICING_MAP: dict[str, dict[str, float]] = {
     "gpt-5.5": {"in": 2.00, "out": 8.00},
     "gpt-5": {"in": 1.50, "out": 6.00},
     "gpt-4.5": {"in": 75.00, "out": 150.00},
@@ -22,7 +24,7 @@ PRICING_MAP: Dict[str, Dict[str, float]] = {
     "local-model": {"in": 0.0, "out": 0.0}
 }
 
-_today_cache: Dict[str, Any] = {"date": "", "cost": 0.0}
+_today_cache: dict[str, Any] = {"date": "", "cost": 0.0}
 
 
 def record(model: str, in_tok: int, out_tok: int, cost: float = 0.0) -> None:
@@ -64,7 +66,7 @@ def record(model: str, in_tok: int, out_tok: int, cost: float = 0.0) -> None:
         except OSError: pass
 
 
-def turn_line(in_tok: int, out_tok: int, cost: float, ctx_used: int, ctx_max: Optional[int] = None) -> str:
+def turn_line(in_tok: int, out_tok: int, cost: float, ctx_used: int, ctx_max: int | None = None) -> str:
     """Generates a structured terminal diagnostic summary line with cached ledger reads."""
     today = time.strftime("%Y-%m-%d")
     today_cost = _today_cache["cost"] if _today_cache.get("date") == today else 0.0

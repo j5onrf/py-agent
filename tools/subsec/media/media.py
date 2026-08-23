@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 # Universal Full-Screen Responsive Media Player TUI v1.1.1 [TUIAMP]
 
-import sys
-import os
-import tty
-import termios
-import select
-import subprocess
-import shutil
-import time
 import math
 import random
 import re
+import select
+import shutil
+import subprocess
+import sys
+import termios
+import time
+import tty
 
 # Strips ANSI escape sequences to compute visual plain-text width
 ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
@@ -353,8 +352,7 @@ def draw_row_raw(colored_text, width, align="center"):
     """Pads and draws a single row cleanly encased within the vertical borders."""
     plain_len = len(strip_ansi(colored_text))
     pad = width - plain_len
-    if pad < 0:
-        pad = 0
+    pad = max(pad, 0)
     if align == "center":
         left = pad // 2
         right = pad - left

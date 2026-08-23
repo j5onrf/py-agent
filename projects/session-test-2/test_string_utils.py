@@ -1,5 +1,7 @@
 import unittest
-from string_utils import reverse_words, count_vowels
+
+from string_utils import count_vowels, reverse_words
+
 
 class TestStringUtils(unittest.TestCase):
     

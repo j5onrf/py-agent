@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 # Basepage TUI v1.2.1 [TUIAMP-Engine]
 
-import sys
-import os
-import tty
-import termios
-import urllib.request
-import urllib.parse
-import urllib.error
-import json
-import re
-import subprocess
-import shutil
-import webbrowser
 import html
-import time
+import json
+import os
 import random
+import re
+import shutil
+import subprocess
+import sys
+import termios
+import time
+import tty
+import urllib.error
+import urllib.parse
+import urllib.request
+import webbrowser
 
 CACHE_DIR = os.path.expanduser("~/.cache/ai_basepage")
 os.makedirs(CACHE_DIR, exist_ok=True)
@@ -190,9 +190,9 @@ def print_header(subtitle=""):
     sys.stdout.write("\033[2J\033[H")
     c = [f"\033[3{i}m" for i in range(1, 6)]
     reset = "\033[0m"
-    print(f"         \033[90m┌──────────────────────────────┐\033[0m")
-    print(f"         \033[90m│\033[0m      \033[1;32m󰚌  B A S E P A G E\033[0m      \033[90m│\033[0m")
-    print(f"         \033[90m└──────────────────────────────┘\033[0m")
+    print("         \033[90m┌──────────────────────────────┐\033[0m")
+    print("         \033[90m│\033[0m      \033[1;32m󰚌  B A S E P A G E\033[0m      \033[90m│\033[0m")
+    print("         \033[90m└──────────────────────────────┘\033[0m")
     if subtitle:
         print(f"               \033[1;35m// {subtitle}\033[0m\n")
 
@@ -517,7 +517,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--bg-sync":
         for mode_idx in range(len(SORTS)):
             current_sort_idx = mode_idx
-            for fk in FEEDS.keys():
+            for fk in FEEDS:
                 fetch_feed_instant(fk)
         sys.exit(0)
         

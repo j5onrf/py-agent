@@ -5,8 +5,11 @@ Handles multi-turn autonomous goal execution, completion detection,
 stagnation recovery, and execution logging.
 """
 
-import os, sys, time, argparse
-from typing import List, Dict, Any, Optional
+import argparse
+import os
+import sys
+import time
+from typing import Any
 
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
 sys.path.append(os.path.join(CFG_DIR, "modules"))
@@ -23,7 +26,7 @@ COMPLETION_KEYWORDS = frozenset({
 })
 
 
-def is_task_complete(ans: Optional[str], history: List[Dict[str, Any]]) -> bool:
+def is_task_complete(ans: str | None, history: list[dict[str, Any]]) -> bool:
     """Checks both assistant answer and recent tool outputs for completion keywords."""
     if ans:
         ans_upper = ans.upper()
@@ -59,7 +62,7 @@ def log_turn_to_file(workspace: str, task: str, turn: int, ans: str, status: str
         pass
 
 
-def run_loop(task: str, max_turns: int = 10, task_file: Optional[str] = None, enable_logging: bool = True) -> bool:
+def run_loop(task: str, max_turns: int = 10, task_file: str | None = None, enable_logging: bool = True) -> bool:
     workspace = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
     
     # Load goal from TASK.md or task_file if direct string not provided
@@ -82,7 +85,7 @@ def run_loop(task: str, max_turns: int = 10, task_file: Optional[str] = None, en
     sys.stderr.write(f"\n\033[1;36m[loop]\033[0m Starting autonomous execution in \033[1;33m{disp_dir}\033[0m (max {max_turns} turns)\n")
     sys.stderr.write(f"\033[2m:: Goal: {task[:120]}{'...' if len(task) > 120 else ''}\033[0m\n\n")
 
-    history: List[Dict[str, Any]] = [
+    history: list[dict[str, Any]] = [
         {
             "role": "system", 
             "content": (

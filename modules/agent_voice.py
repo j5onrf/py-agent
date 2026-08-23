@@ -1,8 +1,17 @@
 #!/usr/bin/env python3
 """Local-AI Standalone Voice to Text Module"""
 
-import base64, http.server, json, os, re, socket, ssl, subprocess, sys, threading, time, urllib.request as urlreq
-from typing import Tuple
+import base64
+import http.server
+import json
+import os
+import re
+import socket
+import ssl
+import subprocess
+import sys
+import time
+import urllib.request as urlreq
 
 PORT = 9999
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
@@ -281,7 +290,7 @@ def run_server() -> None:
             print("\n[sys] Server stopped.")
 
 
-def toggle_voice_bridge(auto_toggle: bool = False) -> Tuple[bool, bool]:
+def toggle_voice_bridge(auto_toggle: bool = False) -> tuple[bool, bool]:
     global _voice_proc, _auto_submit
     if core:
         _auto_submit = core.get_state().get("voice_auto_submit", True)

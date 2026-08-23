@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 # AI Summary TUI v0.7.6 (KoKo Read-Aloud & Responsive Highlight) (Gemini) [j5onrf] [06-02-26]
 
-import sys
-import os
-import tty
-import termios
-import urllib.request
-import urllib.error
 import json
-import select
-import subprocess
-import shutil
+import os
 import re
+import shutil
+import subprocess
+import sys
+import termios
 import time
+import tty
+import urllib.error
+import urllib.request
 
 LOCAL_API_URL = "http://localhost:8080/v1/chat/completions"
 
@@ -138,7 +137,7 @@ def get_input_with_back_button(profile_name):
         else:
             raise Exception("No clipboard utility found (install wl-clipboard).")
     except Exception as e:
-        sys.stdout.write(f"\033[91m[Clipboard Error: {str(e)}]\033[0m\n")
+        sys.stdout.write(f"\033[91m[Clipboard Error: {e!s}]\033[0m\n")
         sys.stdout.flush()
         input("\nPress Enter to return.")
         return ""

@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
 """Native Tool Engine - Handles file editing, commands, & graph intelligence"""
 
-import os, sys, json, ast, re, difflib, subprocess, urllib.parse
-from typing import List, Dict, Any, Optional, Callable
+import ast
+import difflib
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.parse
+from collections.abc import Callable
+from typing import Any
 
 from rich.console import Console
 from rich.syntax import Syntax
@@ -16,7 +24,7 @@ BINARY_EXTENSIONS = frozenset({
 })
 RE_ABS_PATH = re.compile(r'/(?:[a-zA-Z0-9_\-\.]+/)*[a-zA-Z0-9_\-\.]*')
 
-EDIT_TOOLS: List[Dict[str, Any]] = [
+EDIT_TOOLS: list[dict[str, Any]] = [
     {"type": "function", "function": {"name": n, "description": d, "parameters": {"type": "object", "properties": p, "required": r}}}
     for n, d, p, r in [
         ("read_symbol", "Extract source code snippet for a function/class symbol from index graph without reading full file.", {"symbol": {"type": "string"}}, ["symbol"]),
@@ -60,7 +68,7 @@ def run_graph_cmd(cmd_name: str, arg: str, workspace: str) -> str:
         return f"[error] failed to run graph command {cmd_name}: {e}"
 
 
-def run_tool(name: str, args: Dict[str, Any], workspace: str, confirm_gate_fn: Optional[Callable[[str], bool]] = None, print_output_fn: Optional[Callable[[str], None]] = None) -> str:
+def run_tool(name: str, args: dict[str, Any], workspace: str, confirm_gate_fn: Callable[[str], bool] | None = None, print_output_fn: Callable[[str], None] | None = None) -> str:
     gates_active = os.environ.get("AI_CONFIRM_GATES", "1") == "1"
     denial = "[denied] User declined tool execution."
     raw_path = args.get("path", "")

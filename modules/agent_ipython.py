@@ -1,8 +1,17 @@
 #!/usr/bin/env python3
 """Local-AI Standalone IPython Kernel & RLM Harness Module (NOOA-Enhanced)"""
 
-import ast, contextlib, difflib, io, json, os, sys, subprocess, traceback
-from typing import Dict, Any, List, Optional, Tuple, Callable
+import ast
+import contextlib
+import difflib
+import io
+import json
+import os
+import subprocess
+import sys
+import traceback
+from collections.abc import Callable
+from typing import Any
 
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
 
@@ -11,7 +20,7 @@ try:
 except ImportError:
     core = None
 
-_shell_globals: Dict[str, Any] = {}
+_shell_globals: dict[str, Any] = {}
 _shell_instance = None
 
 try:
@@ -25,7 +34,7 @@ def is_ipython_enabled() -> bool:
     return core.get_state().get("ipython_mode", False) if core else False
 
 
-def toggle_ipython_mode(enable: Optional[bool] = None) -> bool:
+def toggle_ipython_mode(enable: bool | None = None) -> bool:
     new_st = (not is_ipython_enabled()) if enable is None else enable
     if core: core.save_state("ipython_mode", new_st)
     return new_st
@@ -131,7 +140,7 @@ def delegate(goal: str, workspace: str = ".") -> str:
         return f"[error] Sub-agent delegation failed: {e}"
 
 
-def _init_kernel_sdk(workspace: str, confirm_gate_fn: Optional[Callable[[str], bool]] = None) -> None:
+def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | None = None) -> None:
     global _shell_globals, _shell_instance, _confirm_gate_fn
     if confirm_gate_fn:
         _confirm_gate_fn = confirm_gate_fn
@@ -186,8 +195,8 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Optional[Callable[[str], b
                 with _orig_open(full, "r", encoding="utf-8", errors="replace") as f:
                     old = f.read()
                 if diff := "\n".join(difflib.unified_diff(old.splitlines(), content.splitlines(), fromfile=f"a/{path}", tofile=f"b/{path}", lineterm="")):
-                    from rich.syntax import Syntax
                     from rich.console import Console
+                    from rich.syntax import Syntax
                     Console(stderr=True).print("\n", Syntax(diff, "diff", theme="ansi_dark", background_color="default"), "\n")
             except Exception: pass
 
@@ -196,7 +205,7 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Optional[Callable[[str], b
             f.write(content)
         return f"wrote {len(content)} chars to {path}"
 
-    def _list_dir(path: str = ".") -> List[str]:
+    def _list_dir(path: str = ".") -> list[str]:
         if not _check_boundary(path, "LIST DIR"): return ["[denied] Out-of-bounds list_dir blocked."]
         full = os.path.realpath(path if os.path.isabs(path) else os.path.join(ws_real, path))
         return sorted(_orig_listdir(full))
@@ -226,7 +235,7 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Optional[Callable[[str], b
         _shell_instance.user_ns.update(sdk)
 
 
-def inspect_ast_safety(code: str, workspace: str, confirm_gate_fn: Optional[Callable[[str], bool]] = None) -> Optional[str]:
+def inspect_ast_safety(code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] | None = None) -> str | None:
     if not confirm_gate_fn or os.environ.get("AI_CONFIRM_GATES", "1") == "0": return None
     # Skip AST safety parse for IPython line/cell magics (% and !)
     clean = code.strip()
@@ -249,7 +258,7 @@ def inspect_ast_safety(code: str, workspace: str, confirm_gate_fn: Optional[Call
     return None
 
 
-def run_cell(code: str, workspace: str, confirm_gate_fn: Optional[Callable[[str], bool]] = None) -> str:
+def run_cell(code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] | None = None) -> str:
     _init_kernel_sdk(workspace, confirm_gate_fn)
     if denial := inspect_ast_safety(code, workspace, confirm_gate_fn):
         return denial
@@ -297,5 +306,5 @@ IPYTHON_TOOL = [{
 }]
 
 
-def get_active_tools() -> List[Dict[str, Any]]:
+def get_active_tools() -> list[dict[str, Any]]:
     return IPYTHON_TOOL if is_ipython_enabled() else getattr(core, "EDIT_TOOLS", [])

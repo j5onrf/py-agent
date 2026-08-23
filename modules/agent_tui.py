@@ -1,15 +1,25 @@
 #!/usr/bin/env python3
 """Production Minimal Textual TUI for Py Agent Engine"""
 
-import base64, json, os, re, sqlite3, subprocess, sys, threading, time, urllib.request as urlreq
+import base64
+import json
+import os
+import re
+import sqlite3
+import subprocess
+import sys
+import threading
+import time
+import urllib.request as urlreq
+from collections.abc import Iterator
 from contextlib import closing
-from typing import Any, Dict, Iterator, List, Optional, Set
+from typing import Any
 
 try:
     import uvloop; uvloop.install()
 except (ImportError, NotImplementedError): pass
 
-from rich.box import Box, ROUNDED
+from rich.box import ROUNDED, Box
 from rich.console import Group
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -25,7 +35,14 @@ from textual.widgets import Footer, Input, Static
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
 sys.path.append(os.path.join(CFG_DIR, "modules"))
 
-import agent_cloud, agent_core as core, agent_skills as skills, agent_ui as ui, agent_tui_async as tui_async, agent_voice as voice, agent_tts as tts, agent_ipython as ipython
+import agent_cloud
+import agent_core as core
+import agent_ipython as ipython
+import agent_skills as skills
+import agent_tts as tts
+import agent_tui_async as tui_async
+import agent_ui as ui
+import agent_voice as voice
 
 CONTEXT_FILE = os.path.join(CFG_DIR, "ai-context.md")
 SKILLS_DIR, SESSIONS_DIR = os.path.join(CFG_DIR, "skills"), os.path.join(CFG_DIR, "projects", "database")
@@ -45,7 +62,7 @@ THINK_TAGS_RE = re.compile(r'<think>.*?</think>', re.DOTALL)
 BASE_PROMPT_CHAT = "### Conversational Guidelines:\n- Role: Active, natural, and highly articulate conversational assistant.\n- Tone: Professional, warm, objective, and intellectually engaging.\n\n"
 BASE_PROMPT_AGENT = "Active local project workspace developer agent.\nIf <context> is provided, answer directly using only its facts. Otherwise, answer normally.\n\n"
 
-_CACHED_CLIPBOARD_TOOL: Optional[List[str]] = None
+_CACHED_CLIPBOARD_TOOL: list[str] | None = None
 
 
 def format_dir_path(path: str) -> str:
@@ -67,7 +84,7 @@ def copy_to_clipboard(text: str) -> bool:
     try:
         sys.stdout.write(f"\x1b]52;c;{base64.b64encode(text.encode('utf-8')).decode('utf-8')}\x07")
         sys.stdout.flush()
-    except (IOError, OSError): pass
+    except OSError: pass
     tools = [_CACHED_CLIPBOARD_TOOL] if _CACHED_CLIPBOARD_TOOL else [["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"], ["pbcopy"], ["clip.exe"]]
     for tool in filter(None, tools):
         try:
@@ -215,7 +232,7 @@ class LocalAITUI(App):
     THEMES = ["code1", "code2", "dark", "mono"]
 
     @property
-    def command_sources(self) -> Set[Any]: return {AgentCommandProvider}
+    def command_sources(self) -> set[Any]: return {AgentCommandProvider}
 
     @property
     def border_accent(self) -> str:
@@ -302,7 +319,7 @@ class LocalAITUI(App):
                 if isinstance(child, Message): child.refresh(layout=True)
             self.chat_area.refresh(layout=True)
 
-    def __init__(self, workspace_path: str, model_name: str, is_agent: Optional[bool] = None) -> None:
+    def __init__(self, workspace_path: str, model_name: str, is_agent: bool | None = None) -> None:
         super().__init__()
         self.workspace_path, self.model_name = workspace_path, model_name
         self.safe_name = core.workspace_safe_name(workspace_path)
@@ -348,7 +365,7 @@ class LocalAITUI(App):
         self.reasoning_active, self.reasoning_budget, self.entering_reasoning_budget = core.get_state("reasoning_active", False), core.get_state("reasoning_budget", 500), False
 
         cli_hist = os.environ.get("AI_SESSION_HISTORY")
-        try: self.history: List[Dict[str, Any]] = json.loads(cli_hist) if cli_hist else []
+        try: self.history: list[dict[str, Any]] = json.loads(cli_hist) if cli_hist else []
         except (json.JSONDecodeError, TypeError, ValueError): self.history = []
 
         self.generation_cancelled, self.active_response, self.stats_turns = False, None, 0
@@ -512,7 +529,7 @@ class LocalAITUI(App):
         self.lbl_voice, self.lbl_tts, self.lbl_image = self.query_one("#lbl-voice", Static), self.query_one("#lbl-tts", Static), self.query_one("#lbl-image", Static)
 
         if hasattr(ipython, "is_ipython_enabled"):
-            self.lbl_harness.update(f"[dim]Harness[/dim] " + ("NOOA IPython" if ipython.is_ipython_enabled() else "Native Tools"))
+            self.lbl_harness.update("[dim]Harness[/dim] " + ("NOOA IPython" if ipython.is_ipython_enabled() else "Native Tools"))
 
         if hasattr(voice, "is_bridge_running"):
             is_act = voice.is_bridge_running()
@@ -694,7 +711,7 @@ class LocalAITUI(App):
                 self.run_worker(lambda: self.process_query_worker(args), thread=True)
             else:
                 active = ipython.toggle_ipython_mode()
-                if hasattr(self, "lbl_harness"): self.lbl_harness.update(f"[dim]Harness[/dim] " + ("NOOA IPython" if active else "Native Tools"))
+                if hasattr(self, "lbl_harness"): self.lbl_harness.update("[dim]Harness[/dim] " + ("NOOA IPython" if active else "Native Tools"))
                 self.notify(f"NOOA IPython harness {'enabled (single tool mode)' if active else 'disabled (classic tools)'}.")
                 if active and "py-" not in self.active_skill:
                     self.notify(f"[yellow]Warning: Active skill '{self.active_skill}' is a classic JSON skill. Use a Py profile (e.g. pi/py-pro) for best in-kernel SDK results.[/yellow]", sys_prefix=False)

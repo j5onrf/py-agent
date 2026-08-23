@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
 """Core Module - Handles streaming SSE, tool gates, and Rich rendering"""
 
-import os, sys, time, json, ast, re, shutil, subprocess, difflib, urllib.parse, urllib.request as urlreq
-from typing import List, Dict, Any, Optional, Tuple
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+import urllib.request as urlreq
+from typing import Any
 
+import agent_cloud
+import agent_tools as tools
+import agent_ui as ui
 import requests
+from rich.box import ROUNDED
 from rich.console import Console, Group
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.text import Text
-from rich.box import ROUNDED
-from rich.syntax import Syntax
-
-import agent_ui as ui
-import agent_cloud
-import agent_tools as tools
 
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
 STATE_FILE: str = os.path.join(CFG_DIR, ".state.json")
@@ -33,7 +38,7 @@ RE_MD_JSON_WRAPPER = re.compile(r'```(?:json)?\s*([\s\S]*?)\s*```', re.DOTALL)
 RE_XML_TOOL_TAGS = re.compile(r'<\|?[a-zA-Z_]+_call_?(?:start|end)?\|?>', re.DOTALL)
 
 
-def _heal_tool_args(raw: str) -> Dict[str, Any]:
+def _heal_tool_args(raw: str) -> dict[str, Any]:
     """Self-healing JSON tool argument parser (Unsloth-inspired).
     Recovers from missing brackets, single quotes, unescaped linebreaks, and leaked XML.
     """
@@ -84,8 +89,8 @@ BINARY_EXTENSIONS = frozenset({
 _TPM_SKIP_QUERIES = frozenset({"hello", "hi", "hey", "exit", "quit", "q", "/clear", "/reset", "/stats", "/tok", "/m", "/r"})
 _TPM_BLACKLIST = frozenset({"files", "file", "file_list", "project", "code", "description", "features", "dependencies", "project_type", "directory", "folder", "workspace"})
 
-EDIT_TOOLS: List[Dict[str, Any]] = getattr(tools, "EDIT_TOOLS", [])
-TOOL_VERBS: Dict[str, str] = getattr(tools, "TOOL_VERBS", {})
+EDIT_TOOLS: list[dict[str, Any]] = getattr(tools, "EDIT_TOOLS", [])
+TOOL_VERBS: dict[str, str] = getattr(tools, "TOOL_VERBS", {})
 
 DEFAULTS = {
     "spell_active": True, "show_stats": True, "memory_active": True, "box_style": 1, "yolo_mode": False,
@@ -101,9 +106,9 @@ try: import speed_test
 except ImportError: speed_test = None
 
 # Internal caches
-_state_cache: Dict[str, Any] = {}
+_state_cache: dict[str, Any] = {}
 _state_mtime: float = 0.0
-_server_alive_cache: Dict[str, Tuple[bool, float]] = {}
+_server_alive_cache: dict[str, tuple[bool, float]] = {}
 
 
 def get_state(key: str = "", default: Any = None) -> Any:
@@ -149,7 +154,7 @@ def workspace_safe_name(workspace_path: str, home_dir: str = "") -> str:
     return "home" if ws == home else (ws.replace("/", "-").strip("-.") or "home")
 
 
-def run_mod(module_name: str, *args: str, input_data: Optional[str] = None) -> str:
+def run_mod(module_name: str, *args: str, input_data: str | None = None) -> str:
     for sub in ("modules", ""):
         path = os.path.join(CFG_DIR, sub, module_name)
         if os.path.exists(path):
@@ -194,7 +199,7 @@ def _clear_lines(stream_err: bool, text: str, extra_top: int = 0) -> None:
     try:
         target.write(f"\r\033[{up}A\033[J" if up > 0 else "\r\033[J")
         target.flush()
-    except (IOError, OSError): pass
+    except OSError: pass
 
 
 class RichStreamer:
@@ -202,7 +207,7 @@ class RichStreamer:
         self.prefix, self.active, self.spinner = prefix, active and sys.stdout.isatty(), spinner
         self.acc_think, self.acc_ans, self.phase, self.think_hdr_printed, self.ans_started = "", "", "INIT", False, False
 
-    def _stop_spinner(self, done_msg: Optional[str] = None) -> None:
+    def _stop_spinner(self, done_msg: str | None = None) -> None:
         if self.spinner:
             try: self.spinner.stop(done_msg=done_msg)
             except (AttributeError, RuntimeError, OSError): pass
@@ -212,7 +217,7 @@ class RichStreamer:
             try:
                 sys.stdout.write("\033[?25h")
                 sys.stdout.flush()
-            except (IOError, OSError): pass
+            except OSError: pass
 
     def update(self, token: str) -> None:
         if not self.active:
@@ -223,7 +228,7 @@ class RichStreamer:
                     formatted = token.replace("\r\n", "\n").replace("\n", "\r\n")
                     sys.stdout.write(formatted)
                     sys.stdout.flush()
-                except (IOError, OSError): pass
+                except OSError: pass
             return
 
         show_think = os.environ.get("AI_SHOW_THINKING", "1") == "1"
@@ -258,7 +263,7 @@ class RichStreamer:
                         out_tok = tok.replace("\r\n", "\n").replace("\n", "\r\n")
                         sys.stderr.write(out_tok)
                         sys.stderr.flush()
-                    except (IOError, OSError): pass
+                    except OSError: pass
         else:
             tok = RE_FINAL_ANSWER.sub('', token.replace("\\n", "\n"))
             if not self.ans_started:
@@ -272,7 +277,7 @@ class RichStreamer:
                     try:
                         sys.stdout.write(f"{p_style}{p_str}\033[0m")
                         sys.stdout.flush()
-                    except (IOError, OSError): pass
+                    except OSError: pass
                 self.acc_ans += p_str
 
             self.acc_ans += tok
@@ -281,7 +286,7 @@ class RichStreamer:
                     out_tok = tok.replace("\r\n", "\n").replace("\n", "\r\n")
                     sys.stdout.write(out_tok)
                     sys.stdout.flush()
-                except (IOError, OSError): pass
+                except OSError: pass
 
     def stop(self, interrupted: bool = False) -> None:
         self._stop_spinner()
@@ -289,7 +294,7 @@ class RichStreamer:
             try:
                 sys.stdout.write("\033[?25h\r\n")
                 sys.stdout.flush()
-            except (IOError, OSError): pass
+            except OSError: pass
             return
 
         show_think = os.environ.get("AI_SHOW_THINKING", "1") == "1"
@@ -320,10 +325,10 @@ class RichStreamer:
                 try:
                     sys.stdout.write("\r\n")
                     sys.stdout.flush()
-                except (IOError, OSError): pass
+                except OSError: pass
 
 
-def _log_turn_usage(model: str, in_tok: int, out_tok: int, cost: float, show_stats: bool, ctx_used: Optional[int] = None, user_msg: str = "", assistant_msg: str = "") -> None:
+def _log_turn_usage(model: str, in_tok: int, out_tok: int, cost: float, show_stats: bool, ctx_used: int | None = None, user_msg: str = "", assistant_msg: str = "") -> None:
     try:
         ws = os.environ.get("AI_WORKSPACE_PATH")
         # Only log session.jsonl inside explicit project workspaces (never in ~/.config/py-agent or home)
@@ -342,7 +347,7 @@ def _log_turn_usage(model: str, in_tok: int, out_tok: int, cost: float, show_sta
     except (OSError, TypeError, ValueError, KeyError): pass
 
 
-def _process_stream_chunk(content: str, reasoning: str, in_think_block: bool) -> Tuple[str, bool, bool]:
+def _process_stream_chunk(content: str, reasoning: str, in_think_block: bool) -> tuple[str, bool, bool]:
     if content:
         if "Final Answer:" in content: content = RE_FINAL_ANSWER.sub('', content).lstrip()
         if "<|tool_call" in content:
@@ -355,7 +360,7 @@ def _process_stream_chunk(content: str, reasoning: str, in_think_block: bool) ->
     return "", False, in_think_block
 
 
-def _calc_turn_tokens(ans_text: str, messages: List[Dict[str, Any]], captured_usage: Optional[Dict[str, Any]], is_local: bool) -> Tuple[int, int]:
+def _calc_turn_tokens(ans_text: str, messages: list[dict[str, Any]], captured_usage: dict[str, Any] | None, is_local: bool) -> tuple[int, int]:
     if captured_usage and "completion_tokens" in captured_usage:
         return captured_usage.get("prompt_tokens", 0), captured_usage.get("completion_tokens", 0)
     if is_local:
@@ -377,7 +382,7 @@ def _print_tool_output(spinner: Any, text: str) -> None:
         else: _console_err.print(text)
 
 
-def _run_edit_tool(name: str, args: Dict[str, Any], workspace: str, spinner: Any = None) -> str:
+def _run_edit_tool(name: str, args: dict[str, Any], workspace: str, spinner: Any = None) -> str:
     """Delegates directly to centralized agent_tools engine with gate & output hooks."""
     return tools.run_tool(
         name, args, workspace,
@@ -386,7 +391,7 @@ def _run_edit_tool(name: str, args: Dict[str, Any], workspace: str, spinner: Any
     )
 
 
-def agentic_turn(messages: List[Dict[str, Any]], url: str, headers: Dict[str, str], body: Dict[str, Any], timeout: int, spinner: Any, show_stats: bool = False, is_agent: bool = False) -> Optional[str]:
+def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, str], body: dict[str, Any], timeout: int, spinner: Any, show_stats: bool = False, is_agent: bool = False) -> str | None:
     workspace = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
     is_local = "localhost" in url or "127.0.0.1" in url or body.get("model") == "local-model"
 
@@ -462,7 +467,7 @@ def agentic_turn(messages: List[Dict[str, Any]], url: str, headers: Dict[str, st
                 except (json.JSONDecodeError, KeyError, IndexError, TypeError, ValueError): pass
 
             if streamer: streamer.stop()
-            elif not first_chunk: print("")
+            elif not first_chunk: print()
 
             ans_text = "".join(acc_content)
             in_tok, out_tok = _calc_turn_tokens(ans_text, messages, captured_usage, is_local)
@@ -542,7 +547,7 @@ def _is_local_server_alive(url: str, timeout: float = 0.3) -> bool:
     return alive
 
 
-def stream_response(messages: List[Dict[str, Any]], prefix: str = "AI: ", cfg_dir: str = "", show_stats: bool = False, thinking_budget: int = 0, is_agent: bool = False) -> Optional[str]:
+def stream_response(messages: list[dict[str, Any]], prefix: str = "AI: ", cfg_dir: str = "", show_stats: bool = False, thinking_budget: int = 0, is_agent: bool = False) -> str | None:
     spinner = ui.InlineSpinner()
     try:
         configs = agent_cloud.get_active_configs(messages)
@@ -573,7 +578,7 @@ def get_accurate_token_count(text: Any, server_url: str = "http://localhost:8080
     return max(1, (len(text if isinstance(text, str) else str(text)) * 10) // 36) if text else 0
 
 
-def show_memory_status(messages: List[Dict[str, Any]], max_context: int = 8192, server_url: str = "http://localhost:8080") -> None:
+def show_memory_status(messages: list[dict[str, Any]], max_context: int = 8192, server_url: str = "http://localhost:8080") -> None:
     total_toks = sum(get_accurate_token_count(m.get("content") or "", server_url) for m in messages)
     pct = (total_toks / max_context) * 100
     bar = "█" * int(pct / 5) + "░" * (20 - int(pct / 5))
@@ -588,7 +593,7 @@ def show_memory_status(messages: List[Dict[str, Any]], max_context: int = 8192, 
     ))
 
 
-def prune_history(history: List[Dict[str, Any]], max_tokens: Optional[int] = None) -> List[Dict[str, Any]]:
+def prune_history(history: list[dict[str, Any]], max_tokens: int | None = None) -> list[dict[str, Any]]:
     if len(history) <= 1: return history
     limit = max_tokens or int(os.environ.get("AI_MAX_TOKENS", 8192))
     history = [m for m in history if m.get("role") != "tool"]

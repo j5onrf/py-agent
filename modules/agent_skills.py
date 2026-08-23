@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """Unified library & executable for static, dynamic, and on-demand skills"""
 
-import os, sys, re, subprocess, json, shutil
-from typing import List, Dict, Any, Optional, Set
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from typing import Any
 
-import agent_ui as ui
 import agent_context as context
+import agent_ui as ui
 
 PAGER_STRIP_RE: re.Pattern = re.compile(r'\|\s*(leaf|mdcat|cat|glow|view)\b.*$', re.IGNORECASE)
 RE_FRONTMATTER_JSON: re.Pattern = re.compile(r'^\s*(\{[\s\S]*?\})\s*')
@@ -22,7 +27,7 @@ def ensure_mysys_exists(skills_dir: str, cfg_dir: str) -> None:
         except Exception: pass
 
 
-def find_skill_file(base_dir: str, skill_name: str) -> Optional[str]:
+def find_skill_file(base_dir: str, skill_name: str) -> str | None:
     """Scans subdirectories to locate target Markdown skill file."""
     clean = skill_name.lstrip("-").lower()
     for cand in (os.path.join(base_dir, "profiles", f"{clean}.md"), os.path.join(base_dir, f"{clean}.md"), os.path.join(base_dir, "system", f"{clean}.md")):
@@ -37,7 +42,7 @@ def find_skill_file(base_dir: str, skill_name: str) -> Optional[str]:
 def load_skill_content(skills_str: str, skills_dir: str, cfg_dir: str) -> str:
     """Concatenates the instruction contents of all matched skills."""
     if not skills_str: return ""
-    contents: List[str] = []
+    contents: list[str] = []
     for skill in [s.lstrip("-").lower() for s in skills_str.split()]:
         if sf := find_skill_file(skills_dir, skill):
             if "system" in skill: ensure_mysys_exists(skills_dir, cfg_dir)
@@ -97,7 +102,7 @@ def run_local_tool(cmd: str) -> str: return _exec_tool_cmd(cmd, interactive=Fals
 def run_interactive_tool(cmd: str) -> str: return _exec_tool_cmd(cmd, interactive=True)
 
 
-def get_system_context(query: str, context_file: str, stop_words: Set[str], skills_dir: str, cfg_dir: str) -> str:
+def get_system_context(query: str, context_file: str, stop_words: set[str], skills_dir: str, cfg_dir: str) -> str:
     """Matches inputs against contextual templates, executing approved shortcuts dynamically."""
     if not (q_tokens := context.tokenize(query, stop_words)) or "\n" in query.strip(): return ""
     for entry in context.load_context_entries(context_file, stop_words):
@@ -122,9 +127,9 @@ def get_system_context(query: str, context_file: str, stop_words: Set[str], skil
     return ""
 
 
-def load_skill_blueprints(dept_skills_dir: str, stop_words: Set[str]) -> List[Dict[str, Any]]:
+def load_skill_blueprints(dept_skills_dir: str, stop_words: set[str]) -> list[dict[str, Any]]:
     """Loads metadata descriptions and indexing tokens for on-demand specialty skills."""
-    blueprints: List[Dict[str, Any]] = []
+    blueprints: list[dict[str, Any]] = []
     if os.path.exists(dept_skills_dir):
         for r, _, fs in os.walk(dept_skills_dir):
             for f in fs:
@@ -132,7 +137,7 @@ def load_skill_blueprints(dept_skills_dir: str, stop_words: Set[str]) -> List[Di
                     path = os.path.join(r, f)
                     try:
                         with open(path, "r", encoding="utf-8") as sf:
-                            lines = [l.strip() for l in sf.readlines() if l.strip()]
+                            lines = [l.strip() for l in sf if l.strip()]
                         if not lines: continue
                         desc_line = next((l for l in lines if not l.startswith(("#", "---", ">", "*", "-", "import ")) and not RE_METADATA_LINE.match(l)), "")
 
@@ -156,7 +161,7 @@ def load_skill_blueprints(dept_skills_dir: str, stop_words: Set[str]) -> List[Di
     return blueprints
 
 
-def run_skill_selector(workspace: str, raw_cmd: str, dept_skills_dir: str, stop_words: Set[str]) -> None:
+def run_skill_selector(workspace: str, raw_cmd: str, dept_skills_dir: str, stop_words: set[str]) -> None:
     """Runs the dynamic arrow-key skill loading overlay inside the active terminal."""
     try:
         chat_history = json.loads(sys.stdin.read().strip())

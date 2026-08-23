@@ -3,13 +3,13 @@
 Connects PyCode GUI directly to py-agent engine and local llama.cpp server.
 """
 
+import json
 import os
 import sys
-import json
-import uuid
-import time
 import threading
-from typing import Dict, Any, List, Optional, Tuple
+import time
+import uuid
+from typing import Any
 
 try:
     sys.stdout.reconfigure(line_buffering=True)
@@ -22,22 +22,21 @@ SKILLS_DIR = os.path.join(CFG_DIR, "skills")
 if MODULES_DIR not in sys.path:
     sys.path.insert(0, MODULES_DIR)
 
-import agent_core as core
-import agent_tools as tools
-import agent_skills as skills
 import agent_cloud
+import agent_core as core
+import agent_skills as skills
+import agent_tools as tools
 import agent_tts as tts
-import agent_voice as voice
 
 BASE_PROMPT_CHAT = "### Conversational Guidelines:\n- Role: Active, natural, and highly articulate conversational assistant.\n- Tone: Professional, warm, objective, and intellectually engaging.\n\n"
 BASE_PROMPT_AGENT = "Active local project workspace developer agent.\nIf <context> is provided, answer directly using only its facts. Otherwise, answer normally.\n\n"
 
-SESSION_HISTORIES: Dict[str, List[Dict[str, Any]]] = {}
-SESSION_WORKSPACES: Dict[str, str] = {}
+SESSION_HISTORIES: dict[str, list[dict[str, Any]]] = {}
+SESSION_WORKSPACES: dict[str, str] = {}
 
 
 def send_rpc_response(req_id: Any, result: Any = None, error: Any = None) -> None:
-    payload: Dict[str, Any] = {"jsonrpc": "2.0", "id": req_id}
+    payload: dict[str, Any] = {"jsonrpc": "2.0", "id": req_id}
     if error:
         payload["error"] = error
     else:
@@ -68,7 +67,7 @@ def send_acp_chunk(session_id: str, text: str, is_thought: bool = False) -> None
     sys.stdout.flush()
 
 
-def detect_workspace_mode(workspace: str) -> Tuple[bool, str, bool]:
+def detect_workspace_mode(workspace: str) -> tuple[bool, str, bool]:
     home = os.path.realpath(os.path.expanduser("~"))
     ws_real = os.path.realpath(workspace)
     cfg_file = os.path.join(workspace, ".agent", "config.json")
@@ -130,7 +129,7 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
     return sys_prompt
 
 
-def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: List[Dict[str, Any]], workspace: str) -> None:
+def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str, Any]], workspace: str) -> None:
     user_text = " ".join(item.get("text", "") for item in prompt_items if isinstance(item, dict) and item.get("type") == "text").strip()
     if not user_text:
         user_text = "Hello"

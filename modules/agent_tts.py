@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Local-AI Kokoro Text-to-Speech (Text Out Loud) Module"""
 
-import os, re, subprocess, threading
+import os
+import re
+import subprocess
+import threading
 
 VOICE_FILE = os.path.expanduser("~/.config/koko_current_voice")
 
@@ -51,7 +54,7 @@ def speak_text(text: str) -> None:
         wav_path = "/dev/shm/tts.wav"
         # Strict shell escaping protects against code execution or syntax errors
         escaped_text = clean.replace('\\', '\\\\').replace('"', '\\"').replace('$', '\\$').replace('`', '\\`')
-        cmd = f'OMP_NUM_THREADS=6 koko --style "{voice}" --speed 1.15 text "{escaped_text}" -o {wav_path} && pw-play {wav_path}'
+        cmd = f'OMP_NUM_THREADS=4 koko --style "{voice}" --speed 1.15 text "{escaped_text}" -o {wav_path} 2>/dev/null && pw-play {wav_path}'
         subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     threading.Thread(target=_run, daemon=True).start()

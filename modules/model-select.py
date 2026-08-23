@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
 """Fully Dynamic TUI Model Selector driven by OpenRouter Rankings"""
 
-import asyncio, json, os, re, select, shutil, subprocess, sys, termios, tty, atexit
+import asyncio
+import atexit
+import json
+import os
+import re
+import select
+import shutil
+import subprocess
+import sys
+import termios
+import tty
 import urllib.request as urlreq
-from typing import Set
 
 ENV_PATH, CACHE_PATH = os.path.expanduser("~/.config/py-agent/.env"), os.path.expanduser("~/.config/py-agent/.openrouter_cache_v2.json")
 
@@ -108,7 +117,7 @@ def load_env_vars():
     return v
 
 
-def get_active_key_set() -> Set[str]:
+def get_active_key_set() -> set[str]:
     """Single-pass reader returning all active non-placeholder API key names."""
     active = set()
     if os.path.exists(ENV_PATH):
@@ -258,7 +267,7 @@ async def async_get_key():
     return await asyncio.to_thread(_read)
 
 
-def draw_main_menu(selected, gemini_curr, claude_curr, openai_curr, grok_curr, or_curr, custom_curr, active_keys: Set[str], message=""):
+def draw_main_menu(selected, gemini_curr, claude_curr, openai_curr, grok_curr, or_curr, custom_curr, active_keys: set[str], message=""):
     sys.stdout.write("\x1b[H\x1b[2J")
     amber, green, red, reset, bold, dim = "\033[38;2;230;120;60m", "\033[1;32m", "\033[1;31m", "\033[0m", "\033[1m", "\033[90m"
 
@@ -285,7 +294,7 @@ def draw_main_menu(selected, gemini_curr, claude_curr, openai_curr, grok_curr, o
         f"🌐  OpenRouter Free       {f'{green}{or_curr}{reset}' if (or_act and is_or_free) else f'{dim}None selected{reset}'}\n       {dim}Select from the top 20 most popular free models{reset}",
         f"🌐  OpenRouter Paid       {f'{green}{or_curr}{reset}' if (or_act and not is_or_free) else f'{dim}None selected{reset}'}\n       {dim}Select from the top 20 industry leading paid engines{reset}",
         f"↺  Refresh API Lists      {dim}Query OpenRouter for current model rankings{reset}",
-        f"✕  Save & Close"
+        "✕  Save & Close"
     ]
 
     for i, opt in enumerate(options):

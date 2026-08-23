@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
 """Py Agent [j5onrf] [v0.9.8.82]"""
 
-import json, os, re, shutil, sqlite3, subprocess, sys, threading, time
-from typing import List, Optional, Tuple
+import json
+import os
+import re
+import shutil
+import sqlite3
+import subprocess
+import sys
+import threading
+import time
 from contextlib import closing
 
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
@@ -42,13 +49,20 @@ try:
 except ImportError: pass
 
 try:
-    import agent_context as context, agent_core as core, agent_skills as skills, agent_spell as spell, agent_ui as ui, agent_voice as voice, agent_tts as tts, agent_ipython as ipython
+    import agent_context as context
+    import agent_core as core
+    import agent_ipython as ipython
+    import agent_skills as skills
+    import agent_spell as spell
+    import agent_tts as tts
+    import agent_ui as ui
+    import agent_voice as voice
 except ImportError as e:
     sys.stderr.write(f"\033[1;31m[CRITICAL]: Failed to load modules: {e}\033[0m\n")
     sys.exit(1)
 
 
-def workspace_db_counts(safe_name: str) -> Tuple[int, int]:
+def workspace_db_counts(safe_name: str) -> tuple[int, int]:
     """In-memory direct SQLite counts to eliminate process-spawning startup latency."""
     db_path = os.path.join(SESSIONS_DIR, f"{safe_name}.db")
     turns, facts = 0, 0
@@ -97,7 +111,7 @@ def sync_md_to_sqlite(workspace: str, workspace_path: str) -> None:
         except (OSError, json.JSONDecodeError): pass
 
 
-def clean_exit(safe_name: Optional[str] = None) -> None:
+def clean_exit(safe_name: str | None = None) -> None:
     if safe_name:
         try: core.run_mod("ai-agent-sessions", "cleanup-sub", safe_name, str(os.getpid()))
         except Exception: pass
@@ -105,7 +119,7 @@ def clean_exit(safe_name: Optional[str] = None) -> None:
     sys.exit(0)
 
 
-def run_interactive_chat(args: List[str]) -> None:
+def run_interactive_chat(args: list[str]) -> None:
     is_agent = args[0] == "--talk-chat"
     workspace_path = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
     home_dir = os.path.expanduser("~")
@@ -255,7 +269,7 @@ def run_interactive_chat(args: List[str]) -> None:
                             st = core.get_state()
                             reasoning_active, reasoning_budget = st.get("reasoning_active", False), st.get("reasoning_budget", 500)
                             os.environ["AI_SHOW_THINKING"] = "1" if st.get("show_thinking", True) else "0"
-                            ui._console.print(f"[green][sys] Resumed CLI session from PyCode.[/green]\n")
+                            ui._console.print("[green][sys] Resumed CLI session from PyCode.[/green]\n")
                         except Exception as e:
                             ui._console.print(f"[red][sys] Failed PyCode: {e}[/red]\n")
                     else:
@@ -464,7 +478,7 @@ def run_interactive_chat(args: List[str]) -> None:
         clean_exit(safe_name if is_agent else None)
 
 
-def run_direct_query(args: List[str]) -> None:
+def run_direct_query(args: list[str]) -> None:
     query_parts = args[1:]
     query = " ".join(query_parts).strip()
 
@@ -487,7 +501,7 @@ def run_direct_query(args: List[str]) -> None:
     sys.exit(0)
 
 
-def run_matching_search(args: List[str]) -> None:
+def run_matching_search(args: list[str]) -> None:
     user_input = re.sub(r"[`$]", "", " ".join(args)).strip()
     if not user_input or args[0].startswith("--"): sys.exit(0)
     if user_input.lower() in ("/help", "/h"): ui.show_help(); sys.exit(0)

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Dynamic Cloud Cascade Engine - Top-down .env provider API priority."""
 
-import os, re
-from typing import List, Dict, Any, Tuple
+import os
+import re
+from typing import Any
 
 ENV_PATH: str = os.path.expanduser("~/.config/py-agent/.env")
 RE_ENV_API_KEY: re.Pattern = re.compile(r"^([A-Z0-9_]+_API_KEY|[A-Z0-9_]+_KEY)\s*=\s*\"?([^\"]*)\"?$")
@@ -15,9 +16,9 @@ FALLBACK_MODELS = {
 }
 
 
-def get_active_configs(messages: List[Dict[str, str]]) -> List[Tuple[str, Dict[str, str], Dict[str, Any], int]]:
+def get_active_configs(messages: list[dict[str, str]]) -> list[tuple[str, dict[str, str], dict[str, Any], int]]:
     """Compiles active cloud API configurations, prioritizing them based on their top-down order in .env."""
-    configs: List[Tuple[str, Dict[str, str], Dict[str, Any], int]] = []
+    configs: list[tuple[str, dict[str, str], dict[str, Any], int]] = []
     if not os.path.exists(ENV_PATH):
         return configs
 

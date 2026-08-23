@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 # Base Tracker TUI v0.8.0 [TUIAMP-Engine]
 
-import sys
-import os
-import tty
-import termios
-import urllib.request
 import json
 import shutil
+import sys
+import termios
+import tty
+import urllib.request
 from datetime import datetime
 
 # --- Configuration ---
@@ -39,9 +38,9 @@ def print_header(subtitle=""):
     sys.stdout.write("\033[2J\033[H")  # Clear screen and home cursor
     c = [f"\033[3{i}m" for i in range(1, 6)]
     reset = "\033[0m"
-    print(f"         \033[90m┌──────────────────────────────┐\033[0m")
-    print(f"         \033[90m│\033[0m   \033[1;32m󰚌  B A S E T R A C K E R\033[0m   \033[90m│\033[0m")
-    print(f"         \033[90m└──────────────────────────────┘\033[0m")
+    print("         \033[90m┌──────────────────────────────┐\033[0m")
+    print("         \033[90m│\033[0m   \033[1;32m󰚌  B A S E T R A C K E R\033[0m   \033[90m│\033[0m")
+    print("         \033[90m└──────────────────────────────┘\033[0m")
     if subtitle:
         print(f"               \033[1;35m// {subtitle}\033[0m\n")
 
@@ -181,7 +180,7 @@ def render_target_view(target_config):
                     color = "\033[0m" if idx % 2 == 0 else "\033[38;5;246m"
                     sys.stdout.write(f"  {idx:2d}. \033[1;36m{display_name}\033[0m{padding_str}{badge_str}  {color}{date_str}\033[0m\033[K\r\n")
 
-            sys.stdout.write(f"\r\n\033[90m─────────────────────────────────────────────────────────────────────────────\033[0m\033[K\r\n")
+            sys.stdout.write("\r\n\033[90m─────────────────────────────────────────────────────────────────────────────\033[0m\033[K\r\n")
             sys.stdout.write(" \033[90m[q/Enter] Return to Target Selection\033[0m\033[K\r\n")
             sys.stdout.flush()
 
