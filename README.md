@@ -22,7 +22,7 @@
 
 Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`) controlling a C++ backend `llama-server`. Built for extreme efficiency on quantized local models (`LFM2.5-8B-A1B`, `Qwen3.5-2B`, `Ornith-1.5-35B-A3B`, `Qwen3.6-35B-A3B`, `Qwen3.8-27B`) and cloud providers.
 
-🟢 **Active:** Dedicated `Huggingface` endpoints: ([`Qwen/Qwen3.8-27B`](https://huggingface.co/spaces/victor/Qwen3.8-27B-free-endpoint), [`DeepSeek-V4-Flash`](https://huggingface.co/spaces/victor/DeepSeek-V4-Flash-0731-free-endpoint)).
+🟢 **Active:** Official `Huggingface` Router endpoints: ([`Qwen/Qwen3.8-2.4T-A95B`](https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B), [`DeepSeek-V4-Flash-0731`](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731)).
 
 - **Direct Shell Jaccard (`<plugins>`):** Sub-millisecond fuzzy intent routing for shell shortcuts, diagnostic tools, and custom plugins mapped in [`ai-context.md`](ai-context.md).
 - **Single-Turn Query (`ai <query>`):** Instant response piped straight back to your active shell prompt.
@@ -152,25 +152,44 @@ nano ~/.config/py-agent/.env
 <summary><b>📋 View Example <code>~/.config/py-agent/.env</code> (Click to Expand)</b></summary>
 
 ```env
-# Top-Down Priority (First Active Key is Used)
+# ==============================================================================
+# Py-Agent Environment Configuration Template
+# Top-Down Priority: The first active (uncommented) provider key is used.
+# ==============================================================================
 
-# Cloud Providers
-GEMINI_API_KEY="AIzaSyYourGeminiKey"
-GEMINI_MODEL="gemini-3.5-flash-lite"
+# ── 1. Custom Endpoints / Hugging Face Router ─────────────────────────────────
+# Get a free read token at: https://huggingface.co/settings/tokens
+# CUSTOM_API_KEY="hf_YourHuggingFaceTokenHere"
+CUSTOM_URL="https://router.huggingface.co/hf-inference/v1/chat/completions"
+CUSTOM_MODEL="Qwen/Qwen3.8-27B"
 
-OPENROUTER_API_KEY="sk-or-v1-YourOpenRouterKey"
+# ── 2. Google Gemini ─────────────────────────────────────────────────────────
+# Get key at: https://aistudio.google.com/app/apikey
+# GEMINI_API_KEY="AIzaSyYourGeminiApiKeyHere"
+GEMINI_MODEL="gemini-3.7-flash"
+
+# ── 3. OpenRouter (Free & Paid Catalog) ───────────────────────────────────────
+# Get key at: https://openrouter.ai/keys
+# OPENROUTER_API_KEY="sk-or-v1-YourOpenRouterKeyHere"
 OPENROUTER_MODEL="openrouter/free"
 
-OPENAI_API_KEY="your-openai-key"
-OPENAI_MODEL="gpt-5.6"
+# ── 4. Anthropic Claude ──────────────────────────────────────────────────────
+# CLAUDE_API_KEY="sk-ant-YourClaudeKeyHere"
+CLAUDE_MODEL="claude-Fable"
 
-CLAUDE_API_KEY="your-claude-key"
-CLAUDE_MODEL="claude-opus-5"
+# ── 5. OpenAI ────────────────────────────────────────────────────────────────
+# OPENAI_API_KEY="sk-YourOpenAIKeyHere"
+OPENAI_MODEL="gpt-luna"
 
-XAI_API_KEY="xai-your-grok-key"
-XAI_MODEL="grok-4.6"
+# ── 6. x.AI Grok ─────────────────────────────────────────────────────────────
+# XAI_API_KEY="xai-YourGrokKeyHere"
+XAI_MODEL="grok-5.6"
 
-# Context Limit
+# ── Voice Bridge Transcription (Optional) ────────────────────────────────────
+# GEM_VOICE="AIzaSyYourGeminiApiKeyHere"
+# GEM_MODEL="gemini-3.5-flash-lite"
+
+# ── Context Window Budget ────────────────────────────────────────────────────
 AI_MAX_TOKENS="8192"
 ```
 

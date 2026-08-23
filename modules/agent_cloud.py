@@ -9,10 +9,7 @@ ENV_PATH: str = os.path.expanduser("~/.config/py-agent/.env")
 RE_ENV_API_KEY: re.Pattern = re.compile(r"^([A-Z0-9_]+_API_KEY|[A-Z0-9_]+_KEY)\s*=\s*\"?([^\"]*)\"?$")
 
 FALLBACK_MODELS = {
-    "gemini": "gemini-3.7-flash",
-    "openai": "gpt-5.5",
-    "xai": "grok-4.5",
-    "custom": "default"
+    "gemini": "gemini-3.5-flash-lite"
 }
 
 
@@ -22,24 +19,18 @@ def get_active_configs(messages: list[dict[str, str]]) -> list[tuple[str, dict[s
     if not os.path.exists(ENV_PATH):
         return configs
 
-    custom_model_low = (os.environ.get("CUSTOM_MODEL") or "").lower()
-
-    if "deepseek" in custom_model_low:
-        custom_url = "https://q5dh1rfszfym23hj.us-east-2.aws.endpoints.huggingface.cloud/v1/chat/completions"
-    elif "qwen" in custom_model_low:
-        custom_url = "https://g9hnto0u7lvbu837.us-east-2.aws.endpoints.huggingface.cloud/v1/chat/completions"
-    else:
-        custom_url = os.environ.get("CUSTOM_URL")
-        if not custom_url:
-            try:
-                with open(ENV_PATH, "r", encoding="utf-8") as f:
-                    for line in f:
-                        if (s := line.strip()) and not s.startswith("#") and s.startswith("CUSTOM_URL="):
-                            custom_url = s.split("=", 1)[1].strip().strip('"').strip("'")
-                            break
-            except OSError:
-                pass
-        custom_url = custom_url or "https://q5dh1rfszfym23hj.us-east-2.aws.endpoints.huggingface.cloud/v1/chat/completions"
+    # Read CUSTOM_URL directly from environment or .env file (default to official Hugging Face Router)
+    custom_url = os.environ.get("CUSTOM_URL")
+    if not custom_url:
+        try:
+            with open(ENV_PATH, "r", encoding="utf-8") as f:
+                for line in f:
+                    if (s := line.strip()) and not s.startswith("#") and s.startswith("CUSTOM_URL="):
+                        custom_url = s.split("=", 1)[1].strip().strip('"').strip("'")
+                        break
+        except OSError:
+            pass
+    custom_url = custom_url or "https://router.huggingface.co/v1/chat/completions"
 
     url_map = {
         "GEMINI_API_KEY": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
@@ -70,7 +61,7 @@ def get_active_configs(messages: list[dict[str, str]]) -> list[tuple[str, dict[s
                             return [("https://api.anthropic.com/v1/messages", {"x-api-key": val_clean, "anthropic-version": "2023-06-01"}, body, 30)]
 
                         elif url := url_map.get(key_name):
-                            fallback = FALLBACK_MODELS.get(provider, "default-model")
+                            fallback = FALLBACK_MODELS.get(provider, "gemini-3.5-flash-lite")
                             model_var = "OPENROUTER_MODEL" if provider == "openrouter" else f"{provider.upper()}_MODEL"
                             body = {"model": os.environ.get(model_var) or fallback, "messages": messages, "stream": True}
                             headers = {"Authorization": f"Bearer {val_clean}"}
