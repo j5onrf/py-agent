@@ -342,7 +342,7 @@ Act as a senior staff engineer...
 
 ## 16. Voice Bridge & Neural Audio (`/v` & `/tts`)
 
-- **Voice to Text (`/v` / `/v auto`):** HTTPS bridge (`:9999`) for mobile/tablet dictation. Use `/v` for prompt review, `/v auto` for auto-submit.
+- **Voice to Text (`/v` / `/v auto`):** Zero-latency HTTPS bridge (`:9999`) for mobile/tablet dictation using Gemini cloud transcription. Emits native Wayland virtual keypresses (`wtype`) directly into PyCode desktop, browser WebUI, or active terminal prompts.
 - **Neural TTS (`/tts`):** Reads responses aloud via PipeWire & Kokoro; auto-filters code and `<think>` blocks.
 - **Stop Speech:** Run `pkill -9 -f "pw-play|koko"`, type `stop talking`, or bind `Super+Shift+X`.
 

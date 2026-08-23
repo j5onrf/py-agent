@@ -227,6 +227,15 @@ class VoiceHandler(http.server.SimpleHTTPRequestHandler):
                     with open(PENDING_FILE, "w", encoding="utf-8") as f:
                         f.write(query)
 
+                    # Universal Wayland / Hyprland virtual typing into active window
+                    try:
+                        subprocess.run(["wtype", query], check=False)
+                        if _auto_submit:
+                            time.sleep(0.05)
+                            subprocess.run(["wtype", "-k", "Return"], check=False)
+                    except Exception:
+                        pass
+
                 self.send_response(200)
                 self.send_header("Content-Type", "text/plain")
                 self.end_headers()

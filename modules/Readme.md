@@ -103,9 +103,9 @@ Built to be lightweight, auditable by a single developer, and private by design.
 
 # Voice to Text
 
-- **Toggle:** Type `/v` or `/voice` in session to start/stop server.
+- **Toggle:** Type `/v` or `/voice` in session to start/stop server (or `/v auto` for instant dispatch).
 - **Connect:** Open `https://[PC-IP]:9999` on tablet or phone.
-- **Speak:** Hold button to talk; speech auto-types directly into your terminal prompt.
+- **Speak:** Hold button to talk; speech auto-types directly into your active PyCode composer, browser, or terminal prompt via native Wayland virtual typing (`wtype`).
 
 ### Setup (`~/.config/py-agent/.env`)
 

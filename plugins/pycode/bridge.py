@@ -7,6 +7,8 @@ import os
 import sys
 import json
 import uuid
+import time
+import threading
 from typing import Dict, Any, List, Optional, Tuple
 
 try:
@@ -309,6 +311,41 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: List[Dict[str,
 def main():
     default_workspace = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
     active_session_id = f"pyagent-{uuid.uuid4().hex[:8]}"
+
+    # Background listener for tablet/phone voice dictation (.voice_pending.txt)
+    def _voice_watcher():
+        pending_file = os.path.join(CFG_DIR, ".voice_pending.txt")
+        while True:
+            try:
+                time.sleep(0.3)
+                if os.path.exists(pending_file) and os.path.getsize(pending_file) > 0:
+                    with open(pending_file, "r", encoding="utf-8") as vf:
+                        text = vf.read().strip()
+                    try:
+                        os.remove(pending_file)
+                    except OSError:
+                        pass
+                    if text and active_session_id:
+                        active_cwd = SESSION_WORKSPACES.get(active_session_id, default_workspace)
+                        # Show user voice prompt in PyCode UI
+                        sys.stdout.write(json.dumps({
+                            "jsonrpc": "2.0",
+                            "method": "session/update",
+                            "params": {
+                                "sessionId": active_session_id,
+                                "update": {
+                                    "sessionUpdate": "user_message_chunk",
+                                    "content": {"type": "text", "text": text}
+                                }
+                            }
+                        }) + "\n")
+                        sys.stdout.flush()
+                        # Execute prompt and stream answer
+                        handle_acp_prompt(None, active_session_id, [{"type": "text", "text": text}], active_cwd)
+            except Exception:
+                pass
+
+    threading.Thread(target=_voice_watcher, daemon=True).start()
 
     for raw_line in sys.stdin:
         line = raw_line.strip()
