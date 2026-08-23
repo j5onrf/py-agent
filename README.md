@@ -45,7 +45,7 @@ Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`)
 | **Reasonix Cognitive Engine** | Real-time reasoning trace step extraction ([Reasonix](https://github.com/esengine/deepseek-reasonix)) + cognitive phase formatting inside thinking stream. | `/t [N\|show\|hide]` |
 | **System Admin & Diagnostics** | Live health monitoring, AUR/security audits, system optimization, status routing, and git commit hooks. | [`tools/agentic/system/`](tools/agentic/system) |
 | **Model Select TUI** | Real-time **[Cloud Connection](modules/Readme.md)** TUI, key toggles, and endpoint selector. | `model select` |
-| **Interactive Textual TUI** | Full-screen **[Textual](modules/Readme.md)** TUI workspace with JSON-RPC 2.0 sub-agent socket IPC powered by a C-speed `uvloop` event loop. | `/tui` |
+| **Interactive Textual PyTUI** | Full-screen **[Textual](modules/Readme.md)** TUI workspace with JSON-RPC 2.0 sub-agent socket IPC powered by a C-speed `uvloop` event loop. | `/tui` |
 
 ---
 
@@ -100,7 +100,7 @@ Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`)
         </a>
       </td>
       <td align="center" width="33%" valign="top">
-        <b>Textual TUI</b><br>
+        <b>Textual PyTUI</b><br>
         <code>/tui</code><br><br>
         <a href="https://github.com/user-attachments/assets/1cfcd26a-c7f9-482d-9624-24193ce7b5c2" target="_blank">
           <kbd>

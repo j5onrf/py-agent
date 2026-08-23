@@ -1,4 +1,4 @@
-# Py Agent Workspace & Session Manual
+# Py-Agent Workspace & Session Manual
 
 High-speed local developer agent, episodic memory, SQLite checkpoints, NOOA-enhanced IPython kernel harness, and codebase index graph.
 
@@ -202,7 +202,7 @@ Cross-platform React desktop and WebUI workspace for `py-agent`, powered by a cu
 
 ---
 
-## 5. Textual TUI Interface (`/tui`)
+## 5. Textual PyTUI Interface (`/tui`)
 
 Full-screen async Textual interface powered by `uvloop` background workers. Launch via `/tui` or run `agent_tui.py`.
 

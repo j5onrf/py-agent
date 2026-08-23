@@ -463,7 +463,7 @@ class LocalAITUI(App):
                 t.add_column("Key", style=cmd_style, justify="left"); t.add_column("Action", style="default")
                 for k, a in [("Tab", "Plan / Build Mode"), ("Ctrl+B", "Toggle Sidebar Panel"), ("Ctrl+T", "Cycle Themes"), ("Ctrl+O", "Copy Latest Response"), ("▲ Show", "Toggle Bottom Shortcut Bar"), ("/help", "View All Commands")]:
                     t.add_row(k, a)
-                self.query_one("#welcome-banner", Static).update(Panel(t, title=" ∿ Py Agent ", title_align="left", border_style=self.border_accent, box=ROUNDED, expand=False))
+                self.query_one("#welcome-banner", Static).update(Panel(t, title=" ∿ PyTUI ", title_align="left", border_style=self.border_accent, box=ROUNDED, expand=False))
         except Exception: pass
 
     def compose(self) -> ComposeResult:
