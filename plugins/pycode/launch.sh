@@ -30,7 +30,7 @@ chmod +x "$BRIDGE_PY" 2>/dev/null || true
 if [[ "$1" == "web" || "$1" == "--web" || "$1" == "--browser" || "$2" == "web" || "$2" == "--web" ]]; then
     echo "[pycode] Starting server in browser mode for: $TARGET_WORKSPACE"
     cd "$TARGET_WORKSPACE"
-    exec node "$PYCODE_DIR/apps/server/dist/bin.mjs" --cwd="$TARGET_WORKSPACE"
+    exec node "$PYCODE_DIR/apps/server/dist/bin.mjs" start --mode=web "$TARGET_WORKSPACE"
 fi
 
 # ── 2. Native Desktop App Mode (Default) ────────────────────────────────────

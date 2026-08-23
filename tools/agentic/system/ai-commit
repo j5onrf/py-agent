@@ -36,17 +36,20 @@ changes=$(git diff --cached -U0 -- \
         }
     }' || true)
 
-PROMPT="Summarize ONLY the primary staged change as a short commit title.
+PROMPT="Write a short git commit message (4 to 8 words) for these staged changes.
 
 Rules:
-- STRICT LENGTH: Between 3 and 6 words long.
-- Summarize ONLY the main primary change. Do NOT list multiple items or use semicolons.
-- Start with an action verb (Add, Fix, Refactor, Update).
-- Output ONLY the title text. No quotes, no period at the end.
+- Length: 4 to 8 words. Complete thought, do not trail off.
+- Format: Imperative mood starting with Add, Fix, Update, Refactor, or Remove.
+- Output ONLY the commit line. No quotes, no explanations, no trailing period.
 
-Example: Update model reference and fix token streamer
+Good examples:
+- Add user authentication middleware
+- Fix broken pipe on stream disconnect
+- Update launch script for background server
+- Refactor database query to improve performance
 
-Files:
+Staged files:
 $stats
 
 Diff:
@@ -69,22 +72,30 @@ printf "\r\033[2K" >&2
 raw_message=$(cat "$tmp_out" 2>/dev/null || echo "")
 rm -f "$tmp_out"
 
-message=$(echo "$raw_message" | sed -E \
-    -e 's/<\/?think>.*//g' \
+# 1. Strip <think>...</think> reasoning blocks across multiple lines
+message=$(echo "$raw_message" | perl -0777 -pe 's/<think>.*?<\/think>//gs' 2>/dev/null || echo "$raw_message")
+
+# 2. Extract the first non-empty line and strip prefixes/markdown
+message=$(echo "$message" | sed -E \
     -e 's/^[Cc]ommit [Mm]essage:?\s*//' \
-    -e 's/;.*//' \
+    -e 's/^[-*]\s*//' \
     -e 's/^[`"'\''\s]+//' \
     -e 's/[`"'\''\s\.]+$//' \
     -e 's/^[[:space:]]+//; s/[[:space:]]+$//' \
     | grep -v '^$' | head -n 1)
 
+# 3. If model still produced a long sentence (>8 words), safely truncate and strip dangling prepositions
 if [[ -n "$message" ]]; then
     word_count=$(echo "$message" | wc -w)
-    if [[ $word_count -gt 7 ]]; then
-        message=$(echo "$message" | cut -d' ' -f1-7)
+    if [[ $word_count -gt 8 ]]; then
+        # Take first 8 words
+        message=$(echo "$message" | awk '{for(i=1;i<=8;i++) printf "%s%s", $i, (i<8?" ":"\n")}')
+        # Strip trailing prepositions/conjunctions to prevent hanging sentences ("in", "to", "for", "and", etc.)
+        message=$(echo "$message" | sed -E 's/\s+(in|to|for|with|and|or|the|a|an|of|by|from|on|at|as)$//I')
     fi
 fi
 
+# Fallback & Capitalization
 if [[ -z "$message" ]]; then
     message="Update staged files"
 else
