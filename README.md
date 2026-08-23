@@ -60,7 +60,7 @@ Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`)
 | **Integrity** | **Type-Safe & AST Guard** | [Pydantic AI](https://github.com/pydantic/pydantic-ai) schemas + [OpenAI Agents](https://github.com/openai/openai-agents-python)-style self-correcting `.py`/`.json` file writes. |
 | **Resilience** | **Self-Healing Tool Calls** | [Unsloth](https://github.com/unslothai/unsloth)-inspired heuristic parser fixing malformed JSON/XML arguments on the fly before tool execution. |
 | **Optimization** | **Token-Slasher** | Custom [`tools/`](tools/) and [`skills/`](skills/) integration built for minimal token consumption. |
-| **Voice-to-Text** | **Tablet/Phone Bridge** | Zero-latency HTTPS voice bridge with Gemini cloud audio transcription (`/v [auto]`). |
+| **Voice-to-Text** | **Tablet/Phone Bridge** | Zero-latency HTTPS voice bridge with Gemini cloud transcription and native Wayland virtual typing (`wtype`) directly into PyCode GUI and CLI (`/v [auto]`). |
 | **Text-to-Speech** | **Neural Kokoro TTS** | Local PipeWire audio reader (`/tts`) using `koko` with automatic code/thinking filtering. |
 
 ---
