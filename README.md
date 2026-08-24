@@ -60,7 +60,7 @@ Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`)
 | **Integrity** | **Type-Safe & AST Guard** | [Pydantic AI](https://github.com/pydantic/pydantic-ai) schemas + [OpenAI Agents](https://github.com/openai/openai-agents-python)-style self-correcting `.py`/`.json` file writes. |
 | **Resilience** | **Self-Healing Tool Calls** | [Unsloth](https://github.com/unslothai/unsloth)-inspired heuristic parser fixing malformed JSON/XML arguments on the fly before tool execution. |
 | **Optimization** | **Token-Slasher** | Custom [`tools/`](tools/) and [`skills/`](skills/) integration built for minimal token consumption. |
-| **Voice-to-Text** | **Tablet/Phone Bridge** | Zero-latency HTTPS voice bridge with Gemini cloud transcription and native Wayland virtual typing (`wtype`) directly into PyCode GUI and CLI (`/v [auto]`). |
+| **Voice-to-Text** | **Tablet/Phone Bridge** | Zero-latency HTTPS voice bridge with Gemini cloud transcription and native Wayland virtual typing (`wtype`) directly into PyCode IDE and CLI (`/v [auto]`). |
 | **Text-to-Speech** | **Neural Kokoro TTS** | Local PipeWire audio reader (`/tts`) using `koko` with automatic code/thinking filtering. |
 
 ---
@@ -212,7 +212,7 @@ AI_MAX_TOKENS="8192"
 - [x] **Core Engine Optimization:** Production pass on streaming, token counting, and sub-agent concurrency.
 - [x] **Thinking UI Controls:** Real-time thinking TPS metrics and `/t show|hide` panel toggles.
 - [x] **Modular Agent Personas & Tool Loop:** Interactive profile selector on `ai init` (`pi`, `claude`, `hermes`) with automated path-healing file editing & YOLO execution loops.
-- [x] **Textual Async TUI:** Sub-millisecond `uvloop` event loop integration, Unix socket sub-agent hub, and live workspace watchers.
+- [x] **Textual Async PyTUI:** Sub-millisecond `uvloop` event loop integration, Unix socket sub-agent hub, and live workspace watchers.
 - [x] **Reasonix Cognitive Step:** Real-time reasoning cognitive transition extraction, real-time thinking step formatting, and stream interception.
 - [x] **Ralph Autonomous Task Loop:** On-demand `while` loop engine (`/task`, `TASK.md`) with automated completion verification.
 - [x] **Voice to Text:** Low-latency HTTPS tablet or phone voice bridge, Gemini cloud transcription, and non-blocking stdin injection loop (`/v [auto]`).

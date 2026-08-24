@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Graph-Enabled Index-Map Workspace Intelligence Engine"""
+"""Graph-Enabled Index-Map Workspace Intelligence Engine [In-Memory & CLI Module]"""
 
 import os, re, ast, json, fnmatch, time, sys, warnings, sqlite3, struct, urllib.request as urlreq
 
@@ -380,7 +380,6 @@ def run_indexing(target_dir, force=False, is_agent=False, no_db=False):
 
             ext = os.path.splitext(file)[1].lower()
             
-            # Detect extensionless Python executable scripts via shebang
             is_py_shebang = False
             if not ext and not is_binary(fp):
                 try:
@@ -436,8 +435,9 @@ def run_indexing(target_dir, force=False, is_agent=False, no_db=False):
         sys.stderr.write(f"\r\x1b[2K\033[1;31m[error] Error: Failed to write output files: {e}\033[0m\n"); sys.stderr.flush()
 
 
-def show_architecture():
-    if not (db := find_db_path()): print("[error] SQLite index-map-memory database file not found. Initialize with 'init' first."); return
+def show_architecture(workspace=None) -> str:
+    db = find_db_path(workspace)
+    if not db: return "[error] SQLite index-map-memory database file not found. Initialize with 'init' first."
     conn = sqlite3.connect(db)
     cur = conn.cursor()
     fc = cur.execute("SELECT COUNT(*) FROM nodes WHERE type='file'").fetchone()[0]
@@ -445,16 +445,24 @@ def show_architecture():
     fnc = cur.execute("SELECT COUNT(*) FROM nodes WHERE type='function'").fetchone()[0]
     ec = cur.execute("SELECT COUNT(*) FROM edges WHERE type='calls'").fetchone()[0]
 
-    print(f"\n\033[1;36m[Workspace Architecture Overview]\033[0m\nActive Files      : {fc}\nDetected Classes  : {cc}\nDetected Functions: {fnc}\nCall Connections  : {ec}")
-    print(f"\n\033[1;32mMajor Entrypoints & File Structure:\033[0m")
+    res = [
+        "\n\033[1;36m[Workspace Architecture Overview]\033[0m",
+        f"Active Files      : {fc}",
+        f"Detected Classes  : {cc}",
+        f"Detected Functions: {fnc}",
+        f"Call Connections  : {ec}",
+        "\n\033[1;32mMajor Entrypoints & File Structure:\033[0m"
+    ]
     for name, lang in cur.execute("SELECT name, language FROM nodes WHERE type='file' LIMIT 20").fetchall():
         out_edges = cur.execute("SELECT COUNT(*) FROM edges WHERE source LIKE ?", (f"%{name}%",)).fetchone()[0]
-        print(f"  ├── {name:<35} ({lang or 'unknown'}) - {out_edges} exports/relations")
+        res.append(f"  ├── {name:<35} ({lang or 'unknown'}) - {out_edges} exports/relations")
     conn.close()
+    return "\n".join(res)
 
 
-def trace_symbol(symbol):
-    if not (db := find_db_path()): print("[error] Database not found."); return
+def trace_symbol(symbol: str, workspace=None) -> str:
+    db = find_db_path(workspace)
+    if not db: return "[error] Database not found."
     conn = sqlite3.connect(db)
     cur = conn.cursor()
     
@@ -463,38 +471,45 @@ def trace_symbol(symbol):
     query_sql = "SELECT id, type, filepath, meta FROM nodes WHERE name = ? OR name = ? OR id LIKE ? OR id LIKE ?"
     nodes = cur.execute(query_sql, (symbol, short_sym, f"%:{clean_sym}", f"%:{short_sym}")).fetchall()
     if not nodes:
-        print(f"[error] Symbol '{symbol}' was not found in the relationship map."); conn.close(); return
+        conn.close()
+        return f"[error] Symbol '{symbol}' was not found in the relationship map."
 
+    res = []
     for node_id, node_type, filepath, meta_str in nodes:
         meta = json.loads(meta_str) if meta_str else {}
         args_str = f"({', '.join(meta.get('args', []))})" if 'args' in meta else ""
         lines_str = f" (Lines {meta.get('line_start')}-{meta.get('line_end')})" if meta.get('line_start') else ""
-        print(f"\n\033[1;34m[Trace Call Tree] For: {symbol}{args_str} [{node_type}] in {filepath}{lines_str}\033[0m")
+        res.append(f"\n\033[1;34m[Trace Call Tree] For: {symbol}{args_str} [{node_type}] in {filepath}{lines_str}\033[0m")
 
         for title, rel_type in (("\n\033[1;32m<-- [Callers] (Who invokes/uses this symbol):\033[0m", "target"), ("\n\033[1;35m--> [Callees] (Who/What this symbol calls):\033[0m", "source")):
-            print(title)
+            res.append(title)
             q = f"SELECT n.name, n.type, n.filepath, n.meta FROM edges e JOIN nodes n ON n.id = e.{'source' if rel_type == 'target' else 'target'} WHERE e.{rel_type} = ? AND e.type IN ('calls', 'inherits')"
             rows = cur.execute(q, (node_id,)).fetchall()
-            if not rows: print("  (None detected)")
+            if not rows: res.append("  (None detected)")
             for rname, rtype, rpath, rmeta in rows:
                 rm = json.loads(rmeta) if rmeta else {}
                 rargs = f"({', '.join(rm.get('args', []))})" if 'args' in rm else ""
-                print(f"  ├── \033[36m{rname}\033[0m{rargs} [{rtype}] ({rpath})")
+                res.append(f"  ├── \033[36m{rname}\033[0m{rargs} [{rtype}] ({rpath})")
     conn.close()
+    return "\n".join(res)
 
 
-def get_blast_radius(symbol):
-    if not (db := find_db_path()): print("[error] Database not found."); return
+def get_blast_radius(symbol: str, workspace=None) -> str:
+    db = find_db_path(workspace)
+    if not db: return "[error] Database not found."
     conn = sqlite3.connect(db)
     cur = conn.cursor()
     clean_sym = symbol.replace('.', ':').replace('/', ':')
     short_sym = symbol.split('.')[-1].split(':')[-1]
     query_sql = "SELECT id, type, filepath FROM nodes WHERE name = ? OR name = ? OR id LIKE ? OR id LIKE ?"
-    if not (starts := cur.execute(query_sql, (symbol, short_sym, f"%:{clean_sym}", f"%:{short_sym}")).fetchall()):
-        print(f"[error] Symbol '{symbol}' not found."); conn.close(); return
+    starts = cur.execute(query_sql, (symbol, short_sym, f"%:{clean_sym}", f"%:{short_sym}")).fetchall()
+    if not starts:
+        conn.close()
+        return f"[error] Symbol '{symbol}' not found."
 
+    res = []
     for node_id, node_type, filepath in starts:
-        print(f"\n\033[1;31m[Blast Radius] Upstream structural impact map for modifying: {symbol}\033[0m\nTarget Anchor: {node_id} ({node_type})")
+        res.append(f"\n\033[1;31m[Blast Radius] Upstream structural impact map for modifying: {symbol}\033[0m\nTarget Anchor: {node_id} ({node_type})")
         visited, queue, levels = {node_id}, [(node_id, 0)], {}
         while queue:
             curr, lvl = queue.pop(0)
@@ -503,18 +518,20 @@ def get_blast_radius(symbol):
             for (source,) in cur.execute("SELECT source FROM edges WHERE target = ? AND type IN ('calls', 'contains')", (curr,)).fetchall():
                 if source not in visited: visited.add(source); queue.append((source, lvl + 1))
 
-        if not levels: print("  -> \033[32mNo upstream dependencies detected. Low risk index block.\033[0m")
+        if not levels: res.append("  -> \033[32mNo upstream dependencies detected. Low risk index block.\033[0m")
         else:
             for lvl in sorted(levels.keys()):
-                print(f"  {'  ' * lvl}-> Level {lvl} {'Direct Impact (Callers/Containers):' if lvl == 1 else 'Indirect Transitive Impact:'}")
+                res.append(f"  {'  ' * lvl}-> Level {lvl} {'Direct Impact (Callers/Containers):' if lvl == 1 else 'Indirect Transitive Impact:'}")
                 for item in levels[lvl]:
                     p = item.split(":")
-                    print(f"  {'  ' * lvl}  - \033[1;33m{p[-1]}\033[0m [{p[0]}] ({p[1]})")
+                    res.append(f"  {'  ' * lvl}  - \033[1;33m{p[-1]}\033[0m [{p[0]}] ({p[1]})")
     conn.close()
+    return "\n".join(res)
 
 
-def extract_snippet(symbol):
-    if not (db := find_db_path()): print("[error] Database not found."); return
+def extract_snippet(symbol: str, workspace=None) -> str:
+    db = find_db_path(workspace)
+    if not db: return "[error] Database not found."
     conn = sqlite3.connect(db)
     cur = conn.cursor()
     
@@ -523,43 +540,50 @@ def extract_snippet(symbol):
     query_sql = "SELECT filepath, meta, type, name FROM nodes WHERE name = ? OR name = ? OR id LIKE ? OR id LIKE ?"
     results = cur.execute(query_sql, (symbol, short_sym, f"%:{clean_sym}", f"%:{short_sym}")).fetchall()
     if not results:
-        print(f"[error] Symbol '{symbol}' not found."); conn.close(); return
+        conn.close()
+        return f"[error] Symbol '{symbol}' not found."
 
+    res = []
     root_dir = os.path.dirname(os.path.dirname(db)) if os.path.basename(os.path.dirname(db)) == ".agent" else os.path.dirname(db)
     for filepath, meta_str, node_type, name in results:
         meta = json.loads(meta_str) if meta_str else {}
         l_start, l_end = meta.get('line_start'), meta.get('line_end')
         full_path = os.path.join(root_dir, filepath)
-        if not os.path.isfile(full_path): print(f"[error] Target path does not exist on disk: {filepath}"); continue
+        if not os.path.isfile(full_path): res.append(f"[error] Target path does not exist on disk: {filepath}"); continue
 
-        print(f"\n\033[1;36m[Snippet] {node_type.upper()} {name} in {filepath} (Lines {l_start} to {l_end}):\033[0m")
+        res.append(f"\n\033[1;36m[Snippet] {node_type.upper()} {name} in {filepath} (Lines {l_start} to {l_end}):\033[0m")
         if l_start and l_end:
             try:
                 with open(full_path, 'r', encoding='utf-8', errors='ignore') as f: lines = f.readlines()
-                print("".join(lines[max(0, l_start - 1):l_end]))
-            except Exception as e: print(f"[error] Snippet extract read failure: {e}")
-        else: print("  (Offsets were not cached for this node structure)")
+                res.append("".join(lines[max(0, l_start - 1):l_end]))
+            except Exception as e: res.append(f"[error] Snippet extract read failure: {e}")
+        else: res.append("  (Offsets were not cached for this node structure)")
     conn.close()
+    return "\n".join(res)
 
 
-def run_custom_query(sql_str):
-    if not (db := find_db_path()): print("[error] Database not found."); return
+def run_custom_query(sql_str: str, workspace=None) -> str:
+    db = find_db_path(workspace)
+    if not db: return "[error] Database not found."
     conn = sqlite3.connect(db)
     cur = conn.cursor()
+    res = []
     try:
         cur.execute(sql_str)
         headers, rows = [d[0] for d in cur.description] if cur.description else [], cur.fetchall()
-        print(f"\n\033[1;32m[SQL Results: {len(rows)} rows matched]\033[0m")
+        res.append(f"\n\033[1;32m[SQL Results: {len(rows)} rows matched]\033[0m")
         if headers:
-            print(" | ".join(f"\033[1;34m{h}\033[0m" for h in headers))
-            print("-" * (len(" | ".join(headers)) + 5))
-        for row in rows: print(" | ".join(str(val) for val in row))
-    except Exception as e: print(f"[error] SQL Syntax Execution Error: {e}")
+            res.append(" | ".join(f"\033[1;34m{h}\033[0m" for h in headers))
+            res.append("-" * (len(" | ".join(headers)) + 5))
+        for row in rows: res.append(" | ".join(str(val) for val in row))
+    except Exception as e: res.append(f"[error] SQL Syntax Execution Error: {e}")
     conn.close()
+    return "\n".join(res)
 
 
-def search_symbols(pattern, server_url=EMBEDDING_SERVER):
-    if not (db := find_db_path()): print("[error] Database not found."); return
+def search_symbols(pattern: str, server_url=EMBEDDING_SERVER, workspace=None) -> str:
+    db = find_db_path(workspace)
+    if not db: return "[error] Database not found."
     conn = sqlite3.connect(db)
     use_vec = False
     if HAS_VEC:
@@ -569,18 +593,21 @@ def search_symbols(pattern, server_url=EMBEDDING_SERVER):
         except Exception: pass
 
     cur = conn.cursor()
+    res = []
     if use_vec and (emb := get_embedding(pattern, server_url)):
-        print(f"\n\033[1;32m[Semantic Search Matches for: '{pattern}']\033[0m")
+        res.append(f"\n\033[1;32m[Semantic Search Matches for: '{pattern}']\033[0m")
         try:
             for rid, rtype, rpath, dist in cur.execute("SELECT n.id, n.type, n.filepath, v.distance FROM nodes_vec v JOIN nodes n ON n.rowid = v.id WHERE embedding MATCH ? AND k = 10 ORDER BY distance ASC", (serialize_vec(emb),)).fetchall():
-                print(f"  - \033[1;36m{rid}\033[0m [{rtype}] ({rpath}) [dist: {dist:.4f}]")
-            conn.close(); return
+                res.append(f"  - \033[1;36m{rid}\033[0m [{rtype}] ({rpath}) [dist: {dist:.4f}]")
+            conn.close()
+            return "\n".join(res)
         except Exception: pass
 
-    res = cur.execute("SELECT id, type, filepath FROM nodes WHERE name LIKE ? OR filepath LIKE ? LIMIT 50", (f"%{pattern}%", f"%{pattern}%")).fetchall()
-    print(f"\n\033[1;32m[Matches Found: {len(res)}]\033[0m")
-    for rid, rtype, rpath in res: print(f"  - \033[1;36m{rid}\033[0m [{rtype}] ({rpath})")
+    rows = cur.execute("SELECT id, type, filepath FROM nodes WHERE name LIKE ? OR filepath LIKE ? LIMIT 50", (f"%{pattern}%", f"%{pattern}%")).fetchall()
+    res.append(f"\n\033[1;32m[Matches Found: {len(rows)}]\033[0m")
+    for rid, rtype, rpath in rows: res.append(f"  - \033[1;36m{rid}\033[0m [{rtype}] ({rpath})")
     conn.close()
+    return "\n".join(res)
 
 
 def main():
@@ -612,12 +639,12 @@ Flags:
   --force, -f           Forces full re-compilation, bypassing modification cache
         """)
     elif cmd == "init": run_indexing(os.path.abspath(os.path.expanduser(args[1])) if len(args) > 1 else os.getcwd(), force=force_compile, is_agent=is_agent, no_db=no_db)
-    elif cmd == "architecture": show_architecture()
-    elif cmd == "search": search_symbols(args[1], EMBEDDING_SERVER) if len(args) >= 2 else print("[error] Must provide a search pattern.")
-    elif cmd == "trace": trace_symbol(args[1]) if len(args) >= 2 else print("[error] Must specify a class or function symbol.")
-    elif cmd == "blast-radius": get_blast_radius(args[1]) if len(args) >= 2 else print("[error] Must specify target symbol to evaluate.")
-    elif cmd == "snippet": extract_snippet(args[1]) if len(args) >= 2 else print("[error] Must specify symbol name.")
-    elif cmd == "query": run_custom_query(args[1]) if len(args) >= 2 else print("[error] Must specify SQLite query string wrapped in quotes.")
+    elif cmd == "architecture": print(show_architecture())
+    elif cmd == "search": print(search_symbols(args[1], EMBEDDING_SERVER)) if len(args) >= 2 else print("[error] Must provide a search pattern.")
+    elif cmd == "trace": print(trace_symbol(args[1])) if len(args) >= 2 else print("[error] Must specify a class or function symbol.")
+    elif cmd == "blast-radius": print(get_blast_radius(args[1])) if len(args) >= 2 else print("[error] Must specify target symbol to evaluate.")
+    elif cmd == "snippet": print(extract_snippet(args[1])) if len(args) >= 2 else print("[error] Must specify symbol name.")
+    elif cmd == "query": print(run_custom_query(args[1])) if len(args) >= 2 else print("[error] Must specify SQLite query string wrapped in quotes.")
     else:
         path_test = os.path.abspath(os.path.expanduser(args[0]))
         if os.path.isdir(path_test): run_indexing(path_test, force=force_compile, is_agent=is_agent, no_db=no_db)

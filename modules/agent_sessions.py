@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SQLite-backed session, checkpoint, and turn logger with sub-agent registry [In-Memory Module & CLI]"""
+"""SQLite-backed session, checkpoint, and turn logger with sub-agent registry [Self-Healing In-Memory Module & CLI]"""
 
 import glob
 import json
@@ -26,7 +26,7 @@ except ImportError:
 
 
 def get_key() -> str:
-    """Self-contained keyboard reader (Prevents circular import with agent_ui)."""
+    """Self-contained keyboard reader without importing agent_ui."""
     import select, termios, tty
     if not sys.stdin.isatty():
         try:
@@ -53,12 +53,22 @@ def get_key() -> str:
 
 
 def connect_db(db_path: str) -> sqlite3.Connection:
+    """Self-healing SQLite connection that automatically ensures all tables & indexes exist."""
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = sqlite3.connect(db_path, timeout=30.0)
     try:
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA busy_timeout = 30000;")
         conn.execute("PRAGMA synchronous=NORMAL;")
-    except sqlite3.Error: pass
+        cur = conn.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS checkpoints (id INTEGER PRIMARY KEY AUTOINCREMENT, workspace TEXT NOT NULL, tag TEXT NOT NULL, history TEXT NOT NULL, timestamp INTEGER NOT NULL);")
+        cur.execute("CREATE TABLE IF NOT EXISTS turns (id INTEGER PRIMARY KEY AUTOINCREMENT, workspace TEXT NOT NULL, user_msg TEXT NOT NULL, assistant_msg TEXT NOT NULL, tokens TEXT NOT NULL, timestamp INTEGER NOT NULL);")
+        cur.execute("CREATE TABLE IF NOT EXISTS tpm_memories (key TEXT PRIMARY KEY, value TEXT NOT NULL, timestamp INTEGER NOT NULL);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_turns_workspace ON turns (workspace);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_checkpoints_workspace ON checkpoints (workspace);")
+        conn.commit()
+    except sqlite3.Error:
+        pass
     return conn
 
 
@@ -98,14 +108,10 @@ def cleanup_sub_agent(workspace: str, target_pid: Optional[int] = None) -> None:
 
 
 def init_db(workspace: str) -> None:
-    with closing(connect_db(os.path.join(SESSIONS_DIR, f"{workspace}.db"))) as conn:
-        cur = conn.cursor()
-        cur.execute("CREATE TABLE IF NOT EXISTS checkpoints (id INTEGER PRIMARY KEY AUTOINCREMENT, workspace TEXT NOT NULL, tag TEXT NOT NULL, history TEXT NOT NULL, timestamp INTEGER NOT NULL)")
-        cur.execute("CREATE TABLE IF NOT EXISTS turns (id INTEGER PRIMARY KEY AUTOINCREMENT, workspace TEXT NOT NULL, user_msg TEXT NOT NULL, assistant_msg TEXT NOT NULL, tokens TEXT NOT NULL, timestamp INTEGER NOT NULL)")
-        cur.execute("CREATE TABLE IF NOT EXISTS tpm_memories (key TEXT PRIMARY KEY, value TEXT NOT NULL, timestamp INTEGER NOT NULL)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_turns_workspace ON turns (workspace)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_checkpoints_workspace ON checkpoints (workspace)")
-        conn.commit()
+    """Wrapper that ensures DB and tables exist."""
+    db_path = os.path.join(SESSIONS_DIR, f"{workspace}.db")
+    with closing(connect_db(db_path)) as conn:
+        pass
 
 
 def save_checkpoint(workspace: str, tag: str, history_obj: Any = None) -> None:
@@ -115,7 +121,6 @@ def save_checkpoint(workspace: str, tag: str, history_obj: Any = None) -> None:
         try: hist_data = sys.stdin.read().strip(); json.loads(hist_data)
         except Exception: return
 
-    init_db(workspace)
     with closing(connect_db(os.path.join(SESSIONS_DIR, f"{workspace}.db"))) as conn:
         conn.cursor().execute("INSERT INTO checkpoints (workspace, tag, history, timestamp) VALUES (?, ?, ?, ?)", (workspace, tag, hist_data, int(time.time())))
         conn.commit()
@@ -166,7 +171,6 @@ def rollback_checkpoint(workspace: str) -> Optional[list[dict[str, Any]]]:
                 selected = display_rows[int(key)]
                 if is_global:
                     tag, history, ts, src_ws = selected
-                    init_db(workspace)
                     with closing(connect_db(db_path)) as conn3:
                         conn3.cursor().execute("INSERT OR REPLACE INTO checkpoints (workspace, tag, history, timestamp) VALUES (?, ?, ?, ?)", (workspace, tag, history, int(time.time())))
                         conn3.commit()
@@ -180,7 +184,6 @@ def rollback_checkpoint(workspace: str) -> Optional[list[dict[str, Any]]]:
 def log_turn(workspace: str, user_msg: str, assistant_msg: str) -> None:
     clean_user = user_msg.split("User Question:", 1)[-1].strip() if "User Question:" in user_msg else user_msg
     tokens_str = " ".join(tokenize(clean_user))
-    init_db(workspace)
     with closing(connect_db(os.path.join(SESSIONS_DIR, f"{workspace}.db"))) as conn:
         conn.cursor().execute("INSERT INTO turns (workspace, user_msg, assistant_msg, tokens, timestamp) VALUES (?, ?, ?, ?, ?)", (workspace, clean_user, assistant_msg, tokens_str, int(time.time())))
         conn.commit()

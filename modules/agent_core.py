@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
-"""Core Module - Handles streaming SSE, tool gates, and Rich rendering"""
+"""Core Module - Handles streaming SSE, tool gates, and Rich rendering [High-Performance SQLite Edition]"""
 
 import json
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 import time
 import urllib.request as urlreq
+from contextlib import closing
 from typing import Any
 
 import agent_cloud
+import agent_ipython as ipython
+import agent_memories as memories
+import agent_sessions as sessions
 import agent_tools as tools
 import agent_ui as ui
 import requests
@@ -23,6 +28,7 @@ from rich.text import Text
 
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
 STATE_FILE: str = os.path.join(CFG_DIR, ".state.json")
+SESSIONS_DIR: str = os.path.join(CFG_DIR, "projects", "database")
 
 _console, _console_err, _session = Console(), Console(stderr=True), requests.Session()
 
@@ -39,9 +45,7 @@ RE_XML_TOOL_TAGS = re.compile(r'<\|?[a-zA-Z_]+_call_?(?:start|end)?\|?>', re.DOT
 
 
 def _heal_tool_args(raw: str) -> dict[str, Any]:
-    """Self-healing JSON tool argument parser (Unsloth-inspired).
-    Recovers from missing brackets, single quotes, unescaped linebreaks, and leaked XML.
-    """
+    """Self-healing JSON tool argument parser (Unsloth-inspired)."""
     if not raw or not raw.strip():
         return {}
 
@@ -56,14 +60,10 @@ def _heal_tool_args(raw: str) -> dict[str, Any]:
     except json.JSONDecodeError:
         pass
 
-    # Heal single quotes -> double quotes
     healed = re.sub(r"(?<!\\)'", '"', cleaned)
-    # Heal unquoted keys (e.g. {path: "/foo"} -> {"path": "/foo"})
     healed = re.sub(r'(\b[a-zA-Z_][a-zA-Z0-9_]*\b)\s*:', r'"\1":', healed)
-    # Fix trailing commas before closing braces
     healed = re.sub(r',\s*([\]}])', r'\1', healed)
 
-    # Auto-balance missing braces/brackets
     open_braces = healed.count('{') - healed.count('}')
     open_brackets = healed.count('[') - healed.count(']')
     if open_brackets > 0:
@@ -105,7 +105,6 @@ except ImportError: usage_log = None
 try: import speed_test
 except ImportError: speed_test = None
 
-# Internal caches
 _state_cache: dict[str, Any] = {}
 _state_mtime: float = 0.0
 _server_alive_cache: dict[str, tuple[bool, float]] = {}
@@ -155,6 +154,7 @@ def workspace_safe_name(workspace_path: str, home_dir: str = "") -> str:
 
 
 def run_mod(module_name: str, *args: str, input_data: str | None = None) -> str:
+    """Fallback runner for specialized shell/python submodules."""
     for sub in ("modules", ""):
         path = os.path.join(CFG_DIR, sub, module_name)
         if os.path.exists(path):
@@ -167,10 +167,11 @@ def run_mod(module_name: str, *args: str, input_data: str | None = None) -> str:
 
 
 def background_tpm_update(user_msg: str, assistant_msg: str, workspace: str, workspace_path: str) -> None:
+    """Async background worker with zero-subprocess in-memory SQLite storage."""
     clean = user_msg.lower().strip()
     if len(clean) < 8 or clean in _TPM_SKIP_QUERIES: return
     try:
-        ex_facts = run_mod("ai-agent-memories", "tpm-get", workspace)
+        ex_facts = memories.tpm_get(workspace)
         sys_p = "You are an async memory compiler. Extract ONLY persistent facts, roles, or preferences about the HUMAN USER (e.g. {\"user_role\": \"python dev\", \"preferred_style\": \"concise\"}). Do NOT extract project code descriptions, file listings, or software features. Output ONLY a flat JSON object or {} if no user facts exist."
         payload = {"messages": [{"role": "system", "content": sys_p}, {"role": "user", "content": f"### Profile:\n{ex_facts or 'None'}\n\n### Turn:\nUser: {user_msg}\nAssistant: {assistant_msg}\n\nJSON:"}], "stream": False}
         req = urlreq.Request("http://localhost:8080/v1/chat/completions", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST")
@@ -178,14 +179,14 @@ def background_tpm_update(user_msg: str, assistant_msg: str, workspace: str, wor
             out = json.loads(resp.read().decode())["choices"][0]["message"].get("content", "")
         if m := RE_JSON_OBJECT.search(out):
             if parsed := {str(k).strip().lower(): str(v).strip() for k, v in json.loads(m.group(0)).items() if k and v is not None and str(k).strip().lower() not in _TPM_BLACKLIST}:
-                run_mod("ai-agent-memories", "tpm-reconcile", workspace, input_data=json.dumps(parsed))
-                if res := run_mod("ai-agent-memories", "tpm-get", workspace):
+                memories.tpm_reconcile(workspace, parsed)
+                if res := memories.tpm_get(workspace):
                     if workspace_path and os.path.isdir(workspace_path) and os.path.realpath(workspace_path) not in (os.path.realpath(os.path.expanduser("~")), os.path.realpath(CFG_DIR)):
                         md_dir = os.path.join(workspace_path, ".agent")
                         os.makedirs(md_dir, exist_ok=True)
                         with open(os.path.join(md_dir, "tpm.md"), "w", encoding="utf-8") as f:
                             f.write(res + "\n")
-    except (OSError, urlreq.URLError, TimeoutError, json.JSONDecodeError):
+    except Exception:
         pass
 
 
@@ -307,7 +308,6 @@ class RichStreamer:
 
         if self.ans_started and self.acc_ans.strip():
             if render_md and sys.stdout.isatty():
-                # Erase raw text stream and render full Rich Markdown
                 _clear_lines(False, self.acc_ans)
                 p_clean = self.prefix.strip()
                 p_style = "bold green" if "Agent" in p_clean else "bold cyan"
@@ -331,7 +331,6 @@ class RichStreamer:
 def _log_turn_usage(model: str, in_tok: int, out_tok: int, cost: float, show_stats: bool, ctx_used: int | None = None, user_msg: str = "", assistant_msg: str = "") -> None:
     try:
         ws = os.environ.get("AI_WORKSPACE_PATH")
-        # Only log session.jsonl inside explicit project workspaces (never in ~/.config/py-agent or home)
         if ws and os.path.isdir(ws) and os.path.realpath(ws) not in (os.path.realpath(os.path.expanduser("~")), os.path.realpath(CFG_DIR)):
             agent_dir = os.path.join(ws, ".agent")
             os.makedirs(agent_dir, exist_ok=True)
@@ -383,7 +382,6 @@ def _print_tool_output(spinner: Any, text: str) -> None:
 
 
 def _run_edit_tool(name: str, args: dict[str, Any], workspace: str, spinner: Any = None) -> str:
-    """Delegates directly to centralized agent_tools engine with gate & output hooks."""
     return tools.run_tool(
         name, args, workspace,
         confirm_gate_fn=lambda r: _confirm_gate(r, spinner),
@@ -396,18 +394,23 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
     is_local = "localhost" in url or "127.0.0.1" in url or body.get("model") == "local-model"
 
     if is_agent and messages and messages[0]["role"] == "system" and "### EDIT MODE" not in messages[0]["content"]:
-        tools_header = f"### EDIT MODE:\nYou are an active coding agent at {workspace}.\n\n### WORKING TOOLS:\nCapabilities: read_symbol, read_file, write_file, list_dir, run_command. Root: {workspace}.\n\n"
+        tools_header = (
+            f"### ACTIVE DEVELOPER AGENT MODE:\n"
+            f"Workspace Root: {workspace}\n"
+            f"CRITICAL DIRECTIVE: Do NOT output conversational chatter or explain what you will do. "
+            f"You MUST immediately execute actions by calling available tools (run_command, read_file, write_file, list_dir, read_symbol).\n\n"
+        )
         messages[0]["content"] = tools_header + messages[0]["content"]
 
     resolved_model, streamer, res = None, None, None
 
-    try: import agent_ipython as ipython
-    except ImportError: ipython = None
-
     for _round in range(10):
         body_tools = {**body, "messages": messages, "stream": True}
         if is_agent:
-            body_tools["tools"] = ipython.get_active_tools() if ipython else EDIT_TOOLS
+            active_skill = os.environ.get("AI_ACTIVE_SKILL", "")
+            is_py_profile = "py-" in active_skill.lower()
+            use_ipython = is_py_profile or (ipython and ipython.is_ipython_enabled())
+            body_tools["tools"] = ipython.IPYTHON_TOOL if (use_ipython and ipython) else EDIT_TOOLS
 
         if spinner:
             try: spinner.update("Working...")
@@ -436,6 +439,8 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
                     resolved_model = data.get("model") or resolved_model
                     choices = data.get("choices", [{}])
                     if not choices: continue
+                    
+                    finish_reason = choices[0].get("finish_reason")
                     delta = choices[0].get("delta", {})
 
                     content = delta.get("content", "") or ""
@@ -464,6 +469,9 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
                         tc_entry = tool_calls_map.setdefault(idx, {"id": tc.get("id", ""), "type": "function", "function": {"name": tc.get("function", {}).get("name", ""), "arguments": ""}})
                         if tc.get("function", {}).get("name"): tc_entry["function"]["name"] = tc["function"]["name"]
                         tc_entry["function"]["arguments"] += tc.get("function", {}).get("arguments", "")
+
+                    if finish_reason in ("stop", "length") and not tool_calls_map:
+                        break
                 except (json.JSONDecodeError, KeyError, IndexError, TypeError, ValueError): pass
 
             if streamer: streamer.stop()
@@ -495,14 +503,10 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
 
                 _console_err.print(f"[dim]∗ {verb} • [cyan]{fname}[/cyan] [italic]{brief}[/italic][/dim]")
                 if spinner:
-                    try: spinner.update("Working...")
-                    except (AttributeError, RuntimeError): pass
-                    spinner.start("Working...")
+                    spinner.stop()
 
                 try: result = _run_edit_tool(fname, args, workspace, spinner)
                 except (OSError, subprocess.SubprocessError, ValueError, TypeError, KeyError) as e: result = f"[tool error] {e}"
-                finally:
-                    if spinner: spinner.stop(done_msg="Done")
 
                 pruned_result = result if len(result) <= 1500 else result[:1200] + f"\n... [Reasonix Harness: Snipped {len(result) - 1200} chars for context stability]"
                 messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": fname, "content": pruned_result})
@@ -527,26 +531,6 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
     return None
 
 
-def _is_local_server_alive(url: str, timeout: float = 0.3) -> bool:
-    """Checks local LLM server liveness with 2.0s memoization to eliminate turn latency."""
-    if "localhost" not in url and "127.0.0.1" not in url: return True
-    now = time.time()
-    cached = _server_alive_cache.get("local")
-    if cached and (now - cached[1] < 2.0):
-        return cached[0]
-
-    alive = False
-    try:
-        req = urlreq.Request("http://localhost:8080/v1/models", method="GET")
-        with urlreq.urlopen(req, timeout=timeout) as r:
-            alive = (r.status == 200)
-    except (OSError, urlreq.URLError, TimeoutError):
-        alive = False
-
-    _server_alive_cache["local"] = (alive, now)
-    return alive
-
-
 def stream_response(messages: list[dict[str, Any]], prefix: str = "AI: ", cfg_dir: str = "", show_stats: bool = False, thinking_budget: int = 0, is_agent: bool = False) -> str | None:
     spinner = ui.InlineSpinner()
     try:
@@ -559,7 +543,6 @@ def stream_response(messages: list[dict[str, Any]], prefix: str = "AI: ", cfg_di
             configs = [("http://localhost:8080/v1/chat/completions", {}, {"messages": messages, "stream": True, **think_kwargs}, 180)]
 
         url, headers, body, timeout = configs[0]
-        # Only inject llama-server thinking parameters for local endpoints
         if "localhost" in url or "127.0.0.1" in url or body.get("model") == "local-model":
             body = {**body, **think_kwargs}
 

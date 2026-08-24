@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified library & executable for static, dynamic, and on-demand skills"""
+"""Unified library & executable for static, dynamic, universal YAML, and on-demand skills [In-Memory Edition]"""
 
 import json
 import os
@@ -7,7 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
-from typing import Any
+from typing import Any, Optional
 
 import agent_context as context
 import agent_ui as ui
@@ -15,32 +15,92 @@ import agent_ui as ui
 PAGER_STRIP_RE: re.Pattern = re.compile(r'\|\s*(leaf|mdcat|cat|glow|view)\b.*$', re.IGNORECASE)
 RE_FRONTMATTER_JSON: re.Pattern = re.compile(r'^\s*(\{[\s\S]*?\})\s*')
 RE_METADATA_LINE: re.Pattern = re.compile(r'^\w+:\s')
-RE_SKILL_SPLIT: re.Pattern = re.compile(r"[-_]")
+RE_SKILL_SPLIT: re.Pattern = re.compile(r"[-_/]")
 RE_SKILL_BLOCK: re.Pattern = re.compile(r"### Loaded On-Demand Skill:\s*([^\n]+)\n([\s\S]*?)(?=\n\n### Loaded On-Demand Skill:|\Z)")
 
 
 def ensure_mysys_exists(skills_dir: str, cfg_dir: str) -> None:
-    """Ensures host hardware profile facts are generated and placed in context."""
     if not os.path.exists(os.path.join(skills_dir, "system", "mysys.md")):
-        try:
-            subprocess.run([sys.executable, os.path.join(cfg_dir, "tools", "generate-profile")], check=False)
+        try: subprocess.run([sys.executable, os.path.join(cfg_dir, "tools", "generate-profile")], check=False)
         except Exception: pass
 
 
+def parse_frontmatter(raw_text: str) -> tuple[dict[str, Any], str]:
+    """Universal parser for YAML (---), JSON ({}), and plain Markdown headers."""
+    if not raw_text:
+        return {}, ""
+    raw = raw_text.strip()
+    
+    # 1. Standard YAML / Markdown Frontmatter (--- ... ---)
+    if raw.startswith("---"):
+        parts = raw.split("---", 2)
+        if len(parts) >= 3:
+            fm_str, body = parts[1].strip(), parts[2].strip()
+            meta = {}
+            cur_key = None
+            cur_val_lines = []
+            
+            for line in fm_str.splitlines():
+                l_strip = line.strip()
+                if not l_strip or l_strip.startswith("#"):
+                    continue
+                
+                if ":" in line and not line.startswith((" ", "\t", "-")):
+                    if cur_key:
+                        meta[cur_key] = " ".join(cur_val_lines).strip()
+                    k, v = line.split(":", 1)
+                    cur_key = k.strip().lower()
+                    v_clean = v.strip().strip("\"'")
+                    cur_val_lines = [] if v_clean in (">", "|", "") else [v_clean]
+                elif cur_key:
+                    cur_val_lines.append(l_strip.strip("\"'"))
+                    
+            if cur_key:
+                meta[cur_key] = " ".join(cur_val_lines).strip()
+            return meta, body
+
+    # 2. JSON Frontmatter
+    elif raw.startswith("{"):
+        if m := RE_FRONTMATTER_JSON.match(raw):
+            try:
+                meta = json.loads(m.group(1))
+                return meta, raw[m.end():].strip()
+            except (json.JSONDecodeError, TypeError): pass
+
+    return {}, raw
+
+
 def find_skill_file(base_dir: str, skill_name: str) -> str | None:
-    """Scans subdirectories to locate target Markdown skill file."""
+    """Locates target skill across standard flat files and nested directory SKILL.md structures."""
     clean = skill_name.lstrip("-").lower()
-    for cand in (os.path.join(base_dir, "profiles", f"{clean}.md"), os.path.join(base_dir, f"{clean}.md"), os.path.join(base_dir, "system", f"{clean}.md")):
-        if os.path.exists(cand): return cand
-    target = f"{os.path.basename(clean)}.md"
-    for r, _, fs in os.walk(base_dir):
-        if r[len(base_dir):].count(os.sep) <= 3 and (found := next((os.path.join(r, f) for f in fs if f.lower() == target), None)):
-            return found
+    
+    candidates = [
+        os.path.join(base_dir, "profiles", f"{clean}.md"),
+        os.path.join(base_dir, f"{clean}.md"),
+        os.path.join(base_dir, "system", f"{clean}.md"),
+        os.path.join(base_dir, clean, "SKILL.md"),
+        os.path.join(base_dir, clean, "skill.md")
+    ]
+    for cand in candidates:
+        if os.path.isfile(cand): return cand
+
+    target_fnames = {f"{os.path.basename(clean)}.md", "skill.md", "skill.md".upper()}
+    clean_target = os.path.basename(clean)
+
+    for root, _, files in os.walk(base_dir):
+        if root[len(base_dir):].count(os.sep) <= 5:
+            if os.path.basename(root).lower() == clean_target:
+                for f in files:
+                    if f.lower() in ("skill.md", f"{clean_target}.md"):
+                        return os.path.join(root, f)
+            for f in files:
+                if f.lower() in target_fnames:
+                    return os.path.join(root, f)
     return None
 
 
 def load_skill_content(skills_str: str, skills_dir: str, cfg_dir: str) -> str:
-    """Concatenates the instruction contents of all matched skills."""
+    """Concatenates the instruction contents of all matched skills, stripping frontmatter."""
     if not skills_str: return ""
     contents: list[str] = []
     for skill in [s.lstrip("-").lower() for s in skills_str.split()]:
@@ -49,36 +109,23 @@ def load_skill_content(skills_str: str, skills_dir: str, cfg_dir: str) -> str:
             try:
                 with open(sf, "r", encoding="utf-8") as f:
                     raw = f.read().strip()
-                meta, body = {}, raw
-                if raw.startswith("---"):
-                    parts = raw.split("---", 2)
-                    if len(parts) >= 3:
-                        fm_str, body = parts[1], parts[2].strip()
-                        for line in fm_str.splitlines():
-                            if ":" in line and not line.strip().startswith("#"):
-                                k, v = line.split(":", 1)
-                                k, v = k.strip(), v.strip().strip("\"'")
-                                meta[k] = True if v.lower() == "true" else (False if v.lower() == "false" else (int(v) if v.isdigit() else v))
-                elif raw.startswith("{"):
-                    if m := RE_FRONTMATTER_JSON.match(raw):
-                        try:
-                            meta = json.loads(m.group(1))
-                            body = raw[m.end():].strip()
-                        except (json.JSONDecodeError, TypeError): pass
+                meta, body = parse_frontmatter(raw)
+                
                 if meta:
                     try:
                         import agent_core
                         for k, v in meta.items():
-                            agent_core.save_state("yolo_mode" if k == "yolo" else k, v)
+                            if k == "yolo": agent_core.save_state("yolo_mode", True if str(v).lower() in ("true", "1") else False)
+                            elif k in ("reasoning", "reasoning_active"): agent_core.save_state("reasoning_active", True)
                     except Exception: pass
-                contents.append(body)
+                    
+                contents.append(body or raw)
             except (OSError, UnicodeDecodeError) as e:
                 sys.stderr.write(f"\033[1;31mError loading skill '{skill}': {e}\033[0m\n")
     return "\n\n".join(contents)
 
 
 def _exec_tool_cmd(cmd: str, interactive: bool = False) -> str:
-    """Shared subprocess execution engine for local background and interactive tools."""
     try:
         sanitized = PAGER_STRIP_RE.sub('', cmd.strip()).strip()
         workspace = os.environ.get("AI_WORKSPACE_PATH") or os.getcwd()
@@ -103,7 +150,6 @@ def run_interactive_tool(cmd: str) -> str: return _exec_tool_cmd(cmd, interactiv
 
 
 def get_system_context(query: str, context_file: str, stop_words: set[str], skills_dir: str, cfg_dir: str) -> str:
-    """Matches inputs against contextual templates, executing approved shortcuts dynamically."""
     if not (q_tokens := context.tokenize(query, stop_words)) or "\n" in query.strip(): return ""
     for entry in context.load_context_entries(context_file, stop_words):
         ent_tokens = entry.get("tokens", [])
@@ -127,51 +173,80 @@ def get_system_context(query: str, context_file: str, stop_words: set[str], skil
     return ""
 
 
-def load_skill_blueprints(dept_skills_dir: str, stop_words: set[str]) -> list[dict[str, Any]]:
-    """Loads metadata descriptions and indexing tokens for on-demand specialty skills."""
+def load_skill_blueprints(base_skills_dir: str, stop_words: set[str]) -> list[dict[str, Any]]:
+    """Universal indexer: walks entire skills directory and parses all markdown and YAML frontmatter skills."""
     blueprints: list[dict[str, Any]] = []
-    if os.path.exists(dept_skills_dir):
-        for r, _, fs in os.walk(dept_skills_dir):
-            for f in fs:
-                if f.endswith(".md"):
-                    path = os.path.join(r, f)
+    seen_names = set()
+
+    if os.path.exists(base_skills_dir):
+        for root, _, files in os.walk(base_skills_dir):
+            for f in files:
+                if f.lower().endswith(".md"):
+                    path = os.path.join(root, f)
                     try:
                         with open(path, "r", encoding="utf-8") as sf:
-                            lines = [l.strip() for l in sf if l.strip()]
-                        if not lines: continue
-                        desc_line = next((l for l in lines if not l.startswith(("#", "---", ">", "*", "-", "import ")) and not RE_METADATA_LINE.match(l)), "")
+                            content = sf.read().strip()
+                        if not content: continue
 
-                        if lines[0].startswith("# [SKILL]") and "--->" in lines[0]:
-                            header, intents = lines[0].split("--->", 1)
-                            skill_name, intent_list = header.replace("# [SKILL]", "").replace("#", "").strip(), [i.strip() for i in intents.split(",") if i.strip()]
+                        meta, body = parse_frontmatter(content)
+                        lines = [l.strip() for l in (body or content).splitlines() if l.strip()]
+
+                        folder_name = os.path.basename(root)
+
+                        # 1. Universal YAML Frontmatter Standard (name, description, triggers)
+                        if meta and ("name" in meta or "description" in meta):
+                            skill_name = meta.get("name") or (folder_name if f.lower() == "skill.md" else os.path.splitext(f)[0])
+                            desc = meta.get("description", "")
+                            
+                            intents = list(set(
+                                RE_SKILL_SPLIT.split(skill_name.lower()) +
+                                RE_SKILL_SPLIT.split(folder_name.lower()) +
+                                context.tokenize(desc, stop_words) +
+                                context.tokenize(skill_name, stop_words)
+                            ))
+
+                        # 2. Legacy Header: # [SKILL] name ---> intent1, intent2
+                        elif lines and lines[0].startswith("# [SKILL]") and "--->" in lines[0]:
+                            header, intents_raw = lines[0].split("--->", 1)
+                            skill_name = header.replace("# [SKILL]", "").replace("#", "").strip()
+                            intents = [i.strip().lower() for i in intents_raw.split(",") if i.strip()]
+                            desc = next((l for l in lines[1:] if not l.startswith(("#", "---", ">", "*", "-", "import ")) and not RE_METADATA_LINE.match(l)), "")
+
+                        # 3. Standard Markdown Title / Filename fallback
                         else:
-                            base_name = os.path.splitext(f)[0]
+                            base_name = folder_name if f.lower() == "skill.md" else os.path.splitext(f)[0]
                             skill_name = next((l.replace("#", "").strip() for l in lines if l.startswith("#")), base_name.replace("-", " ").replace("_", " ").title())
-                            intent_list = list(set(RE_SKILL_SPLIT.split(base_name.lower()) + context.tokenize(skill_name, stop_words)))
+                            intents = list(set(RE_SKILL_SPLIT.split(base_name.lower()) + context.tokenize(skill_name, stop_words)))
+                            desc = next((l for l in lines if not l.startswith(("#", "---", ">", "*", "-", "import ")) and not RE_METADATA_LINE.match(l)), "")
+
+                        clean_name = skill_name.lower().strip()
+                        if clean_name in seen_names:
+                            continue
+                        seen_names.add(clean_name)
+
+                        clean_desc = desc.replace("\n", " ").strip() if desc else "No description provided."
 
                         blueprints.append({
-                            "name": skill_name.lower(),
+                            "name": clean_name,
                             "path": path,
-                            "rel_path": os.path.relpath(path, dept_skills_dir),
-                            "desc": desc_line or "No description provided.",
-                            "intents": intent_list,
-                            "tokens": context.tokenize(" ".join(intent_list), stop_words)
+                            "rel_path": os.path.relpath(path, base_skills_dir),
+                            "desc": clean_desc,
+                            "intents": intents,
+                            "tokens": context.tokenize(" ".join(intents), stop_words)
                         })
-                    except (OSError, UnicodeDecodeError, KeyError, IndexError, ValueError): pass
+                    except Exception: pass
     return blueprints
 
 
-def run_skill_selector(workspace: str, raw_cmd: str, dept_skills_dir: str, stop_words: set[str]) -> None:
-    """Runs the dynamic arrow-key skill loading overlay inside the active terminal."""
-    try:
-        chat_history = json.loads(sys.stdin.read().strip())
-    except Exception as e:
-        sys.stderr.write(f"\033[1;31m[skill-mgr] Failed to load history: {e}\033[0m\n")
-        sys.exit(1)
+def run_skill_selector(workspace: str, raw_cmd: str, base_skills_dir: str, stop_words: set[str], chat_history: Optional[list[dict[str, Any]]] = None) -> tuple[list[dict[str, Any]], Optional[str]]:
+    """Interactive arrow-key skill loading overlay across all skill subdirectories."""
+    if chat_history is None:
+        try: chat_history = json.loads(sys.stdin.read().strip())
+        except Exception: chat_history = [{"role": "system", "content": ""}]
 
     parts = raw_cmd.strip().split(maxsplit=1)
     search_query = parts[1].strip() if len(parts) > 1 else ""
-    skills = load_skill_blueprints(dept_skills_dir, stop_words)
+    skill_list = load_skill_blueprints(base_skills_dir, stop_words)
     current_idx = 0
     sys.stderr.write("\033[?25l")
     sys.stderr.flush()
@@ -181,7 +256,7 @@ def run_skill_selector(workspace: str, raw_cmd: str, dept_skills_dir: str, stop_
             q_tokens = set(context.tokenize(search_query, stop_words)) if search_query else set()
             sq_lower = search_query.lower()
             candidates = []
-            for s in skills:
+            for s in skill_list:
                 if not search_query:
                     candidates.append((1.0, s))
                 else:
@@ -213,15 +288,17 @@ def run_skill_selector(workspace: str, raw_cmd: str, dept_skills_dir: str, stop_
             clear_2_lines = "\r\x1b[2K\x1b[1A\r\x1b[2K"
             if key in ('\x03', '\x1b'):
                 sys.stderr.write(f"{clear_2_lines}Cancelled.\n")
-                break
-            elif key in ('\r', ''):
+                return chat_history, None
+            elif key in ('\r', '\n', ''):
                 if num_opts > 0:
                     _, sel = candidates[current_idx]
                     try:
                         with open(sel["path"], "r", encoding="utf-8") as sf:
-                            body = sf.read().strip()
-                        sys_c = chat_history[0]["content"]
-                        
+                            raw_file = sf.read().strip()
+                        _, body = parse_frontmatter(raw_file)
+                        body = body or raw_file
+
+                        sys_c = chat_history[0]["content"] if chat_history else ""
                         raw_blocks = RE_SKILL_BLOCK.findall(sys_c)
                         cat = "personality" if "personality" in sel["path"] else ("code" if "code" in sel["path"] else "system")
                         
@@ -238,13 +315,14 @@ def run_skill_selector(workspace: str, raw_cmd: str, dept_skills_dir: str, stop_
                         new_blocks = "\n\n".join(f"### Loaded On-Demand Skill: {n}\n{b}" for n, b in active_skills)
                         chat_history[0]["content"] = f"{base_p}\n\n{new_blocks}\n"
 
-                        sys.stderr.write(f"{clear_2_lines}\033[2;32m[sys] Skill '{sel['name']}' successfully loaded.\033[0m\n")
-                        print(json.dumps(chat_history))
-                    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
+                        s_name = sel["name"].replace(" ", "-")
+                        sys.stderr.write(f"{clear_2_lines}\033[1;32m✓ Skill '{sel['name']}' successfully loaded.\033[0m\n\n")
+                        return chat_history, s_name
+                    except Exception as e:
                         sys.stderr.write(f"{clear_2_lines}\033[1;31m[sys] Failed to load skill: {e}\033[0m\n")
                 else:
                     sys.stderr.write(f"{clear_2_lines}No skill selected.\n")
-                break
+                return chat_history, None
             elif key == '\x1b[A':
                 if num_opts > 0: current_idx = max(0, current_idx - 1)
                 sys.stderr.write(clear_2_lines)
@@ -259,10 +337,6 @@ def run_skill_selector(workspace: str, raw_cmd: str, dept_skills_dir: str, stop_
                 sys.stderr.write(clear_2_lines)
             else:
                 sys.stderr.write(clear_2_lines)
-    except KeyboardInterrupt:
-        sys.stderr.write("\r\x1b[2K\nCancelled.\n")
-        sys.stderr.flush()
-        sys.exit(130)
     finally:
         sys.stderr.write("\033[?25h")
         sys.stderr.flush()
@@ -272,4 +346,5 @@ if __name__ == "__main__":
     CFG_DIR = os.path.expanduser("~/.config/py-agent")
     stop_words = getattr(context, "STOP_WORDS", {"is", "what", "it", "do", "any", "i", "have", "the", "a", "an", "on", "to", "for", "me", "you", "my", "your", "we", "us", "are", "about", "in", "how"})
     if len(sys.argv) < 3: sys.argv.extend(["", ""])
-    run_skill_selector(sys.argv[1], sys.argv[2], os.path.join(CFG_DIR, "skills", "on-demand"), stop_words)
+    hist, name = run_skill_selector(sys.argv[1], sys.argv[2], os.path.join(CFG_DIR, "skills"), stop_words)
+    if hist: print(json.dumps(hist))

@@ -1,5 +1,0 @@
-Traceback (most recent call last):
-  File "/home/j5/.config/local-ai/projects/session-test/broken_math.py", line 1, in <module>
-    10 / 0
-    ~~~^~~
-ZeroDivisionError: division by zero

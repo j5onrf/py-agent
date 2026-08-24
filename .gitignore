@@ -28,3 +28,4 @@ projects/database/*.db*
 # Python Bytecode
 __pycache__/
 *.pyc
+.ruff_cache

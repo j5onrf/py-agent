@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local-AI Standalone IPython Kernel & RLM Harness Module (NOOA-Enhanced)"""
+"""Local-AI Standalone IPython Kernel & RLM Harness Module [In-Memory Edition]"""
 
 import ast
 import contextlib
@@ -14,11 +14,16 @@ from collections.abc import Callable
 from typing import Any
 
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
+sys.path.append(os.path.join(CFG_DIR, "modules"))
 
 try:
     import agent_core as core
+    import agent_memories as memories
+    import agent_tools as tools
 except ImportError:
     core = None
+    memories = None
+    tools = None
 
 _shell_globals: dict[str, Any] = {}
 _shell_instance = None
@@ -46,7 +51,7 @@ _confirm_gate_fn = None
 
 
 def bounded_repr(val: Any, max_len: int = 1200) -> str:
-    """NOOA-inspired bounded preview generator: Keeps full object in RAM while truncating context output."""
+    """NOOA-inspired bounded preview generator."""
     if val is None: return "None"
     if hasattr(val, "shape") and hasattr(val, "head"):
         try: return f"<DataFrame shape={val.shape}>\n{val.head(5)}"
@@ -69,72 +74,57 @@ def bounded_repr(val: Any, max_len: int = 1200) -> str:
 
 
 class MemorySDK:
-    """Model-Callable Harness API for Temporal Personality Memory."""
+    """Direct in-memory model-callable Harness API for TPM."""
     def __init__(self, workspace: str, safe_name: str):
         self.workspace, self.safe_name = workspace, safe_name
 
     def search(self, query: str) -> str:
-        """Search memory for user preferences or facts."""
-        mod_path = os.path.join(CFG_DIR, "modules", "ai-agent-memories")
-        res = subprocess.run([sys.executable, mod_path, "get-context", self.safe_name, query], capture_output=True, text=True, timeout=10)
-        return (res.stdout or res.stderr or "").strip() or "No matching memories found."
+        if memories:
+            return memories.search_past_context(self.safe_name, query) or "No matching memories found."
+        return "Memory module unavailable."
 
     def get_facts(self) -> str:
-        """Get all stored TPM facts."""
-        mod_path = os.path.join(CFG_DIR, "modules", "ai-agent-memories")
-        res = subprocess.run([sys.executable, mod_path, "tpm-get", self.safe_name], capture_output=True, text=True, timeout=10)
-        return (res.stdout or res.stderr or "").strip() or "No facts stored."
+        if memories:
+            return memories.tpm_get(self.safe_name) or "No facts stored."
+        return "Memory module unavailable."
 
     def add_fact(self, key: str, value: str) -> str:
-        """Add or update a persistent user preference fact."""
-        mod_path = os.path.join(CFG_DIR, "modules", "ai-agent-memories")
-        payload = json.dumps({key.strip().lower(): str(value).strip()})
-        subprocess.run([sys.executable, mod_path, "tpm-reconcile", self.safe_name], input=payload, text=True, timeout=10)
-        return f"Fact reconciled: {key} = {value}"
+        if memories:
+            memories.tpm_reconcile(self.safe_name, {key.strip().lower(): str(value).strip()})
+            return f"Fact reconciled: {key} = {value}"
+        return "Memory module unavailable."
 
 
 class GraphSDK:
-    """Model-Callable Harness API for Codebase Index Graph."""
+    """Direct in-memory model-callable Harness API for Codebase Index Graph."""
     def __init__(self, workspace: str):
         self.workspace = workspace
-        self.mod_path = os.path.join(CFG_DIR, "tools", "index-map", "index-map")
 
     def snippet(self, symbol: str) -> str:
-        """Extract precise source code snippet for a symbol."""
-        res = subprocess.run([sys.executable, self.mod_path, "snippet", symbol], cwd=self.workspace, capture_output=True, text=True, timeout=10)
-        return (res.stdout or res.stderr or "").strip()
+        return tools.run_graph_cmd("snippet", symbol, self.workspace) if tools else "Tools module unavailable."
 
     def trace(self, symbol: str) -> str:
-        """Trace callers and callees for a symbol."""
-        res = subprocess.run([sys.executable, self.mod_path, "trace", symbol], cwd=self.workspace, capture_output=True, text=True, timeout=10)
-        return (res.stdout or res.stderr or "").strip()
+        return tools.run_graph_cmd("trace", symbol, self.workspace) if tools else "Tools module unavailable."
 
     def blast_radius(self, symbol: str) -> str:
-        """Calculate upstream impact map for modifying a symbol."""
-        res = subprocess.run([sys.executable, self.mod_path, "blast-radius", symbol], cwd=self.workspace, capture_output=True, text=True, timeout=10)
-        return (res.stdout or res.stderr or "").strip()
+        return tools.run_graph_cmd("blast-radius", symbol, self.workspace) if tools else "Tools module unavailable."
 
     def search(self, pattern: str) -> str:
-        """Search codebase graph for matching symbols or concepts."""
-        res = subprocess.run([sys.executable, self.mod_path, "search", pattern], cwd=self.workspace, capture_output=True, text=True, timeout=10)
-        return (res.stdout or res.stderr or "").strip()
+        return tools.run_graph_cmd("search", pattern, self.workspace) if tools else "Tools module unavailable."
 
     def architecture(self) -> str:
-        """Get high-level workspace structure summary."""
-        res = subprocess.run([sys.executable, self.mod_path, "architecture"], cwd=self.workspace, capture_output=True, text=True, timeout=10)
-        return (res.stdout or res.stderr or "").strip()
+        return tools.run_graph_cmd("architecture", "", self.workspace) if tools else "Tools module unavailable."
 
 
 def delegate(goal: str, workspace: str = ".") -> str:
-    """NOOA-inspired Sub-Agent Delegation: Runs an isolated sub-task loop in a private context and returns final summary."""
+    """NOOA-inspired Sub-Agent Delegation."""
     try:
-        import agent_core as core
         ws_real = os.path.realpath(workspace)
         sub_history = [
             {"role": "system", "content": f"You are an isolated sub-agent worker in workspace '{ws_real}'.\nGoal: {goal}\nExecute required tool operations to complete the goal, then output ONLY a concise final summary report."},
             {"role": "user", "content": f"Execute sub-task: {goal}"}
         ]
-        ans = core.stream_response(sub_history, prefix="SubAgent:", show_stats=False, thinking_budget=0, is_agent=True)
+        ans = core.stream_response(sub_history, prefix="SubAgent:", show_stats=False, thinking_budget=0, is_agent=True) if core else None
         return (ans or "Sub-agent completed task.").strip()
     except Exception as e:
         return f"[error] Sub-agent delegation failed: {e}"
@@ -164,8 +154,8 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
         if _is_outside(full):
             if _confirm_gate_fn:
                 return _confirm_gate_fn(f"OUT-OF-BOUNDS KERNEL {op_name}: {full}")
-            import agent_core as core
-            return core._confirm_gate(f"OUT-OF-BOUNDS KERNEL {op_name}: {full}", None)
+            if core:
+                return core._confirm_gate(f"OUT-OF-BOUNDS KERNEL {op_name}: {full}", None)
         return True
 
     def safe_open(file, mode='r', *args, **kwargs):
@@ -237,7 +227,6 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
 
 def inspect_ast_safety(code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] | None = None) -> str | None:
     if not confirm_gate_fn or os.environ.get("AI_CONFIRM_GATES", "1") == "0": return None
-    # Skip AST safety parse for IPython line/cell magics (% and !)
     clean = code.strip()
     if clean.startswith(("%", "!", "?")):
         if clean.startswith("!"):

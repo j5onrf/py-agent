@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ACP (Agent Client Protocol) stdio Bridge for PyCode / T3 Code WebApp
+"""ACP (Agent Client Protocol) stdio Bridge for PyCode / T3 Code WebApp [In-Memory Edition]
 Connects PyCode GUI directly to py-agent engine and local llama.cpp server.
 """
 
@@ -24,6 +24,8 @@ if MODULES_DIR not in sys.path:
 
 import agent_cloud
 import agent_core as core
+import agent_memories as memories
+import agent_sessions as sessions
 import agent_skills as skills
 import agent_tools as tools
 import agent_tts as tts
@@ -100,7 +102,6 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
     clean_name = profile_name if profile_name not in ("default", "init") else "init"
     profile_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
     
-    # Clean startup greeting directive for GUI sessions
     if profile_content:
         profile_content = profile_content.replace('Reply ONLY with: "Workspace loaded. Awaiting instructions."', "Execute the requested action immediately.")
 
@@ -119,10 +120,11 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
                 except OSError:
                     pass
 
+    # Direct in-memory TPM retrieval
     try:
-        tpm_facts = core.run_mod("ai-agent-memories", "tpm-get", safe_name)
+        tpm_facts = memories.tpm_get(safe_name)
         if tpm_facts:
-            sys_prompt += f"### USER FACTS & PREFERENCES (TPM):\n{tpm_facts}\n\n"
+            sys_prompt += f"\n{tpm_facts}\n"
     except Exception:
         pass
 
@@ -137,13 +139,11 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
     safe_name = core.workspace_safe_name(workspace)
     is_agent, profile_name, is_yolo = detect_workspace_mode(workspace)
     
-    # YOLO only active in workspace agent mode, strictly OFF in plain chat mode
     if is_agent and is_yolo:
         os.environ["AI_CONFIRM_GATES"] = "0"
     else:
         os.environ["AI_CONFIRM_GATES"] = "1"
 
-    # Read state directly from .state.json
     st = core.get_state()
     reasoning_active = st.get("reasoning_active", False)
     reasoning_budget = st.get("reasoning_budget", 500) if reasoning_active else 0
@@ -214,7 +214,6 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
                     text_chunk = delta.get("content") or ""
                     thinking_chunk = delta.get("reasoning_content") or delta.get("thinking") or delta.get("reasoning") or ""
 
-                    # 1. Dedicated reasoning token arrived
                     if thinking_chunk:
                         if show_thinking:
                             if not in_think_block:
@@ -222,7 +221,6 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
                                 send_acp_chunk(session_id, "> *Thinking...* ")
                             send_acp_chunk(session_id, thinking_chunk.replace("\n", "\n> "))
 
-                    # 2. Content chunk arrived
                     elif text_chunk:
                         if in_think_block and "</think>" not in text_chunk:
                             if show_thinking:
@@ -290,14 +288,14 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
             pruned_result = result if len(result) <= 2000 else result[:1500] + f"\n... [Snipped {len(result) - 1500} chars]"
             messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": fname, "content": pruned_result})
 
+    # Direct in-memory turn logging & background TPM update
     if is_agent and user_text and accumulated_ans:
         try:
-            core.run_mod("ai-agent-sessions", "log-turn", safe_name, user_text, accumulated_ans)
+            sessions.log_turn(safe_name, user_text, accumulated_ans)
             core.background_tpm_update(user_text, accumulated_ans, safe_name, workspace)
         except Exception:
             pass
 
-    # Speak response out loud via Kokoro / PipeWire if TTS is enabled in .state.json
     if tts.is_tts_enabled() and accumulated_ans:
         try:
             tts.speak_response(accumulated_ans)
@@ -311,7 +309,6 @@ def main():
     default_workspace = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
     active_session_id = f"pyagent-{uuid.uuid4().hex[:8]}"
 
-    # Background listener for tablet/phone voice dictation (.voice_pending.txt)
     def _voice_watcher():
         pending_file = os.path.join(CFG_DIR, ".voice_pending.txt")
         while True:
@@ -326,7 +323,6 @@ def main():
                         pass
                     if text and active_session_id:
                         active_cwd = SESSION_WORKSPACES.get(active_session_id, default_workspace)
-                        # Show user voice prompt in PyCode UI
                         sys.stdout.write(json.dumps({
                             "jsonrpc": "2.0",
                             "method": "session/update",
@@ -339,7 +335,6 @@ def main():
                             }
                         }) + "\n")
                         sys.stdout.flush()
-                        # Execute prompt and stream answer
                         handle_acp_prompt(None, active_session_id, [{"type": "text", "text": text}], active_cwd)
             except Exception:
                 pass
@@ -360,7 +355,6 @@ def main():
         method = req.get("method")
         params = req.get("params", {})
 
-        # 1. ACP Initialize Handshake
         if method == "initialize":
             send_rpc_response(req_id, result={
                 "protocolVersion": 1,
@@ -374,42 +368,28 @@ def main():
                     "version": "1.0.0"
                 }
             })
-
-        # 2. ACP Authenticate Handshake
         elif method == "authenticate":
             send_rpc_response(req_id, result={})
-
-        # 3. ACP Session Creation
         elif method in ("session/new", "createSession", "session/create"):
             active_session_id = params.get("sessionId") or f"pyagent-{uuid.uuid4().hex[:8]}"
             session_cwd = params.get("cwd") or default_workspace
             SESSION_WORKSPACES[active_session_id] = os.path.realpath(session_cwd)
             send_rpc_response(req_id, result={"sessionId": active_session_id})
-
-        # 4. ACP Session List
         elif method in ("session/list", "listSessions"):
             active_cwd = SESSION_WORKSPACES.get(active_session_id, default_workspace)
             send_rpc_response(req_id, result={"sessions": [{"sessionId": active_session_id, "cwd": active_cwd}]})
-
-        # 5. ACP Prompt Turn
         elif method in ("session/prompt", "prompt"):
             req_session_id = params.get("sessionId") or active_session_id
             active_cwd = SESSION_WORKSPACES.get(req_session_id, default_workspace)
             prompt_items = params.get("prompt", [])
             handle_acp_prompt(req_id, req_session_id, prompt_items, active_cwd)
-
-        # 6. ACP Session Cancel
         elif method in ("session/cancel", "cancel"):
             send_rpc_response(req_id, result={})
-
-        # 7. Generic Tools listing fallback
         elif method == "tools/list":
             send_rpc_response(req_id, result={"tools": tools.EDIT_TOOLS})
-
         elif method == "shutdown":
             send_rpc_response(req_id, result={"status": "ok"})
             break
-
         else:
             send_rpc_response(req_id, result={})
 

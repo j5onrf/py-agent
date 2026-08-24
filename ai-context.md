@@ -41,6 +41,8 @@
 
 ```properties
 # --- Workspaces ---
+ai init ~/.config/py-agent/projects/omarchyv4 ---> omarchyv4
+
 ai init ~/.config/py-agent/projects/session-test ---> session test, projects session
 ai init ~/.config/py-agent/projects/session-test-2 ---> session test 2, projects session
 ai init ~/.config/py-agent/projects/session-test-3 ---> session test 3, projects session

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.8.85]"""
+"""Py Agent [j5onrf] [v0.9.8.89] - Pure Standard In-Memory Architecture"""
 
 import json
 import os
@@ -52,6 +52,8 @@ try:
     import agent_context as context
     import agent_core as core
     import agent_ipython as ipython
+    import agent_memories as memories
+    import agent_sessions as sessions
     import agent_skills as skills
     import agent_spell as spell
     import agent_tts as tts
@@ -101,19 +103,21 @@ def ensure_clean_agent_dir(workspace_path: str) -> None:
 
 
 def sync_md_to_sqlite(workspace: str, workspace_path: str) -> None:
+    """Direct in-memory TPM synchronization from markdown to SQLite."""
     md_path = os.path.join(workspace_path, ".agent", "tpm.md")
     if os.path.exists(md_path):
         try:
             with open(md_path, "r", encoding="utf-8") as f:
                 matches = re.findall(r"\*\s+\*\*([^*]+)\*\*:\s*(.*)", f.read())
             if matches:
-                core.run_mod("ai-agent-memories", "tpm-reconcile", workspace, input_data=json.dumps({k.strip().lower(): v.strip() for k, v in matches}))
-        except (OSError, json.JSONDecodeError): pass
+                facts_dict = {k.strip().lower(): v.strip() for k, v in matches}
+                memories.tpm_reconcile(workspace, facts_dict)
+        except Exception: pass
 
 
 def clean_exit(safe_name: str | None = None) -> None:
     if safe_name:
-        try: core.run_mod("ai-agent-sessions", "cleanup-sub", safe_name, str(os.getpid()))
+        try: sessions.cleanup_sub_agent(safe_name, os.getpid())
         except Exception: pass
     ui._console.print("\n[yellow]Exiting conversation.[/yellow]")
     sys.exit(0)
@@ -178,9 +182,7 @@ def run_interactive_chat(args: list[str]) -> None:
     db_turns, tpm_count = workspace_db_counts(safe_name) if is_agent else (0, 0)
     sub_id = None
     if is_agent:
-        try:
-            sub_str = core.run_mod("ai-agent-sessions", "get-sub-id", safe_name, str(os.getpid()))
-            if sub_str.isdigit() and int(sub_str) > 0: sub_id = int(sub_str)
+        try: sub_id = sessions.get_sub_agent_id(safe_name, os.getpid())
         except Exception: pass
 
     ui.draw_session_box(workspace_path, home_dir, is_agent, db_turns, tpm_count, memory_active, active_system_prompt, clean_name, sub_id=sub_id, box_style=st.get("box_style", 2))
@@ -252,6 +254,30 @@ def run_interactive_chat(args: list[str]) -> None:
                         os.environ["AI_SHOW_THINKING"] = "1" if st.get("show_thinking", True) else "0"
                         ui._console.print("[green][sys] Resumed CLI session.[/green]\n")
                     except Exception as e: ui._console.print(f"[red][sys] Failed TUI: {e}[/red]\n")
+                    continue
+
+                if query.startswith(("/webui", "/web")):
+                    ui._console.print("[dim yellow][sys] Suspending CLI. Launching Py-Agent WebUI...[/dim yellow]")
+                    web_bin = os.path.join(CFG_DIR, "plugins", "webui", "launch.sh")
+                    if os.path.exists(web_bin):
+                        try:
+                            active_skill_env = os.environ.get("AI_ACTIVE_SKILL", clean_name or "default")
+                            web_env = {
+                                **os.environ,
+                                "AI_IS_AGENT": "1" if is_agent else "0",
+                                "AI_WORKSPACE_PATH": workspace_path,
+                                "AI_ACTIVE_SKILL": active_skill_env,
+                                "AI_CONFIRM_GATES": "0"
+                            }
+                            subprocess.run(["/bin/bash", web_bin], env=web_env)
+                            st = core.get_state()
+                            reasoning_active, reasoning_budget = st.get("reasoning_active", False), st.get("reasoning_budget", 500)
+                            os.environ["AI_SHOW_THINKING"] = "1" if st.get("show_thinking", True) else "0"
+                            ui._console.print("[green][sys] Resumed CLI session from WebUI.[/green]\n")
+                        except Exception as e:
+                            ui._console.print(f"[red][sys] Failed WebUI: {e}[/red]\n")
+                    else:
+                        ui._console.print(f"[red][sys] Launcher script not found: {web_bin}[/red]\n")
                     continue
 
                 if query.startswith(("/pycode", "/pyc")):
@@ -370,14 +396,15 @@ def run_interactive_chat(args: list[str]) -> None:
                         try: os.remove(db_path)
                         except OSError: pass
 
-                    core.run_mod("ai-agent-sessions", "clear", safe_name)
-                    core.run_mod("ai-agent-memories", "tpm-clear", safe_name)
+                    # Direct in-memory database purge
+                    sessions.clear_turns(safe_name)
+                    memories.tpm_clear(safe_name)
 
                     ui._console.print("[yellow][sys] Workspace reset complete. Launching 'ai init' next time will prompt for a new profile.[/yellow]\n")
                     continue
 
                 if query == "/tok":
-                    subprocess.run([sys.executable, f"{CFG_DIR}/modules/ai-agent-sessions", "show-tok"], input=json.dumps(chat_history), text=True)
+                    core.show_memory_status(chat_history, max_context=int(os.environ.get("AI_MAX_TOKENS", 8192)), server_url="http://localhost:8080")
                     continue
 
                 if spell_active and not query.startswith(("/", "-", "#", "```")):
@@ -397,29 +424,25 @@ def run_interactive_chat(args: list[str]) -> None:
                     ui._console.print(f"[green][sys] On-demand skill removed. Reverted to base skill: [bold]{clean_name or 'default'}[/bold].[/green]\n")
                     continue
 
-                res = subprocess.run([sys.executable, f"{CFG_DIR}/modules/agent_skills.py", safe_name, query], input=json.dumps(chat_history), stdout=subprocess.PIPE, text=True)
-                out_str = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', res.stdout or "").strip()
-                if out_str:
-                    try:
-                        chat_history = json.loads(out_str)
-                        if match := re.search(r"### Loaded On-Demand Skill:\s*(.+)", chat_history[0].get("content", "")):
-                            s_name = match.group(1).strip().replace(" ", "-")
-                            os.environ["AI_ACTIVE_SKILL"] = f"{clean_name} {s_name}"
-                        ui._console.print("[green][sys] Skill loaded successfully.[/green]\n")
-                    except json.JSONDecodeError as e: ui._console.print(f"[red]Error loading session: {e}[/red]")
+                # Run skill selector directly in-memory across all skill directories
+                chat_history, loaded_name = skills.run_skill_selector(
+                    safe_name, query, SKILLS_DIR, STOP_WORDS, chat_history
+                )
+                if loaded_name:
+                    os.environ["AI_ACTIVE_SKILL"] = f"{clean_name} {loaded_name}"
                 continue
 
             if query.startswith("-save"):
-                core.run_mod("ai-agent-sessions", "save", safe_name, query.replace("-save", "").strip(), input_data=json.dumps(chat_history))
+                tag = query.replace("-save", "").strip() or "checkpoint"
+                sessions.save_checkpoint(safe_name, tag, chat_history)
                 continue
 
             if query in ("-load", "-timeline"):
                 try:
-                    res = subprocess.run([sys.executable, f"{CFG_DIR}/modules/ai-agent-sessions", "load", safe_name], stdin=sys.stdin, stdout=subprocess.PIPE, text=True)
-                    if res.stdout.strip():
-                        chat_history = json.loads(res.stdout.strip())
+                    if restored_hist := sessions.rollback_checkpoint(safe_name):
+                        chat_history = restored_hist
                         ui._console.print(f"[green][session-mgr] Restored session ({len(chat_history) - 1} turns loaded).[/green]\n")
-                except (subprocess.SubprocessError, json.JSONDecodeError) as e:
+                except Exception as e:
                     ui._console.print(f"[red]Error loading session: {e}[/red]")
                 continue
 
@@ -428,12 +451,13 @@ def run_interactive_chat(args: list[str]) -> None:
             if is_agent and memory_active:
                 if not is_first_turn and len(query) > 5:
                     try:
-                        res = subprocess.run([sys.executable, f"{CFG_DIR}/modules/ai-agent-memories", "get-context", safe_name, query], stdout=subprocess.PIPE, text=True, timeout=10)
-                        if res.returncode == 2: pending_query = None; continue
-                        if res.returncode == 3: memory_active = False; core.save_state("memory_active", False)
-                        past_memory = res.stdout.strip()
+                        res_mem = memories.search_past_context(safe_name, query)
+                        if res_mem == "__CANCELLED__": pending_query = None; continue
+                        if res_mem == "__DISABLE_MEMORY__": memory_active = False; core.save_state("memory_active", False)
+                        elif res_mem: past_memory = res_mem
                     except Exception: pass
-                tpm_context = core.run_mod("ai-agent-memories", "tpm-get", safe_name)
+                # Direct in-memory TPM fact retrieval
+                tpm_context = memories.tpm_get(safe_name)
 
             if re.match(r"^/?([ftba])(?:\s+(\d+))?$", query.lower()):
                 think_bin = f"{CFG_DIR}/modules/chat"
@@ -457,7 +481,9 @@ def run_interactive_chat(args: list[str]) -> None:
                 chat_history.append({"role": "assistant", "content": ans})
                 tts.speak_response(ans)
                 if is_agent:
-                    core.run_mod("ai-agent-sessions", "log-turn", safe_name, query, ans)
+                    # Direct in-memory SQLite turn logging
+                    sessions.log_turn(safe_name, query, ans)
+                    
                     if match := re.search(r"Run:\s*((?:trace symbol|blast radius|read function|find symbol)\s+\S+|architecture overview)", ans):
                         try: readline.set_startup_hook(lambda: readline.insert_text(match.group(1).strip()))
                         except Exception: pass
