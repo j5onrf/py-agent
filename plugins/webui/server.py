@@ -56,12 +56,15 @@ def detect_workspace_mode(workspace: str) -> tuple[bool, str, bool]:
 
 def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) -> str:
     skill_target = profile_name if (is_agent and profile_name not in ("default", "init")) else "chat"
-    skill_content = skills.load_skill_content(skill_target, SKILLS_DIR, CFG_DIR)
+    profile_content = skills.load_skill_content(skill_target, SKILLS_DIR, CFG_DIR)
 
     if not is_agent:
-        return skill_content or BASE_PROMPT_CHAT
+        return profile_content or BASE_PROMPT_CHAT
 
-    sys_prompt = skill_content or BASE_PROMPT_AGENT
+    if profile_content:
+        profile_content = profile_content.replace('Reply ONLY with: "Workspace loaded. Awaiting instructions."', "Execute the requested action immediately.")
+
+    sys_prompt = profile_content or BASE_PROMPT_AGENT
     sys_prompt += f"\n\n### ACTIVE PROJECT WORKSPACE:\nYour active project root directory is: {workspace}\n"
     sys_prompt += "Capabilities: read_symbol, trace_symbol, blast_radius, find_symbol, architecture_overview, read_file, write_file, list_dir, run_command.\n\n"
 
@@ -194,16 +197,16 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                     if not line:
                         continue
                     line_str = line.decode("utf-8", errors="ignore").strip()
-                    
-                    # Forward raw line directly to WebUI (preserves timings, usage, and metrics)
-                    self.wfile.write(line + b"\n\n")
-                    self.wfile.flush()
 
                     if not line_str.startswith("data:"):
                         continue
                     data_str = line_str[5:].strip()
                     if data_str == "[DONE]":
                         break
+
+                    # Forward chunk directly to WebUI (do not send [DONE] prematurely)
+                    self.wfile.write(line + b"\n\n")
+                    self.wfile.flush()
 
                     try:
                         data = json.loads(data_str)
@@ -252,6 +255,10 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
 
                     pruned = result if len(result) <= 1500 else result[:1200] + "\n... [Pruned]"
                     messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": fname, "content": pruned})
+
+            # Send final [DONE] after all tool rounds are complete
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
 
         except Exception as e:
             err_msg = f"\n\n[Gateway error: {e}]\n"

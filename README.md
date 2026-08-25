@@ -29,6 +29,7 @@ Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`)
 - **Multi-Turn Chat (`ai`):** Persistent interactive terminal session with memory context.
 - **Workspace Agent (`ai init <path>`):** Full codebase graph indexing, path-healing file editing, and sub-agent concurrency.
 - **Native GUI IDE (`/pyc`):** Cross-platform React desktop & browser development workspace powered by [PyCode](https://github.com/j5onrf/pycode).
+- **llama.cpp WebAgent (`/webui`):** Autonomous tool-enabled web gateway on top of official `llama-server` UI (`http://127.0.0.1:3000`).
 
 ---
 
@@ -46,6 +47,7 @@ Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`)
 | **System Admin & Diagnostics** | Live health monitoring, AUR/security audits, system optimization, status routing, and git commit hooks. | [`tools/agentic/system/`](tools/agentic/system) |
 | **Model Select TUI** | Real-time **[Cloud Connection](modules/Readme.md)** TUI, key toggles, and endpoint selector. | `model select` |
 | **Interactive Textual PyTUI** | Full-screen **[Textual](modules/Readme.md)** TUI workspace with JSON-RPC 2.0 sub-agent socket IPC powered by a C-speed `uvloop` event loop. | `/tui` |
+| **llama.cpp WebAgent Gateway** | Full autonomous agent tool execution (`list_dir`, `write_file`, AST graph) injected directly into official `llama.cpp` WebUI. | `/webui` |
 
 ---
 
@@ -111,6 +113,23 @@ Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`)
       <td align="center" width="33%" valign="top">
         <b>Web Assistant (<a href="https://github.com/CopilotKit/OpenBot">PyBot</a>)</b><br>
         <code>/pybot</code> <i>(Coming Soon)</i><br><br>
+      </td>
+    </tr>
+    <tr>
+      <td align="center" width="33%" valign="top">
+        <b>llama.cpp WebAgent</b><br>
+        <code>/webui</code><br><br>
+        <a href="http://127.0.0.1:3000" target="_blank">
+          <kbd>
+            <img src="https://github.com/user-attachments/assets/39760d51-75f0-4b01-b385-6c5d99282a42" alt="llama.cpp WebAgent" width="100%" />
+          </kbd>
+        </a>
+      </td>
+      <td align="center" width="33%" valign="top">
+        <!-- Reserved Slot -->
+      </td>
+      <td align="center" width="33%" valign="top">
+        <!-- Reserved Slot -->
       </td>
     </tr>
   </table>
@@ -221,6 +240,7 @@ AI_MAX_TOKENS="8192"
 - [x] **DeepSeek Session Audit & IPC:** Real-time JSONL event logging (`.agent/session.jsonl`), JSON-RPC 2.0 sub-agent socket IPC, and YAML skill profile frontmatter headers.
 - [x] **Self-Healing Tool Parser:** Unsloth-inspired resilient JSON argument healer auto-balancing brackets, stripping leaked XML tokens, and repairing unescaped newlines for small local models.
 - [x] **[PyCode](https://github.com/j5onrf/pycode) Cross-Platform GUI (T3 Fork):** Local-first React desktop and WebUI workspace connected via ACP (Agent Client Protocol) stdio JSON-RPC bridge (`/pyc`, `/pyc web`)—featuring real-time token/thought streaming, custom vector branding, theme-reactive ambient aurora glow toggle, and automatic workspace AST indexing.
+- [x] **llama.cpp WebAgent Gateway:** Real-time tool execution (`list_dir`, `write_file`, AST index maps) and streaming proxy for the official `llama.cpp` WebUI (`/webui`).
 - [ ] **PyBot Integration ([OpenBot](https://github.com/CopilotKit/OpenBot) Plugin):** Embedded web assistant & customizable agent widget plugin to bring `py-agent` intelligence to browser overlays and multi-surface chat bots.
 - [ ] **Context Stress Testing:** Continuous context-window pressure tests across quantized local engines.
 - [ ] **Automated File Containment Validation:** Zero-trust security verification on traversal boundaries.
