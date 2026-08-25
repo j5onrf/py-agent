@@ -20,7 +20,7 @@
 
 <h2 align="center">Overview & Execution Modes</h2>
 
-Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`) controlling a C++ backend `llama-server`. Built for extreme efficiency on quantized local models (`LFM2.5-8B-A1B`, `Qwen3.5-2B`, `Ornith-1.5-35B-A3B`, `Qwen3.6-35B-A3B`, `Qwen3.8-27B`) and cloud providers.
+Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`) controlling a C++ backend `llama-server`. Built for extreme efficiency on quantized local models (`LFM2.5-8B-A1B`, `Qwen3.5-2B`, `Qwen3.6-35B-A3B`, `Qwen3.8-27B`) and cloud providers.
 
 🟢 **Active:** Official `Huggingface` Router endpoints: ([`Qwen/Qwen3.8-2.4T-A95B`](https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B), [`DeepSeek-V4-Flash-0731`](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731)).
 
@@ -36,7 +36,7 @@ Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`)
 
 | Feature System | Foundation & Architectural Roots | Interface Command / Link |
 | :--- | :--- | :--- |
-| **PyCode Native Desktop GUI** | Customized [T3 Code](https://github.com/pingdotgg/t3code) fork connected via native Agent Client Protocol (ACP) over stdio JSON-RPC 2.0 with live token & thought streaming. | `/pyc` (or `/pyc web`) |
+| **PyCode Native Desktop IDE** | Customized [T3 Code](https://github.com/pingdotgg/t3code) fork connected via native Agent Client Protocol (ACP) over stdio JSON-RPC 2.0 with live token & thought streaming. | `/pyc` (or `/pyc web`) |
 | **Temporal Personality Memory (TPM)** | Reconciles personal identity & workspace habits using [Weaviate Engram](https://github.com/weaviate/engram-python-sdk) concepts + [Noema](https://github.com/Fail-Safe/Noema) Markdown files. | `.agent/tpm.md` |
 | **Codebase Graph & Relational Index** | Structural codebase maps ([Graphify](https://github.com/Graphify-Labs/graphify)) + relational queries ([codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)) + [sqlite-vec](https://github.com/asg017/sqlite-vec) vector RAG with class inheritance graph mapping. | `index-map <dir>` |
 | **Ralph Autonomous Task Loop** | Self-directed iteration loop ([Ralph Wiggum](https://github.com/ghuntley/how-to-ralph-wiggum)) executing tasks against project specs (`TASK.md`) until verified complete. | `/task [goal]` |

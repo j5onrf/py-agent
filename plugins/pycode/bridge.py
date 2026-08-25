@@ -131,7 +131,7 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
     return sys_prompt
 
 
-def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str, Any]], workspace: str) -> None:
+def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str, Any]], workspace: str, params: dict[str, Any] | None = None) -> None:
     user_text = " ".join(item.get("text", "") for item in prompt_items if isinstance(item, dict) and item.get("type") == "text").strip()
     if not user_text:
         user_text = "Hello"
@@ -139,20 +139,52 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
     safe_name = core.workspace_safe_name(workspace)
     is_agent, profile_name, is_yolo = detect_workspace_mode(workspace)
     
+    # Read runtimeMode & dropdown options passed from PyCode UI
+    raw_mode = (params or {}).get("runtimeMode", "")
+    opt_mode = next((opt.get("value") for opt in (params or {}).get("options", []) if opt.get("id") == "mode"), None)
+
+    if opt_mode == "build" or raw_mode == "full-access":
+        is_yolo = True
+    elif opt_mode == "plan" or raw_mode == "supervised":
+        is_yolo = False
+
+    # Synchronize state
     if is_agent and is_yolo:
         os.environ["AI_CONFIRM_GATES"] = "0"
+        core.save_state("yolo_mode", True)
     else:
         os.environ["AI_CONFIRM_GATES"] = "1"
+        core.save_state("yolo_mode", False)
 
-    st = core.get_state()
-    reasoning_active = st.get("reasoning_active", False)
-    reasoning_budget = st.get("reasoning_budget", 500) if reasoning_active else 0
-    show_thinking = st.get("show_thinking", True)
+    options_list = (params or {}).get("options", [])
+    raw_effort = next((opt.get("value") for opt in options_list if isinstance(opt, dict) and opt.get("id") == "effort"), None)
+
+    REASONING_BUDGET_MAP = {
+        "off": 0,
+        "low": 250,
+        "medium": 500,
+        "high": 1000,
+        "max": 2000,
+    }
+
+    if raw_effort in REASONING_BUDGET_MAP:
+        reasoning_budget = REASONING_BUDGET_MAP[raw_effort]
+        reasoning_active = reasoning_budget > 0
+        core.save_state("reasoning_active", reasoning_active)
+        core.save_state("reasoning_budget", reasoning_budget)
+    else:
+        st = core.get_state()
+        reasoning_active = st.get("reasoning_active", False)
+        reasoning_budget = st.get("reasoning_budget", 500) if reasoning_active else 0
+
+    # Match agent_tui.py logic exactly
     enable_think = reasoning_active and reasoning_budget > 0
+    budget_val = reasoning_budget if enable_think else 0
+    show_thinking = enable_think
 
     think_kwargs = {
-        "thinking_budget_tokens": reasoning_budget,
-        "reasoning_budget": reasoning_budget,
+        "thinking_budget_tokens": budget_val,
+        "reasoning_budget": budget_val,
         "chat_template_kwargs": {"enable_thinking": enable_think}
     }
 
@@ -181,12 +213,12 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
         body = {
             "messages": messages,
             "stream": True,
-            **(think_kwargs if is_local else {})
+            **base_body
         }
+        if is_local:
+            body.update(think_kwargs)
         if is_agent:
             body["tools"] = tools.EDIT_TOOLS
-
-        body = {**base_body, **body}
 
         try:
             res = core._session.post(url, json=body, headers={"Content-Type": "application/json", **headers}, timeout=timeout, stream=True)
@@ -215,7 +247,7 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
                     thinking_chunk = delta.get("reasoning_content") or delta.get("thinking") or delta.get("reasoning") or ""
 
                     if thinking_chunk:
-                        if show_thinking:
+                        if enable_think:
                             if not in_think_block:
                                 in_think_block = True
                                 send_acp_chunk(session_id, "> *Thinking...* ")
@@ -382,7 +414,7 @@ def main():
             req_session_id = params.get("sessionId") or active_session_id
             active_cwd = SESSION_WORKSPACES.get(req_session_id, default_workspace)
             prompt_items = params.get("prompt", [])
-            handle_acp_prompt(req_id, req_session_id, prompt_items, active_cwd)
+            handle_acp_prompt(req_id, req_session_id, prompt_items, active_cwd, params=params)
         elif method in ("session/cancel", "cancel"):
             send_rpc_response(req_id, result={})
         elif method == "tools/list":
