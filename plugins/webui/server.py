@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Py-Agent Official WebUI Gateway [j5onrf]
 Streams 100% official llama.cpp WebUI with full agent tool execution,
-dynamic cloud/local cascading, 0s KV cache reuse, and live CLI telemetry.
+dynamic cloud/local cascading, 0s KV cache reuse, and live reasoning controls.
 """
 
 import gzip
@@ -12,7 +12,6 @@ import socket
 import socketserver
 import sys
 import threading
-import time
 import urllib.parse
 from typing import Any
 
@@ -40,6 +39,15 @@ _cached_system_prompt: str | None = None
 
 BASE_PROMPT_CHAT = "Read-only local shell assistant.\nIf <context> is provided, answer directly using only its facts. Otherwise, answer normally.\n\n### Conversational Guidelines:\n- Role: Active, natural, and highly articulate conversational assistant.\n- Tone: Professional, warm, objective, and intellectually engaging.\n\n"
 BASE_PROMPT_AGENT = "Active local project workspace developer agent.\nIf <context> is provided, answer directly using only its facts. Otherwise, answer normally.\n\n"
+
+REASONING_EFFORT_MAP = {
+    "off": 0,
+    "none": 0,
+    "low": 250,
+    "medium": 500,
+    "high": 1000,
+    "max": 2000
+}
 
 
 def log_cli(msg: str) -> None:
@@ -171,7 +179,6 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                 self.send_error(502, str(e))
             return
 
-        t_turn_start = time.perf_counter()
         content_length = int(self.headers.get("Content-Length", 0))
         post_data = self.rfile.read(content_length) if content_length > 0 else b"{}"
 
@@ -183,6 +190,57 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
         workspace = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
         is_agent, profile_name, _ = detect_workspace_mode(workspace)
         messages = body.get("messages", [])
+
+        user_text = next((m.get("content") for m in reversed(messages) if m.get("role") == "user"), "")
+        raw_query = user_text.strip() if isinstance(user_text, str) else ""
+
+        # Chat slash command handler for /t and /thinking in WebUI
+        if raw_query.startswith(("/t", "/thinking")):
+            parts = raw_query.split()
+            st = core.get_state()
+            curr_active = st.get("reasoning_active", False)
+            curr_budget = st.get("reasoning_budget", 500)
+
+            if len(parts) > 1:
+                sub = parts[1].lower()
+                if sub in ("off", "hide", "mute", "disable", "0"):
+                    core.save_state("reasoning_active", False)
+                    core.save_state("reasoning_budget", 0)
+                    resp_msg = "✔ Deep reasoning **disabled**."
+                elif sub in ("on", "enable", "show"):
+                    core.save_state("reasoning_active", True)
+                    b_val = curr_budget if curr_budget > 0 else 500
+                    core.save_state("reasoning_budget", b_val)
+                    resp_msg = f"✔ Deep reasoning **enabled** (budget: {b_val} tokens)."
+                elif sub.isdigit():
+                    b_val = max(0, int(sub))
+                    core.save_state("reasoning_active", b_val > 0)
+                    core.save_state("reasoning_budget", b_val)
+                    resp_msg = f"✔ Deep reasoning set to **{b_val} tokens**." if b_val > 0 else "✔ Deep reasoning **disabled**."
+                else:
+                    new_state = not curr_active
+                    core.save_state("reasoning_active", new_state)
+                    resp_msg = f"✔ Deep reasoning **{'enabled' if new_state else 'disabled'}** (budget: {curr_budget} tokens)."
+            else:
+                new_state = not curr_active
+                core.save_state("reasoning_active", new_state)
+                b_val = curr_budget if curr_budget > 0 else 500
+                core.save_state("reasoning_budget", b_val)
+                resp_msg = f"✔ Deep reasoning **{'enabled' if new_state else 'disabled'}** (budget: {b_val} tokens)."
+
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+
+            chunk = {"choices": [{"delta": {"content": resp_msg}}]}
+            self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode("utf-8"))
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+            log_cli(f"\033[1;36m[webui]\033[0m \033[1;33m{resp_msg}\033[0m")
+            return
 
         sys_context = assemble_system_prompt(workspace, is_agent, profile_name)
         if not messages or messages[0].get("role") != "system":
@@ -203,19 +261,23 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
             pass
 
         safe_name = core.workspace_safe_name(workspace)
-        user_text = next((m.get("content") for m in reversed(messages) if m.get("role") == "user"), "")
         accumulated_ans = ""
-        total_tokens = 0
-        first_ttft = None
 
         if user_text:
             log_cli(f"\033[1;36m[webui]\033[0m \033[1;32m❯\033[0m \"\033[37m{str(user_text)[:60]}\033[0m\"")
 
+        # Map WebUI dropdown options or inherit CLI state
+        web_effort = body.get("reasoning_effort") or (body.get("chat_template_kwargs", {}) or {}).get("reasoning_effort")
         st = core.get_state()
-        reasoning_active = st.get("reasoning_active", False)
-        reasoning_budget = st.get("reasoning_budget", 500) if reasoning_active else 0
-        enable_think = reasoning_active and reasoning_budget > 0
 
+        if web_effort and str(web_effort).lower() in REASONING_EFFORT_MAP:
+            reasoning_budget = REASONING_EFFORT_MAP[str(web_effort).lower()]
+            reasoning_active = reasoning_budget > 0
+        else:
+            reasoning_active = st.get("reasoning_active", False)
+            reasoning_budget = st.get("reasoning_budget", 500) if reasoning_active else 0
+
+        enable_think = reasoning_active and reasoning_budget > 0
         think_kwargs = {
             "thinking_budget_tokens": reasoning_budget if enable_think else 0,
             "reasoning_budget": reasoning_budget if enable_think else 0,
@@ -245,7 +307,6 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                 if is_agent:
                     req_body["tools"] = tools.EDIT_TOOLS
 
-                t_dispatch = time.perf_counter()
                 res = _session.post(url, json=req_body, headers={"Content-Type": "application/json", **headers}, timeout=timeout, stream=True)
                 if res.status_code != 200:
                     err_chunk = {"choices": [{"delta": {"content": f"\n[error] LLM Server HTTP {res.status_code}\n"}}]}
@@ -255,7 +316,6 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
 
                 tool_calls_map = {}
                 acc_content = []
-                first_token_time = None
 
                 for line in res.iter_lines(chunk_size=1):
                     if not line:
@@ -271,11 +331,6 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                     self.wfile.write(line + b"\n\n")
                     self.wfile.flush()
 
-                    if first_token_time is None:
-                        first_token_time = time.perf_counter()
-                        if first_ttft is None:
-                            first_ttft = first_token_time - t_dispatch
-
                     try:
                         data = json.loads(data_str)
                         choices = data.get("choices", [{}])
@@ -284,7 +339,6 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                             content = delta.get("content", "") or ""
                             if content:
                                 acc_content.append(content)
-                                total_tokens += 1
 
                             for tc in delta.get("tool_calls", []):
                                 idx = tc.get("index", 0)
@@ -327,25 +381,18 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                     self.wfile.write(f"data: {json.dumps({'choices': [{'delta': {'content': start_msg}}]})}\n\n".encode("utf-8"))
                     self.wfile.flush()
 
-                    t_exec_start = time.perf_counter()
+                    log_cli(f"  \033[2m∗ {verb.title()} • \033[1;36m{fname}\033[0m \033[3m{brief}\033[0m")
+
                     try:
                         result = tools.run_tool(fname, args, workspace, confirm_gate_fn=lambda r: True)
                     except Exception as e:
                         result = f"[tool error] {e}"
-                    t_exec_dur = time.perf_counter() - t_exec_start
-
-                    log_cli(f"  \033[2m∗ {verb.title()} • \033[1;36m{fname}\033[0m \033[3m{brief}\033[0m \033[2m[{t_exec_dur:.2f}s]\033[0m")
 
                     pruned = result if len(result) <= 2000 else result[:1500] + f"\n... [Snipped {len(result) - 1500} chars]"
                     messages.append({"role": "tool", "tool_call_id": cid, "name": fname, "content": pruned})
 
             self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
-
-            t_total_dur = time.perf_counter() - t_turn_start
-            tps = (total_tokens / max(0.001, t_total_dur)) if total_tokens > 0 else 0.0
-            ttft_str = f"{first_ttft:.2f}s" if first_ttft is not None else "--"
-            log_cli(f"\033[1;36m[webui]\033[0m \033[2m[ {total_tokens} tokens | {t_total_dur:.2f}s | {tps:.1f} t/s | ttft: {ttft_str} ]\033[0m\n")
 
             if is_agent and user_text and accumulated_ans:
                 try:
