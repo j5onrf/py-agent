@@ -1,18 +1,14 @@
 #!/usr/bin/env python3
 """Py-Agent Official WebUI Gateway [j5onrf]
-Streams 100% official llama.cpp WebUI with full agent tool execution,
-dynamic cloud/local cascading, 0s KV cache reuse, and live debug diagnostics.
+Streams 100% official llama.cpp WebUI with full TPS speed and token timing metrics.
 """
 
 import gzip
 import http.server
 import json
 import os
-import socket
 import socketserver
 import sys
-import threading
-import time
 import urllib.parse
 from typing import Any
 
@@ -23,28 +19,17 @@ SKILLS_DIR = os.path.join(CFG_DIR, "skills")
 if MODULES_DIR not in sys.path:
     sys.path.insert(0, MODULES_DIR)
 
-import agent_cloud
 import agent_core as core
-import agent_memories as memories
-import agent_sessions as sessions
 import agent_skills as skills
 import agent_tools as tools
-import agent_tts as tts
 import requests
 
 PORT = int(os.environ.get("PY_AGENT_WEB_PORT", 3000))
 LLAMA_BASE_URL = os.environ.get("AI_LLAMA_BASE_URL", "http://127.0.0.1:8080")
+LLAMA_SERVER_URL = f"{LLAMA_BASE_URL}/v1/chat/completions"
 
-_session = requests.Session()
-_cached_system_prompt: str | None = None
-
-BASE_PROMPT_CHAT = "Read-only local shell assistant.\nIf <context> is provided, answer directly using only its facts. Otherwise, answer normally.\n\n### Conversational Guidelines:\n- Role: Active, natural, and highly articulate conversational assistant.\n- Tone: Professional, warm, objective, and intellectually engaging.\n\n"
+BASE_PROMPT_CHAT = "### Conversational Guidelines:\n- Role: Active, natural, and highly articulate conversational assistant.\n- Tone: Professional, warm, objective, and intellectually engaging.\n\n"
 BASE_PROMPT_AGENT = "Active local project workspace developer agent.\nIf <context> is provided, answer directly using only its facts. Otherwise, answer normally.\n\n"
-
-
-def log_diag(tag: str, msg: str, color: str = "\033[1;36m") -> None:
-    sys.stderr.write(f"{color}[webui:{tag}]\033[0m {msg}\n")
-    sys.stderr.flush()
 
 
 def detect_workspace_mode(workspace: str) -> tuple[bool, str, bool]:
@@ -52,18 +37,17 @@ def detect_workspace_mode(workspace: str) -> tuple[bool, str, bool]:
     ws_real = os.path.realpath(workspace)
     cfg_file = os.path.join(workspace, ".agent", "config.json")
     inherited_skill = os.environ.get("AI_ACTIVE_SKILL")
-    is_agent_env = os.environ.get("AI_IS_AGENT") == "1"
 
-    if not is_agent_env and (ws_real == home or not os.path.exists(os.path.join(workspace, ".agent"))):
+    if ws_real == home or not os.path.exists(os.path.join(workspace, ".agent")):
         return False, (inherited_skill or "chat"), False
 
-    selected_profile, is_yolo = inherited_skill or "default", True
+    selected_profile, is_yolo = inherited_skill or "default", False
     if os.path.exists(cfg_file):
         try:
             with open(cfg_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 selected_profile = inherited_skill or data.get("profile", "default")
-                is_yolo = data.get("yolo", True)
+                is_yolo = data.get("yolo", False)
         except Exception:
             pass
 
@@ -71,48 +55,36 @@ def detect_workspace_mode(workspace: str) -> tuple[bool, str, bool]:
 
 
 def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) -> str:
-    global _cached_system_prompt
-    if _cached_system_prompt:
-        return _cached_system_prompt
+    skill_target = profile_name if (is_agent and profile_name not in ("default", "init")) else "chat"
+    profile_content = skills.load_skill_content(skill_target, SKILLS_DIR, CFG_DIR)
 
     if not is_agent:
-        clean_name = profile_name if (profile_name and profile_name != "default") else "chat"
-        skill_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
-        _cached_system_prompt = skill_content or BASE_PROMPT_CHAT
-        return _cached_system_prompt
+        return profile_content or BASE_PROMPT_CHAT
 
-    clean_name = profile_name if profile_name not in ("default", "init") else "init"
-    profile_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
-    base_prompt = (BASE_PROMPT_AGENT + f"\n\n### Active Skill/Role Instructions:\n{profile_content}\n") if (clean_name == "init" and profile_content) else (profile_content or BASE_PROMPT_AGENT)
+    if profile_content:
+        profile_content = profile_content.replace('Reply ONLY with: "Workspace loaded. Awaiting instructions."', "Execute the requested action immediately.")
+
+    sys_prompt = profile_content or BASE_PROMPT_AGENT
+    sys_prompt += f"\n\n### ACTIVE PROJECT WORKSPACE:\nYour active project root directory is: {workspace}\n"
+    sys_prompt += "Capabilities: read_symbol, trace_symbol, blast_radius, find_symbol, architecture_overview, read_file, write_file, list_dir, run_command.\n\n"
 
     agent_dir = os.path.join(workspace, ".agent")
-    map_content = ""
     if os.path.exists(agent_dir):
         for f in os.listdir(agent_dir):
             if f.startswith("index-map-") and f.endswith(".txt"):
                 try:
                     with open(os.path.join(agent_dir, f), "r", encoding="utf-8", errors="ignore") as mf:
-                        map_content = mf.read().strip()
+                        sys_prompt += f"### CODESPACE MAP:\n{mf.read().strip()}\n\n"
                         break
                 except OSError:
                     pass
 
-    if map_content:
-        base_prompt += f"\n\n### CODESPACE MAP:\n{map_content}"
-
-    tools_header = (
-        f"### ACTIVE DEVELOPER AGENT MODE:\n"
-        f"Workspace Root: {workspace}\n"
-        f"CRITICAL DIRECTIVE: Do NOT output conversational chatter or explain what you will do. "
-        f"You MUST immediately execute actions by calling available tools (run_command, read_file, write_file, list_dir, read_symbol).\n\n"
-    )
-
-    _cached_system_prompt = tools_header + base_prompt
-    return _cached_system_prompt
+    return sys_prompt
 
 
 class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        """Proxies official llama.cpp assets and explicitly decompresses gzip payloads."""
         target_url = f"{LLAMA_BASE_URL}{self.path}"
         try:
             resp = requests.get(target_url, timeout=8)
@@ -168,7 +140,7 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                 self.send_error(502, str(e))
             return
 
-        t_start = time.perf_counter()
+        # Intercept chat completions for py-agent skills & tools
         content_length = int(self.headers.get("Content-Length", 0))
         post_data = self.rfile.read(content_length) if content_length > 0 else b"{}"
 
@@ -181,7 +153,7 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
         is_agent, profile_name, _ = detect_workspace_mode(workspace)
         messages = body.get("messages", [])
 
-        # Byte-exact system prompt matching CLI KV cache
+        # Inject Py-Agent system prompt (Skill + Index Map)
         sys_context = assemble_system_prompt(workspace, is_agent, profile_name)
         if not messages or messages[0].get("role") != "system":
             messages.insert(0, {"role": "system", "content": sys_context})
@@ -195,53 +167,23 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
 
-        try:
-            self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        except Exception:
-            pass
-
-        safe_name = core.workspace_safe_name(workspace)
-        user_text = next((m.get("content") for m in reversed(messages) if m.get("role") == "user"), "")
-        accumulated_ans = ""
-
-        st = core.get_state()
-        reasoning_active = st.get("reasoning_active", False)
-        reasoning_budget = st.get("reasoning_budget", 500) if reasoning_active else 0
-        enable_think = reasoning_active and reasoning_budget > 0
-
-        think_kwargs = {
-            "thinking_budget_tokens": reasoning_budget if enable_think else 0,
-            "reasoning_budget": reasoning_budget if enable_think else 0,
-            "chat_template_kwargs": {"enable_thinking": enable_think}
-        }
-
-        configs = agent_cloud.get_active_configs(messages) if hasattr(agent_cloud, "get_active_configs") else []
-        if not configs:
-            configs = [(f"{LLAMA_BASE_URL}/v1/chat/completions", {}, {"model": "local-model", **think_kwargs}, 180)]
-
-        url, headers, base_body, timeout = configs[0]
-        is_local = "localhost" in url or "127.0.0.1" in url or base_body.get("model") == "local-model"
-        os.environ["AI_CONFIRM_GATES"] = "0"
-
-        log_diag("req", f"Target: {url} | Messages: {len(messages)} | Query: '{str(user_text)[:40]}'")
+        session = requests.Session()
 
         try:
             for _round in range(10 if is_agent else 1):
+                # Preserve all original WebUI options (stream_options, timings, samplers)
                 req_body = {
                     **body,
-                    **base_body,
                     "messages": messages,
                     "stream": True
                 }
-                if is_local:
-                    req_body.update(think_kwargs)
+                # Ensure timings & usage are requested so WebUI can render the metrics badge
                 if "stream_options" not in req_body:
                     req_body["stream_options"] = {"include_usage": True}
                 if is_agent:
                     req_body["tools"] = tools.EDIT_TOOLS
 
-                t_req_dispatch = time.perf_counter()
-                res = _session.post(url, json=req_body, headers={"Content-Type": "application/json", **headers}, timeout=timeout, stream=True)
+                res = session.post(LLAMA_SERVER_URL, json=req_body, headers={"Content-Type": "application/json"}, timeout=180, stream=True)
                 if res.status_code != 200:
                     err_chunk = {"choices": [{"delta": {"content": f"\n[error] LLM Server HTTP {res.status_code}\n"}}]}
                     self.wfile.write(f"data: {json.dumps(err_chunk)}\n\n".encode("utf-8"))
@@ -250,11 +192,8 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
 
                 tool_calls_map = {}
                 acc_content = []
-                first_token_time = None
-                token_count = 0
-                captured_timings = {}
 
-                for line in res.iter_lines(chunk_size=1):
+                for line in res.iter_lines():
                     if not line:
                         continue
                     line_str = line.decode("utf-8", errors="ignore").strip()
@@ -265,33 +204,26 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                     if data_str == "[DONE]":
                         break
 
+                    # Forward chunk directly to WebUI (do not send [DONE] prematurely)
                     self.wfile.write(line + b"\n\n")
                     self.wfile.flush()
 
-                    if first_token_time is None:
-                        first_token_time = time.perf_counter()
-
                     try:
                         data = json.loads(data_str)
-                        captured_timings = data.get("timings") or captured_timings
                         choices = data.get("choices", [{}])
                         if choices:
                             delta = choices[0].get("delta", {})
                             content = delta.get("content", "") or ""
                             if content:
                                 acc_content.append(content)
-                                token_count += 1
 
                             for tc in delta.get("tool_calls", []):
                                 idx = tc.get("index", 0)
-                                call_id = tc.get("id") or f"call_{_round}_{idx}"
                                 tc_entry = tool_calls_map.setdefault(idx, {
-                                    "id": call_id,
+                                    "id": tc.get("id", f"call_{idx}"),
                                     "type": "function",
                                     "function": {"name": tc.get("function", {}).get("name", ""), "arguments": ""}
                                 })
-                                if tc.get("id"):
-                                    tc_entry["id"] = tc["id"]
                                 if tc.get("function", {}).get("name"):
                                     tc_entry["function"]["name"] = tc["function"]["name"]
                                 tc_entry["function"]["arguments"] += tc.get("function", {}).get("arguments", "")
@@ -300,26 +232,9 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
 
                 calls = [val for _, val in sorted(tool_calls_map.items())] if tool_calls_map else None
                 ans_text = "".join(acc_content)
-                t_round_end = time.perf_counter()
-
-                ttft = (first_token_time - t_req_dispatch) if first_token_time else (t_round_end - t_req_dispatch)
-                gen_time = (t_round_end - first_token_time) if first_token_time else 0.001
-                tps = token_count / max(0.001, gen_time)
-
-                timing_info = f"TTFT: {ttft:.2f}s | Gen: {token_count} tok @ {tps:.1f} t/s"
-                if captured_timings:
-                    p_eval = captured_timings.get("prompt_per_second", 0)
-                    timing_info += f" | PromptEval: {p_eval:.0f} t/s"
-
-                log_diag("timing", f"[Round {_round + 1}] {timing_info}", "\033[1;32m" if ttft < 1.0 else "\033[1;33m")
 
                 if not calls or not is_agent:
-                    accumulated_ans = ans_text
                     break
-
-                for idx, tc in enumerate(calls):
-                    if not tc.get("id"):
-                        tc["id"] = f"call_{_round}_{idx}"
 
                 messages.append({"role": "assistant", "content": ans_text or None, "tool_calls": calls})
 
@@ -328,43 +243,22 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                     raw_args = tc.get("function", {}).get("arguments", "")
                     args = core._heal_tool_args(raw_args)
                     verb = tools.TOOL_VERBS.get(fname, "working")
-                    cid = tc.get("id") or f"call_{_round}_0"
 
                     start_msg = f"\n\n> ⚙️ **{verb.title()}** • `{fname}`...\n"
                     self.wfile.write(f"data: {json.dumps({'choices': [{'delta': {'content': start_msg}}]})}\n\n".encode("utf-8"))
                     self.wfile.flush()
 
-                    t_tool_start = time.perf_counter()
                     try:
-                        result = tools.run_tool(fname, args, workspace, confirm_gate_fn=lambda r: True)
+                        result = tools.run_tool(fname, args, workspace)
                     except Exception as e:
                         result = f"[tool error] {e}"
-                    t_tool_dur = time.perf_counter() - t_tool_start
 
-                    log_diag("tool", f"Executed `{fname}` in {t_tool_dur:.2f}s")
+                    pruned = result if len(result) <= 1500 else result[:1200] + "\n... [Pruned]"
+                    messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": fname, "content": pruned})
 
-                    pruned = result if len(result) <= 2000 else result[:1500] + f"\n... [Snipped {len(result) - 1500} chars]"
-                    messages.append({"role": "tool", "tool_call_id": cid, "name": fname, "content": pruned})
-
+            # Send final [DONE] after all tool rounds are complete
             self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
-
-            total_dur = time.perf_counter() - t_start
-            log_diag("done", f"Total turn completed in {total_dur:.2f}s\n", "\033[1;35m")
-
-            if is_agent and user_text and accumulated_ans:
-                try:
-                    sessions.log_turn(safe_name, str(user_text), accumulated_ans)
-                    if st.get("memory_active", False):
-                        threading.Thread(target=core.background_tpm_update, args=(str(user_text), accumulated_ans, safe_name, workspace), daemon=True).start()
-                except Exception:
-                    pass
-
-            if tts.is_tts_enabled() and accumulated_ans:
-                try:
-                    tts.speak_response(accumulated_ans)
-                except Exception:
-                    pass
 
         except Exception as e:
             err_msg = f"\n\n[Gateway error: {e}]\n"
@@ -374,7 +268,7 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
             except Exception:
                 pass
         finally:
-            pass
+            session.close()
 
     def log_message(self, format, *args):
         return

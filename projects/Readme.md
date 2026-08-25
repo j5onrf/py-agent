@@ -181,7 +181,7 @@ Running `ai init <path>` sets the default workspace agent profile:
 
 ---
 
-## 4. PyCode React Desktop GUI (`/pyc`)
+## 4. PyCode React Desktop IDE (`/pyc`)
 
 Cross-platform React desktop and WebUI workspace for `py-agent`, powered by a customized fork of [`pingdotgg/t3code`](https://github.com/pingdotgg/t3code). Repo: **[j5onrf/pycode](https://github.com/j5onrf/pycode)**.
 
