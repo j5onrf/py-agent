@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Py-Agent Official WebUI Gateway [j5onrf]
 Streams 100% official llama.cpp WebUI with full agent tool execution,
-dynamic cloud/local cascading, 0s KV cache reuse, and live debug diagnostics.
+dynamic cloud/local cascading, 0s KV cache reuse, and live CLI telemetry.
 """
 
 import gzip
@@ -42,9 +42,12 @@ BASE_PROMPT_CHAT = "Read-only local shell assistant.\nIf <context> is provided, 
 BASE_PROMPT_AGENT = "Active local project workspace developer agent.\nIf <context> is provided, answer directly using only its facts. Otherwise, answer normally.\n\n"
 
 
-def log_diag(tag: str, msg: str, color: str = "\033[1;36m") -> None:
-    sys.stderr.write(f"{color}[webui:{tag}]\033[0m {msg}\n")
-    sys.stderr.flush()
+def log_cli(msg: str) -> None:
+    try:
+        sys.stderr.write(msg + "\n")
+        sys.stderr.flush()
+    except OSError:
+        pass
 
 
 def detect_workspace_mode(workspace: str) -> tuple[bool, str, bool]:
@@ -168,7 +171,7 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                 self.send_error(502, str(e))
             return
 
-        t_start = time.perf_counter()
+        t_turn_start = time.perf_counter()
         content_length = int(self.headers.get("Content-Length", 0))
         post_data = self.rfile.read(content_length) if content_length > 0 else b"{}"
 
@@ -181,7 +184,6 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
         is_agent, profile_name, _ = detect_workspace_mode(workspace)
         messages = body.get("messages", [])
 
-        # Byte-exact system prompt matching CLI KV cache
         sys_context = assemble_system_prompt(workspace, is_agent, profile_name)
         if not messages or messages[0].get("role") != "system":
             messages.insert(0, {"role": "system", "content": sys_context})
@@ -203,6 +205,11 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
         safe_name = core.workspace_safe_name(workspace)
         user_text = next((m.get("content") for m in reversed(messages) if m.get("role") == "user"), "")
         accumulated_ans = ""
+        total_tokens = 0
+        first_ttft = None
+
+        if user_text:
+            log_cli(f"\033[1;36m[webui]\033[0m \033[1;32m❯\033[0m \"\033[37m{str(user_text)[:60]}\033[0m\"")
 
         st = core.get_state()
         reasoning_active = st.get("reasoning_active", False)
@@ -223,8 +230,6 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
         is_local = "localhost" in url or "127.0.0.1" in url or base_body.get("model") == "local-model"
         os.environ["AI_CONFIRM_GATES"] = "0"
 
-        log_diag("req", f"Target: {url} | Messages: {len(messages)} | Query: '{str(user_text)[:40]}'")
-
         try:
             for _round in range(10 if is_agent else 1):
                 req_body = {
@@ -240,7 +245,7 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                 if is_agent:
                     req_body["tools"] = tools.EDIT_TOOLS
 
-                t_req_dispatch = time.perf_counter()
+                t_dispatch = time.perf_counter()
                 res = _session.post(url, json=req_body, headers={"Content-Type": "application/json", **headers}, timeout=timeout, stream=True)
                 if res.status_code != 200:
                     err_chunk = {"choices": [{"delta": {"content": f"\n[error] LLM Server HTTP {res.status_code}\n"}}]}
@@ -251,8 +256,6 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                 tool_calls_map = {}
                 acc_content = []
                 first_token_time = None
-                token_count = 0
-                captured_timings = {}
 
                 for line in res.iter_lines(chunk_size=1):
                     if not line:
@@ -270,17 +273,18 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
 
                     if first_token_time is None:
                         first_token_time = time.perf_counter()
+                        if first_ttft is None:
+                            first_ttft = first_token_time - t_dispatch
 
                     try:
                         data = json.loads(data_str)
-                        captured_timings = data.get("timings") or captured_timings
                         choices = data.get("choices", [{}])
                         if choices:
                             delta = choices[0].get("delta", {})
                             content = delta.get("content", "") or ""
                             if content:
                                 acc_content.append(content)
-                                token_count += 1
+                                total_tokens += 1
 
                             for tc in delta.get("tool_calls", []):
                                 idx = tc.get("index", 0)
@@ -300,18 +304,6 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
 
                 calls = [val for _, val in sorted(tool_calls_map.items())] if tool_calls_map else None
                 ans_text = "".join(acc_content)
-                t_round_end = time.perf_counter()
-
-                ttft = (first_token_time - t_req_dispatch) if first_token_time else (t_round_end - t_req_dispatch)
-                gen_time = (t_round_end - first_token_time) if first_token_time else 0.001
-                tps = token_count / max(0.001, gen_time)
-
-                timing_info = f"TTFT: {ttft:.2f}s | Gen: {token_count} tok @ {tps:.1f} t/s"
-                if captured_timings:
-                    p_eval = captured_timings.get("prompt_per_second", 0)
-                    timing_info += f" | PromptEval: {p_eval:.0f} t/s"
-
-                log_diag("timing", f"[Round {_round + 1}] {timing_info}", "\033[1;32m" if ttft < 1.0 else "\033[1;33m")
 
                 if not calls or not is_agent:
                     accumulated_ans = ans_text
@@ -328,20 +320,21 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                     raw_args = tc.get("function", {}).get("arguments", "")
                     args = core._heal_tool_args(raw_args)
                     verb = tools.TOOL_VERBS.get(fname, "working")
+                    brief = str(args.get("path") or args.get("symbol") or args.get("command") or "")[:40]
                     cid = tc.get("id") or f"call_{_round}_0"
 
                     start_msg = f"\n\n> ⚙️ **{verb.title()}** • `{fname}`...\n"
                     self.wfile.write(f"data: {json.dumps({'choices': [{'delta': {'content': start_msg}}]})}\n\n".encode("utf-8"))
                     self.wfile.flush()
 
-                    t_tool_start = time.perf_counter()
+                    t_exec_start = time.perf_counter()
                     try:
                         result = tools.run_tool(fname, args, workspace, confirm_gate_fn=lambda r: True)
                     except Exception as e:
                         result = f"[tool error] {e}"
-                    t_tool_dur = time.perf_counter() - t_tool_start
+                    t_exec_dur = time.perf_counter() - t_exec_start
 
-                    log_diag("tool", f"Executed `{fname}` in {t_tool_dur:.2f}s")
+                    log_cli(f"  \033[2m∗ {verb.title()} • \033[1;36m{fname}\033[0m \033[3m{brief}\033[0m \033[2m[{t_exec_dur:.2f}s]\033[0m")
 
                     pruned = result if len(result) <= 2000 else result[:1500] + f"\n... [Snipped {len(result) - 1500} chars]"
                     messages.append({"role": "tool", "tool_call_id": cid, "name": fname, "content": pruned})
@@ -349,8 +342,10 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
 
-            total_dur = time.perf_counter() - t_start
-            log_diag("done", f"Total turn completed in {total_dur:.2f}s\n", "\033[1;35m")
+            t_total_dur = time.perf_counter() - t_turn_start
+            tps = (total_tokens / max(0.001, t_total_dur)) if total_tokens > 0 else 0.0
+            ttft_str = f"{first_ttft:.2f}s" if first_ttft is not None else "--"
+            log_cli(f"\033[1;36m[webui]\033[0m \033[2m[ {total_tokens} tokens | {t_total_dur:.2f}s | {tps:.1f} t/s | ttft: {ttft_str} ]\033[0m\n")
 
             if is_agent and user_text and accumulated_ans:
                 try:
