@@ -93,7 +93,7 @@ EDIT_TOOLS: list[dict[str, Any]] = getattr(tools, "EDIT_TOOLS", [])
 TOOL_VERBS: dict[str, str] = getattr(tools, "TOOL_VERBS", {})
 
 DEFAULTS = {
-    "spell_active": True, "show_stats": True, "memory_active": True, "box_style": 1, "yolo_mode": False,
+    "spell_active": True, "show_stats": True, "memory_active": False, "box_style": 1, "yolo_mode": False,
     "show_thinking": True, "reasoning_active": False, "reasoning_budget": 500, "render_markdown": True,
     "compact_mode": 0, "sidebar_hidden": False, "footer_hidden": True, "tips_card_hidden": False, "tui_theme": "code1",
     "voice_auto_submit": True, "tts_enabled": False, "tui_borders_enabled": True

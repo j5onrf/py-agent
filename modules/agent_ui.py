@@ -259,6 +259,7 @@ def show_help() -> None:
     cmds = [
         ("/h", "Help menu"),
         ("/pyc, /pyc web", "Desktop GUI or WebUI"),
+        ("/webui, /web", "llama.cpp WebAgent gateway"),
         ("/tui", "Textual UI"),
         ("/v \\[auto], /voice", "Voice to text"),
         ("/tts", "Text out loud"),

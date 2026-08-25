@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.8.89] - Pure Standard In-Memory Architecture"""
+"""Py Agent [j5onrf] [v0.9.8.90] - Pure Standard In-Memory Architecture"""
 
 import json
 import os
@@ -169,7 +169,8 @@ def run_interactive_chat(args: list[str]) -> None:
     chat_history = [{"role": "system", "content": active_system_prompt}]
 
     st = core.get_state()
-    spell_active, show_stats, memory_active = st["spell_active"], st["show_stats"], st["memory_active"]
+    spell_active, show_stats = st.get("spell_active", True), st.get("show_stats", True)
+    memory_active = st.get("memory_active", False)
     reasoning_active, reasoning_budget = st.get("reasoning_active", False), st.get("reasoning_budget", 500)
 
     os.environ["AI_RENDER_MARKDOWN"] = "1" if st.get("render_markdown", True) else "0"
@@ -177,7 +178,7 @@ def run_interactive_chat(args: list[str]) -> None:
     os.environ["AI_SHOW_THINKING"] = "1" if st.get("show_thinking", True) else "0"
     if is_yolo or st.get("yolo_mode", False): os.environ["AI_CONFIRM_GATES"] = "0"
 
-    if is_agent: sync_md_to_sqlite(safe_name, workspace_path)
+    if is_agent and memory_active: sync_md_to_sqlite(safe_name, workspace_path)
 
     db_turns, tpm_count = workspace_db_counts(safe_name) if is_agent else (0, 0)
     sub_id = None
@@ -312,7 +313,9 @@ def run_interactive_chat(args: list[str]) -> None:
                 if query == "/m":
                     memory_active = not memory_active
                     core.save_state("memory_active", memory_active)
-                    ui._console.print(f"[green][sys] Memory {'enabled' if memory_active else 'disabled'}.[/green]\n")
+                    if is_agent and memory_active:
+                        sync_md_to_sqlite(safe_name, workspace_path)
+                    ui._console.print(f"[green][sys] Memory & TPM facts {'enabled' if memory_active else 'disabled'}.[/green]\n")
                     continue
 
                 if query in ("/md", "/markdown"):

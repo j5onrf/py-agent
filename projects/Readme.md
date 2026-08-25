@@ -89,7 +89,7 @@ Switch CLI box styles using `/box [1-5]` (or type `/box` to cycle). Selection pe
 
 ## 1. Directory Structure
 
-All auto-created agent metadata files are strictly isolated inside `project/.agent/` to keep project workspaces clean.
+All auto-created agent metadata files are strictly isolated inside `project/.agent/` to keep project workspaces completely clean.
 
 | Path | Purpose |
 | :--- | :--- |
@@ -138,7 +138,7 @@ Running `ai init <path>` sets the default workspace agent profile:
 | **Lite** | `pi/lite`, `claude/lite`, `hermes/lite` | Small/Medium Models | `~220t` | Native JSON tools optimized for zero tool-calling confusion. |
 | **Py-Pro** | `pi/py-pro`, `claude/py-pro`, `hermes/py-pro` | Medium/Large Models | `~300t–310t` | NOOA-enhanced IPython kernel harness (`exec_python`) with stateful memory. |
 
-* **Reset Workspace Profile:** Type `/reset` in chat (or delete `.agent/config.json`).
+* **Reset Workspace Profile:** Type `/reset` in chat (or delete `.agent/config.json`). This purges workspace settings so `ai init` prompts for a new profile selection on next launch.
 * **Skill Frontmatter Overrides:** Add `---` YAML headers to skill `.md` files to set `reasoning_budget`, `yolo`, or `description` automatically on load.
 * **Customize Skills:** Modify or create profile `.md` files in `~/.config/py-agent/skills/profiles/`.
 
@@ -153,6 +153,7 @@ Running `ai init <path>` sets the default workspace agent profile:
 │   Available commands:                                               │
 │  /h                          - Help menu                            │
 │  /pyc, /pyc web              - Desktop GUI or WebUI                 │
+│  /webui, /web                - llama.cpp WebAgent gateway           │
 │  /tui                        - Textual TUI                          │
 │  /v [auto], /voice           - Voice to text                        │
 │  /tts                        - Text out loud                        │
@@ -161,7 +162,7 @@ Running `ai init <path>` sets the default workspace agent profile:
 │  /task [goal]                - Autonomous task loop                 │
 │  /t [N|show|hide]            - Set reasoning budget or show/hide    │
 │  /g, /yolo                   - Toggle confirmation gates (YOLO)     │
-│  /m                          - Toggle database memory               │
+│  /m                          - Toggle database memory & TPM facts   │
 │  /md                         - Toggle Markdown                      │
 │  /stats                      - Generation speed stats               │
 │  /tok                        - Context token usage                  │
@@ -202,17 +203,27 @@ Cross-platform React desktop and WebUI workspace for `py-agent`, powered by a cu
 
 ---
 
-## 5. Textual PyTUI Interface (`/tui`)
+## 5. llama.cpp WebAgent Gateway (`/webui`)
+
+Autonomous tool-execution streaming reverse proxy for the official `llama.cpp` WebUI. Launch via `/webui` (or `/web`).
+
+* **How It Works:** Spawns a lightweight Python proxy (`server.py`) on port 3000 that wraps `llama-server` (`http://127.0.0.1:8080`). It intercepts `/v1/chat/completions` to inject active workspace skill profiles, shorthand codebase index maps (`.agent/index-map-*.txt`), and multi-round agent tool calls (`read_file`, `write_file`, `run_command`, AST graph tools) directly into the web chat stream.
+* **Native Metrics & Timings:** Preserves 100% of official `llama.cpp` web frontend features—including live TPS speed metrics, token timing badges, sampler controls, and gzip decompression.
+* **CLI Suspension:** Typing `/webui` suspends the terminal session, launches the proxy, opens `http://127.0.0.1:3000` via `xdg-open`, and cleanly resumes the terminal session upon exit.
+
+---
+
+## 6. Textual PyTUI Interface (`/tui`)
 
 Full-screen async Textual interface powered by `uvloop` background workers. Launch via `/tui` or run `agent_tui.py`.
 
 * **Plan / Build Modes (`Tab`):** Toggle between **Plan** (confirmation gate per tool action) and **Build** (Autonomous YOLO).
-* **Border Toggle (`Ctrl+F`):** Toggle card outline borders ON/OFF.
+* **Border Toggle (`Ctrl+F`):** Toggle card outline borders ON/OFF instantly.
 * **Background Services:** `uvloop` libuv file watching (`.agent/tpm.md`) and Unix domain socket IPC hub (`/tmp/py-agent-<workspace>.sock`) for multi-terminal sub-agent tracking.
 
 ---
 
-## 6. IPython Kernel Harness (`/py`) - NOOA-Enhanced
+## 7. IPython Kernel Harness (`/py`) - NOOA-Enhanced
 
 Stateful Python REPL (NVIDIA Object-Oriented Agent architecture) keeping variables, DataFrames, and imports alive in kernel RAM across turns—saving up to 90% context tokens.
 
@@ -229,81 +240,135 @@ Stateful Python REPL (NVIDIA Object-Oriented Agent architecture) keeping variabl
 <summary><b>💡 Top 5 Everyday Real-World Use Cases (Click to Expand)</b></summary>
 <br>
 
-1. **Fix a Bug or Add a Feature (Surgical Edits):** Ask in plain English (*"The contact form isn't validating email addresses. Fix it and test it"*). Pinpoints the exact function via graph, writes the fix, and runs tests.
-2. **Safety Check Before Changing Anything (Blast Radius):** Ask *"If I change the pricing calculation, what else will break?"*. Runs a `blast_radius` check across all connected files.
-3. **Understand How Your App Works:** Ask *"Explain in plain English how user login works in this project"*. Extracts only the login function from the graph without dumping whole files.
-4. **Process Big Log Files or Datasets:** Ask *"I have a 20,000-line error log. Tell me why my app crashed today"*. Opens in RAM, filters lines, and summaries without context bloat.
-5. **Build a Full Feature Start-to-Finish (`/task`):** Type `/task "Create a user profile page with avatar upload button and tests"`. Loops until 100% verified complete.
+1. **Fix a Bug or Add a Feature (Surgical Edits):** Ask in plain English (*"The contact form isn't validating email addresses. Fix it and test it"*). The agent uses the graph engine to pinpoint the exact file, reads only that function, writes the fix, and runs tests to prove it works.
+2. **Safety Check Before Changing Anything (Blast Radius):** Ask *"If I change the pricing calculation, what else will break?"*. The agent runs a `blast_radius` check across all connected files and alerts you before making changes.
+3. **Understand How Your App Works (Plain English Explanations):** Ask *"Explain in plain English how user login works in this project"*. The agent extracts *only* the login function from the graph and explains it simply without dumping 500 lines of code.
+4. **Process Big Log Files or Datasets (Zero Context Bloat):** Ask *"I have a 20,000-line error log. Tell me why my app crashed today"*. In `/py` mode, it opens the file in background RAM, filters out normal lines, and gives a 3-bullet summary without lagging your session.
+5. **Build a Full Feature Start-to-Finish (`/task`):** Type `/task "Create a user profile page with an avatar upload button and tests"`. The agent enters a self-directed loop, creates files, writes code, executes tests, self-corrects if tests fail, and notifies you when 100% complete.
 
 </details>
 
 ---
 
-## 7. Autonomous Task Loops (Ralph Engine)
+## 8. Autonomous Task Loops (Ralph Engine)
 
 Self-directed iterative loop that runs tools, verifies results, and self-corrects until a task is complete.
 
 - **Inline Execution:** `/task "Create a module string_utils.py with tests and run unittest"`
 - **Spec File Mode:** Create `TASK.md` in project root and run `/task`
-- **Dual Completion Detection:** Checks assistant text **and** tool execution logs (`exec_python`, `run_command`) for `TASK COMPLETE`.
-- **Stagnation Recovery:** Detects duplicate turns and injects course-correction prompts.
-- **Audit Logging:** Logs goal progress into `.agent/task_log.md`.
-- **Engine Script:** `~/.config/py-agent/tools/loop/ralph.py` (Flags: `-n` / `--turns`, `-f` / `--file`, `--no-log`).
+- **Dual Completion Detection:** Checks both assistant text responses **and** tool execution logs (`exec_python`, `run_command`, etc.) for completion markers (`TASK COMPLETE`).
+- **Stagnation Recovery:** Automatically detects duplicate turns and injects course-correction prompts.
+- **Audit Logging:** Logs turn-by-turn goal progress into `.agent/task_log.md`.
+- **Engine Script:** `~/.config/py-agent/tools/loop/ralph.py` (Supports flags `-n` / `--turns`, `-f` / `--file`, `--no-log`).
+
+<details>
+<summary><b>💡 Quick Use Cases & Tips (Click to Expand)</b></summary>
+<br>
+
+* **Hands-Off Feature Development:** Give a high-level goal like `/task "Refactor string_utils.py to handle Unicode text and run test suite"`. The loop runs continuously until all tests pass.
+* **Spec-Driven Refactoring (`TASK.md`):** Write a checklist of 5 features in `TASK.md`, run `/task`, and let the agent check off items one by one autonomously.
+
+</details>
 
 ---
 
-## 8. Checkpoints & Save States
+## 9. Checkpoints & Save States
 
 - **Save:** `-save <tag>` — Snapshot session state to SQLite.
 - **Load:** `-load` — Restore or clone session checkpoint across workspaces.
 
 ---
 
-## 9. Local RAG, Skills & Context Injection
+## 10. Local RAG, Skills & Context Injection
 
 - **Whole File:** `file <path>` — Append entire file into context.
 - **Targeted Symbol:** `read_symbol("<symbol>")` — Inject specific AST function/class snippet from index graph (saves 95% tokens).
-- **On-Demand Skills (`/s <skill>`):** Inject specialty prompts (`/s pirate`, `/s caveman`, `/s reviewer`) on the fly.
+- **On-Demand Skills (`/s <skill>`):** Inject specialized specialty prompts (`/s pirate`, `/s caveman`, `/s reviewer`) on the fly into active chat sessions.
   - **Multi-Skill Stacking:** Stack up to 3 active on-demand skills simultaneously.
-  - **Category Auto-Swap:** Loading a new skill of the same category (e.g. `personality/`) automatically replaces the old skill.
-  - **Unload Skills (`/s off`):** Type `/s off` (or `/s clear` / `/s reset`) to revert to base profile skill.
+  - **Category Auto-Swap:** Loading a new skill of the same category (e.g. `personality/`) automatically replaces the old skill to prevent persona collisions.
+  - **Unload Skills (`/s off`):** Type `/s off` (or `/s clear` / `/s reset`) to remove all on-demand skills and revert to your base profile skill.
+
+<details>
+<summary><b>💡 Quick Tips for Skills (Click to Expand)</b></summary>
+<br>
+
+* **Quick Persona Swap:** Type `/s caveman` to switch to token-slashing caveman mode. Type `/s pirate` to swap directly to pirate mode.
+* **Stack Specialty Skills:** Type `/s pirate reviewer` to combine pirate persona with code reviewer instructions!
+* **Reset to Default:** Type `/s off` anytime to clear on-demand skills and return to your base workspace profile.
+
+</details>
 
 ---
 
-## 10. Codebase Graph Mapper
+## 11. Codebase Graph Mapper
 
-- **Agent Mode (`ai init` / `/sync`):** Outputs map files directly to `project/.agent/` to keep source trees clean.
-- **Standalone CLI Mode (`index-map`):** Outputs map files to project root when run independently in shell.
-- **AST Graph:** Maps classes, methods, call-chains, and inheritance across Python, Rust, Go, JS/TS, C/C++, Lua.
+The codebase intelligence engine features **dual-mode output routing**:
+
+- **Agent Mode (`ai init` / `/sync`):** Outputs map files directly to `project/.agent/` to keep source directories clean.
+- **Standalone CLI Mode (`index-map`):** Outputs map files to the project root directory when run independently in shell.
+- **AST Graph:** Maps classes, methods, call-chains, and class inheritance across Python, Rust, Go, JS/TS, C/C++, Lua.
 - **Vector Search:** Embeds codeblocks into `sqlite-vec` virtual tables for semantic retrieval.
 
+<details>
+<summary><b>💡 Quick Use Cases & Tips (Click to Expand)</b></summary>
+<br>
+
+* **Instant Codebase Orientation:** Run `index-map architecture` or ask *"Give me an architecture overview"* to map all files, classes, and call counts instantly.
+* **Surgical Code Inspection:** Instead of reading 500-line files, ask *"Show me snippet for PhysicsEngine.compute_trajectory"* to load only the 15 lines you need.
+
+</details>
+
 ---
 
-## 11. Temporal Personality Memory (TPM)
+## 12. Temporal Personality Memory (TPM)
 
 - **Async Fact Extraction:** Auto-extracts user preferences in background thread after each turn.
-- **Strict Fact Filtering:** Key blacklisting prevents project code from contaminating user memory.
+- **Strict Fact Filtering:** Key blacklisting prevents project files/code from contaminating user memory.
 - **Context Injection:** Compiles and injects facts into model `<context>` blocks every turn.
 - **Human-Editable Sync:** Reconciles manual edits in `.agent/tpm.md` into SQLite on startup.
 
+<details>
+<summary><b>💡 Quick Use Cases & Tips (Click to Expand)</b></summary>
+<br>
+
+* **Persistent Habits:** Tell the AI *"I prefer type-annotated Python and pytest over unittest"*. The AI saves this preference to `.agent/tpm.md` and respects it across all future sessions.
+* **Direct Manual Editing:** Edit `.agent/tpm.md` directly in your text editor—the agent syncs your manual edits on next startup.
+
+</details>
+
 ---
 
-## 12. Sub-Agents & Concurrency
+## 13. Sub-Agents & Concurrency
+
+The Py Agent framework provides **dual-mode sub-agent execution**:
 
 ### 1. In-Kernel Programmatic Sub-Agents (`delegate("goal")`)
-* **Context Token Protection:** Sub-agent runs tools in an isolated sandbox and returns **only the final summary report** to your kernel variable.
+* **Natural Language Invocation:** Ask *"Delegate a sub-agent to test..."* or *"Run a sub-agent worker to audit file X"*.
+* **Context Token Protection:** The sub-agent runs tool operations inside an isolated private sandbox memory. All intermediate investigation logs are discarded, returning **only the final summary report** to your kernel variable.
+* **Speed:** Sub-agent tasks complete in 1–2 seconds with 0 context token bloat.
 
 ### 2. Multi-Terminal Parallel Sub-Agents (`ai init`)
-* **Process Badges:** Sequence IDs (`[sub-agent #1]`, `[sub-agent #2]`) when launching `ai init` in parallel terminals.
+* **Process Badges:** Assigns sequence IDs (`[sub-agent #1]`, `[sub-agent #2]`) when launching `ai init` in parallel terminals.
 * **Self-Healing Registry:** Auto-purges stale PID lockfiles (`.active_sessions/`) on exit or crash.
-* **SQLite Lock Protection:** `PRAGMA busy_timeout = 30000` + `WAL` mode eliminates database locks.
-* **Unix Socket IPC:** Async socket hub (`/tmp/py-agent-<workspace>.sock`) for live status broadcasting.
+* **SQLite Lock Protection:** `PRAGMA busy_timeout = 30000` + `WAL` mode eliminates multi-agent database locks.
+* **Unix Socket IPC:** Async socket hub (`/tmp/py-agent-<workspace>.sock`) parses JSON-RPC 2.0 status messages for live TUI notifications.
+
+<details>
+<summary><b>💡 Quick Use Cases & Tips (Click to Expand)</b></summary>
+<br>
+
+* **Context-Free Heavy Auditing:** Use `delegate("Audit string_utils.py for edge cases")` to let a sub-agent perform 10 background file reads and test runs without filling your main chat history.
+* **Multi-Terminal Workflow:** Open 3 terminal tabs running `ai init ~/my-project` to work on 3 features simultaneously (`[sub-agent #1]`, `[sub-agent #2]`, `[sub-agent #3]`).
+
+</details>
 
 ---
 
-## 13. Skill Profile Frontmatter Overrides (`---`)
+## 14. Skill Profile Frontmatter Overrides (`---`)
 
-YAML (`---`) or JSON (`{...}`) frontmatter headers override runtime settings automatically on load (`ai init` or `/s <skill>`).
+Skill profiles support **YAML (`---`) or JSON (`{...}`) frontmatter headers** to override runtime settings automatically on load (`ai init` or `/s <skill>`).
+
+#### Frontmatter Syntax Example (`my-skill.md`):
 
 ```markdown
 ---
@@ -315,15 +380,17 @@ description: "Expert Python refactoring agent with high reasoning budget"
 Act as a senior staff engineer...
 ```
 
+#### Supported Frontmatter Keys:
+
 | Key | Type | Description |
 | :--- | :--- | :--- |
 | `reasoning_budget` | Integer | Deep reasoning token budget (e.g. `750` or `0`). |
 | `yolo` | Boolean | Autonomous mode (`true` disables gates, `false` enables). |
-| `description` | String | Skill summary description shown in menus. |
+| `description` | String | Skill summary description shown in TUI menu. |
 
 ---
 
-## 14. Security & Execution Isolation
+## 15. Security & Execution Isolation
 
 - **Read-Only Default:** Workspace edits require explicit `ai init` enablement.
 - **Directory Lock:** Enforces confirmation gates for paths outside project root.
@@ -332,23 +399,25 @@ Act as a senior staff engineer...
 
 ---
 
-## 15. Reasonix Cognitive Engine (`/t`)
+## 16. Reasonix Cognitive Engine (`/t`)
 
-- **Set Token Budget:** `/t <N>` — Set thinking token budget (e.g. `/t 500` or `/t 0` to disable).
-- **Show / Hide Thinking:** `/t show` or `/t hide` — Toggle real-time thinking display.
+Real-time reasoning trace step extraction and cognitive phase formatting inside the live thinking stream.
+
+- **Set Token Budget:** `/t <N>` — Set thinking token budget (e.g. `/t 500` or `/t 0` to disable thinking).
+- **Show / Hide Thinking:** `/t show` or `/t hide` — Toggle real-time thinking panel visibility while reasoning mode stays active.
 - **Quick Toggle:** `/t` — Toggle deep reasoning mode ON/OFF.
 
 ---
 
-## 16. Voice Bridge & Neural Audio (`/v` & `/tts`)
+## 17. Voice Bridge & Neural Audio (`/v` & `/tts`)
 
-- **Voice to Text (`/v` / `/v auto`):** Zero-latency HTTPS bridge (`:9999`) for mobile/tablet dictation using Gemini cloud transcription. Emits native Wayland virtual keypresses (`wtype`) directly into PyCode desktop, browser WebUI, or active terminal prompts.
+- **Voice to Text (`/v` / `/v auto`):** HTTPS bridge (`:9999`) for mobile/tablet dictation. Use `/v` for prompt review, `/v auto` for auto-submit.
 - **Neural TTS (`/tts`):** Reads responses aloud via PipeWire & Kokoro; auto-filters code and `<think>` blocks.
 - **Stop Speech:** Run `pkill -9 -f "pw-play|koko"`, type `stop talking`, or bind `Super+Shift+X`.
 
 ---
 
-## 17. Environment Variables & Context Limits
+## 18. Environment Variables & Context Limits
 
 Override max context token limits or model defaults:
 ```bash
