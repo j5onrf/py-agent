@@ -118,7 +118,7 @@ Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`)
     <tr>
       <td align="center" width="33%" valign="top">
         <b>llama.cpp WebAgent</b><br>
-        <code>/webui</code><br><br>
+        <code>/webui</code> · <code>/web</code><br><br>
         <a href="https://github.com/user-attachments/assets/39760d51-75f0-4b01-b385-6c5d99282a42" target="_blank">
           <kbd>
             <img src="https://github.com/user-attachments/assets/39760d51-75f0-4b01-b385-6c5d99282a42" alt="llama.cpp WebAgent" width="100%" />

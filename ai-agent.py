@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.8.90] - Pure Standard In-Memory Architecture"""
+"""Py Agent [j5onrf] [v0.9.8.91] - Pure Standard In-Memory Architecture"""
 
 import json
 import os
@@ -17,9 +17,8 @@ CONTEXT_FILE: str = os.path.join(CFG_DIR, "ai-context.md")
 SKILLS_DIR: str = os.path.join(CFG_DIR, "skills")
 SESSIONS_DIR: str = os.path.join(CFG_DIR, "projects", "database")
 
-BASE_PROMPT: str = "Read-only local shell assistant.\nIf <context> is provided, answer directly using only its facts. Otherwise, answer normally.\n\n"
-BASE_PROMPT_CHAT: str = BASE_PROMPT + "### Conversational Guidelines:\n- Role: Active, natural, and highly articulate conversational assistant.\n- Tone: Professional, warm, objective, and intellectually engaging.\n\n"
-BASE_PROMPT_AGENT: str = "Active local project workspace developer agent.\nIf <context> is provided, answer directly using only its facts. Otherwise, answer normally.\n\n"
+BASE_PROMPT_CHAT: str = "Active, natural conversational assistant."
+BASE_PROMPT_AGENT: str = "Active local workspace developer agent."
 
 try:
     from agent_context import STOP_WORDS
@@ -155,10 +154,14 @@ def run_interactive_chat(args: list[str]) -> None:
     if is_agent:
         clean_name = selected_profile if selected_profile not in ("default", "init") else "init"
         profile_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
-        active_system_prompt = (BASE_PROMPT_AGENT + f"\n\n### Active Skill/Role Instructions:\n{profile_content}\n") if (clean_name == "init" and profile_content) else (profile_content or BASE_PROMPT_AGENT)
+        if not profile_content and clean_name not in ("default", "init"):
+            ui._console.print(f"[dim yellow][sys] Skill '{clean_name}' not found. Using minimal agent prompt.[/dim yellow]")
+        active_system_prompt = profile_content or BASE_PROMPT_AGENT
     else:
         clean_name = selected_profile if (selected_profile and selected_profile != "default") else "chat"
         skill_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
+        if not skill_content and clean_name != "chat":
+            ui._console.print(f"[dim yellow][sys] Skill '{clean_name}' not found. Using minimal chat prompt.[/dim yellow]")
         active_system_prompt = skill_content or BASE_PROMPT_CHAT
 
     pending_query = " ".join(args[1:]) if len(args) > 1 else None
@@ -268,7 +271,8 @@ def run_interactive_chat(args: list[str]) -> None:
                                 "AI_IS_AGENT": "1" if is_agent else "0",
                                 "AI_WORKSPACE_PATH": workspace_path,
                                 "AI_ACTIVE_SKILL": active_skill_env,
-                                "AI_CONFIRM_GATES": "0"
+                                "AI_CONFIRM_GATES": "0",
+                                "AI_SESSION_HISTORY": json.dumps(chat_history)
                             }
                             subprocess.run(["/bin/bash", web_bin], env=web_env)
                             st = core.get_state()
@@ -524,7 +528,7 @@ def run_direct_query(args: list[str]) -> None:
     sys_ctx = skills.get_system_context(query, CONTEXT_FILE, STOP_WORDS, SKILLS_DIR, CFG_DIR)
     if sys_ctx == "__ABORT_TURN__": sys_ctx = ""
 
-    active_p = BASE_PROMPT + (f"### Active Skill/Role Instructions:\n{skill_content}\n" if skill_content else "")
+    active_p = skill_content or BASE_PROMPT_CHAT
     messages = [{"role": "system", "content": active_p}, {"role": "user", "content": f"<context>\n{sys_ctx}\n</context>\n\nUser Question: {query}" if sys_ctx else f"User Question: {query}"}]
     core.stream_response(messages, prefix="AI:", show_stats=False, thinking_budget=0)
     sys.exit(0)

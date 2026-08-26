@@ -29,15 +29,20 @@ import agent_sessions as sessions
 import agent_skills as skills
 import agent_tools as tools
 import agent_tts as tts
+import requests
 
-BASE_PROMPT_CHAT = "### Conversational Guidelines:\n- Role: Active, natural, and highly articulate conversational assistant.\n- Tone: Professional, warm, objective, and intellectually engaging.\n\n"
-BASE_PROMPT_AGENT = "Active local project workspace developer agent.\nIf <context> is provided, answer directly using only its facts. Otherwise, answer normally.\n\n"
+BASE_PROMPT_CHAT = "Active, natural conversational assistant."
+BASE_PROMPT_AGENT = "Active local workspace developer agent."
 
 SESSION_HISTORIES: dict[str, list[dict[str, Any]]] = {}
 SESSION_WORKSPACES: dict[str, str] = {}
+CANCELLED_SESSIONS: set[str] = set()
+ACTIVE_RESPONSES: dict[str, requests.Response] = {}
 
 
 def send_rpc_response(req_id: Any, result: Any = None, error: Any = None) -> None:
+    if req_id is None:
+        return
     payload: dict[str, Any] = {"jsonrpc": "2.0", "id": req_id}
     if error:
         payload["error"] = error
@@ -105,7 +110,7 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
     if profile_content:
         profile_content = profile_content.replace('Reply ONLY with: "Workspace loaded. Awaiting instructions."', "Execute the requested action immediately.")
 
-    sys_prompt = (BASE_PROMPT_AGENT + f"\n\n### Active Skill/Role Instructions:\n{profile_content}\n") if (clean_name == "init" and profile_content) else (profile_content or BASE_PROMPT_AGENT)
+    sys_prompt = profile_content or BASE_PROMPT_AGENT
     sys_prompt += f"\n\n### ACTIVE PROJECT WORKSPACE:\nYour active project root directory is: {workspace}\n"
     sys_prompt += "Capabilities: read_symbol, trace_symbol, blast_radius, find_symbol, architecture_overview, read_file, write_file, list_dir, run_command.\n\n"
 
@@ -120,26 +125,26 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
                 except OSError:
                     pass
 
-    # Direct in-memory TPM retrieval
-    try:
-        tpm_facts = memories.tpm_get(safe_name)
-        if tpm_facts:
-            sys_prompt += f"\n{tpm_facts}\n"
-    except Exception:
-        pass
+    if core.get_state("memory_active", False):
+        try:
+            tpm_facts = memories.tpm_get(safe_name)
+            if tpm_facts:
+                sys_prompt += f"\n{tpm_facts}\n"
+        except Exception:
+            pass
 
     return sys_prompt
 
 
 def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str, Any]], workspace: str, params: dict[str, Any] | None = None) -> None:
+    CANCELLED_SESSIONS.discard(session_id)
     user_text = " ".join(item.get("text", "") for item in prompt_items if isinstance(item, dict) and item.get("type") == "text").strip()
     if not user_text:
         user_text = "Hello"
 
     safe_name = core.workspace_safe_name(workspace)
     is_agent, profile_name, is_yolo = detect_workspace_mode(workspace)
-    
-    # Read runtimeMode & dropdown options passed from PyCode UI
+
     raw_mode = (params or {}).get("runtimeMode", "")
     opt_mode = next((opt.get("value") for opt in (params or {}).get("options", []) if opt.get("id") == "mode"), None)
 
@@ -148,7 +153,6 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
     elif opt_mode == "plan" or raw_mode == "supervised":
         is_yolo = False
 
-    # Synchronize state
     if is_agent and is_yolo:
         os.environ["AI_CONFIRM_GATES"] = "0"
         core.save_state("yolo_mode", True)
@@ -156,28 +160,10 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
         os.environ["AI_CONFIRM_GATES"] = "1"
         core.save_state("yolo_mode", False)
 
-    options_list = (params or {}).get("options", [])
-    raw_effort = next((opt.get("value") for opt in options_list if isinstance(opt, dict) and opt.get("id") == "effort"), None)
-
-    REASONING_BUDGET_MAP = {
-        "off": 0,
-        "low": 250,
-        "medium": 500,
-        "high": 1000,
-        "max": 2000,
-    }
-
-    if raw_effort in REASONING_BUDGET_MAP:
-        reasoning_budget = REASONING_BUDGET_MAP[raw_effort]
-        reasoning_active = reasoning_budget > 0
-        core.save_state("reasoning_active", reasoning_active)
-        core.save_state("reasoning_budget", reasoning_budget)
-    else:
-        st = core.get_state()
-        reasoning_active = st.get("reasoning_active", False)
-        reasoning_budget = st.get("reasoning_budget", 500) if reasoning_active else 0
-
-    # Match agent_tui.py logic exactly
+    # Inherit active reasoning configuration from CLI state
+    st = core.get_state()
+    reasoning_active = st.get("reasoning_active", False)
+    reasoning_budget = st.get("reasoning_budget", 500) if reasoning_active else 0
     enable_think = reasoning_active and reasoning_budget > 0
     budget_val = reasoning_budget if enable_think else 0
     show_thinking = enable_think
@@ -203,76 +189,85 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
     in_think_block = False
     max_rounds = 10 if is_agent else 1
 
-    for _round in range(max_rounds):
-        tool_calls_map = {}
-        round_text = ""
-
-        url, headers, base_body, timeout = configs[0]
-        is_local = "localhost" in url or "127.0.0.1" in url or base_body.get("model") == "local-model"
-
-        body = {
-            "messages": messages,
-            "stream": True,
-            **base_body
-        }
-        if is_local:
-            body.update(think_kwargs)
-        if is_agent:
-            body["tools"] = tools.EDIT_TOOLS
-
-        try:
-            res = core._session.post(url, json=body, headers={"Content-Type": "application/json", **headers}, timeout=timeout, stream=True)
-            if res.status_code != 200:
-                send_acp_chunk(session_id, f"\n[Error: LLM HTTP {res.status_code}: {res.text[:100]}]\n")
+    try:
+        for _round in range(max_rounds):
+            if session_id in CANCELLED_SESSIONS:
                 break
 
-            for line in res.iter_lines():
-                if not line:
-                    continue
-                line_str = line.decode("utf-8", errors="ignore").strip()
-                if not line_str.startswith("data:"):
-                    continue
-                data_str = line_str[5:].strip()
-                if data_str == "[DONE]":
+            tool_calls_map = {}
+            round_text = ""
+
+            url, headers, base_body, timeout = configs[0]
+            is_local = "localhost" in url or "127.0.0.1" in url or base_body.get("model") == "local-model"
+
+            body = {
+                "messages": messages,
+                "stream": True,
+                **base_body
+            }
+            if is_local:
+                body.update(think_kwargs)
+            if is_agent:
+                body["tools"] = tools.EDIT_TOOLS
+
+            res = None
+            try:
+                res = core._session.post(url, json=body, headers={"Content-Type": "application/json", **headers}, timeout=timeout, stream=True)
+                ACTIVE_RESPONSES[session_id] = res
+
+                if res.status_code != 200:
+                    send_acp_chunk(session_id, f"\n[Error: LLM HTTP {res.status_code}: {res.text[:100]}]\n")
                     break
 
-                try:
-                    data = json.loads(data_str)
-                    choices = data.get("choices", [{}])
-                    if not choices:
+                for line in res.iter_lines():
+                    if session_id in CANCELLED_SESSIONS:
+                        break
+                    if not line:
                         continue
-                    delta = choices[0].get("delta", {})
+                    line_str = line.decode("utf-8", errors="ignore").strip()
+                    if not line_str.startswith("data:"):
+                        continue
+                    data_str = line_str[5:].strip()
+                    if data_str == "[DONE]":
+                        break
 
-                    text_chunk = delta.get("content") or ""
-                    thinking_chunk = delta.get("reasoning_content") or delta.get("thinking") or delta.get("reasoning") or ""
+                    try:
+                        data = json.loads(data_str)
+                        choices = data.get("choices", [{}])
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta", {})
 
-                    if thinking_chunk:
-                        if enable_think:
-                            if not in_think_block:
+                        text_chunk = delta.get("content") or ""
+                        thinking_chunk = delta.get("reasoning_content") or delta.get("thinking") or delta.get("reasoning") or ""
+
+                        if thinking_chunk:
+                            if enable_think:
+                                if not in_think_block:
+                                    in_think_block = True
+                                    send_acp_chunk(session_id, "> *Thinking...* ")
+                                send_acp_chunk(session_id, thinking_chunk.replace("\n", "\n> "))
+
+                        elif text_chunk:
+                            if in_think_block and "</think>" not in text_chunk:
+                                if show_thinking:
+                                    send_acp_chunk(session_id, "\n\n")
+                                in_think_block = False
+
+                            if "<think>" in text_chunk:
                                 in_think_block = True
-                                send_acp_chunk(session_id, "> *Thinking...* ")
-                            send_acp_chunk(session_id, thinking_chunk.replace("\n", "\n> "))
+                                text_chunk = text_chunk.replace("<think>", "")
+                                if show_thinking:
+                                    send_acp_chunk(session_id, "> *Thinking...* ")
 
-                    elif text_chunk:
-                        if in_think_block and "</think>" not in text_chunk:
-                            if show_thinking:
-                                send_acp_chunk(session_id, "\n\n")
-                            in_think_block = False
-
-                        if "<think>" in text_chunk:
-                            in_think_block = True
-                            text_chunk = text_chunk.replace("<think>", "")
-                            if show_thinking:
-                                send_acp_chunk(session_id, "> *Thinking...* ")
-
-                        if "</think>" in text_chunk:
-                            parts = text_chunk.split("</think>", 1)
-                            if parts[0] and show_thinking:
-                                send_acp_chunk(session_id, parts[0].replace("\n", "\n> "))
-                            in_think_block = False
-                            if show_thinking:
-                                send_acp_chunk(session_id, "\n\n")
-                            text_chunk = parts[1] if len(parts) > 1 else ""
+                            if "</think>" in text_chunk:
+                                parts = text_chunk.split("</think>", 1)
+                                if parts[0] and show_thinking:
+                                    send_acp_chunk(session_id, parts[0].replace("\n", "\n> "))
+                                in_think_block = False
+                                if show_thinking:
+                                    send_acp_chunk(session_id, "\n\n")
+                                text_chunk = parts[1] if len(parts) > 1 else ""
 
                         if text_chunk:
                             if in_think_block:
@@ -283,58 +278,74 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
                                 round_text += text_chunk
                                 send_acp_chunk(session_id, text_chunk, is_thought=False)
 
-                    if is_agent:
-                        for tc in delta.get("tool_calls", []):
-                            idx = tc.get("index", 0)
-                            tc_entry = tool_calls_map.setdefault(idx, {"id": tc.get("id", ""), "type": "function", "function": {"name": tc.get("function", {}).get("name", ""), "arguments": ""}})
-                            if tc.get("function", {}).get("name"):
-                                tc_entry["function"]["name"] = tc["function"]["name"]
-                            tc_entry["function"]["arguments"] += tc.get("function", {}).get("arguments", "")
+                        if is_agent:
+                            for tc in delta.get("tool_calls", []):
+                                idx = tc.get("index", 0)
+                                tc_entry = tool_calls_map.setdefault(idx, {"id": tc.get("id", ""), "type": "function", "function": {"name": tc.get("function", {}).get("name", ""), "arguments": ""}})
+                                if tc.get("function", {}).get("name"):
+                                    tc_entry["function"]["name"] = tc["function"]["name"]
+                                tc_entry["function"]["arguments"] += tc.get("function", {}).get("arguments", "")
 
-                except (json.JSONDecodeError, KeyError, IndexError):
-                    pass
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        pass
 
-        except Exception as e:
-            send_acp_chunk(session_id, f"\n[Connection error: {e}]\n")
-            break
-
-        calls = [val for _, val in sorted(tool_calls_map.items())] if tool_calls_map else None
-
-        if not calls or not is_agent:
-            messages.append({"role": "assistant", "content": round_text})
-            break
-
-        messages.append({"role": "assistant", "content": round_text or None, "tool_calls": calls})
-
-        for tc in calls:
-            fname = tc.get("function", {}).get("name", "")
-            raw_args = tc.get("function", {}).get("arguments") or ""
-            args = core._heal_tool_args(raw_args)
-
-            send_acp_chunk(session_id, f"\n\n*Running tool: `{fname}`...*\n")
-            try:
-                result = tools.run_tool(fname, args, workspace)
             except Exception as e:
-                result = f"[error] tool execution failed: {e}"
+                if session_id not in CANCELLED_SESSIONS:
+                    send_acp_chunk(session_id, f"\n[Connection error: {e}]\n")
+                break
+            finally:
+                if res is not None:
+                    try:
+                        res.close()
+                    except Exception:
+                        pass
+                ACTIVE_RESPONSES.pop(session_id, None)
 
-            pruned_result = result if len(result) <= 2000 else result[:1500] + f"\n... [Snipped {len(result) - 1500} chars]"
-            messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": fname, "content": pruned_result})
+            if session_id in CANCELLED_SESSIONS:
+                send_acp_chunk(session_id, "\n\n*(Generation stopped)*")
+                break
 
-    # Direct in-memory turn logging & background TPM update
-    if is_agent and user_text and accumulated_ans:
-        try:
-            sessions.log_turn(safe_name, user_text, accumulated_ans)
-            core.background_tpm_update(user_text, accumulated_ans, safe_name, workspace)
-        except Exception:
-            pass
+            calls = [val for _, val in sorted(tool_calls_map.items())] if tool_calls_map else None
 
-    if tts.is_tts_enabled() and accumulated_ans:
-        try:
-            tts.speak_response(accumulated_ans)
-        except Exception:
-            pass
+            if not calls or not is_agent:
+                messages.append({"role": "assistant", "content": round_text})
+                break
 
-    send_rpc_response(req_id, result={"stopReason": "end_turn"})
+            messages.append({"role": "assistant", "content": round_text or None, "tool_calls": calls})
+
+            for tc in calls:
+                if session_id in CANCELLED_SESSIONS:
+                    break
+                fname = tc.get("function", {}).get("name", "")
+                raw_args = tc.get("function", {}).get("arguments") or ""
+                args = core._heal_tool_args(raw_args)
+
+                send_acp_chunk(session_id, f"\n\n*Running tool: `{fname}`...*\n")
+                try:
+                    result = tools.run_tool(fname, args, workspace)
+                except Exception as e:
+                    result = f"[error] tool execution failed: {e}"
+
+                pruned_result = result if len(result) <= 2000 else result[:1500] + f"\n... [Snipped {len(result) - 1500} chars]"
+                messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": fname, "content": pruned_result})
+
+        if is_agent and user_text and accumulated_ans and session_id not in CANCELLED_SESSIONS:
+            try:
+                sessions.log_turn(safe_name, user_text, accumulated_ans)
+                if core.get_state("memory_active", False):
+                    core.background_tpm_update(user_text, accumulated_ans, safe_name, workspace)
+            except Exception:
+                pass
+
+        if tts.is_tts_enabled() and accumulated_ans and session_id not in CANCELLED_SESSIONS:
+            try:
+                tts.speak_response(accumulated_ans)
+            except Exception:
+                pass
+
+    finally:
+        stop_reason = "cancelled" if session_id in CANCELLED_SESSIONS else "end_turn"
+        send_rpc_response(req_id, result={"stopReason": stop_reason})
 
 
 def main():
@@ -367,7 +378,7 @@ def main():
                             }
                         }) + "\n")
                         sys.stdout.flush()
-                        handle_acp_prompt(None, active_session_id, [{"type": "text", "text": text}], active_cwd)
+                        threading.Thread(target=handle_acp_prompt, args=(None, active_session_id, [{"type": "text", "text": text}], active_cwd), daemon=True).start()
             except Exception:
                 pass
 
@@ -414,8 +425,15 @@ def main():
             req_session_id = params.get("sessionId") or active_session_id
             active_cwd = SESSION_WORKSPACES.get(req_session_id, default_workspace)
             prompt_items = params.get("prompt", [])
-            handle_acp_prompt(req_id, req_session_id, prompt_items, active_cwd, params=params)
+            threading.Thread(target=handle_acp_prompt, args=(req_id, req_session_id, prompt_items, active_cwd, params), daemon=True).start()
         elif method in ("session/cancel", "cancel"):
+            req_session_id = params.get("sessionId") or active_session_id
+            CANCELLED_SESSIONS.add(req_session_id)
+            if resp := ACTIVE_RESPONSES.get(req_session_id):
+                try:
+                    resp.close()
+                except Exception:
+                    pass
             send_rpc_response(req_id, result={})
         elif method == "tools/list":
             send_rpc_response(req_id, result={"tools": tools.EDIT_TOOLS})

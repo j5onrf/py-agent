@@ -37,8 +37,8 @@ LLAMA_BASE_URL = os.environ.get("AI_LLAMA_BASE_URL", "http://127.0.0.1:8080")
 _session = requests.Session()
 _cached_system_prompt: str | None = None
 
-BASE_PROMPT_CHAT = "Read-only local shell assistant.\nIf <context> is provided, answer directly using only its facts. Otherwise, answer normally.\n\n### Conversational Guidelines:\n- Role: Active, natural, and highly articulate conversational assistant.\n- Tone: Professional, warm, objective, and intellectually engaging.\n\n"
-BASE_PROMPT_AGENT = "Active local project workspace developer agent.\nIf <context> is provided, answer directly using only its facts. Otherwise, answer normally.\n\n"
+BASE_PROMPT_CHAT = "Active, natural conversational assistant."
+BASE_PROMPT_AGENT = "Active local workspace developer agent."
 
 REASONING_EFFORT_MAP = {
     "off": 0,
@@ -94,7 +94,11 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
 
     clean_name = profile_name if profile_name not in ("default", "init") else "init"
     profile_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
-    base_prompt = (BASE_PROMPT_AGENT + f"\n\n### Active Skill/Role Instructions:\n{profile_content}\n") if (clean_name == "init" and profile_content) else (profile_content or BASE_PROMPT_AGENT)
+    
+    if profile_content:
+        profile_content = profile_content.replace('Reply ONLY with: "Workspace loaded. Awaiting instructions."', "Execute the requested action immediately.")
+
+    base_prompt = profile_content or BASE_PROMPT_AGENT
 
     agent_dir = os.path.join(workspace, ".agent")
     map_content = ""
@@ -110,6 +114,16 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
 
     if map_content:
         base_prompt += f"\n\n### CODESPACE MAP:\n{map_content}"
+
+    # In-memory TPM fact retrieval if memory is enabled
+    safe_name = core.workspace_safe_name(workspace)
+    if core.get_state("memory_active", False):
+        try:
+            tpm_facts = memories.tpm_get(safe_name)
+            if tpm_facts:
+                base_prompt += f"\n\n{tpm_facts}"
+        except Exception:
+            pass
 
     tools_header = (
         f"### ACTIVE DEVELOPER AGENT MODE:\n"

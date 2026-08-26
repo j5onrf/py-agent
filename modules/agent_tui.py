@@ -59,8 +59,8 @@ MULTI_NEWLINE_RE = re.compile(r'\n{3,}')
 FINAL_ANSWER_RE = re.compile(r'^\s*Final Answer:\s*', re.IGNORECASE)
 THINK_TAGS_RE = re.compile(r'<think>.*?</think>', re.DOTALL)
 
-BASE_PROMPT_CHAT = "### Conversational Guidelines:\n- Role: Active, natural, and highly articulate conversational assistant.\n- Tone: Professional, warm, objective, and intellectually engaging.\n\n"
-BASE_PROMPT_AGENT = "Active local project workspace developer agent.\nIf <context> is provided, answer directly using only its facts. Otherwise, answer normally.\n\n"
+BASE_PROMPT_CHAT = "Active, natural conversational assistant."
+BASE_PROMPT_AGENT = "Active local workspace developer agent."
 
 _CACHED_CLIPBOARD_TOOL: list[str] | None = None
 
@@ -357,7 +357,7 @@ class LocalAITUI(App):
         self.on_demand_skill = skills_split[1] if len(skills_split) > 1 else None
         self.active_skill = f"{self.base_skill} {self.on_demand_skill}".strip() if self.on_demand_skill else self.base_skill
 
-        self.memory_active, self.db_turns, self.tpm_count = core.get_state("memory_active", True), 0, 0
+        self.memory_active, self.db_turns, self.tpm_count = core.get_state("memory_active", False), 0, 0
         self.refresh_db_counts()
 
         raw_c = core.get_state("compact_mode", 0)
@@ -438,8 +438,6 @@ class LocalAITUI(App):
 
             if self.is_agent:
                 sys_p = (s_content or BASE_PROMPT_AGENT) + f"\n\n### ACTIVE PROJECT WORKSPACE:\nYour active project root directory is: {self.workspace_path}\n"
-                if hasattr(core, "EDIT_SYSTEM_ADD") and "### EDIT MODE" not in sys_p:
-                    sys_p += core.EDIT_SYSTEM_ADD.format(ws=self.workspace_path) + core.TOOLS_SYSTEM_ADD.format(names="read_file, write_file, list_dir, run_command", ws=self.workspace_path)
                 try:
                     if os.path.exists(self.workspace_path):
                         if map_files := [f for f in os.listdir(self.workspace_path) if f.startswith("index-map-") and f.endswith(".txt")]:
@@ -447,7 +445,7 @@ class LocalAITUI(App):
                                 if cmap := mf.read().strip(): sys_p += f"\n\n### CODESPACE MAP:\n{cmap}\n"
                 except (OSError, UnicodeDecodeError): pass
             else:
-                sys_p = (s_content if "### Conversational Guidelines" in s_content else BASE_PROMPT_CHAT + f"\n\n### Active Skill/Role Instructions:\n{s_content}\n") if s_content else BASE_PROMPT_CHAT
+                sys_p = s_content or BASE_PROMPT_CHAT
 
             self.history.insert(0, {"role": "system", "content": sys_p})
             if self.is_agent and len(self.history) == 1: self.history.append({"role": "assistant", "content": "Agent: Workspace loaded. Awaiting instructions."})
