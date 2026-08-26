@@ -2,7 +2,7 @@
 """
 Ralph Wiggum Autonomous Task Loop Engine [Production Grade]
 Handles multi-turn autonomous goal execution, completion detection, 
-stagnation recovery, and execution logging.
+stagnation recovery, context overflow compaction, and execution logging.
 """
 
 import argparse
@@ -33,7 +33,6 @@ def is_task_complete(ans: str | None, history: list[dict[str, Any]]) -> bool:
         if any(k in ans_upper for k in COMPLETION_KEYWORDS):
             return True
 
-    # Scan the last 6 messages in history for tool output completions
     for msg in reversed(history[-6:]):
         if msg.get("role") == "tool" and msg.get("content"):
             content_upper = str(msg["content"]).upper()
@@ -62,10 +61,9 @@ def log_turn_to_file(workspace: str, task: str, turn: int, ans: str, status: str
         pass
 
 
-def run_loop(task: str, max_turns: int = 10, task_file: str | None = None, enable_logging: bool = True) -> bool:
+def run_loop(task: str, max_turns: int = 10, task_file: str | None = None, enable_logging: bool = True, plan_model: str | None = None) -> bool:
     workspace = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
     
-    # Load goal from TASK.md or task_file if direct string not provided
     if not task:
         target_file = task_file or os.path.join(workspace, "TASK.md")
         if os.path.exists(target_file):
@@ -90,9 +88,11 @@ def run_loop(task: str, max_turns: int = 10, task_file: str | None = None, enabl
             "role": "system", 
             "content": (
                 f"You are an autonomous developer agent at {workspace}.\n"
-                "Execute the goal step-by-step using available workspace tools.\n"
-                "Test and verify changes as you progress.\n"
-                "When the goal is fully achieved and verified, output 'TASK COMPLETE' on a line by itself."
+                "CRITICAL DIRECTIVES:\n"
+                "1. Execute the goal step-by-step using available workspace tools.\n"
+                "2. Use edit_file for targeted modifications; avoid rewriting entire files.\n"
+                "3. Test and verify your changes as you progress.\n"
+                "4. When the goal is fully achieved and verified, output 'TASK COMPLETE' on a line by itself."
             )
         },
         {"role": "user", "content": f"### AUTONOMOUS GOAL:\n{task}"}
@@ -101,17 +101,34 @@ def run_loop(task: str, max_turns: int = 10, task_file: str | None = None, enabl
     turn = 0
     stagnation_count = 0
     last_ans = ""
+    max_context = int(os.environ.get("AI_MAX_TOKENS", 8192))
 
     try:
         while turn < max_turns:
             turn += 1
             sys.stderr.write(f"\033[1;33m[loop turn {turn}/{max_turns}]\033[0m\n")
 
-            # Keep context trimmed to prevent context window overflow
-            history = core.prune_history(history)
+            # Context compaction watchdog: compact if exceeding 80% limit
+            curr_tokens = sum(core.get_accurate_token_count(m.get("content") or "") for m in history)
+            if curr_tokens > int(max_context * 0.8):
+                sys.stderr.write(f"\033[2m[loop] Context at {curr_tokens}/{max_context} tokens. Auto-compacting history...\033[0m\n")
+                history = core.prune_history(history, max_tokens=int(max_context * 0.6))
 
-            # Stream turn execution
-            ans = core.stream_response(history, prefix="Agent:", show_stats=True, is_agent=True)
+            # Turn 1 Plan-Model Handover: route turn 1 via plan_model if specified
+            orig_model_env = os.environ.get("CUSTOM_MODEL")
+            if turn == 1 and plan_model:
+                sys.stderr.write(f"\033[2m[loop] Routing Turn 1 plan generation through model: {plan_model}\033[0m\n")
+                os.environ["CUSTOM_MODEL"] = plan_model
+
+            try:
+                # Stream turn execution
+                ans = core.stream_response(history, prefix="Agent:", show_stats=True, is_agent=True)
+            finally:
+                if turn == 1 and plan_model:
+                    if orig_model_env is not None:
+                        os.environ["CUSTOM_MODEL"] = orig_model_env
+                    else:
+                        os.environ.pop("CUSTOM_MODEL", None)
 
             if ans is None:
                 sys.stderr.write("\033[1;31m[error] API request failed or operation interrupted.\033[0m\n")
@@ -119,14 +136,13 @@ def run_loop(task: str, max_turns: int = 10, task_file: str | None = None, enabl
                     log_turn_to_file(workspace, task, turn, "API Error / Interrupted", status="FAILED")
                 return False
 
-            # Append assistant response if non-empty
             if ans:
                 history.append({"role": "assistant", "content": ans})
 
             if enable_logging:
                 log_turn_to_file(workspace, task, turn, ans or "(Tool execution)", status="IN_PROGRESS")
 
-            # Check for completion (either in text or tool outputs)
+            # Completion detection
             if is_task_complete(ans, history):
                 sys.stderr.write(f"\n\033[1;32m✔ [ok] Task completed successfully in {turn} turn(s)!\033[0m\n\n")
                 if enable_logging:
@@ -140,7 +156,7 @@ def run_loop(task: str, max_turns: int = 10, task_file: str | None = None, enabl
                     sys.stderr.write("\033[1;33m[loop] Stagnation detected. Injecting course-correction prompt...\033[0m\n")
                     history.append({
                         "role": "user", 
-                        "content": "Notice: Previous approach produced duplicate results. Please try an alternative tool or strategy to achieve the goal, or run verification."
+                        "content": "Notice: Previous approach produced duplicate results. Use alternative tools (e.g. edit_file, read_symbol) or verify current state."
                     })
                     stagnation_count = 0
                     continue
@@ -154,7 +170,6 @@ def run_loop(task: str, max_turns: int = 10, task_file: str | None = None, enabl
                 "content": "Continue executing remaining steps toward the goal. Run verification if needed, and output 'TASK COMPLETE' on its own line when finished."
             })
 
-        # Max turns reached without completion
         sys.stderr.write(f"\n\033[1;33m▲ [warning] Loop limit reached ({max_turns} turns) without explicit completion.\033[0m\n\n")
         if enable_logging:
             log_turn_to_file(workspace, task, turn, "Max turns reached.", status="MAX_TURNS_REACHED")
@@ -172,10 +187,11 @@ def main() -> None:
     parser.add_argument("task", nargs="?", default="", help="Goal description for the autonomous loop")
     parser.add_argument("-n", "--turns", type=int, default=10, help="Maximum turns allowed (default: 10)")
     parser.add_argument("-f", "--file", type=str, default=None, help="Path to spec file (default: TASK.md)")
+    parser.add_argument("--plan-model", type=str, default=None, help="Optional model for initial planning phase")
     parser.add_argument("--no-log", action="store_true", help="Disable audit logging to .agent/task_log.md")
 
     args = parser.parse_args()
-    success = run_loop(args.task, max_turns=args.turns, task_file=args.file, enable_logging=not args.no_log)
+    success = run_loop(args.task, max_turns=args.turns, task_file=args.file, enable_logging=not args.no_log, plan_model=args.plan_model)
     sys.exit(0 if success else 1)
 
 

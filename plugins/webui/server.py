@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """Py-Agent Official WebUI Gateway [j5onrf]
-Streams 100% official llama.cpp WebUI with full agent tool execution,
-dynamic cloud/local cascading, 0s KV cache reuse, and live reasoning controls.
+Streams 100% official llama.cpp WebUI with full TPS speed and token timing metrics.
 """
 
 import gzip
 import http.server
 import json
 import os
-import socket
 import socketserver
 import sys
 import threading
@@ -22,9 +20,7 @@ SKILLS_DIR = os.path.join(CFG_DIR, "skills")
 if MODULES_DIR not in sys.path:
     sys.path.insert(0, MODULES_DIR)
 
-import agent_cloud
 import agent_core as core
-import agent_memories as memories
 import agent_sessions as sessions
 import agent_skills as skills
 import agent_tools as tools
@@ -33,29 +29,10 @@ import requests
 
 PORT = int(os.environ.get("PY_AGENT_WEB_PORT", 3000))
 LLAMA_BASE_URL = os.environ.get("AI_LLAMA_BASE_URL", "http://127.0.0.1:8080")
-
-_session = requests.Session()
-_cached_system_prompt: str | None = None
+LLAMA_SERVER_URL = f"{LLAMA_BASE_URL}/v1/chat/completions"
 
 BASE_PROMPT_CHAT = "Active, natural conversational assistant."
 BASE_PROMPT_AGENT = "Active local workspace developer agent."
-
-REASONING_EFFORT_MAP = {
-    "off": 0,
-    "none": 0,
-    "low": 250,
-    "medium": 500,
-    "high": 1000,
-    "max": 2000
-}
-
-
-def log_cli(msg: str) -> None:
-    try:
-        sys.stderr.write(msg + "\n")
-        sys.stderr.flush()
-    except OSError:
-        pass
 
 
 def detect_workspace_mode(workspace: str) -> tuple[bool, str, bool]:
@@ -63,18 +40,17 @@ def detect_workspace_mode(workspace: str) -> tuple[bool, str, bool]:
     ws_real = os.path.realpath(workspace)
     cfg_file = os.path.join(workspace, ".agent", "config.json")
     inherited_skill = os.environ.get("AI_ACTIVE_SKILL")
-    is_agent_env = os.environ.get("AI_IS_AGENT") == "1"
 
-    if not is_agent_env and (ws_real == home or not os.path.exists(os.path.join(workspace, ".agent"))):
+    if ws_real == home or not os.path.exists(os.path.join(workspace, ".agent")):
         return False, (inherited_skill or "chat"), False
 
-    selected_profile, is_yolo = inherited_skill or "default", True
+    selected_profile, is_yolo = inherited_skill or "default", False
     if os.path.exists(cfg_file):
         try:
             with open(cfg_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 selected_profile = inherited_skill or data.get("profile", "default")
-                is_yolo = data.get("yolo", True)
+                is_yolo = data.get("yolo", False)
         except Exception:
             pass
 
@@ -82,58 +58,40 @@ def detect_workspace_mode(workspace: str) -> tuple[bool, str, bool]:
 
 
 def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) -> str:
-    global _cached_system_prompt
-    if _cached_system_prompt:
-        return _cached_system_prompt
-
     if not is_agent:
         clean_name = profile_name if (profile_name and profile_name != "default") else "chat"
         skill_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
-        _cached_system_prompt = skill_content or BASE_PROMPT_CHAT
-        return _cached_system_prompt
+        return skill_content or BASE_PROMPT_CHAT
 
     clean_name = profile_name if profile_name not in ("default", "init") else "init"
     profile_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
-    
+
     if profile_content:
         profile_content = profile_content.replace('Reply ONLY with: "Workspace loaded. Awaiting instructions."', "Execute the requested action immediately.")
 
-    base_prompt = profile_content or BASE_PROMPT_AGENT
+    tools_header = (
+        f"### ACTIVE DEVELOPER AGENT MODE:\n"
+        f"Workspace Root: {workspace}\n"
+        f"CRITICAL DIRECTIVES:\n"
+        f"1. Immediately execute actions using available tools (read_file, edit_file, write_file, list_dir, run_command, read_symbol).\n"
+        f"2. Use relative paths from Workspace Root. Avoid repeating identical tool queries.\n\n"
+    )
+
+    sys_prompt = tools_header + (profile_content or BASE_PROMPT_AGENT)
+    sys_prompt += f"\n\n### ACTIVE PROJECT WORKSPACE:\nYour active project root directory is: {workspace}\n"
 
     agent_dir = os.path.join(workspace, ".agent")
-    map_content = ""
     if os.path.exists(agent_dir):
         for f in os.listdir(agent_dir):
             if f.startswith("index-map-") and f.endswith(".txt"):
                 try:
                     with open(os.path.join(agent_dir, f), "r", encoding="utf-8", errors="ignore") as mf:
-                        map_content = mf.read().strip()
+                        sys_prompt += f"### CODESPACE MAP:\n{mf.read().strip()}\n\n"
                         break
                 except OSError:
                     pass
 
-    if map_content:
-        base_prompt += f"\n\n### CODESPACE MAP:\n{map_content}"
-
-    # In-memory TPM fact retrieval if memory is enabled
-    safe_name = core.workspace_safe_name(workspace)
-    if core.get_state("memory_active", False):
-        try:
-            tpm_facts = memories.tpm_get(safe_name)
-            if tpm_facts:
-                base_prompt += f"\n\n{tpm_facts}"
-        except Exception:
-            pass
-
-    tools_header = (
-        f"### ACTIVE DEVELOPER AGENT MODE:\n"
-        f"Workspace Root: {workspace}\n"
-        f"CRITICAL DIRECTIVE: Do NOT output conversational chatter or explain what you will do. "
-        f"You MUST immediately execute actions by calling available tools (run_command, read_file, write_file, list_dir, read_symbol).\n\n"
-    )
-
-    _cached_system_prompt = tools_header + base_prompt
-    return _cached_system_prompt
+    return sys_prompt
 
 
 class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
@@ -205,57 +163,7 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
         is_agent, profile_name, _ = detect_workspace_mode(workspace)
         messages = body.get("messages", [])
 
-        user_text = next((m.get("content") for m in reversed(messages) if m.get("role") == "user"), "")
-        raw_query = user_text.strip() if isinstance(user_text, str) else ""
-
-        # Chat slash command handler for /t and /thinking in WebUI
-        if raw_query.startswith(("/t", "/thinking")):
-            parts = raw_query.split()
-            st = core.get_state()
-            curr_active = st.get("reasoning_active", False)
-            curr_budget = st.get("reasoning_budget", 500)
-
-            if len(parts) > 1:
-                sub = parts[1].lower()
-                if sub in ("off", "hide", "mute", "disable", "0"):
-                    core.save_state("reasoning_active", False)
-                    core.save_state("reasoning_budget", 0)
-                    resp_msg = "✔ Deep reasoning **disabled**."
-                elif sub in ("on", "enable", "show"):
-                    core.save_state("reasoning_active", True)
-                    b_val = curr_budget if curr_budget > 0 else 500
-                    core.save_state("reasoning_budget", b_val)
-                    resp_msg = f"✔ Deep reasoning **enabled** (budget: {b_val} tokens)."
-                elif sub.isdigit():
-                    b_val = max(0, int(sub))
-                    core.save_state("reasoning_active", b_val > 0)
-                    core.save_state("reasoning_budget", b_val)
-                    resp_msg = f"✔ Deep reasoning set to **{b_val} tokens**." if b_val > 0 else "✔ Deep reasoning **disabled**."
-                else:
-                    new_state = not curr_active
-                    core.save_state("reasoning_active", new_state)
-                    resp_msg = f"✔ Deep reasoning **{'enabled' if new_state else 'disabled'}** (budget: {curr_budget} tokens)."
-            else:
-                new_state = not curr_active
-                core.save_state("reasoning_active", new_state)
-                b_val = curr_budget if curr_budget > 0 else 500
-                core.save_state("reasoning_budget", b_val)
-                resp_msg = f"✔ Deep reasoning **{'enabled' if new_state else 'disabled'}** (budget: {b_val} tokens)."
-
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("Connection", "keep-alive")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-
-            chunk = {"choices": [{"delta": {"content": resp_msg}}]}
-            self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode("utf-8"))
-            self.wfile.write(b"data: [DONE]\n\n")
-            self.wfile.flush()
-            log_cli(f"\033[1;36m[webui]\033[0m \033[1;33m{resp_msg}\033[0m")
-            return
-
+        # Inject Py-Agent system prompt
         sys_context = assemble_system_prompt(workspace, is_agent, profile_name)
         if not messages or messages[0].get("role") != "system":
             messages.insert(0, {"role": "system", "content": sys_context})
@@ -269,59 +177,27 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
 
-        try:
-            self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        except Exception:
-            pass
-
+        session = requests.Session()
         safe_name = core.workspace_safe_name(workspace)
+        user_text = next((m.get("content") for m in reversed(messages) if m.get("role") == "user"), "")
         accumulated_ans = ""
-
-        if user_text:
-            log_cli(f"\033[1;36m[webui]\033[0m \033[1;32m❯\033[0m \"\033[37m{str(user_text)[:60]}\033[0m\"")
-
-        # Map WebUI dropdown options or inherit CLI state
-        web_effort = body.get("reasoning_effort") or (body.get("chat_template_kwargs", {}) or {}).get("reasoning_effort")
-        st = core.get_state()
-
-        if web_effort and str(web_effort).lower() in REASONING_EFFORT_MAP:
-            reasoning_budget = REASONING_EFFORT_MAP[str(web_effort).lower()]
-            reasoning_active = reasoning_budget > 0
-        else:
-            reasoning_active = st.get("reasoning_active", False)
-            reasoning_budget = st.get("reasoning_budget", 500) if reasoning_active else 0
-
-        enable_think = reasoning_active and reasoning_budget > 0
-        think_kwargs = {
-            "thinking_budget_tokens": reasoning_budget if enable_think else 0,
-            "reasoning_budget": reasoning_budget if enable_think else 0,
-            "chat_template_kwargs": {"enable_thinking": enable_think}
-        }
-
-        configs = agent_cloud.get_active_configs(messages) if hasattr(agent_cloud, "get_active_configs") else []
-        if not configs:
-            configs = [(f"{LLAMA_BASE_URL}/v1/chat/completions", {}, {"model": "local-model", **think_kwargs}, 180)]
-
-        url, headers, base_body, timeout = configs[0]
-        is_local = "localhost" in url or "127.0.0.1" in url or base_body.get("model") == "local-model"
         os.environ["AI_CONFIRM_GATES"] = "0"
 
         try:
             for _round in range(10 if is_agent else 1):
                 req_body = {
                     **body,
-                    **base_body,
                     "messages": messages,
                     "stream": True
                 }
-                if is_local:
-                    req_body.update(think_kwargs)
                 if "stream_options" not in req_body:
                     req_body["stream_options"] = {"include_usage": True}
                 if is_agent:
                     req_body["tools"] = tools.EDIT_TOOLS
+                else:
+                    req_body.pop("tools", None)
 
-                res = _session.post(url, json=req_body, headers={"Content-Type": "application/json", **headers}, timeout=timeout, stream=True)
+                res = session.post(LLAMA_SERVER_URL, json=req_body, headers={"Content-Type": "application/json"}, timeout=180, stream=True)
                 if res.status_code != 200:
                     err_chunk = {"choices": [{"delta": {"content": f"\n[error] LLM Server HTTP {res.status_code}\n"}}]}
                     self.wfile.write(f"data: {json.dumps(err_chunk)}\n\n".encode("utf-8"))
@@ -331,7 +207,7 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                 tool_calls_map = {}
                 acc_content = []
 
-                for line in res.iter_lines(chunk_size=1):
+                for line in res.iter_lines():
                     if not line:
                         continue
                     line_str = line.decode("utf-8", errors="ignore").strip()
@@ -354,19 +230,20 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                             if content:
                                 acc_content.append(content)
 
-                            for tc in delta.get("tool_calls", []):
-                                idx = tc.get("index", 0)
-                                call_id = tc.get("id") or f"call_{_round}_{idx}"
-                                tc_entry = tool_calls_map.setdefault(idx, {
-                                    "id": call_id,
-                                    "type": "function",
-                                    "function": {"name": tc.get("function", {}).get("name", ""), "arguments": ""}
-                                })
-                                if tc.get("id"):
-                                    tc_entry["id"] = tc["id"]
-                                if tc.get("function", {}).get("name"):
-                                    tc_entry["function"]["name"] = tc["function"]["name"]
-                                tc_entry["function"]["arguments"] += tc.get("function", {}).get("arguments", "")
+                            if is_agent:
+                                for tc in delta.get("tool_calls", []):
+                                    idx = tc.get("index", 0)
+                                    call_id = tc.get("id") or f"call_{_round}_{idx}"
+                                    tc_entry = tool_calls_map.setdefault(idx, {
+                                        "id": call_id,
+                                        "type": "function",
+                                        "function": {"name": tc.get("function", {}).get("name", ""), "arguments": ""}
+                                    })
+                                    if tc.get("id"):
+                                        tc_entry["id"] = tc["id"]
+                                    if tc.get("function", {}).get("name"):
+                                        tc_entry["function"]["name"] = tc["function"]["name"]
+                                    tc_entry["function"]["arguments"] += tc.get("function", {}).get("arguments", "")
                     except Exception:
                         pass
 
@@ -388,14 +265,11 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                     raw_args = tc.get("function", {}).get("arguments", "")
                     args = core._heal_tool_args(raw_args)
                     verb = tools.TOOL_VERBS.get(fname, "working")
-                    brief = str(args.get("path") or args.get("symbol") or args.get("command") or "")[:40]
                     cid = tc.get("id") or f"call_{_round}_0"
 
                     start_msg = f"\n\n> ⚙️ **{verb.title()}** • `{fname}`...\n"
                     self.wfile.write(f"data: {json.dumps({'choices': [{'delta': {'content': start_msg}}]})}\n\n".encode("utf-8"))
                     self.wfile.flush()
-
-                    log_cli(f"  \033[2m∗ {verb.title()} • \033[1;36m{fname}\033[0m \033[3m{brief}\033[0m")
 
                     try:
                         result = tools.run_tool(fname, args, workspace, confirm_gate_fn=lambda r: True)
@@ -411,7 +285,7 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
             if is_agent and user_text and accumulated_ans:
                 try:
                     sessions.log_turn(safe_name, str(user_text), accumulated_ans)
-                    if st.get("memory_active", False):
+                    if core.get_state("memory_active", False):
                         threading.Thread(target=core.background_tpm_update, args=(str(user_text), accumulated_ans, safe_name, workspace), daemon=True).start()
                 except Exception:
                     pass
@@ -430,7 +304,7 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
             except Exception:
                 pass
         finally:
-            pass
+            session.close()
 
     def log_message(self, format, *args):
         return

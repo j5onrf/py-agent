@@ -1,6 +1,6 @@
 # Py-Agent Workspace & Session Manual
 
-High-speed local developer agent, episodic memory, SQLite checkpoints, NOOA-enhanced IPython kernel harness, and codebase index graph.
+local developer agent, episodic memory, SQLite checkpoints, NOOA-enhanced IPython kernel harness, and codebase index graph.
 
 ```console
 ~ ❯ sess
@@ -134,9 +134,9 @@ Running `ai init <path>` sets the default workspace agent profile:
 
 | Tier | Profiles | Model Scale | Overhead | Behavior |
 | :--- | :--- | :--- | :--- | :--- |
-| **Pro** | `pi/pro`, `claude/pro`, `hermes/pro` | Medium/Large Models | `~280t–290t` | Full-scale codebase graph navigation & multi-file editing. |
-| **Lite** | `pi/lite`, `claude/lite`, `hermes/lite` | Small/Medium Models | `~220t` | Native JSON tools optimized for zero tool-calling confusion. |
-| **Py-Pro** | `pi/py-pro`, `claude/py-pro`, `hermes/py-pro` | Medium/Large Models | `~300t–310t` | NOOA-enhanced IPython kernel harness (`exec_python`) with stateful memory. |
+| **Pro** | `pi/pro`, `claude/pro`, `hermes/pro` | Medium/Large Models | `~280t–290t` | Full-scale codebase graph navigation, surgical edits (`edit_file`), and multi-file workflows. |
+| **Lite** | `pi/lite`, `claude/lite`, `hermes/lite` | Small/Medium Models | `~220t` | Native JSON tools (`read_file`, `edit_file`, `write_file`) optimized for zero tool-calling confusion. |
+| **Py-Pro** | `pi/py-pro`, `claude/py-pro`, `hermes/py-pro` | Medium/Large Models | `~300t–310t` | NOOA-enhanced IPython kernel harness (`exec_python`) with stateful memory and surgical edit SDK. |
 
 * **Reset Workspace Profile:** Type `/reset` in chat (or delete `.agent/config.json`). This purges workspace settings so `ai init` prompts for a new profile selection on next launch.
 * **Skill Frontmatter Overrides:** Add `---` YAML headers to skill `.md` files to set `reasoning_budget`, `yolo`, or `description` automatically on load.
@@ -187,6 +187,7 @@ Cross-platform React desktop and WebUI workspace for `py-agent`, powered by a cu
 
 * **How It Works:** Connects via Agent Client Protocol (ACP) over stdio JSON-RPC 2.0. Streams thoughts and tokens live, formats reasoning into quote blocks (`> *Thinking...*`), features an optional theme-reactive Gemini ambient aurora glow toggle, and auto-syncs workspace AST maps (`index-map`) and TPM memories (`.agent/tpm.md`).
 * **Unified Settings Sync:** PyCode automatically inherits all active CLI toggles (`/tts` audio, `/t` reasoning budgets, `/yolo` confirmation gates, and model endpoints)—configure your environment in terminal, and the GUI adopts it instantly.
+* **Instant Stop Cancellation:** Clicking the Stop button in PyCode immediately terminates generation and cleans up active sockets.
 * **CLI Suspension:** Typing `/pyc` suspends the terminal session and cleanly resumes upon closing the window.
 
 ### Installation
@@ -207,7 +208,8 @@ Cross-platform React desktop and WebUI workspace for `py-agent`, powered by a cu
 
 Autonomous tool-execution streaming reverse proxy for the official `llama.cpp` WebUI. Launch via `/webui` (or `/web`).
 
-* **How It Works:** Spawns a lightweight Python proxy (`server.py`) on port 3000 that wraps `llama-server` (`http://127.0.0.1:8080`). It intercepts `/v1/chat/completions` to inject active workspace skill profiles, shorthand codebase index maps (`.agent/index-map-*.txt`), and multi-round agent tool calls (`read_file`, `write_file`, `run_command`, AST graph tools) directly into the web chat stream.
+* **How It Works:** Spawns a lightweight Python proxy (`server.py`) on port 3000 that wraps `llama-server` (`http://127.0.0.1:8080`). It intercepts `/v1/chat/completions` to inject active workspace skill profiles, shorthand codebase index maps (`.agent/index-map-*.txt`), and multi-round agent tool calls (`read_file`, `edit_file`, `write_file`, `run_command`, AST graph tools) directly into the web chat stream.
+* **0s Prefix KV Cache Reuse:** Uses byte-identical prompt formatting aligned with the CLI engine for sub-100ms time-to-first-token.
 * **Native Metrics & Timings:** Preserves 100% of official `llama.cpp` web frontend features—including live TPS speed metrics, token timing badges, sampler controls, and gzip decompression.
 * **CLI Suspension:** Typing `/webui` suspends the terminal session, launches the proxy, opens `http://127.0.0.1:3000` via `xdg-open`, and cleanly resumes the terminal session upon exit.
 
@@ -233,7 +235,7 @@ Stateful Python REPL (NVIDIA Object-Oriented Agent architecture) keeping variabl
   - `memory` — `.search(query)`, `.get_facts()`, `.add_fact(key, val)`
   - `preview(obj)` / `bounded_repr(obj)` — Compact previews of DataFrames/lists while keeping live objects in RAM.
   - `delegate("goal")` — Runs an isolated sub-agent in a private sandbox; returns only final summary to kernel variable.
-  - `read_file()`, `write_file()`, `list_dir()`, `run_command()` — Native workspace file I/O & shell execution.
+  - `read_file()`, `edit_file()`, `write_file()`, `list_dir()`, `run_command()` — Native workspace file I/O & shell execution.
 - **Zero-Trust Boundary:** Out-of-bounds `open()`, `os.listdir()`, and file I/O targeting paths outside workspace root trigger mandatory authorization gates.
 
 <details>
@@ -256,10 +258,12 @@ Self-directed iterative loop that runs tools, verifies results, and self-correct
 
 - **Inline Execution:** `/task "Create a module string_utils.py with tests and run unittest"`
 - **Spec File Mode:** Create `TASK.md` in project root and run `/task`
+- **Surgical Code Modifications:** Utilizes `edit_file` for targeted line changes without rewriting entire files.
+- **Context Compaction Watchdog:** Auto-prunes older tool responses if context exceeds 80% to ensure long multi-turn tasks complete without context overflow.
 - **Dual Completion Detection:** Checks both assistant text responses **and** tool execution logs (`exec_python`, `run_command`, etc.) for completion markers (`TASK COMPLETE`).
 - **Stagnation Recovery:** Automatically detects duplicate turns and injects course-correction prompts.
 - **Audit Logging:** Logs turn-by-turn goal progress into `.agent/task_log.md`.
-- **Engine Script:** `~/.config/py-agent/tools/loop/ralph.py` (Supports flags `-n` / `--turns`, `-f` / `--file`, `--no-log`).
+- **Engine Script:** `~/.config/py-agent/tools/loop/ralph.py` (Supports flags `-n` / `--turns`, `-f` / `--file`, `--no-log`, `--plan-model`).
 
 <details>
 <summary><b>💡 Quick Use Cases & Tips (Click to Expand)</b></summary>
@@ -343,7 +347,6 @@ The codebase intelligence engine features **dual-mode output routing**:
 The Py Agent framework provides **dual-mode sub-agent execution**:
 
 ### 1. In-Kernel Programmatic Sub-Agents (`delegate("goal")`)
-* **Natural Language Invocation:** Ask *"Delegate a sub-agent to test..."* or *"Run a sub-agent worker to audit file X"*.
 * **Context Token Protection:** The sub-agent runs tool operations inside an isolated private sandbox memory. All intermediate investigation logs are discarded, returning **only the final summary report** to your kernel variable.
 * **Speed:** Sub-agent tasks complete in 1–2 seconds with 0 context token bloat.
 

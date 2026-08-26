@@ -165,7 +165,8 @@ class Message(Static):
         border_col = getattr(self.app, "border_accent", "#89b4fa")
 
         if self.sender == "User":
-            text = self.content if isinstance(self.content, str) else next((i["text"] for i in self.content if isinstance(i, dict) and i.get("type") == "text"), "[Multimodal Payload]")
+            raw_text = self.content if isinstance(self.content, str) else next((i["text"] for i in self.content if isinstance(i, dict) and i.get("type") == "text"), "[Multimodal Payload]")
+            text = raw_text.split("User Question:", 1)[-1].strip() if "User Question:" in raw_text else raw_text
             if compact_state == 0:
                 user_txt_col = "white" if app_theme in ("mono", "grok", "dark") else ("#303446" if not is_dark else "#c8d3f5")
                 res = Panel(Text(text, style=user_txt_col), box=LEFT_BAR, border_style=border_col, style=f"on {bg_col}", padding=(0, 2))
@@ -437,7 +438,7 @@ class LocalAITUI(App):
             s_content = skills.load_skill_content(" ".join(s_list), SKILLS_DIR, CFG_DIR) if s_list else ""
 
             if self.is_agent:
-                sys_p = (s_content or BASE_PROMPT_AGENT) + f"\n\n### ACTIVE PROJECT WORKSPACE:\nYour active project root directory is: {self.workspace_path}\n"
+                sys_p = (s_content or BASE_PROMPT_AGENT) + f"\n\n### ACTIVE PROJECT WORKSPACE:\nYour active project root directory is: {self.workspace_path}\nCapabilities: read_symbol, trace_symbol, blast_radius, find_symbol, architecture_overview, read_file, edit_file, write_file, list_dir, run_command.\n"
                 try:
                     if os.path.exists(self.workspace_path):
                         if map_files := [f for f in os.listdir(self.workspace_path) if f.startswith("index-map-") and f.endswith(".txt")]:

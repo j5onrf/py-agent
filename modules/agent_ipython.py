@@ -172,28 +172,15 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
 
     def _read_file(path: str) -> str:
         if not _check_boundary(path, "READ"): return "[denied] Out-of-bounds read blocked."
-        full = os.path.realpath(path if os.path.isabs(path) else os.path.join(ws_real, path))
-        with _orig_open(full, "r", encoding="utf-8", errors="replace") as f:
-            return f.read()
+        return tools.run_tool("read_file", {"path": path}, ws_real, confirm_gate_fn=_confirm_gate_fn) if tools else ""
 
-    def _write_file(path: str, content: str) -> str:
+    def _edit_file(path: str, old_str: str, new_str: str) -> str:
+        if not _check_boundary(path, "EDIT"): return "[denied] Out-of-bounds edit blocked."
+        return tools.run_tool("edit_file", {"path": path, "old_str": old_str, "new_str": new_str}, ws_real, confirm_gate_fn=_confirm_gate_fn) if tools else ""
+
+    def _write_file(path: str, content: str, overwrite: bool = False) -> str:
         if not _check_boundary(path, "WRITE"): return "[denied] Out-of-bounds write blocked."
-        full = os.path.realpath(path if os.path.isabs(path) else os.path.join(ws_real, path))
-
-        if os.path.exists(full):
-            try:
-                with _orig_open(full, "r", encoding="utf-8", errors="replace") as f:
-                    old = f.read()
-                if diff := "\n".join(difflib.unified_diff(old.splitlines(), content.splitlines(), fromfile=f"a/{path}", tofile=f"b/{path}", lineterm="")):
-                    from rich.console import Console
-                    from rich.syntax import Syntax
-                    Console(stderr=True).print("\n", Syntax(diff, "diff", theme="ansi_dark", background_color="default"), "\n")
-            except Exception: pass
-
-        os.makedirs(os.path.dirname(full) or ws_real, exist_ok=True)
-        with _orig_open(full, "w", encoding="utf-8") as f:
-            f.write(content)
-        return f"wrote {len(content)} chars to {path}"
+        return tools.run_tool("write_file", {"path": path, "content": content, "overwrite": overwrite}, ws_real, confirm_gate_fn=_confirm_gate_fn) if tools else ""
 
     def _list_dir(path: str = ".") -> list[str]:
         if not _check_boundary(path, "LIST DIR"): return ["[denied] Out-of-bounds list_dir blocked."]
@@ -212,12 +199,12 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
         return delegate(goal, ws_real)
 
     sdk = {
-        "open": safe_open, "read_file": _read_file, "write_file": _write_file, "list_dir": _list_dir,
-        "run_command": _run_command, "read_symbol": graph_sdk.snippet, "trace_symbol": graph_sdk.trace,
-        "blast_radius": graph_sdk.blast_radius, "find_symbol": graph_sdk.search,
-        "architecture_overview": graph_sdk.architecture, "preview": bounded_repr,
-        "bounded_repr": bounded_repr, "memory": mem_sdk, "graph": graph_sdk,
-        "delegate": _delegate, "workspace": ws_real
+        "open": safe_open, "read_file": _read_file, "edit_file": _edit_file, "write_file": _write_file,
+        "list_dir": _list_dir, "run_command": _run_command, "read_symbol": graph_sdk.snippet,
+        "trace_symbol": graph_sdk.trace, "blast_radius": graph_sdk.blast_radius,
+        "find_symbol": graph_sdk.search, "architecture_overview": graph_sdk.architecture,
+        "preview": bounded_repr, "bounded_repr": bounded_repr, "memory": mem_sdk,
+        "graph": graph_sdk, "delegate": _delegate, "workspace": ws_real
     }
     _shell_globals.update(sdk)
     os.listdir = safe_listdir

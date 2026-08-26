@@ -403,8 +403,13 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
         messages[0]["content"] = tools_header + messages[0]["content"]
 
     resolved_model, streamer, res = None, None, None
+    max_ctx = int(os.environ.get("AI_MAX_TOKENS", 8192))
 
     for _round in range(10):
+        # Auto-compact older tool outputs if context exceeds 80% limit mid-turn
+        if sum(get_accurate_token_count(m.get("content") or "") for m in messages) > int(max_ctx * 0.8):
+            messages = prune_history(messages, max_tokens=int(max_ctx * 0.6))
+
         body_tools = {**body, "messages": messages, "stream": True}
         if is_agent:
             active_skill = os.environ.get("AI_ACTIVE_SKILL", "")
