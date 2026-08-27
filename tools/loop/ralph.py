@@ -124,9 +124,10 @@ def run_loop(
                 f"You are an autonomous developer agent at {workspace}.\n"
                 "CRITICAL DIRECTIVES:\n"
                 "1. Execute the goal step-by-step using available workspace tools.\n"
-                "2. Use edit_file for targeted modifications; avoid rewriting entire files.\n"
-                "3. Test and verify your changes as you progress.\n"
-                "4. When the goal is fully achieved and verified, output 'TASK COMPLETE' on a line by itself."
+                "2. Always use relative paths from the workspace root (e.g. 'string_utils.py', '.') rather than guessing paths.\n"
+                "3. Use edit_file for targeted modifications; avoid rewriting entire files.\n"
+                "4. Test and verify your changes as you progress.\n"
+                "5. When the goal is fully achieved and verified, output 'TASK COMPLETE' on a line by itself."
             ),
         },
         {"role": "user", "content": f"### AUTONOMOUS GOAL:\n{task}"},
