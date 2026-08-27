@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.8.93] - Pure Standard In-Memory Architecture"""
+"""Py Agent [j5onrf] [v0.9.8.94] - Pure Standard In-Memory Architecture"""
 
 import json
 import os

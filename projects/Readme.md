@@ -113,11 +113,13 @@ Running `ai init <path>` sets the default workspace agent profile:
 ```console
 [ai init] Select default Agent Profile for workspace session-test:
 
+  ─── Custom ────────────────────────
+  ❯  1. Custom xyz           (~200t)
+
   ─── Agents ────────────────────────
-  ❯  1. Pi Pro               (~280t)
+     1. Pi Pro               (~280t)
      2. Claude Pro           (~290t)
      3. Hermes Pro           (~280t)
-
      1. Pi Lite              (~220t)
      2. Claude Lite          (~220t)
      3. Hermes Lite          (~220t)
@@ -127,17 +129,20 @@ Running `ai init <path>` sets the default workspace agent profile:
      2. Claude Py-Pro        (~310t)
      3. Hermes Py-Pro        (~300t)
 
-  :: ↵ select  ↑/↓ navigate  Tab: YOLO [OFF]  Esc: default
+  :: ↵ select  ↑/↓ navigate  Tab: YOLO [OFF]  m: Map [ON]  Esc: default
 ```
 
 #### Profile Tiers
 
 | Tier | Profiles | Model Scale | Overhead | Behavior |
 | :--- | :--- | :--- | :--- | :--- |
+| **Custom** | `custom/<name>` | Universal / Custom | `~200t` | Dynamic auto-discovery of user-defined `.md` profiles placed in `skills/profiles/custom/`. |
 | **Pro** | `pi/pro`, `claude/pro`, `hermes/pro` | Medium/Large Models | `~280t–290t` | Full-scale codebase graph navigation, surgical edits (`edit_file`), and multi-file workflows. |
 | **Lite** | `pi/lite`, `claude/lite`, `hermes/lite` | Small/Medium Models | `~220t` | Native JSON tools (`read_file`, `edit_file`, `write_file`) optimized for zero tool-calling confusion. |
 | **Py-Pro** | `pi/py-pro`, `claude/py-pro`, `hermes/py-pro` | Medium/Large Models | `~300t–310t` | NOOA-enhanced IPython kernel harness (`exec_python`) with stateful memory and surgical edit SDK. |
 
+* **Dynamic Custom Profiles:** Drop any number of custom `.md` profile files (e.g. `lfm.md`, `deepseek.md`, `specialist.md`) into `~/.config/py-agent/skills/profiles/custom/` and they will all automatically populate under the `─── Custom ───` category in the selector.
+* **Interactive Toggles:** Press `Tab` to toggle Autonomous YOLO mode `[ON]/[OFF]`, or press `m` to toggle the AST Codebase Index-Map `[ON]/[OFF]`.
 * **Reset Workspace Profile:** Type `/reset` in chat (or delete `.agent/config.json`). This purges workspace settings so `ai init` prompts for a new profile selection on next launch.
 * **Skill Frontmatter Overrides:** Add `---` YAML headers to skill `.md` files to set `reasoning_budget`, `yolo`, or `description` automatically on load.
 * **Customize Skills:** Modify or create profile `.md` files in `~/.config/py-agent/skills/profiles/`.
