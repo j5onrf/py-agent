@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Ralph Wiggum Autonomous Task Loop Engine [Production Grade]
-Handles multi-turn autonomous goal execution, completion detection,
+Handles multi-turn autonomous goal execution, completion detection, 
 stagnation recovery, context overflow compaction, and execution logging.
 """
 
@@ -51,7 +51,11 @@ def is_task_complete(ans: str | None, history: list[dict[str, Any]]) -> bool:
 
 
 def log_turn_to_file(
-    workspace: str, task: str, turn: int, ans: str, status: str = "IN_PROGRESS"
+    workspace: str,
+    task: str,
+    turn: int,
+    ans: str,
+    status: str = "IN_PROGRESS",
 ) -> None:
     """Appends an execution log entry to .agent/task_log.md for workspace auditing."""
     try:
@@ -101,7 +105,7 @@ def run_loop(
 
     if not task:
         sys.stderr.write(
-            '\033[1;31m[error] Usage: /task "<description>" or create TASK.md in workspace\033[0m\n'
+            "\033[1;31m[error] Usage: /task \"<description>\" or create TASK.md in workspace\033[0m\n"
         )
         return False
 
@@ -140,13 +144,16 @@ def run_loop(
 
             # Context compaction watchdog: compact if exceeding 80% limit
             curr_tokens = sum(
-                core.get_accurate_token_count(m.get("content") or "") for m in history
+                core.get_accurate_token_count(m.get("content") or "")
+                for m in history
             )
             if curr_tokens > int(max_context * 0.8):
                 sys.stderr.write(
                     f"\033[2m[loop] Context at {curr_tokens}/{max_context} tokens. Auto-compacting history...\033[0m\n"
                 )
-                history = core.prune_history(history, max_tokens=int(max_context * 0.6))
+                history = core.prune_history(
+                    history, max_tokens=int(max_context * 0.6)
+                )
 
             # Turn 1 Plan-Model Handover: route turn 1 via plan_model if specified
             orig_model_env = os.environ.get("CUSTOM_MODEL")
@@ -157,10 +164,15 @@ def run_loop(
                 os.environ["CUSTOM_MODEL"] = plan_model
 
             try:
-                # Stream turn execution
-                ans = core.stream_response(
-                    history, prefix="Agent:", show_stats=True, is_agent=True
-                )
+                # Stream turn execution with retry
+                ans = None
+                for _attempt in range(2):
+                    ans = core.stream_response(
+                        history, prefix="Agent:", show_stats=True, is_agent=True
+                    )
+                    if ans is not None:
+                        break
+                    time.sleep(0.5)
             finally:
                 if turn == 1 and plan_model:
                     if orig_model_env is not None:
@@ -259,7 +271,10 @@ def run_loop(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ralph Autonomous Loop Engine")
     parser.add_argument(
-        "task", nargs="?", default="", help="Goal description for the autonomous loop"
+        "task",
+        nargs="?",
+        default="",
+        help="Goal description for the autonomous loop",
     )
     parser.add_argument(
         "-n",

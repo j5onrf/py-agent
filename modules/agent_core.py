@@ -674,6 +674,17 @@ def agentic_turn(
                 err_text = res.text[:200].replace("\n", " ").strip()
                 if spinner:
                     spinner.stop()
+                if _round < 8 and ("parse error" in err_text or "tool call" in err_text):
+                    sys.stderr.write(
+                        f"\r\033[1;33m▲ [sys] Recovering from model JSON formatting error. Retrying round {_round + 2}...\033[0m\r\n"
+                    )
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": "Notice: Previous tool call had a JSON formatting/escaping error. Please re-issue the tool call with clean string arguments.",
+                        }
+                    )
+                    continue
                 sys.stderr.write(
                     f"\r\033[1;31m[error] Server HTTP {res.status_code}: {err_text}\033[0m\r\n"
                 )
