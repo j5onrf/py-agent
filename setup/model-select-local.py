@@ -20,40 +20,77 @@ LOCAL_MODELS = [
     {
         "name": "LFM2.5-8B-A1B-APEX-I-Compact",
         "file": "LFM2.5-8B-A1B.gguf",
-        "script": "lfm2.sh"
+        "script": "lfm2.sh",
     },
-    {
-        "name": "Qwen 3.5 2B",
-        "file": "Qwen3.5-2B.gguf",
-        "script": "q2b.sh"
-    },
+    {"name": "Qwen 3.5 2B", "file": "Qwen3.5-2B.gguf", "script": "q2b.sh"},
     {
         "name": "Hermes3.6-35B-A3B-Uncensored-Genesis-V6-APEX",
         "file": "Herm3.6-35B-A3B.gguf",
-        "script": "q35b.sh"
-    }
+        "script": "q35b.sh",
+    },
 ]
+
 
 # --- CPU POWER AUTOMATION ---
 async def async_set_cpu_chill():
     try:
-        await asyncio.create_subprocess_exec("sudo", "-n", "cpupower", "frequency-set", "-g", "powersave", "--max", "3.5GHz", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        await asyncio.create_subprocess_exec(
+            "sudo",
+            "-n",
+            "cpupower",
+            "frequency-set",
+            "-g",
+            "powersave",
+            "--max",
+            "3.5GHz",
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         with open(STATE_FILE, "w") as f:
             f.write("chill")
         if shutil.which("notify-send"):
-            await asyncio.create_subprocess_exec("notify-send", "CPU Mode", "OLLAMA CHILL (3.5 GHz) - Auto", "-u", "low", "-t", "2000")
+            await asyncio.create_subprocess_exec(
+                "notify-send",
+                "CPU Mode",
+                "OLLAMA CHILL (3.5 GHz) - Auto",
+                "-u",
+                "low",
+                "-t",
+                "2000",
+            )
     except Exception:
         pass
 
+
 async def async_set_cpu_balanced():
     try:
-        await asyncio.create_subprocess_exec("sudo", "-n", "cpupower", "frequency-set", "-g", "powersave", "--max", "4.4GHz", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        await asyncio.create_subprocess_exec(
+            "sudo",
+            "-n",
+            "cpupower",
+            "frequency-set",
+            "-g",
+            "powersave",
+            "--max",
+            "4.4GHz",
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         with open(STATE_FILE, "w") as f:
             f.write("balanced")
         if shutil.which("notify-send"):
-            await asyncio.create_subprocess_exec("notify-send", "CPU Mode", "BALANCED (Dynamic) - Auto", "-u", "normal", "-t", "2000")
+            await asyncio.create_subprocess_exec(
+                "notify-send",
+                "CPU Mode",
+                "BALANCED (Dynamic) - Auto",
+                "-u",
+                "normal",
+                "-t",
+                "2000",
+            )
     except Exception:
         pass
+
 
 def get_current_running_model():
     try:
@@ -65,6 +102,7 @@ def get_current_running_model():
     except Exception:
         pass
     return None
+
 
 # --- NON-BLOCKING POWER CLEAN ENGINE ---
 async def async_stop_all_engines():
@@ -99,30 +137,54 @@ async def async_stop_all_engines():
                         pass
 
     try:
-        await asyncio.create_subprocess_exec("pkill", "-f", "AI ", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        await asyncio.create_subprocess_exec("pkill", "-f", "uvicorn", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        await asyncio.create_subprocess_exec("sync", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        await asyncio.create_subprocess_exec(
+            "pkill", "-f", "AI ", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        await asyncio.create_subprocess_exec(
+            "pkill",
+            "-f",
+            "uvicorn",
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        await asyncio.create_subprocess_exec(
+            "sync", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
     except Exception:
         pass
 
     if shutil.which("notify-send"):
         try:
-            await asyncio.create_subprocess_exec("notify-send", "AI Engine", "All Engines & Windows Shutdown", "-i", "system-shutdown")
+            await asyncio.create_subprocess_exec(
+                "notify-send",
+                "AI Engine",
+                "All Engines & Windows Shutdown",
+                "-i",
+                "system-shutdown",
+            )
         except Exception:
             pass
+
 
 def launch_local_server(script_name):
     script_path = os.path.join(SERV_DIR, script_name)
     if not os.path.exists(script_path):
         return False
     try:
-        subprocess.Popen([script_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        subprocess.Popen(
+            [script_path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
         return True
     except Exception:
         return False
 
+
 async def async_get_key():
     fd = sys.stdin.fileno()
+
     def _read():
         old_settings = termios.tcgetattr(fd)
         try:
@@ -130,36 +192,46 @@ async def async_get_key():
             ch_bytes = os.read(fd, 1)
             if not ch_bytes:
                 return None
-            ch = ch_bytes.decode('utf-8', errors='ignore')
-            if ch == '\x1b':
+            ch = ch_bytes.decode("utf-8", errors="ignore")
+            if ch == "\x1b":
                 rlist, _, _ = select.select([fd], [], [], 0.05)
                 if rlist:
                     seq_bytes = os.read(fd, 2)
-                    seq = seq_bytes.decode('utf-8', errors='ignore')
-                    if seq in ('[A', 'OA'):
-                        return 'up'
-                    elif seq in ('[B', 'OB'):
-                        return 'down'
-                    elif seq in ('[C', 'OC'):
-                        return 'right'
-                    elif seq in ('[D', 'OD'):
-                        return 'left'
-                return 'esc'
-            elif ch in ('\r', '\n'):
-                return 'enter'
-            elif ch.lower() == 'q':
-                return 'q'
+                    seq = seq_bytes.decode("utf-8", errors="ignore")
+                    if seq in ("[A", "OA"):
+                        return "up"
+                    elif seq in ("[B", "OB"):
+                        return "down"
+                    elif seq in ("[C", "OC"):
+                        return "right"
+                    elif seq in ("[D", "OD"):
+                        return "left"
+                return "esc"
+            elif ch in ("\r", "\n"):
+                return "enter"
+            elif ch.lower() == "q":
+                return "q"
             return ch
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
     return await asyncio.to_thread(_read)
+
 
 def draw_menu(selected, active_model, message=""):
     # Clear screen and move cursor to top-left
     sys.stdout.write("\x1b[H\x1b[2J")
-    amber, green, reset, bold, dim = "\033[38;2;230;120;60m", "\033[1;32m", "\033[0m", "\033[1m", "\033[90m"
+    amber, green, reset, bold, dim = (
+        "\033[38;2;230;120;60m",
+        "\033[1;32m",
+        "\033[0m",
+        "\033[1m",
+        "\033[90m",
+    )
 
-    sys.stdout.write(f"\r\n   {bold}  LOCAL-AI OFFLINE WORKSPACE{reset}\r\n   {dim}────────────────────────────────────────────────────────────{reset}\r\n\r\n")
+    sys.stdout.write(
+        f"\r\n   {bold}  LOCAL-AI OFFLINE WORKSPACE{reset}\r\n   {dim}────────────────────────────────────────────────────────────{reset}\r\n\r\n"
+    )
 
     for i, model in enumerate(LOCAL_MODELS):
         status = f" {green}(active){reset}" if model["file"] == active_model else ""
@@ -169,12 +241,21 @@ def draw_menu(selected, active_model, message=""):
 
     stop_idx, exit_idx = len(LOCAL_MODELS), len(LOCAL_MODELS) + 1
 
-    sys.stdout.write(f"{'   ' + amber + '❯' + reset + '  ' + bold if selected == stop_idx else '      '}🚫  Unload All Local Models {dim}(Free System RAM){reset}\r\n\r\n")
-    sys.stdout.write(f"{'   ' + amber + '❯' + reset + '  ' + bold if selected == exit_idx else '      '}✕   Close Settings{reset}\r\n")
+    sys.stdout.write(
+        f"{'   ' + amber + '❯' + reset + '  ' + bold if selected == stop_idx else '      '}🚫  Unload All Local Models {dim}(Free System RAM){reset}\r\n\r\n"
+    )
+    sys.stdout.write(
+        f"{'   ' + amber + '❯' + reset + '  ' + bold if selected == exit_idx else '      '}✕   Close Settings{reset}\r\n"
+    )
 
-    sys.stdout.write(f"\r\n   {dim}────────────────────────────────────────────────────────────{reset}\r\n")
-    sys.stdout.write(f"   {message or f'{dim}Use ▲/▼ Arrows to choose local server, Enter to initialize.{reset}'}\r\n")
+    sys.stdout.write(
+        f"\r\n   {dim}────────────────────────────────────────────────────────────{reset}\r\n"
+    )
+    sys.stdout.write(
+        f"   {message or f'{dim}Use ▲/▼ Arrows to choose local server, Enter to initialize.{reset}'}\r\n"
+    )
     sys.stdout.flush()
+
 
 async def async_main():
     selected = 0
@@ -195,11 +276,11 @@ async def async_main():
             message = ""
             key = await async_get_key()
 
-            if key == 'up':
+            if key == "up":
                 selected = (selected - 1) % total_options
-            elif key == 'down':
+            elif key == "down":
                 selected = (selected + 1) % total_options
-            elif key == 'enter':
+            elif key == "enter":
                 if selected < len(LOCAL_MODELS):
                     target_model = LOCAL_MODELS[selected]
 
@@ -228,13 +309,14 @@ async def async_main():
                     message = "\033[1;32m✓ Engines stopped. Local RAM cleared successfully.\033[0m"
                 elif selected == len(LOCAL_MODELS) + 1:
                     break
-            elif key == 'q':
+            elif key == "q":
                 break
     finally:
         # Reset terminal to clean state upon exiting
         os.system("stty sane")
         sys.stdout.write("\x1b[H\x1b[2J")
         sys.stdout.flush()
+
 
 if __name__ == "__main__":
     asyncio.run(async_main())

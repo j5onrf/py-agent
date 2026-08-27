@@ -36,7 +36,7 @@ files_to_compile = [
     "ai-agent.py", "modules/agent_core.py", "modules/agent_ipython.py",
     "modules/agent_tools.py", "modules/agent_tui.py", "modules/agent_tui_async.py",
     "modules/agent_usage.py", "modules/agent_cloud.py", "modules/agent_context.py",
-    "modules/agent_skills.py", "modules/agent_spell.py", "modules/agent_ui.py",
+    "modules/agent_skills.py", "modules/agent_ui.py",
     "modules/agent_voice.py", "modules/agent_tts.py", "modules/model-select.py",
     "modules/speed_test.py", "modules/ai-agent-sessions", "modules/ai-agent-memories",
     "modules/chat", "tools/loop/ralph.py", "plugins/webui/server.py", "plugins/pycode/bridge.py"
@@ -55,7 +55,7 @@ for f in files_to_compile:
 print(f"\n{CYAN}[Pass 2/8] Module Imports & Cross-Dependencies{RESET}")
 modules_to_import = [
     "agent_core", "agent_ipython", "agent_tools", "agent_usage",
-    "agent_cloud", "agent_context", "agent_skills", "agent_spell",
+    "agent_cloud", "agent_context", "agent_skills",
     "agent_ui", "agent_voice", "agent_tts", "speed_test"
 ]
 

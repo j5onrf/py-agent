@@ -32,24 +32,73 @@ def cleanup_terminal():
 
 atexit.register(cleanup_terminal)
 
-GEMINI_CURATED = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.5-pro"]
-OPENAI_CURATED = ["gpt-5.5", "gpt-5", "gpt-4.5", "o3", "o3-mini", "gpt-4o", "gpt-4o-mini"]
-CLAUDE_CURATED = ["claude-3-7-sonnet", "claude-opus-5", "claude-fable-5", "claude-sonnet-5", "claude-opus-4-8", "claude-opus-4-7"]
+GEMINI_CURATED = [
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.5-pro",
+]
+OPENAI_CURATED = [
+    "gpt-5.5",
+    "gpt-5",
+    "gpt-4.5",
+    "o3",
+    "o3-mini",
+    "gpt-4o",
+    "gpt-4o-mini",
+]
+CLAUDE_CURATED = [
+    "claude-3-7-sonnet",
+    "claude-opus-5",
+    "claude-fable-5",
+    "claude-sonnet-5",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+]
 GROK_CURATED = ["grok-4.5", "grok-4", "grok-3", "grok-2"]
 HF_ROUTER_URL = "https://router.huggingface.co/v1/chat/completions"
 
 HF_ENDPOINT_MAP = {
     "Local llama-server / vLLM (Port 8080)": "http://127.0.0.1:8080/v1/chat/completions",
-    "Local Ollama (Port 11434)": "http://127.0.0.1:11434/v1/chat/completions"
+    "Local Ollama (Port 11434)": "http://127.0.0.1:11434/v1/chat/completions",
 }
 CUSTOM_CURATED = list(HF_ENDPOINT_MAP.keys())
-OR_FREE_DEFAULTS = ["openrouter/free", "nvidia/nemotron-3-ultra:free", "poolside/laguna-m.1:free", "tencent/hy3:free", "google/gemma-4-26b-a4b:free", "meta-llama/llama-3.3-70b-instruct:free", "deepseek/deepseek-chat:free", "microsoft/phi-4:free", "mistralai/mistral-nemo:free"]
-OR_PAID_DEFAULTS = ["deepseek/deepseek-v4-flash", "anthropic/claude-3.7-sonnet", "google/gemini-3.7-flash", "xiaomi/mimo-v2.5", "minimax/minimax-m3", "tencent/hy3", "z-ai/glm-5.2", "deepseek/deepseek-v4-pro", "anthropic/claude-opus-4.8", "openai/gpt-5.5", "openai/gpt-4o-mini"]
+OR_FREE_DEFAULTS = [
+    "openrouter/free",
+    "nvidia/nemotron-3-ultra:free",
+    "poolside/laguna-m.1:free",
+    "tencent/hy3:free",
+    "google/gemma-4-26b-a4b:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "deepseek/deepseek-chat:free",
+    "microsoft/phi-4:free",
+    "mistralai/mistral-nemo:free",
+]
+OR_PAID_DEFAULTS = [
+    "deepseek/deepseek-v4-flash",
+    "anthropic/claude-3.7-sonnet",
+    "google/gemini-3.7-flash",
+    "xiaomi/mimo-v2.5",
+    "minimax/minimax-m3",
+    "tencent/hy3",
+    "z-ai/glm-5.2",
+    "deepseek/deepseek-v4-pro",
+    "anthropic/claude-opus-4.8",
+    "openai/gpt-5.5",
+    "openai/gpt-4o-mini",
+]
 
 
 def classify_openrouter_models(raw_data):
     if not isinstance(raw_data, list):
-        return OR_FREE_DEFAULTS, OR_PAID_DEFAULTS, GEMINI_CURATED, CLAUDE_CURATED, OPENAI_CURATED, GROK_CURATED
+        return (
+            OR_FREE_DEFAULTS,
+            OR_PAID_DEFAULTS,
+            GEMINI_CURATED,
+            CLAUDE_CURATED,
+            OPENAI_CURATED,
+            GROK_CURATED,
+        )
     free_c, paid_c, gemini_c, openai_c, claude_c, grok_c = [], [], [], [], [], []
 
     for item in raw_data:
@@ -65,17 +114,31 @@ def classify_openrouter_models(raw_data):
         elif m_id.startswith("x-ai/") and did not in grok_c:
             grok_c.append(did)
 
-        if "google/gemini" in m_id.lower() or "google/gemini" in item.get("name", "").lower():
+        if (
+            "google/gemini" in m_id.lower()
+            or "google/gemini" in item.get("name", "").lower()
+        ):
             continue
 
         p = item.get("pricing", {})
-        is_free = "free" in m_id.lower() or (p and float(p.get("prompt", 0)) == 0 and float(p.get("completion", 0)) == 0)
+        is_free = "free" in m_id.lower() or (
+            p and float(p.get("prompt", 0)) == 0 and float(p.get("completion", 0)) == 0
+        )
         target = free_c if is_free else paid_c
         if m_id not in target:
             target.append(m_id)
 
-    free_c = ["openrouter/free"] + [x for x in (free_c or OR_FREE_DEFAULTS) if x != "openrouter/free"]
-    return free_c, paid_c or OR_PAID_DEFAULTS, gemini_c or GEMINI_CURATED, claude_c or CLAUDE_CURATED, openai_c or OPENAI_CURATED, grok_c or GROK_CURATED
+    free_c = ["openrouter/free"] + [
+        x for x in (free_c or OR_FREE_DEFAULTS) if x != "openrouter/free"
+    ]
+    return (
+        free_c,
+        paid_c or OR_PAID_DEFAULTS,
+        gemini_c or GEMINI_CURATED,
+        claude_c or CLAUDE_CURATED,
+        openai_c or OPENAI_CURATED,
+        grok_c or GROK_CURATED,
+    )
 
 
 def ensure_env_exists():
@@ -93,20 +156,20 @@ def ensure_env_exists():
             with open(ENV_PATH, "w", encoding="utf-8") as f:
                 f.write(
                     "# Top-Down Priority (First Active Key is Used)\n\n"
-                    "# CUSTOM_API_KEY=\"hf_YourHuggingFaceTokenHere\"\n"
-                    "CUSTOM_URL=\"https://router.huggingface.co/v1/chat/completions\"\n"
-                    "CUSTOM_MODEL=\"Qwen/Qwen3.8-2.4T-A95B\"\n\n"
-                    "# GEMINI_API_KEY=\"AIzaSyYourGeminiKey\"\n"
-                    "GEMINI_MODEL=\"gemini-3.7-flash\"\n\n"
-                    "# OPENROUTER_API_KEY=\"sk-or-v1-YourOpenRouterKey\"\n"
-                    "OPENROUTER_MODEL=\"openrouter/free\"\n\n"
-                    "# OPENAI_API_KEY=\"your-openai-key\"\n"
-                    "OPENAI_MODEL=\"gpt-5.5\"\n\n"
-                    "# CLAUDE_API_KEY=\"your-claude-key\"\n"
-                    "CLAUDE_MODEL=\"claude-fable-5\"\n\n"
-                    "# XAI_API_KEY=\"xai-your-grok-key\"\n"
-                    "XAI_MODEL=\"grok-4.6\"\n\n"
-                    "AI_MAX_TOKENS=\"8192\"\n"
+                    '# CUSTOM_API_KEY="hf_YourHuggingFaceTokenHere"\n'
+                    'CUSTOM_URL="https://router.huggingface.co/v1/chat/completions"\n'
+                    'CUSTOM_MODEL="Qwen/Qwen3.8-2.4T-A95B"\n\n'
+                    '# GEMINI_API_KEY="AIzaSyYourGeminiKey"\n'
+                    'GEMINI_MODEL="gemini-3.7-flash"\n\n'
+                    '# OPENROUTER_API_KEY="sk-or-v1-YourOpenRouterKey"\n'
+                    'OPENROUTER_MODEL="openrouter/free"\n\n'
+                    '# OPENAI_API_KEY="your-openai-key"\n'
+                    'OPENAI_MODEL="gpt-5.5"\n\n'
+                    '# CLAUDE_API_KEY="your-claude-key"\n'
+                    'CLAUDE_MODEL="claude-fable-5"\n\n'
+                    '# XAI_API_KEY="xai-your-grok-key"\n'
+                    'XAI_MODEL="grok-4.6"\n\n'
+                    'AI_MAX_TOKENS="8192"\n'
                 )
         except OSError:
             pass
@@ -115,17 +178,26 @@ def ensure_env_exists():
 def load_env_vars():
     ensure_env_exists()
     v = {
-        "GEMINI_API_KEY": "", "OPENROUTER_API_KEY": "", "CLAUDE_API_KEY": "",
-        "OPENAI_API_KEY": "", "XAI_API_KEY": "", "CUSTOM_API_KEY": "",
-        "GEMINI_MODEL": "gemini-3.7-flash", "OPENROUTER_MODEL": "openrouter/free",
-        "CLAUDE_MODEL": "claude-fable-5", "OPENAI_MODEL": "gpt-5.5",
-        "XAI_MODEL": "grok-4.6", "CUSTOM_MODEL": "default"
+        "GEMINI_API_KEY": "",
+        "OPENROUTER_API_KEY": "",
+        "CLAUDE_API_KEY": "",
+        "OPENAI_API_KEY": "",
+        "XAI_API_KEY": "",
+        "CUSTOM_API_KEY": "",
+        "GEMINI_MODEL": "gemini-3.7-flash",
+        "OPENROUTER_MODEL": "openrouter/free",
+        "CLAUDE_MODEL": "claude-fable-5",
+        "OPENAI_MODEL": "gpt-5.5",
+        "XAI_MODEL": "grok-4.6",
+        "CUSTOM_MODEL": "default",
     }
     if os.path.exists(ENV_PATH):
         try:
             with open(ENV_PATH, "r", encoding="utf-8") as f:
                 for l in f:
-                    if m := re.match(r"^#?\s*([A-Z0-9_]+)\s*=\s*\"?([^\"]*)\"?$", l.strip()):
+                    if m := re.match(
+                        r"^#?\s*([A-Z0-9_]+)\s*=\s*\"?([^\"]*)\"?$", l.strip()
+                    ):
                         k, val = m.groups()
                         if not l.strip().startswith("#") or not v.get(k):
                             v[k] = val
@@ -144,7 +216,9 @@ def get_active_key_set() -> set[str]:
                     if (s := l.strip()) and not s.startswith("#") and "=" in s:
                         k, v = s.split("=", 1)
                         val = v.strip().strip('"').strip("'")
-                        if val and not any(sub in val.lower() for sub in ("your", "here", "api-key")):
+                        if val and not any(
+                            sub in val.lower() for sub in ("your", "here", "api-key")
+                        ):
                             active.add(k.strip())
         except (OSError, UnicodeDecodeError):
             pass
@@ -160,7 +234,9 @@ def update_env(key, value):
         updated = False
         for i, l in enumerate(lines):
             if re.match(rf"^#?\s*{key}\s*=\s*.*$", l):
-                lines[i] = f"{'#' if l.strip().startswith('#') else ''}{key}=\"{value}\"\n"
+                lines[i] = (
+                    f'{"#" if l.strip().startswith("#") else ""}{key}="{value}"\n'
+                )
                 updated = True
                 break
         if not updated:
@@ -180,7 +256,9 @@ def set_key_commented_state(key, should_comment):
         updated = False
         for i, l in enumerate(lines):
             if f"{key}=" in l.strip() or f"{key} =" in l.strip():
-                lines[i] = f"{'#' if should_comment else ''}{l.strip().lstrip('#').strip()}\n"
+                lines[i] = (
+                    f"{'#' if should_comment else ''}{l.strip().lstrip('#').strip()}\n"
+                )
                 updated = True
                 break
         if not updated and not should_comment:
@@ -190,7 +268,7 @@ def set_key_commented_state(key, should_comment):
                 "CLAUDE_API_KEY": "your-claude-api-key-here",
                 "OPENAI_API_KEY": "your-openai-api-key-here",
                 "XAI_API_KEY": "xai-your-grok-api-key-here",
-                "CUSTOM_API_KEY": "hf_YourHuggingFaceTokenHere"
+                "CUSTOM_API_KEY": "hf_YourHuggingFaceTokenHere",
             }
             lines.append(f'{key}="{pm.get(key, "your-key-here")}"\n')
         with open(ENV_PATH, "w", encoding="utf-8") as f:
@@ -205,13 +283,36 @@ def toggle_env_api_keys():
     try:
         with open(ENV_PATH, "r", encoding="utf-8") as f:
             lines = f.readlines()
-        t_keys = {"GEMINI_API_KEY", "OPENROUTER_API_KEY", "CLAUDE_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY", "CUSTOM_API_KEY"}
-        is_commented = any(l.strip().startswith("#") for l in lines if any(k in l for k in t_keys))
-        lines = [f"{'#' if not is_commented else ''}{l.strip().lstrip('#').strip()}\n" if any(k in l for k in t_keys) else l for l in lines]
+        t_keys = {
+            "GEMINI_API_KEY",
+            "OPENROUTER_API_KEY",
+            "CLAUDE_API_KEY",
+            "OPENAI_API_KEY",
+            "XAI_API_KEY",
+            "CUSTOM_API_KEY",
+        }
+        is_commented = any(
+            l.strip().startswith("#") for l in lines if any(k in l for k in t_keys)
+        )
+        lines = [
+            f"{'#' if not is_commented else ''}{l.strip().lstrip('#').strip()}\n"
+            if any(k in l for k in t_keys)
+            else l
+            for l in lines
+        ]
         with open(ENV_PATH, "w", encoding="utf-8") as f:
             f.writelines(lines)
         if shutil.which("notify-send"):
-            subprocess.run(["notify-send", "AI Environment Toggle", f"Switched to {'Cloud Mode (APIs Enabled)' if is_commented else 'Local / Offline Mode (APIs Disabled)'}", "-t", "2000"], check=False)
+            subprocess.run(
+                [
+                    "notify-send",
+                    "AI Environment Toggle",
+                    f"Switched to {'Cloud Mode (APIs Enabled)' if is_commented else 'Local / Offline Mode (APIs Disabled)'}",
+                    "-t",
+                    "2000",
+                ],
+                check=False,
+            )
         return is_commented
     except (OSError, subprocess.SubprocessError):
         return False
@@ -223,21 +324,46 @@ def load_cached_lists():
             with open(CACHE_PATH, "r", encoding="utf-8") as f:
                 d = json.load(f)
                 return (
-                    d.get("free", OR_FREE_DEFAULTS), d.get("paid", OR_PAID_DEFAULTS),
-                    d.get("gemini", GEMINI_CURATED), d.get("claude", CLAUDE_CURATED),
-                    d.get("openai", OPENAI_CURATED), d.get("grok", GROK_CURATED),
-                    d.get("custom", CUSTOM_CURATED)
+                    d.get("free", OR_FREE_DEFAULTS),
+                    d.get("paid", OR_PAID_DEFAULTS),
+                    d.get("gemini", GEMINI_CURATED),
+                    d.get("claude", CLAUDE_CURATED),
+                    d.get("openai", OPENAI_CURATED),
+                    d.get("grok", GROK_CURATED),
+                    d.get("custom", CUSTOM_CURATED),
                 )
         except (OSError, json.JSONDecodeError):
             pass
-    return OR_FREE_DEFAULTS, OR_PAID_DEFAULTS, GEMINI_CURATED, CLAUDE_CURATED, OPENAI_CURATED, GROK_CURATED, CUSTOM_CURATED
+    return (
+        OR_FREE_DEFAULTS,
+        OR_PAID_DEFAULTS,
+        GEMINI_CURATED,
+        CLAUDE_CURATED,
+        OPENAI_CURATED,
+        GROK_CURATED,
+        CUSTOM_CURATED,
+    )
 
 
-def save_cached_lists(free_l, paid_l, gemini_l, claude_l, openai_l, grok_l, custom_l=CUSTOM_CURATED):
+def save_cached_lists(
+    free_l, paid_l, gemini_l, claude_l, openai_l, grok_l, custom_l=CUSTOM_CURATED
+):
     try:
         tmp = f"{CACHE_PATH}.tmp"
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"free": free_l, "paid": paid_l, "gemini": gemini_l, "claude": claude_l, "openai": openai_l, "grok": grok_l, "custom": custom_l}, f, indent=2)
+            json.dump(
+                {
+                    "free": free_l,
+                    "paid": paid_l,
+                    "gemini": gemini_l,
+                    "claude": claude_l,
+                    "openai": openai_l,
+                    "grok": grok_l,
+                    "custom": custom_l,
+                },
+                f,
+                indent=2,
+            )
         os.replace(tmp, CACHE_PATH)
     except OSError:
         try:
@@ -250,11 +376,19 @@ def save_cached_lists(free_l, paid_l, gemini_l, claude_l, openai_l, grok_l, cust
 async def async_fetch_openrouter_models(api_key):
     def _fetch():
         try:
-            req = urlreq.Request("https://openrouter.ai/api/v1/models?sort=top-weekly", headers={"Authorization": f"Bearer {api_key}"} if api_key else {})
+            req = urlreq.Request(
+                "https://openrouter.ai/api/v1/models?sort=top-weekly",
+                headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
+            )
             with urlreq.urlopen(req, timeout=8) as res:
-                return json.loads(res.read().decode("utf-8")).get("data", []) if res.status == 200 else None
+                return (
+                    json.loads(res.read().decode("utf-8")).get("data", [])
+                    if res.status == 200
+                    else None
+                )
         except (urlreq.URLError, TimeoutError, json.JSONDecodeError, OSError):
             return None
+
     return await asyncio.to_thread(_fetch)
 
 
@@ -262,7 +396,7 @@ async def async_fetch_hf_spaces(api_key: str = ""):
     """Fetch live supported models directly from Hugging Face official router catalog."""
     discovered = {
         "Local llama-server / vLLM (Port 8080)": "http://127.0.0.1:8080/v1/chat/completions",
-        "Local Ollama (Port 11434)": "http://127.0.0.1:11434/v1/chat/completions"
+        "Local Ollama (Port 11434)": "http://127.0.0.1:11434/v1/chat/completions",
     }
 
     def _fetch():
@@ -291,24 +425,34 @@ async def async_fetch_hf_spaces(api_key: str = ""):
 
 async def async_get_key():
     fd = sys.stdin.fileno()
+
     def _read():
         old = termios.tcgetattr(fd)
         try:
             tty.setraw(fd)
             if not (ch_bytes := os.read(fd, 1)):
                 return None
-            ch = ch_bytes.decode('utf-8', errors='ignore')
-            if ch == '\x1b':
+            ch = ch_bytes.decode("utf-8", errors="ignore")
+            if ch == "\x1b":
                 if select.select([fd], [], [], 0.05)[0]:
-                    seq = os.read(fd, 2).decode('utf-8', errors='ignore')
-                    return {'[A': 'up', 'OA': 'up', '[B': 'down', 'OB': 'down', '[C': 'right', 'OC': 'right', '[D': 'left', 'OD': 'left'}.get(seq, 'esc')
-                return 'esc'
-            elif ch in ('\r', '\n'):
-                return 'enter'
-            elif ch in ('\x7f', '\x08'):
-                return 'backspace'
-            elif ch.lower() == 'q':
-                return 'q'
+                    seq = os.read(fd, 2).decode("utf-8", errors="ignore")
+                    return {
+                        "[A": "up",
+                        "OA": "up",
+                        "[B": "down",
+                        "OB": "down",
+                        "[C": "right",
+                        "OC": "right",
+                        "[D": "left",
+                        "OD": "left",
+                    }.get(seq, "esc")
+                return "esc"
+            elif ch in ("\r", "\n"):
+                return "enter"
+            elif ch in ("\x7f", "\x08"):
+                return "backspace"
+            elif ch.lower() == "q":
+                return "q"
             return ch
         except (OSError, termios.error):
             return None
@@ -317,12 +461,30 @@ async def async_get_key():
                 termios.tcsetattr(fd, termios.TCSADRAIN, old)
             except (termios.error, OSError):
                 pass
+
     return await asyncio.to_thread(_read)
 
 
-def draw_main_menu(selected, gemini_curr, claude_curr, openai_curr, grok_curr, or_curr, custom_curr, active_keys: set[str], message=""):
+def draw_main_menu(
+    selected,
+    gemini_curr,
+    claude_curr,
+    openai_curr,
+    grok_curr,
+    or_curr,
+    custom_curr,
+    active_keys: set[str],
+    message="",
+):
     sys.stdout.write("\x1b[H\x1b[2J")
-    amber, green, red, reset, bold, dim = "\033[38;2;230;120;60m", "\033[1;32m", "\033[1;31m", "\033[0m", "\033[1m", "\033[90m"
+    amber, green, red, reset, bold, dim = (
+        "\033[38;2;230;120;60m",
+        "\033[1;32m",
+        "\033[1;31m",
+        "\033[0m",
+        "\033[1m",
+        "\033[90m",
+    )
 
     gemini_act = "GEMINI_API_KEY" in active_keys
     or_act = "OPENROUTER_API_KEY" in active_keys
@@ -331,11 +493,19 @@ def draw_main_menu(selected, gemini_curr, claude_curr, openai_curr, grok_curr, o
     grok_act = "XAI_API_KEY" in active_keys
     custom_act = "CUSTOM_API_KEY" in active_keys
 
-    status_text = f"{green}[ ENABLED ]{reset}" if any([gemini_act, or_act, claude_act, openai_act, grok_act, custom_act]) else f"{red}[ DISABLED ]{reset}"
-    fmt_disp = lambda curr, act: f"{green}{curr}{reset}" if act else f"{red}DISABLED (grayed out){reset}"
+    status_text = (
+        f"{green}[ ENABLED ]{reset}"
+        if any([gemini_act, or_act, claude_act, openai_act, grok_act, custom_act])
+        else f"{red}[ DISABLED ]{reset}"
+    )
+    fmt_disp = lambda curr, act: (
+        f"{green}{curr}{reset}" if act else f"{red}DISABLED (grayed out){reset}"
+    )
     is_or_free = "free" in or_curr.lower()
 
-    sys.stdout.write(f"\n   {bold}  LOCAL-AI CONFIGURATION{reset}\n   {dim}────────────────────────────────────────────────────────────{reset}\n\n")
+    sys.stdout.write(
+        f"\n   {bold}  LOCAL-AI CONFIGURATION{reset}\n   {dim}────────────────────────────────────────────────────────────{reset}\n\n"
+    )
 
     options = [
         f"🔌  Cloud Connection      {status_text}",
@@ -347,31 +517,58 @@ def draw_main_menu(selected, gemini_curr, claude_curr, openai_curr, grok_curr, o
         f"🌐  OpenRouter Free       {f'{green}{or_curr}{reset}' if (or_act and is_or_free) else f'{dim}None selected{reset}'}\n       {dim}Select from the top 20 most popular free models{reset}",
         f"🌐  OpenRouter Paid       {f'{green}{or_curr}{reset}' if (or_act and not is_or_free) else f'{dim}None selected{reset}'}\n       {dim}Select from the top 20 industry leading paid engines{reset}",
         f"↺  Refresh API Lists      {dim}Query OpenRouter & HuggingFace for live models{reset}",
-        "✕  Save & Close"
+        "✕  Save & Close",
     ]
 
     for i, opt in enumerate(options):
-        sys.stdout.write(f"{f'   {amber}❯{reset}  {bold}' if i == selected else '      '}{opt}{reset}\n{'\n' if i in (1, 2, 3, 4, 5, 6, 7) else ''}")
+        sys.stdout.write(
+            f"{f'   {amber}❯{reset}  {bold}' if i == selected else '      '}{opt}{reset}\n{'\n' if i in (1, 2, 3, 4, 5, 6, 7) else ''}"
+        )
 
-    sys.stdout.write(f"\n   {dim}────────────────────────────────────────────────────────────{reset}\n   {message or f'{dim}Use ▲/▼ Arrows to navigate, Enter to choose, Q to exit.{reset}'}\n")
+    sys.stdout.write(
+        f"\n   {dim}────────────────────────────────────────────────────────────{reset}\n   {message or f'{dim}Use ▲/▼ Arrows to navigate, Enter to choose, Q to exit.{reset}'}\n"
+    )
     sys.stdout.flush()
 
 
 async def run_selector(title, full_models_list, current, key_name, is_active):
     state = {"showing_all": False, "search_query": ""}
+
     def get_opts():
-        filt = full_models_list if not state["search_query"] else [m for m in full_models_list if state["search_query"].lower() in m.lower()]
-        return [f"🚫 Turn Off {title}"] + (filt if (state["showing_all"] or state["search_query"]) else filt[:20])
+        filt = (
+            full_models_list
+            if not state["search_query"]
+            else [
+                m
+                for m in full_models_list
+                if state["search_query"].lower() in m.lower()
+            ]
+        )
+        return [f"🚫 Turn Off {title}"] + (
+            filt if (state["showing_all"] or state["search_query"]) else filt[:20]
+        )
 
     opts = get_opts()
     selected = opts.index(current) if (is_active and current in opts) else 0
-    amber, green, red, reset, bold, dim, max_v = "\033[38;2;230;120;60m", "\033[1;32m", "\033[1;31m", "\033[0m", "\033[1m", "\033[90m", 14
+    amber, green, red, reset, bold, dim, max_v = (
+        "\033[38;2;230;120;60m",
+        "\033[1;32m",
+        "\033[1;31m",
+        "\033[0m",
+        "\033[1m",
+        "\033[90m",
+        14,
+    )
 
     while True:
         sys.stdout.write("\x1b[H\x1b[2J")
-        sys.stdout.write(f"\n   {bold}  SELECT {title.upper()}:{reset}\n   {dim}────────────────────────────────────────────────────────────{reset}\n\n")
+        sys.stdout.write(
+            f"\n   {bold}  SELECT {title.upper()}:{reset}\n   {dim}────────────────────────────────────────────────────────────{reset}\n\n"
+        )
         if state["search_query"]:
-            sys.stdout.write(f"   🔍  Filter: {green}{state['search_query']}{amber}_{reset}\n\n")
+            sys.stdout.write(
+                f"   🔍  Filter: {green}{state['search_query']}{amber}_{reset}\n\n"
+            )
 
         start = max(0, min(selected - max_v // 2, len(opts) - max_v))
         end = min(len(opts), start + max_v)
@@ -379,47 +576,75 @@ async def run_selector(title, full_models_list, current, key_name, is_active):
         for i in range(start, end):
             opt = opts[i]
             bullet = f"{amber}❯{reset} " if i == selected else "  "
-            line = f"{bullet}{red}{opt} {dim}(disabled){reset}" if (i == 0 and not is_active) else f"{bullet}{green}{opt} {dim}(active){reset}" if (opt == current and is_active) else f"{bullet}{opt}"
+            line = (
+                f"{bullet}{red}{opt} {dim}(disabled){reset}"
+                if (i == 0 and not is_active)
+                else f"{bullet}{green}{opt} {dim}(active){reset}"
+                if (opt == current and is_active)
+                else f"{bullet}{opt}"
+            )
             sys.stdout.write(f"     {bold if i == selected else ''}{line}{reset}\n")
 
         m_above, m_below = start > 0, end < len(opts)
-        ind = " ▲ ▼ " if (m_above and m_below) else " ▼ more below " if m_below else " ▲ more above " if m_above else ""
-        sys.stdout.write(f"\n{f'   {dim}' + '─'*25 + amber + ind + dim + '─'*25 + reset if ind else f'   {dim}────────────────────────────────────────────────────────────{reset}'}\n")
+        ind = (
+            " ▲ ▼ "
+            if (m_above and m_below)
+            else " ▼ more below "
+            if m_below
+            else " ▲ more above "
+            if m_above
+            else ""
+        )
+        sys.stdout.write(
+            f"\n{f'   {dim}' + '─' * 25 + amber + ind + dim + '─' * 25 + reset if ind else f'   {dim}────────────────────────────────────────────────────────────{reset}'}\n"
+        )
 
-        hint = f"Found {len(opts) - 1} matches. Backspace to edit, Esc to clear." if state["search_query"] else f"Showing Top 20. Press ► (Right Arrow) for all {len(full_models_list)} models." if not state["showing_all"] else f"Showing All {len(full_models_list)} models. Press ◄ (Left Arrow) for Top 20."
-        sys.stdout.write(f"   {dim}{hint}{reset}\n   {dim}Press Enter to apply, or type characters to filter instantly.{reset}\n")
+        hint = (
+            f"Found {len(opts) - 1} matches. Backspace to edit, Esc to clear."
+            if state["search_query"]
+            else f"Showing Top 20. Press ► (Right Arrow) for all {len(full_models_list)} models."
+            if not state["showing_all"]
+            else f"Showing All {len(full_models_list)} models. Press ◄ (Left Arrow) for Top 20."
+        )
+        sys.stdout.write(
+            f"   {dim}{hint}{reset}\n   {dim}Press Enter to apply, or type characters to filter instantly.{reset}\n"
+        )
         sys.stdout.flush()
 
         key = await async_get_key()
-        if key == 'up':
+        if key == "up":
             selected = (selected - 1) % len(opts)
-        elif key == 'down':
+        elif key == "down":
             selected = (selected + 1) % len(opts)
-        elif key == 'backspace':
+        elif key == "backspace":
             if state["search_query"]:
                 state["search_query"] = state["search_query"][:-1]
                 selected = 0
                 opts = get_opts()
-        elif key == 'esc':
+        elif key == "esc":
             if state["search_query"]:
                 state["search_query"] = ""
                 selected = 0
                 opts = get_opts()
             else:
                 return None
-        elif key == 'right' and not state["showing_all"]:
+        elif key == "right" and not state["showing_all"]:
             state["showing_all"] = True
             m = opts[selected]
             opts = get_opts()
             selected = opts.index(m) if m in opts else 0
-        elif key == 'left' and state["showing_all"]:
+        elif key == "left" and state["showing_all"]:
             state["showing_all"] = False
             m = opts[selected]
             opts = get_opts()
             selected = opts.index(m) if m in opts else 0
-        elif key == 'enter':
+        elif key == "enter":
             return "DISABLE" if selected == 0 else opts[selected]
-        elif isinstance(key, str) and len(key) == 1 and (key.isalnum() or key in ('-', ':', '/', '.', '_')):
+        elif (
+            isinstance(key, str)
+            and len(key) == 1
+            and (key.isalnum() or key in ("-", ":", "/", ".", "_"))
+        ):
             state["search_query"] += key
             selected = 0
             opts = get_opts()
@@ -435,8 +660,16 @@ async def async_main():
     grok_curr = env.get("XAI_MODEL", "grok-4.5")
     custom_curr = env.get("CUSTOM_MODEL", "default")
     or_curr = env["OPENROUTER_MODEL"]
-    
-    or_free_list, or_paid_list, gemini_list, claude_list, openai_list, grok_list, custom_list = load_cached_lists()
+
+    (
+        or_free_list,
+        or_paid_list,
+        gemini_list,
+        claude_list,
+        openai_list,
+        grok_list,
+        custom_list,
+    ) = load_cached_lists()
 
     if "openrouter/free" in or_free_list:
         or_free_list.remove("openrouter/free")
@@ -447,28 +680,74 @@ async def async_main():
     try:
         while True:
             active_keys = get_active_key_set()
-            draw_main_menu(selected_idx, gemini_curr, claude_curr, openai_curr, grok_curr, or_curr, custom_curr, active_keys, message)
+            draw_main_menu(
+                selected_idx,
+                gemini_curr,
+                claude_curr,
+                openai_curr,
+                grok_curr,
+                or_curr,
+                custom_curr,
+                active_keys,
+                message,
+            )
             message = ""
             key = await async_get_key()
 
-            if key == 'up':
+            if key == "up":
                 selected_idx = (selected_idx - 1) % total_options
-            elif key == 'down':
+            elif key == "down":
                 selected_idx = (selected_idx + 1) % total_options
-            elif key == 'enter':
+            elif key == "enter":
                 if selected_idx == 0:
                     is_now_enabled = toggle_env_api_keys()
                     env = load_env_vars()
                     message = f"✓ Switched Cloud Connection to: {'\033[1;32mENABLED\033[0m' if is_now_enabled else '\033[1;31mDISABLED\033[0m'}"
                 elif selected_idx in (1, 2, 3, 4, 5, 6, 7):
                     target_map = {
-                        1: ("Gemini", gemini_list, gemini_curr, "GEMINI_API_KEY", "GEMINI_MODEL"),
-                        2: ("OpenAI", openai_list, openai_curr, "OPENAI_API_KEY", "OPENAI_MODEL"),
-                        3: ("Claude", claude_list, claude_curr, "CLAUDE_API_KEY", "CLAUDE_MODEL"),
+                        1: (
+                            "Gemini",
+                            gemini_list,
+                            gemini_curr,
+                            "GEMINI_API_KEY",
+                            "GEMINI_MODEL",
+                        ),
+                        2: (
+                            "OpenAI",
+                            openai_list,
+                            openai_curr,
+                            "OPENAI_API_KEY",
+                            "OPENAI_MODEL",
+                        ),
+                        3: (
+                            "Claude",
+                            claude_list,
+                            claude_curr,
+                            "CLAUDE_API_KEY",
+                            "CLAUDE_MODEL",
+                        ),
                         4: ("Grok", grok_list, grok_curr, "XAI_API_KEY", "XAI_MODEL"),
-                        5: ("Custom / HuggingFace", custom_list, custom_curr, "CUSTOM_API_KEY", "CUSTOM_MODEL"),
-                        6: ("OpenRouter Free", or_free_list, or_curr, "OPENROUTER_API_KEY", "OPENROUTER_MODEL"),
-                        7: ("OpenRouter Paid", or_paid_list, or_curr, "OPENROUTER_API_KEY", "OPENROUTER_MODEL"),
+                        5: (
+                            "Custom / HuggingFace",
+                            custom_list,
+                            custom_curr,
+                            "CUSTOM_API_KEY",
+                            "CUSTOM_MODEL",
+                        ),
+                        6: (
+                            "OpenRouter Free",
+                            or_free_list,
+                            or_curr,
+                            "OPENROUTER_API_KEY",
+                            "OPENROUTER_MODEL",
+                        ),
+                        7: (
+                            "OpenRouter Paid",
+                            or_paid_list,
+                            or_curr,
+                            "OPENROUTER_API_KEY",
+                            "OPENROUTER_MODEL",
+                        ),
                     }
                     title, lst, curr, k_name, m_name = target_map[selected_idx]
                     is_active = k_name in active_keys
@@ -483,8 +762,13 @@ async def async_main():
                             custom_curr = res
                             hf_url = HF_ENDPOINT_MAP.get(res, HF_ROUTER_URL)
                             update_env("CUSTOM_URL", hf_url)
-                            if not env.get("CUSTOM_API_KEY") or env.get("CUSTOM_API_KEY") == "not-needed":
-                                update_env("CUSTOM_API_KEY", "hf_YourHuggingFaceTokenHere")
+                            if (
+                                not env.get("CUSTOM_API_KEY")
+                                or env.get("CUSTOM_API_KEY") == "not-needed"
+                            ):
+                                update_env(
+                                    "CUSTOM_API_KEY", "hf_YourHuggingFaceTokenHere"
+                                )
                         elif selected_idx == 1:
                             gemini_curr = res
                         elif selected_idx == 2:
@@ -495,25 +779,54 @@ async def async_main():
                             grok_curr = res
                         else:
                             or_curr = res
-                        message = f"✓ Saved {m_name}={res} and auto-configured endpoint."
+                        message = (
+                            f"✓ Saved {m_name}={res} and auto-configured endpoint."
+                        )
                 elif selected_idx == 8:
                     message = "\033[1;33m↺ Querying OpenRouter & HuggingFace for live endpoints...\033[0m"
-                    draw_main_menu(selected_idx, gemini_curr, claude_curr, openai_curr, grok_curr, or_curr, custom_curr, active_keys, message)
-                    raw_or = await async_fetch_openrouter_models(env["OPENROUTER_API_KEY"])
+                    draw_main_menu(
+                        selected_idx,
+                        gemini_curr,
+                        claude_curr,
+                        openai_curr,
+                        grok_curr,
+                        or_curr,
+                        custom_curr,
+                        active_keys,
+                        message,
+                    )
+                    raw_or = await async_fetch_openrouter_models(
+                        env["OPENROUTER_API_KEY"]
+                    )
                     raw_hf = await async_fetch_hf_spaces(env.get("CUSTOM_API_KEY", ""))
                     if raw_hf:
                         HF_ENDPOINT_MAP.clear()
                         HF_ENDPOINT_MAP.update(raw_hf)
                         custom_list = list(raw_hf.keys())
                     if raw_or:
-                        or_free_list, or_paid_list, gemini_list, claude_list, openai_list, grok_list = classify_openrouter_models(raw_or)
-                    save_cached_lists(or_free_list, or_paid_list, gemini_list, claude_list, openai_list, grok_list, custom_list)
+                        (
+                            or_free_list,
+                            or_paid_list,
+                            gemini_list,
+                            claude_list,
+                            openai_list,
+                            grok_list,
+                        ) = classify_openrouter_models(raw_or)
+                    save_cached_lists(
+                        or_free_list,
+                        or_paid_list,
+                        gemini_list,
+                        claude_list,
+                        openai_list,
+                        grok_list,
+                        custom_list,
+                    )
                     message = "✓ Synchronized live OpenRouter rankings and HuggingFace endpoints."
                 elif selected_idx == 9:
                     cleanup_terminal()
                     print("\033[1;32m✓ Local-AI configuration saved.\033[0m")
                     return
-            elif key in ('q', 'esc'):
+            elif key in ("q", "esc"):
                 cleanup_terminal()
                 return
     finally:

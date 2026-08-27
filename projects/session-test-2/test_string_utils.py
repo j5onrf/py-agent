@@ -4,7 +4,6 @@ from string_utils import count_vowels, reverse_words
 
 
 class TestStringUtils(unittest.TestCase):
-    
     def test_reverse_words_basic(self):
         self.assertEqual(reverse_words("hello world"), "world hello")
         self.assertEqual(reverse_words("python is awesome"), "awesome is python")
@@ -31,5 +30,6 @@ class TestStringUtils(unittest.TestCase):
         with self.assertRaises(TypeError):
             count_vowels(None)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

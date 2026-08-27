@@ -1,43 +1,45 @@
-# CODEBASE INDEX MAP | Generated: 2026-08-18 16:00 | Workspace: modules | Path: ~/.config/local-ai/modules
+# CODEBASE INDEX MAP | Generated: 2026-08-26 20:53 | Workspace: modules | Path: ~/.config/py-agent/modules
 # Active symbols and structural connections mapped in the local index.
 # -----------------------------------------------------------------------------------------
 # Codebase Modules & Active Architecture:
-#   ├── modules/Readme.md        - System Architecture
+#   ├── modules/Readme.md        - Privacy-First
 #   ├── modules/agent_cloud.py   - Dynamic Cloud Cascade Engine - Top-down .env provider API priority.
 #   ├── modules/agent_context.py - Context Search & Indexing Engine - Jaccard intent matching.
-#   ├── modules/agent_core.py    - Core Module - Handles streaming SSE, tool gates, and Rich rendering
-#   ├── modules/agent_ipython.py - Local-AI Standalone IPython Kernel & RLM Harness Module (NOOA-Enhanced)
-#   ├── modules/agent_skills.py  - Unified library & executable for static, dynamic, and on-demand skills
-#   ├── modules/agent_spell.py   - Offline/Online Spellchecker Module - LanguageTool API & phonetic edit-distance.
-#   ├── modules/agent_tools.py   - Native Tool Engine - Handles file editing, commands, & graph intelligence
+#   ├── modules/agent_core.py    - Core Module - Handles streaming SSE, tool gates, and Rich rendering [High-Performance SQLite Edition
+#   ├── modules/agent_ipython.py - Local-AI Standalone IPython Kernel & RLM Harness Module [In-Memory Edition]
+#   ├── modules/agent_memories.py - SQLite-backed semantic recall and Temporal Personality Memory (TPM) manager [In-Memory Module & CLI]
+#   ├── modules/agent_sessions.py - SQLite-backed session, checkpoint, and turn logger with sub-agent registry [Self-Healing In-Memory M
+#   ├── modules/agent_skills.py  - Unified library & executable for static, dynamic, universal YAML, and on-demand skills [In-Memory Ed
+#   ├── modules/agent_tools.py   - Native Tool Engine - Handles file editing, commands, & graph intelligence [High-Performance In-Memor
 #   ├── modules/agent_tts.py     - Local-AI Kokoro Text-to-Speech (Text Out Loud) Module
-#   ├── modules/agent_tui.py     - Production Minimal Textual TUI for Local-AI Agent Engine
+#   ├── modules/agent_tui.py     - Production Minimal Textual TUI for Py Agent Engine
 #   ├── modules/agent_tui_async.py - Asynchronous uvloop background services for Local-AI Agent TUI
 #   ├── modules/agent_ui.py      - UI Module - Spinners, session boxes, and interactive menus
 #   ├── modules/agent_usage.py   - Token Usage & Spend Ledger Manager
 #   ├── modules/agent_voice.py   - Local-AI Standalone Voice to Text Module
-#   ├── modules/ai-agent-memories - SQLite-backed semantic recall and Temporal Personality Memory (TPM) manager.
-#   ├── modules/ai-agent-sessions - SQLite-backed session, checkpoint, and turn logger with sub-agent registry.
+#   ├── modules/ai-agent-memories - SQLite-backed semantic recall and Temporal Personality Memory (TPM) manager [In-Memory Module & CLI]
+#   ├── modules/ai-agent-sessions - SQLite-backed session, checkpoint, and turn logger with sub-agent registry [In-Memory Module & CLI]
 #   ├── modules/chat             - Unified Agentic Brainstorm, Thinking & Follow-up Recommendation Engine.
-#   ├── modules/model-select.py  - Fully Dynamic TUI Model Selector driven by OpenRouter Rankings
+#   ├── modules/model-select.py  - Fully Dynamic TUI Model Selector driven by OpenRouter & HuggingFace Router Rankings
 #   └── modules/speed_test.py    - Precise token generation & TPS speed test statistics tracker
 # -----------------------------------------------------------------------------------------
-[markdown:Readme.md] title:System Architecture
+[markdown:Readme.md] title:Privacy-First
 [python:agent_cloud.py] imp:os,re,typing | fn:get_active_configs
 [python:agent_context.py] imp:os,re,sys,typing | fn:tokenize,load_context_entries,jaccard_search,clean_tool_prefix
-[python:agent_core.py] imp:agent_cloud,agent_ipython,agent_tools,agent_ui,agent_usage,ast,difflib,json,os,re,requests,rich,shutil,speed_test,subprocess,sys,time,typing,urllib | cls:RichStreamer | fn:get_state,save_state,workspace_safe_name,run_mod,background_tpm_update,_clear_lines,__init__,_stop_spinner,start,update,stop,_log_turn_usage,_process_stream_chunk,_calc_turn_tokens,_confirm_gate,_print_tool_output,_run_edit_tool,agentic_turn,_is_local_server_alive,stream_response,get_accurate_token_count,show_memory_status,prune_history
-[python:agent_ipython.py] imp:IPython,agent_core,ast,contextlib,difflib,io,json,os,rich,subprocess,sys,traceback,typing | cls:MemorySDK,GraphSDK | fn:is_ipython_enabled,toggle_ipython_mode,bounded_repr,__init__,search,get_facts,add_fact,__init__,snippet,trace,blast_radius,search,architecture,delegate,_init_kernel_sdk,_is_outside,_check_boundary,safe_open,safe_listdir,_read_file,_write_file,_list_dir,_run_command,_delegate,inspect_ast_safety,run_cell,get_active_tools
-[python:agent_skills.py] imp:agent_context,agent_core,agent_ui,json,os,re,shutil,subprocess,sys,typing | fn:ensure_mysys_exists,find_skill_file,load_skill_content,_exec_tool_cmd,run_local_tool,run_interactive_tool,get_system_context,load_skill_blueprints,run_skill_selector
-[python:agent_spell.py] imp:difflib,json,os,re,shutil,sys,typing,urllib | fn:load_system_dictionary,edits1,correct_word,_match_case,_transform_words,apply_static_overrides,check_query_spelling_offline,highlight_diff,_get_prio,check_query_spelling
-[python:agent_tools.py] imp:agent_ipython,ast,difflib,json,os,re,rich,subprocess,sys,typing,urllib | fn:_safe_path,_is_outside_workspace,run_graph_cmd,run_tool,_gate
+[python:agent_core.py] imp:agent_cloud,agent_ipython,agent_memories,agent_tools,agent_ui,agent_usage,json,os,re,requests,rich,shutil,speed_test,subprocess,sys,time,typing,urllib | cls:RichStreamer | fn:_heal_tool_args,get_state,save_state,workspace_safe_name,run_mod,background_tpm_update,_clear_lines,__init__,_stop_spinner,start,update,stop,_log_turn_usage,_process_stream_chunk,_calc_turn_tokens,_confirm_gate,_print_tool_output,_run_edit_tool,agentic_turn,stream_response,get_accurate_token_count,show_memory_status,prune_history
+[python:agent_ipython.py] imp:IPython,agent_core,agent_memories,agent_tools,ast,collections,contextlib,io,os,subprocess,sys,traceback,typing | cls:MemorySDK,GraphSDK | fn:is_ipython_enabled,toggle_ipython_mode,bounded_repr,__init__,search,get_facts,add_fact,__init__,snippet,trace,blast_radius,search,architecture,delegate,_init_kernel_sdk,_is_outside,_check_boundary,safe_open,safe_listdir,_read_file,_edit_file,_write_file,_list_dir,_run_command,_delegate,inspect_ast_safety,run_cell,get_active_tools
+[python:agent_memories.py] imp:agent_context,contextlib,json,os,re,select,sqlite3,sys,termios,time,tty | fn:tokenize,get_key,connect_db,tpm_get,tpm_reconcile,tpm_clear,get_tpm_count,search_past_context
+[python:agent_sessions.py] imp:agent_context,contextlib,glob,json,os,re,select,sqlite3,sys,termios,time,tty,typing | fn:tokenize,get_key,connect_db,get_sub_agent_id,cleanup_sub_agent,init_db,save_checkpoint,rollback_checkpoint,log_turn,get_turns_count,clear_turns
+[python:agent_skills.py] imp:agent_context,agent_core,agent_ui,json,os,re,shutil,subprocess,sys,typing | fn:ensure_mysys_exists,parse_frontmatter,find_skill_file,load_skill_content,_exec_tool_cmd,run_local_tool,run_interactive_tool,get_system_context,load_skill_blueprints,run_skill_selector
+[python:agent_tools.py] imp:agent_ipython,ast,collections,difflib,importlib,json,os,re,rich,subprocess,sys,typing,urllib | fn:_get_graph_engine,_safe_path,_is_outside_workspace,run_graph_cmd,run_tool,_gate
 [python:agent_tts.py] imp:agent_core,os,re,subprocess,threading | fn:stop_tts,is_tts_enabled,speak_text,_run,speak_response,toggle_tts
-[python:agent_tui.py] imp:agent_cloud,agent_core,agent_ipython,agent_skills,agent_tts,agent_tui_async,agent_ui,agent_voice,base64,contextlib,json,os,re,rich,shutil,sqlite3,subprocess,sys,textual,threading,time,typing,urllib,uvloop | cls:FooterToggle,ImageButton,CloseCardButton,Message,AgentCommandProvider,LocalAITUI | fn:format_dir_path,format_model_name,copy_to_clipboard,_format_tui_reasonix_text,on_click,on_click,on_click,__init__,update_content,render,search,command_sources,border_accent,is_dark_theme,watch_theme,__init__,on_unmount,_safe_remove_banner,notify,set_skill,set_mode,set_reasoning,action_prompt_image_url,on_key,refresh_db_counts,ensure_system_context,get_db_status_string,update_welcome_banner,compose,action_close_tips_card,on_mount,action_toggle_plan_build,on_input_changed,update_stats_ui,action_scroll_page_up,action_scroll_page_down,action_scroll_up,action_scroll_down,action_copy_last_response,action_copy_entire_chat,handle_view_file,handle_task_command,_run_task_sub,handle_slash_command,prompt_tui_confirm,_show,process_query_worker,on_input_submitted,disable_input,enable_input,action_stop_generation,update_sidebar_visibility,action_toggle_sidebar,update_footer_visibility,action_toggle_footer,action_toggle_compact,action_cycle_theme,action_toggle_reasoning,action_toggle_borders
+[python:agent_tui.py] imp:agent_cloud,agent_core,agent_ipython,agent_skills,agent_tts,agent_tui_async,agent_ui,agent_voice,base64,collections,contextlib,json,os,re,rich,shutil,sqlite3,subprocess,sys,textual,threading,time,typing,urllib,uvloop | cls:FooterToggle,ImageButton,CloseCardButton,Message,AgentCommandProvider,LocalAITUI | fn:format_dir_path,format_model_name,copy_to_clipboard,_format_tui_reasonix_text,on_click,on_click,on_click,__init__,update_content,render,search,command_sources,border_accent,is_dark_theme,watch_theme,__init__,on_unmount,_safe_remove_banner,notify,set_skill,set_mode,set_reasoning,action_prompt_image_url,on_key,refresh_db_counts,ensure_system_context,get_db_status_string,update_welcome_banner,compose,action_close_tips_card,on_mount,action_toggle_plan_build,on_input_changed,update_stats_ui,action_scroll_page_up,action_scroll_page_down,action_scroll_up,action_scroll_down,action_copy_last_response,action_copy_entire_chat,handle_view_file,handle_task_command,_run_task_sub,handle_slash_command,prompt_tui_confirm,_show,process_query_worker,on_input_submitted,disable_input,enable_input,action_stop_generation,update_sidebar_visibility,action_toggle_sidebar,update_footer_visibility,action_toggle_footer,action_toggle_compact,action_cycle_theme,action_toggle_reasoning,action_toggle_borders
 [python:agent_tui_async.py] imp:asyncio,json,os | fn:run_async_cmd,watch_workspace_changes,start_subagent_ipc_hub,handle_subagent_msg
-[python:agent_ui.py] imp:agent_cloud,json,os,re,rich,select,sys,termios,threading,time,tty,typing,urllib | cls:InlineSpinner | fn:__init__,_spin,update,start,stop,_read_fd,get_key,get_local_model_name,draw_session_box,confirm_tool,run_interactive_selection,show_help,select_workspace_profile
+[python:agent_ui.py] imp:agent_cloud,collections,json,os,re,rich,select,sys,termios,threading,time,tty,typing,urllib | cls:InlineSpinner | fn:__init__,_spin,update,start,stop,_read_fd,get_key,get_local_model_name,draw_session_box,confirm_tool,run_interactive_selection,show_help,select_workspace_profile
 [python:agent_usage.py] imp:json,os,time,typing | fn:record,turn_line
-[python:agent_voice.py] imp:agent_core,base64,http,json,os,re,socket,ssl,subprocess,sys,threading,time,typing,urllib | cls:VoiceHandler | fn:is_bridge_running,load_voice_env,transcribe_gemini,get_prompt_input,log_message,do_POST,do_GET,run_server,toggle_voice_bridge
-[python:ai-agent-memories] imp:agent_context,agent_ui,contextlib,json,os,re,select,sqlite3,sys,termios,time,tty,typing | fn:tokenize,get_key,connect_db,search_past_context,tpm_reconcile,tpm_get,tpm_clear,get_tpm_count
-[python:ai-agent-sessions] imp:agent_context,agent_core,agent_ui,contextlib,glob,json,os,re,select,sqlite3,sys,termios,time,tty,typing | fn:tokenize,get_key,connect_db,get_sub_agent_id,cleanup_sub_agent,print_session_box,init_db,save_checkpoint,rollback_checkpoint,log_turn,get_turns_count,clear_turns
+[python:agent_voice.py] imp:agent_core,base64,http,json,os,re,socket,ssl,subprocess,sys,time,urllib | cls:VoiceHandler | fn:is_bridge_running,load_voice_env,transcribe_gemini,get_prompt_input,log_message,do_POST,do_GET,run_server,toggle_voice_bridge
+[python:ai-agent-memories] imp:agent_context,contextlib,json,os,re,select,sqlite3,sys,termios,time,tty,typing | fn:tokenize,get_key,connect_db,tpm_get,tpm_reconcile,tpm_clear,get_tpm_count,search_past_context
+[python:ai-agent-sessions] imp:agent_context,contextlib,glob,json,os,re,select,sqlite3,sys,termios,time,tty,typing | fn:tokenize,get_key,connect_db,get_sub_agent_id,cleanup_sub_agent,init_db,save_checkpoint,rollback_checkpoint,log_turn,get_turns_count,clear_turns
 [python:chat] imp:agent_ui,json,os,re,sys,urllib
-[python:model-select.py] imp:asyncio,atexit,json,os,re,select,shutil,subprocess,sys,termios,tty,typing,urllib | fn:cleanup_terminal,classify_openrouter_models,load_env_vars,get_active_key_set,update_env,set_key_commented_state,toggle_env_api_keys,load_cached_lists,save_cached_lists,async_fetch_openrouter_models,_fetch,async_fetch_hf_spaces,_fetch,async_get_key,_read,draw_main_menu,run_selector,get_opts,async_main
-[python:speed_test.py] imp:os,sys,time,typing | fn:start,count_token,end
+[python:model-select.py] imp:asyncio,atexit,json,os,re,select,shutil,subprocess,sys,termios,tty,urllib | fn:cleanup_terminal,classify_openrouter_models,ensure_env_exists,load_env_vars,get_active_key_set,update_env,set_key_commented_state,toggle_env_api_keys,load_cached_lists,save_cached_lists,async_fetch_openrouter_models,_fetch,async_fetch_hf_spaces,_fetch,async_get_key,_read,draw_main_menu,run_selector,get_opts,async_main
+[python:speed_test.py] imp:sys,time | fn:start,count_token,end

@@ -11,7 +11,6 @@ import socketserver
 import sys
 import threading
 import urllib.parse
-from typing import Any
 
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
 MODULES_DIR = os.path.join(CFG_DIR, "modules")
@@ -67,7 +66,10 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
     profile_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
 
     if profile_content:
-        profile_content = profile_content.replace('Reply ONLY with: "Workspace loaded. Awaiting instructions."', "Execute the requested action immediately.")
+        profile_content = profile_content.replace(
+            'Reply ONLY with: "Workspace loaded. Awaiting instructions."',
+            "Execute the requested action immediately.",
+        )
 
     tools_header = (
         f"### ACTIVE DEVELOPER AGENT MODE:\n"
@@ -94,7 +96,12 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
         for f in os.listdir(agent_dir):
             if f.startswith("index-map-") and f.endswith(".txt"):
                 try:
-                    with open(os.path.join(agent_dir, f), "r", encoding="utf-8", errors="ignore") as mf:
+                    with open(
+                        os.path.join(agent_dir, f),
+                        "r",
+                        encoding="utf-8",
+                        errors="ignore",
+                    ) as mf:
                         sys_prompt += f"### CODESPACE MAP:\n{mf.read().strip()}\n\n"
                         break
                 except OSError:
@@ -118,7 +125,12 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
 
             self.send_response(resp.status_code)
             for k, v in resp.headers.items():
-                if k.lower() not in ("transfer-encoding", "content-encoding", "connection", "content-length"):
+                if k.lower() not in (
+                    "transfer-encoding",
+                    "content-encoding",
+                    "connection",
+                    "content-length",
+                ):
                     self.send_header(k, v)
 
             self.send_header("Content-Length", str(len(body)))
@@ -126,7 +138,9 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
         except Exception:
-            self.send_error(502, f"Could not connect to llama-server at {LLAMA_BASE_URL}.")
+            self.send_error(
+                502, f"Could not connect to llama-server at {LLAMA_BASE_URL}."
+            )
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -142,7 +156,16 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
             content_length = int(self.headers.get("Content-Length", 0))
             post_data = self.rfile.read(content_length) if content_length > 0 else b"{}"
             try:
-                resp = requests.post(target_url, data=post_data, headers={"Content-Type": self.headers.get("Content-Type", "application/json")}, timeout=30)
+                resp = requests.post(
+                    target_url,
+                    data=post_data,
+                    headers={
+                        "Content-Type": self.headers.get(
+                            "Content-Type", "application/json"
+                        )
+                    },
+                    timeout=30,
+                )
                 body = resp.content
                 if body.startswith(b"\x1f\x8b"):
                     try:
@@ -151,7 +174,12 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                         pass
                 self.send_response(resp.status_code)
                 for k, v in resp.headers.items():
-                    if k.lower() not in ("transfer-encoding", "content-encoding", "connection", "content-length"):
+                    if k.lower() not in (
+                        "transfer-encoding",
+                        "content-encoding",
+                        "connection",
+                        "content-length",
+                    ):
                         self.send_header(k, v)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
@@ -188,17 +216,16 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
 
         session = requests.Session()
         safe_name = core.workspace_safe_name(workspace)
-        user_text = next((m.get("content") for m in reversed(messages) if m.get("role") == "user"), "")
+        user_text = next(
+            (m.get("content") for m in reversed(messages) if m.get("role") == "user"),
+            "",
+        )
         accumulated_ans = ""
         os.environ["AI_CONFIRM_GATES"] = "0"
 
         try:
             for _round in range(10 if is_agent else 1):
-                req_body = {
-                    **body,
-                    "messages": messages,
-                    "stream": True
-                }
+                req_body = {**body, "messages": messages, "stream": True}
                 if "stream_options" not in req_body:
                     req_body["stream_options"] = {"include_usage": True}
                 if is_agent:
@@ -206,10 +233,24 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                 else:
                     req_body.pop("tools", None)
 
-                res = session.post(LLAMA_SERVER_URL, json=req_body, headers={"Content-Type": "application/json"}, timeout=180, stream=True)
+                res = session.post(
+                    LLAMA_SERVER_URL,
+                    json=req_body,
+                    headers={"Content-Type": "application/json"},
+                    timeout=180,
+                    stream=True,
+                )
                 if res.status_code != 200:
-                    err_chunk = {"choices": [{"delta": {"content": f"\n[error] LLM Server HTTP {res.status_code}\n"}}]}
-                    self.wfile.write(f"data: {json.dumps(err_chunk)}\n\n".encode("utf-8"))
+                    err_chunk = {
+                        "choices": [
+                            {
+                                "delta": {
+                                    "content": f"\n[error] LLM Server HTTP {res.status_code}\n"
+                                }
+                            }
+                        ]
+                    }
+                    self.wfile.write(f"data: {json.dumps(err_chunk)}\n\n".encode())
                     self.wfile.flush()
                     break
 
@@ -243,20 +284,36 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                                 for tc in delta.get("tool_calls", []):
                                     idx = tc.get("index", 0)
                                     call_id = tc.get("id") or f"call_{_round}_{idx}"
-                                    tc_entry = tool_calls_map.setdefault(idx, {
-                                        "id": call_id,
-                                        "type": "function",
-                                        "function": {"name": tc.get("function", {}).get("name", ""), "arguments": ""}
-                                    })
+                                    tc_entry = tool_calls_map.setdefault(
+                                        idx,
+                                        {
+                                            "id": call_id,
+                                            "type": "function",
+                                            "function": {
+                                                "name": tc.get("function", {}).get(
+                                                    "name", ""
+                                                ),
+                                                "arguments": "",
+                                            },
+                                        },
+                                    )
                                     if tc.get("id"):
                                         tc_entry["id"] = tc["id"]
                                     if tc.get("function", {}).get("name"):
-                                        tc_entry["function"]["name"] = tc["function"]["name"]
-                                    tc_entry["function"]["arguments"] += tc.get("function", {}).get("arguments", "")
+                                        tc_entry["function"]["name"] = tc["function"][
+                                            "name"
+                                        ]
+                                    tc_entry["function"]["arguments"] += tc.get(
+                                        "function", {}
+                                    ).get("arguments", "")
                     except Exception:
                         pass
 
-                calls = [val for _, val in sorted(tool_calls_map.items())] if tool_calls_map else None
+                calls = (
+                    [val for _, val in sorted(tool_calls_map.items())]
+                    if tool_calls_map
+                    else None
+                )
                 ans_text = "".join(acc_content)
 
                 if not calls or not is_agent:
@@ -267,7 +324,13 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                     if not tc.get("id"):
                         tc["id"] = f"call_{_round}_{idx}"
 
-                messages.append({"role": "assistant", "content": ans_text or None, "tool_calls": calls})
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": ans_text or None,
+                        "tool_calls": calls,
+                    }
+                )
 
                 for tc in calls:
                     fname = tc.get("function", {}).get("name", "")
@@ -277,16 +340,32 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                     cid = tc.get("id") or f"call_{_round}_0"
 
                     start_msg = f"\n\n> ⚙️ **{verb.title()}** • `{fname}`...\n"
-                    self.wfile.write(f"data: {json.dumps({'choices': [{'delta': {'content': start_msg}}]})}\n\n".encode("utf-8"))
+                    self.wfile.write(
+                        f"data: {json.dumps({'choices': [{'delta': {'content': start_msg}}]})}\n\n".encode()
+                    )
                     self.wfile.flush()
 
                     try:
-                        result = tools.run_tool(fname, args, workspace, confirm_gate_fn=lambda r: True)
+                        result = tools.run_tool(
+                            fname, args, workspace, confirm_gate_fn=lambda r: True
+                        )
                     except Exception as e:
                         result = f"[tool error] {e}"
 
-                    pruned = result if len(result) <= 2000 else result[:1500] + f"\n... [Snipped {len(result) - 1500} chars]"
-                    messages.append({"role": "tool", "tool_call_id": cid, "name": fname, "content": pruned})
+                    pruned = (
+                        result
+                        if len(result) <= 2000
+                        else result[:1500]
+                        + f"\n... [Snipped {len(result) - 1500} chars]"
+                    )
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": cid,
+                            "name": fname,
+                            "content": pruned,
+                        }
+                    )
 
             self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
@@ -295,7 +374,16 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                 try:
                     sessions.log_turn(safe_name, str(user_text), accumulated_ans)
                     if core.get_state("memory_active", False):
-                        threading.Thread(target=core.background_tpm_update, args=(str(user_text), accumulated_ans, safe_name, workspace), daemon=True).start()
+                        threading.Thread(
+                            target=core.background_tpm_update,
+                            args=(
+                                str(user_text),
+                                accumulated_ans,
+                                safe_name,
+                                workspace,
+                            ),
+                            daemon=True,
+                        ).start()
                 except Exception:
                     pass
 
@@ -308,7 +396,9 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
         except Exception as e:
             err_msg = f"\n\n[Gateway error: {e}]\n"
             try:
-                self.wfile.write(f"data: {json.dumps({'choices': [{'delta': {'content': err_msg}}]})}\n\n".encode("utf-8"))
+                self.wfile.write(
+                    f"data: {json.dumps({'choices': [{'delta': {'content': err_msg}}]})}\n\n".encode()
+                )
                 self.wfile.flush()
             except Exception:
                 pass
@@ -327,7 +417,9 @@ class ThreadedProxyServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 if __name__ == "__main__":
     socketserver.TCPServer.allow_reuse_address = True
     ws = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
-    print(f"\033[1;32m[py-agent] Official llama.cpp WebUI Gateway active at http://127.0.0.1:{PORT}\033[0m")
+    print(
+        f"\033[1;32m[py-agent] Official llama.cpp WebUI Gateway active at http://127.0.0.1:{PORT}\033[0m"
+    )
     server = ThreadedProxyServer(("127.0.0.1", PORT), OfficialWebUIProxyHandler)
     try:
         server.serve_forever()

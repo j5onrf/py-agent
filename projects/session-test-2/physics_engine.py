@@ -5,11 +5,13 @@ class PhysicsEngine:
         self.objects = []
 
     def add_object(self, obj_id, mass, initial_velocity):
-        self.objects.append({"id": obj_id, "mass": mass, "velocity": initial_velocity, "pos": 0.0})
+        self.objects.append(
+            {"id": obj_id, "mass": mass, "velocity": initial_velocity, "pos": 0.0}
+        )
 
     def calculate_kinetic_energy(self, mass, velocity):
         """Calculates kinetic energy: 0.5 * m * v^2"""
-        return 0.5 * mass * (velocity ** 2)
+        return 0.5 * mass * (velocity**2)
 
     def calculate_potential_energy(self, mass, height):
         """Calculates potential energy: m * g * h"""
@@ -17,11 +19,12 @@ class PhysicsEngine:
 
     def calculate_drag_force(self, velocity, area, drag_coefficient=0.47):
         """Calculates drag force on an object moving through fluid."""
-        return 0.5 * drag_coefficient * 1.225 * area * (velocity ** 2)
+        return 0.5 * drag_coefficient * 1.225 * area * (velocity**2)
 
     def compute_trajectory(self, v0, angle_degrees, time_step=0.1, total_time=10.0):
         """Simulates 2D projectile trajectory over time."""
         import math
+
         angle_rad = math.radians(angle_degrees)
         vx = v0 * math.cos(angle_rad)
         vy = v0 * math.sin(angle_rad)

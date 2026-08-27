@@ -17,8 +17,8 @@ PORT = 9999
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
 PENDING_FILE = os.path.join(CFG_DIR, ".voice_pending.txt")
 
-RE_CLEAN_TRANSCRIPTION: re.Pattern = re.compile(r'[^a-zA-Z0-9\s?.,!\'-]')
-RE_NUMERIC_DIGITS: re.Pattern = re.compile(r'^\d{1,4}$')
+RE_CLEAN_TRANSCRIPTION: re.Pattern = re.compile(r"[^a-zA-Z0-9\s?.,!\'-]")
+RE_NUMERIC_DIGITS: re.Pattern = re.compile(r"^\d{1,4}$")
 
 try:
     import agent_core as core
@@ -154,41 +154,64 @@ def load_voice_env() -> None:
                     if (s := line.strip()) and not s.startswith("#") and "=" in s:
                         k, v = s.replace("export ", "", 1).split("=", 1)
                         if k := k.strip():
-                            os.environ[k] = v.split(" #")[0].strip().strip('"').strip("'")
-        except OSError: pass
+                            os.environ[k] = (
+                                v.split(" #")[0].strip().strip('"').strip("'")
+                            )
+        except OSError:
+            pass
 
 
 def transcribe_gemini(audio_data: bytes, mime_type: str = "audio/webm") -> str:
     load_voice_env()
     gkey = os.environ.get("GEM_VOICE") or os.environ.get("GEMINI_API_KEY")
-    model = os.environ.get("GEM_MODEL") or os.environ.get("GEMINI_MODEL", "gemini-3.7-flash")
+    model = os.environ.get("GEM_MODEL") or os.environ.get(
+        "GEMINI_MODEL", "gemini-3.7-flash"
+    )
     if not gkey:
-        sys.stderr.write("[error] GEM_VOICE key is not set in ~/.config/py-agent/.env\n")
+        sys.stderr.write(
+            "[error] GEM_VOICE key is not set in ~/.config/py-agent/.env\n"
+        )
         sys.stderr.flush()
         return ""
 
     encoded = base64.b64encode(audio_data).decode("utf-8")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={gkey}"
     payload = {
-        "contents": [{
-            "parts": [
-                {"inline_data": {"mime_type": mime_type, "data": encoded}},
-                {"text": "Transcribe this audio verbatim. If the audio is silent or contains background noise, output 'SILENCE'. Output ONLY plain text."}
-            ]
-        }]
+        "contents": [
+            {
+                "parts": [
+                    {"inline_data": {"mime_type": mime_type, "data": encoded}},
+                    {
+                        "text": "Transcribe this audio verbatim. If the audio is silent or contains background noise, output 'SILENCE'. Output ONLY plain text."
+                    },
+                ]
+            }
+        ]
     }
     try:
-        req = urlreq.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
+        req = urlreq.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
         with urlreq.urlopen(req, timeout=10) as resp:
             try:
-                with open(os.path.join(CFG_DIR, ".request_log"), "a", encoding="utf-8") as lf:
+                with open(
+                    os.path.join(CFG_DIR, ".request_log"), "a", encoding="utf-8"
+                ) as lf:
                     lf.write(f"{int(time.time())}|gemini\n")
-            except OSError: pass
+            except OSError:
+                pass
             res_data = json.loads(resp.read().decode("utf-8"))
             raw = res_data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            clean = RE_CLEAN_TRANSCRIPTION.sub('', raw).strip()
+            clean = RE_CLEAN_TRANSCRIPTION.sub("", raw).strip()
             cl_lower = clean.lower()
-            if not clean or len(clean) < 2 or cl_lower in ("silence", "uh", "um", "mm", "thank you", "thank you."):
+            if (
+                not clean
+                or len(clean) < 2
+                or cl_lower in ("silence", "uh", "um", "mm", "thank you", "thank you.")
+            ):
                 return ""
             if RE_NUMERIC_DIGITS.match(clean) and len(set(clean)) == 1:
                 return ""
@@ -212,7 +235,8 @@ def get_prompt_input(symbol: str = "❯") -> str:
                     sys.stdout.write(f"{text}\n")
                     sys.stdout.flush()
                     return text
-        except OSError: pass
+        except OSError:
+            pass
 
     try:
         return input(f"{symbol} ").strip()
@@ -221,7 +245,8 @@ def get_prompt_input(symbol: str = "❯") -> str:
 
 
 class VoiceHandler(http.server.SimpleHTTPRequestHandler):
-    def log_message(self, format, *args): pass
+    def log_message(self, format, *args):
+        pass
 
     def do_POST(self):
         try:
@@ -229,7 +254,11 @@ class VoiceHandler(http.server.SimpleHTTPRequestHandler):
                 length = int(self.headers.get("Content-Length", 0))
                 mime_type = self.headers.get("Content-Type", "audio/webm").split(";")[0]
                 audio_data = self.rfile.read(length)
-                query = transcribe_gemini(audio_data, mime_type=mime_type) if audio_data else ""
+                query = (
+                    transcribe_gemini(audio_data, mime_type=mime_type)
+                    if audio_data
+                    else ""
+                )
                 if query:
                     sys.stderr.write(f"[sys] Transcribed: {query}\n")
                     sys.stderr.flush()
@@ -274,7 +303,12 @@ def run_server() -> None:
 
     cert_path = os.path.join(CFG_DIR, "server.pem")
     if not os.path.exists(cert_path):
-        subprocess.run(f'openssl req -new -x509 -keyout "{cert_path}" -out "{cert_path}" -days 365 -nodes -subj "/CN={local_ip}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            f'openssl req -new -x509 -keyout "{cert_path}" -out "{cert_path}" -days 365 -nodes -subj "/CN={local_ip}"',
+            shell=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
     # ThreadingHTTPServer ensures multiple requests / streaming uploads don't block the visualizer UI
     with http.server.ThreadingHTTPServer(("", PORT), VoiceHandler) as httpd:
@@ -299,13 +333,16 @@ def toggle_voice_bridge(auto_toggle: bool = False) -> tuple[bool, bool]:
 
     if auto_toggle and is_running:
         _auto_submit = not _auto_submit
-        if core: core.save_state("voice_auto_submit", _auto_submit)
+        if core:
+            core.save_state("voice_auto_submit", _auto_submit)
         return True, _auto_submit
 
     if is_running:
         if _voice_proc:
-            try: _voice_proc.terminate()
-            except OSError: pass
+            try:
+                _voice_proc.terminate()
+            except OSError:
+                pass
         subprocess.run(["pkill", "-f", "agent_voice.py"], stderr=subprocess.DEVNULL)
         _voice_proc = None
         return False, _auto_submit
@@ -315,7 +352,7 @@ def toggle_voice_bridge(auto_toggle: bool = False) -> tuple[bool, bool]:
             [sys.executable, mod_path, "--server"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            start_new_session=True
+            start_new_session=True,
         )
         return True, _auto_submit
 

@@ -5,6 +5,7 @@ def reverse_words(text):
     words = text.split()
     return " ".join(reversed(words))
 
+
 def count_vowels(text):
     """Counts the number of vowels (a, e, i, o, u, case-insensitive) in text."""
     if not isinstance(text, str):

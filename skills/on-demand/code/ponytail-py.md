@@ -73,7 +73,9 @@ class FileHandler:
 ```python
 def read_text_file(workspace: str, path: str) -> Optional[str]:
     full = os.path.realpath(os.path.join(workspace, path))
-    if full != os.path.realpath(workspace) and not full.startswith(os.path.realpath(workspace) + os.sep):
+    if full != os.path.realpath(workspace) and not full.startswith(
+        os.path.realpath(workspace) + os.sep
+    ):
         return None  # Security boundary preserved
 
     try:

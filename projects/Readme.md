@@ -168,7 +168,6 @@ Running `ai init <path>` sets the default workspace agent profile:
 │  /sync                       - Sync index                           │
 │  /clear, /c                  - Soft clear active chat history       │
 │  /reset, /purge              - Hard reset (.agent & database)       │
-│  /sp                         - Spellchecker                         │
 │  /s <q>, /s off              - Load or unload on-demand skill       │
 │  -save <tag>                 - Save session checkpoint              │
 │  -load                       - Load or clone checkpoint             │

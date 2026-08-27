@@ -21,7 +21,7 @@ PRICING_MAP: dict[str, dict[str, float]] = {
     "gemini-3.6-flash": {"in": 1.50, "out": 7.50},
     "gemini-3.5-flash": {"in": 0.075, "out": 0.30},
     "gemini-3.1-flash-lite": {"in": 0.075, "out": 0.30},
-    "local-model": {"in": 0.0, "out": 0.0}
+    "local-model": {"in": 0.0, "out": 0.0},
 }
 
 _today_cache: dict[str, Any] = {"date": "", "cost": 0.0}
@@ -62,11 +62,15 @@ def record(model: str, in_tok: int, out_tok: int, cost: float = 0.0) -> None:
         os.replace(tmp, LEDGER_PATH)
     except OSError:
         try:
-            if os.path.exists(tmp): os.remove(tmp)
-        except OSError: pass
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
 
 
-def turn_line(in_tok: int, out_tok: int, cost: float, ctx_used: int, ctx_max: int | None = None) -> str:
+def turn_line(
+    in_tok: int, out_tok: int, cost: float, ctx_used: int, ctx_max: int | None = None
+) -> str:
     """Generates a structured terminal diagnostic summary line with cached ledger reads."""
     today = time.strftime("%Y-%m-%d")
     today_cost = _today_cache["cost"] if _today_cache.get("date") == today else 0.0
@@ -84,6 +88,10 @@ def turn_line(in_tok: int, out_tok: int, cost: float, ctx_used: int, ctx_max: in
 
     ctx_pct = (ctx_used / (ctx_max or 8192)) * 100
     cost_part = f"cost: \033[32m${cost:.5f}\033[90m | " if cost > 0.0 else ""
-    today_part = f"today: \033[32m${today_cost:.4f}\033[90m | " if (cost > 0.0 and today_cost > 0.0) else ""
+    today_part = (
+        f"today: \033[32m${today_cost:.4f}\033[90m | "
+        if (cost > 0.0 and today_cost > 0.0)
+        else ""
+    )
 
     return f"\033[90m [ {in_tok} in | {out_tok} out | {cost_part}{today_part}ctx: {ctx_pct:.1f}% ]\033[0m"

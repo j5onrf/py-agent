@@ -52,10 +52,12 @@ You can add any RSS, Atom, or Reddit feed by modifying the `FEEDS` dictionary at
 FEEDS = {
     "r/hyprland": {"type": "reddit", "subreddit": "hyprland"},
     "r/unixporn": {"type": "reddit", "subreddit": "unixporn"},
-    "Hacker News": {"type": "custom", "url": "[https://news.ycombinator.com/rss](https://news.ycombinator.com/rss)"},
-    "llama.cpp Releases": {"type": "github", "owner": "ggml-org", "repo": "llama.cpp"}
+    "Hacker News": {
+        "type": "custom",
+        "url": "[https://news.ycombinator.com/rss](https://news.ycombinator.com/rss)",
+    },
+    "llama.cpp Releases": {"type": "github", "owner": "ggml-org", "repo": "llama.cpp"},
 }
-
 ```
 
 ## Navigation & Controls
