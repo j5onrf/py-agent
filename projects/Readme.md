@@ -38,7 +38,7 @@ Switch CLI box styles using `/box [1-5]` (or type `/box` to cycle). Selection pe
 │ directory:  ~                     │
 │     skill:  default               │
 │  database:  stateless             │
-╰─────────────────── Ctrl+C to exit ─╯
+╰────────────────── Ctrl+C to exit ─╯
 ```
 
 #### Style #2: Double Border
@@ -48,7 +48,7 @@ Switch CLI box styles using `/box [1-5]` (or type `/box` to cycle). Selection pe
 ║ directory:  ~                     ║
 ║     skill:  default               ║
 ║  database:  stateless             ║
-╚═══════════════════ Ctrl+C to exit ─╝
+╚══════════════════ Ctrl+C to exit ─╝
 ```
 
 #### Style #3: Heavy Square
@@ -58,7 +58,7 @@ Switch CLI box styles using `/box [1-5]` (or type `/box` to cycle). Selection pe
 ┃ directory:  ~                     ┃
 ┃     skill:  default               ┃
 ┃  database:  stateless             ┃
-┗━━━━━━━━━━━━━━━━━━━ Ctrl+C to exit ━┛
+┗━━━━━━━━━━━━━━━━━━ Ctrl+C to exit ━┛
 ```
 
 #### Style #4: Minimalist Line
@@ -68,7 +68,7 @@ Switch CLI box styles using `/box [1-5]` (or type `/box` to cycle). Selection pe
   directory:  ~                      
       skill:  default                
    database:  stateless              
- ─────────────────── Ctrl+C to exit ─ 
+ ────────────────── Ctrl+C to exit ─ 
 ```
 
 #### Style #5: Classic In-Panel Codex
@@ -80,7 +80,7 @@ Switch CLI box styles using `/box [1-5]` (or type `/box` to cycle). Selection pe
 │ directory:  ~                     │
 │     skill:  default               │
 │  database:  stateless             │
-╰─────────────────── Ctrl+C to exit ─╯
+╰────────────────── Ctrl+C to exit ─╯
 ```
 
 ---
