@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# ai-status - Diagnostics for Py Agent Stack v1.5.0 [j5onrf]
-# Path: ~/.config/local-ai/tools/agentic/system/ai-status
+# ai-status - Diagnostics for Py-Agent Cloud Models
 
 set -euo pipefail
 
-ENV_PATH="$HOME/.config/local-ai/.env"
-LOG_FILE="$HOME/.config/local-ai/.request_log"
+ENV_PATH="$HOME/.config/py-agent/.env"
+LOG_FILE="$HOME/.config/py-agent/.request_log"
 
 # Safely source active keys from .env into script environment
 if [[ -f "$ENV_PATH" ]]; then
@@ -90,7 +89,7 @@ if [[ -f "$ENV_PATH" ]]; then
                     elif [[ "$provider" == "openai" ]]; then m_val="${OPENAI_MODEL:-gpt-5.5}"
                     elif [[ "$provider" == "claude" ]]; then m_val="${CLAUDE_MODEL:-claude-fable-5}"
                     elif [[ "$provider" == "xai" ]]; then m_val="${XAI_MODEL:-grok-4.5}"
-                    elif [[ "$provider" == "custom" ]]; then m_val="${CUSTOM_MODEL:-default}"
+                    elif [[ "$provider" == "custom" ]]; then m_val="${CUSTOM_MODEL:-Qwen/Qwen3.8-27B}"
                     else m_val="default-model"
                     fi
                 fi
@@ -111,7 +110,7 @@ request_stats="0|0|0|0|0|0|0|0|0|0"
 if [[ -f "$LOG_FILE" ]]; then
     request_stats=$(python3 -c "
 import os, time
-log_file = os.path.expanduser('~/.config/local-ai/.request_log')
+log_file = os.path.expanduser('~/.config/py-agent/.request_log')
 now = int(time.time())
 day_ago, min_ago = now - 86400, now - 60
 rpd = {'gemini': 0, 'openrouter': 0, 'openai': 0, 'claude': 0, 'grok': 0}
@@ -129,7 +128,6 @@ try:
                         rpd[provider] += 1
                         if ts >= min_ago:
                             rpm[provider] += 1
-    # Auto-pruning: Keep only active rolling 24h timestamps
     with open(log_file, 'w') as f:
         for entry in valid:
             f.write(f'{entry}\n')
@@ -151,44 +149,13 @@ grok_rpd=$(echo "$request_stats" | cut -d'|' -f9)
 grok_rpm=$(echo "$request_stats" | cut -d'|' -f10)
 
 # Check individual connectivity
+custom_status=$(check_conn "${CUSTOM_API_KEY:-}" "https://router.huggingface.co")
 gemini_status=$(check_conn "${GEMINI_API_KEY:-}" "https://generativelanguage.googleapis.com")
 openai_status=$(check_conn "${OPENAI_API_KEY:-}" "https://api.openai.com")
 claude_status=$(check_conn "${CLAUDE_API_KEY:-}" "https://api.anthropic.com")
 xai_status=$(check_conn "${XAI_API_KEY:-}" "https://api.x.ai")
 or_status=$(check_conn "${OPENROUTER_API_KEY:-}" "https://openrouter.ai")
 local_status=$(curl -s -I --connect-timeout 1.0 "http://localhost:8080" >/dev/null && echo 0 || echo 1)
-
-# Fetch OpenRouter key metadata on-demand
-or_meta="*Not Available*"
-if [[ $or_status -eq 0 && -n "${OPENROUTER_API_KEY:-}" ]]; then
-    or_meta=$(curl -s -H "Authorization: Bearer $OPENROUTER_API_KEY" "https://openrouter.ai/api/v1/auth/key" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin).get('data', {})
-    limit = f'\${d.get(\"limit\")}' if d.get('limit') is not None else 'Unlimited'
-    free = ' (Free Tier)' if d.get('is_free_tier') else ' (Paid)'
-    print(f'Used: \${d.get(\"usage\", 0):.4f} | Limit: {limit}{free}')
-except Exception:
-    print('Failed to parse metadata')
-" || echo "API Unreachable")
-fi
-
-# Fetch OpenRouter active free models on-demand
-or_free_list="*Not Available*"
-if [[ $or_status -eq 0 && "${OPENROUTER_MODEL:-}" == *"free"* && -n "${OPENROUTER_API_KEY:-}" ]]; then
-    or_free_list=$(curl -s "https://openrouter.ai/api/v1/models" | python3 -c "
-import sys, json
-try:
-    models = json.load(sys.stdin).get('data', [])
-    free = [m.get('id') for m in models if m.get('id', '').endswith(':free')]
-    if free:
-        print(', '.join(free[:15]) + '...')
-    else:
-        print('None found')
-except Exception:
-    print('Failed to parse free models')
-" || echo "Failed to fetch")
-fi
 
 # Fetch Local Server active model dynamically if online
 local_model="Local Server"
@@ -204,23 +171,11 @@ except:
 " || echo "Local Server")
 fi
 
-# Retrieve the dynamic limits based on the active GEMINI_MODEL
-gemini_limits=$(get_gemini_limits "${GEMINI_MODEL:-gemini-3.5-flash-lite}")
-
 # Evaluate active runtime route and fallback dynamically based on .env priority order
 resolved_provider="*None / All Offline*"
 resolved_model="*None*"
 fallback_provider="*None Configured*"
 fallback_model="*None*"
-
-if [[ ${#active_providers[@]} -gt 1 ]]; then
-    f_prov="${active_providers[1]}"
-    fallback_provider=$(echo "$f_prov" | tr '[:lower:]' '[:upper:]' | sed 's/XAI/x.AI/; s/CLAUDE/Anthropic Claude/; s/GEMINI/Google Gemini/; s/OPENAI/OpenAI/; s/OPENROUTER/OpenRouter/; s/CUSTOM/Custom Endpoint/')
-    fallback_model="${active_models[1]}"
-elif [[ $local_status -eq 0 ]]; then
-    fallback_provider="Local AI Server"
-    fallback_model="$local_model"
-fi
 
 for i in "${!active_providers[@]}"; do
     provider="${active_providers[$i]}"
@@ -232,20 +187,13 @@ for i in "${!active_providers[@]}"; do
     elif [[ "$provider" == "claude" ]]; then domain="https://api.anthropic.com"
     elif [[ "$provider" == "xai" ]]; then domain="https://api.x.ai"
     elif [[ "$provider" == "openrouter" ]]; then domain="https://openrouter.ai"
-    elif [[ "$provider" == "custom" ]]; then domain="${CUSTOM_URL:-https://g9hnto0u7lvbu837.us-east-2.aws.endpoints.huggingface.cloud/v1}"
+    elif [[ "$provider" == "custom" ]]; then domain="https://router.huggingface.co"
     fi
     
     status=$(check_conn "$key_val" "$domain")
     if [[ $status -eq 0 ]]; then
-        resolved_provider=$(echo "$provider" | tr '[:lower:]' '[:upper:]' | sed 's/XAI/x.AI/; s/CLAUDE/Anthropic Claude/; s/GEMINI/Google Gemini/; s/OPENAI/OpenAI/; s/OPENROUTER/OpenRouter/; s/CUSTOM/Custom Endpoint/')
+        resolved_provider=$(echo "$provider" | tr '[:lower:]' '[:upper:]' | sed 's/XAI/x.AI/; s/CLAUDE/Anthropic Claude/; s/GEMINI/Google Gemini/; s/OPENAI/OpenAI/; s/OPENROUTER/OpenRouter/; s/CUSTOM/Hugging Face/')
         resolved_model="$model_val"
-        if [[ $i -eq 0 && ${#active_providers[@]} -gt 1 ]]; then
-            f_prov="${active_providers[1]}"
-            fallback_provider=$(echo "$f_prov" | tr '[:lower:]' '[:upper:]' | sed 's/XAI/x.AI/; s/CLAUDE/Anthropic Claude/; s/GEMINI/Google Gemini/; s/OPENAI/OpenAI/; s/OPENROUTER/OpenRouter/')
-            fallback_model="${active_models[1]}"
-        elif [[ $i -gt 0 ]]; then
-            fallback_provider="Primary (${active_providers[0]}) Offline → Active Fallback In Use"
-        fi
         break
     fi
 done
@@ -253,8 +201,6 @@ done
 if [[ "$resolved_provider" == "*None / All Offline*" && $local_status -eq 0 ]]; then
     resolved_provider="Local AI Server"
     resolved_model="$local_model"
-    fallback_provider="*None Available*"
-    fallback_model="*None*"
 fi
 
 # Helper for status text
@@ -271,12 +217,7 @@ echo "### System Status"
 echo "| Provider | Active Model | Status | 24h Activity |"
 echo "| :--- | :--- | :--- | :--- |"
 echo "| **Active Route (${resolved_provider})** | \`${resolved_model}\` | **Online** | Selected |"
-
-if [[ -n "${CUSTOM_API_KEY:-}" ]]; then
-    c_st=$(check_conn "${CUSTOM_API_KEY}" "${CUSTOM_URL:-https://g9hnto0u7lvbu837.us-east-2.aws.endpoints.huggingface.cloud/v1}")
-    echo "| **Custom / HF** | \`${CUSTOM_MODEL:-default}\` | $(st_label "${CUSTOM_API_KEY}" "$c_st") | Endpoint |"
-fi
-
+echo "| **Hugging Face / Router** | \`${CUSTOM_MODEL:-Qwen/Qwen3.8-27B}\` | $(st_label "${CUSTOM_API_KEY:-}" "$custom_status") | Router |"
 echo "| **Google Gemini** | \`${GEMINI_MODEL:-gemini-3.5-flash-lite}\` | $(st_label "${GEMINI_API_KEY:-}" "$gemini_status") | RPM: ${gemini_rpm} / RPD: ${gemini_rpd} |"
 echo "| **OpenAI** | \`${OPENAI_MODEL:-gpt-5.5}\` | $(st_label "${OPENAI_API_KEY:-}" "$openai_status") | RPM: ${openai_rpm} / RPD: ${openai_rpd} |"
 echo "| **Anthropic Claude** | \`${CLAUDE_MODEL:-claude-fable-5}\` | $(st_label "${CLAUDE_API_KEY:-}" "$claude_status") | RPM: ${claude_rpm} / RPD: ${claude_rpd} |"
