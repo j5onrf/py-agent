@@ -37,7 +37,7 @@ ai() {
         echo "$path" > "$_AI_DIR/.active_cd.$$"
         name=$(basename "$path")
 
-        if grep -q '"map": *true' "$path/.agent/config.json" 2>/dev/null; then
+        if grep -qE '"map": *true|"-map"' "$path/.agent/config.json" 2>/dev/null; then
             map="$path/.agent/index-map-$name.txt"; [[ -f "$map" ]] || map="$path/index-map-$name.txt"
             db="$path/.agent/index-map-memory-$name.db"; [[ -f "$db" ]] || db="$path/index-map-memory-$name.db"
 

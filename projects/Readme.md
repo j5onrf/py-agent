@@ -14,7 +14,7 @@ Enable Autonomous YOLO mode? [y/N]: y
 ✓ Profile set to: Pi Py-Pro (Autonomous YOLO)
 
 ╭─  ∿ Py Agent  ───────────────────────────────────────────╮
-│     model:  gemini-3.5-flash-lite                        │
+│     model:  Qwen3.6-35B-A3B.gguf                         │
 │ directory:  ~/.config/py-agent/projects/session-test-2   │
 │     skill:  pi/py-pro                                    │
 │  database:  active (1 facts, 1 turns)                    │
@@ -33,54 +33,54 @@ Switch CLI box styles using `/box [1-5]` (or type `/box` to cycle). Selection pe
 
 #### Style #1: Codex Rounded (Default)
 ```console
-╭─  ∿ Py Agent  ────────────────╮
-│     model:  gemini-3.7-flash  │
-│ directory:  ~                 │
-│     skill:  chat              │
-│  database:  stateless         │
-╰────────────── Ctrl+C to exit ─╯
+╭─  ∿ Py Agent  ────────────────────╮
+│     model:  Qwen3.6-35B-A3B.gguf  │
+│ directory:  ~                     │
+│     skill:  default               │
+│  database:  stateless             │
+╰─────────────────── Ctrl+C to exit ─╯
 ```
 
 #### Style #2: Double Border
 ```console
-╔═  ∿ Py Agent  ════════════════╗
-║     model:  gemini-3.7-flash  ║
-║ directory:  ~                 ║
-║     skill:  default           ║
-║  database:  stateless         ║
-╚══════════════ Ctrl+C to exit ─╝
+╔═  ∿ Py Agent  ════════════════════╗
+║     model:  Qwen3.6-35B-A3B.gguf  ║
+║ directory:  ~                     ║
+║     skill:  default               ║
+║  database:  stateless             ║
+╚═══════════════════ Ctrl+C to exit ─╝
 ```
 
 #### Style #3: Heavy Square
 ```console
-┏━  ∿ Py Agent  ━━━━━━━━━━━━━━━━┓
-┃     model:  gemini-3.7-flash  ┃
-┃ directory:  ~                 ┃
-┃     skill:  default           ┃
-┃  database:  stateless         ┃
-┗━━━━━━━━━━━━━━ Ctrl+C to exit ━┛
+┏━  ∿ Py Agent  ━━━━━━━━━━━━━━━━━━━━┓
+┃     model:  Qwen3.6-35B-A3B.gguf  ┃
+┃ directory:  ~                     ┃
+┃     skill:  default               ┃
+┃  database:  stateless             ┃
+┗━━━━━━━━━━━━━━━━━━━ Ctrl+C to exit ━┛
 ```
 
 #### Style #4: Minimalist Line
 ```console
- ─  Py Agent  ──────────────────
-      model:  gemini-3.7-flash   
-  directory:  ~                  
-      skill:  default            
-   database:  stateless          
- ────────────── Ctrl+C to exit ─ 
+ ─  Py Agent  ──────────────────────
+      model:  Qwen3.6-35B-A3B.gguf   
+  directory:  ~                      
+      skill:  default                
+   database:  stateless              
+ ─────────────────── Ctrl+C to exit ─ 
 ```
 
 #### Style #5: Classic In-Panel Codex
 ```console
-╭───────────────────────────────╮
-│  ∿ Py Agent                   │
-│                               │
-│     model:  gemini-3.7-flash  │
-│ directory:  ~                 │
-│     skill:  default           │
-│  database:  stateless         │
-╰────────────── Ctrl+C to exit ─╯
+╭───────────────────────────────────╮
+│  ∿ Py Agent                       │
+│                                   │
+│     model:  Qwen3.6-35B-A3B.gguf  │
+│ directory:  ~                     │
+│     skill:  default               │
+│  database:  stateless             │
+╰─────────────────── Ctrl+C to exit ─╯
 ```
 
 ---
@@ -135,22 +135,24 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
   :: ↵ select  ↑/↓ navigate  Tab: YOLO [OFF]  m: Map [OFF]  Esc: default
 ```
 
-#### Profile Tiers
+#### Profile Tiers & Dynamic Capabilities
 
-| Tier | Profiles | Model Scale | Overhead | Behavior |
+| Tier | Profiles | Model Scale | Overhead | Dynamic Behavior |
 | :--- | :--- | :--- | :--- | :--- |
-| **Custom** | `custom/<name>` | Universal / Custom | `~150t–300t` | Dynamic auto-discovery of user `.md` templates in `skills/profiles/custom/` (`base.md`, `base-map.md`, `base-py.md`). |
-| **Pro** | `pi/pro`, `claude/pro`, `hermes/pro` | Medium/Large Models (35B+) | `~180t–190t` | Fast 5-tool JSON agent (`read_file`, `edit_file`, `write_file`, `list_dir`, `run_command`) with Index-Map OFF. |
-| **Pro-Map** | `pi/pro-map`, `claude/pro-map`, `hermes/pro-map` | Medium/Large Models (35B+) | `~280t–290t` | Full 10-tool graph agent (+ `read_symbol`, `trace_symbol`, `blast_radius`, `find_symbol`, `architecture_overview`) with Index-Map ON. |
-| **Py-Pro** | `pi/py-pro`, `claude/py-pro`, `hermes/py-pro`, `custom/*-py` | Medium/Large Models (35B+) | `~200t–210t` | Single-tool `exec_python` persistent in-kernel Python REPL with Index-Map OFF. |
-| **Py-Pro-Map** | `pi/py-pro-map`, `claude/py-pro-map`, `hermes/py-pro-map` | Medium/Large Models (35B+) | `~300t–310t` | In-kernel `exec_python` persistent Python REPL with full in-kernel `graph.*` SDK and Index-Map ON. |
+| **Custom** | `custom/<name>` | Universal / Custom | `~150t–300t` | Auto-scans `skills/profiles/custom/` for user `.md` templates (`base.md`, `base-map.md`, `base-py.md`). |
+| **Pro** | `pi/pro`, `claude/pro`, `hermes/pro` | Medium/Large Models (35B+) | `~180t–190t` | Fast 5-tool JSON agent (`read_file`, `edit_file`, `write_file`, `list_dir`, `run_command`). Index-Map is **OFF**. |
+| **Pro-Map** | `pi/pro-map`, `claude/pro-map`, `hermes/pro-map` | Medium/Large Models (35B+) | `~280t–290t` | **Auto-activates 10-tool Graph Mode** (+ `read_symbol`, `trace_symbol`, `blast_radius`, `find_symbol`, `architecture_overview`) and injects the Codebase Index-Map (**Map: ON**). |
+| **Py-Pro** | `pi/py-pro`, `claude/py-pro`, `hermes/py-pro`, `custom/*-py` | Medium/Large Models (35B+) | `~200t–210t` | **Auto-activates single-tool NOOA IPython Kernel** (`exec_python`) with stateful memory and surgical edit SDK. Index-Map is **OFF**. |
+| **Py-Pro-Map** | `pi/py-pro-map`, `claude/py-pro-map`, `hermes/py-pro-map` | Medium/Large Models (35B+) | `~300t–310t` | **Auto-activates both NOOA IPython Kernel AND the in-kernel `graph.*` SDK** with the Codebase Index-Map (**Map: ON**). |
 
+* **Zero-Config Dynamic Triggers:**
+  - Profiles with `*-py` or `ipython: true` automatically activate the in-kernel Python harness (`exec_python`).
+  - Profiles with `*-map` or `map: true` automatically index and inject the AST Codebase Index-Map into `<context>`.
 * **Dynamic Custom Profiles:** Drop any number of custom `.md` profile files (e.g. `base.md`, `base-map.md`, `base-py.md`, `deepseek.md`) into `~/.config/py-agent/skills/profiles/custom/` and they will all automatically populate under the `─── Custom ───` category in the selector.
-* **Interactive Toggles:** Press `Tab` to toggle Autonomous YOLO mode `[ON]/[OFF]`, or press `m` to toggle the AST Codebase Index-Map `[ON]/[OFF]` (defaults to `[OFF]`).
+* **Interactive Toggles:** Press `Tab` to toggle Autonomous YOLO mode `[ON]/[OFF]`, or press `m` to toggle the AST Codebase Index-Map `[ON]/[OFF]` manually.
 * **Reset Workspace Profile:** Type `/reset` in chat (or delete `.agent/config.json`). This purges workspace settings so `ai init` prompts for a new profile selection on next launch.
-* **Skill Frontmatter Overrides:** Add `---` YAML headers to skill `.md` files to set `reasoning_budget`, `yolo`, `map`, or `description` automatically on load.
+* **Skill Frontmatter Overrides:** Add `---` YAML headers to skill `.md` files to set `reasoning_budget`, `yolo`, `map`, `ipython`, or `description` automatically on load.
 * **Customize Skills:** Modify or create profile `.md` files in `~/.config/py-agent/skills/profiles/`.
-
 
 ---
 
@@ -386,8 +388,9 @@ Skill profiles support **YAML (`---`) or JSON (`{...}`) frontmatter headers** to
 ---
 reasoning_budget: 350
 yolo: true
-map: false
-description: "Ultra-lean LFM agent with surgical editing and fast execution"
+map: true
+ipython: false
+description: "Full AST Graph-enabled agent with surgical file editing and test verification"
 ---
 # [SKILL] Custom Agent Profile ---> custom-agent
 Act as a senior staff engineer...
@@ -397,10 +400,11 @@ Act as a senior staff engineer...
 
 | Key | Type | Description |
 | :--- | :--- | :--- |
-| `reasoning_budget` | Integer | Deep reasoning token budget (e.g. `350`, `750`, or `0` to disable). |
+| `reasoning_budget` | Integer | Deep reasoning token budget (e.g. `350`, `500`, or `0` to disable). |
 | `yolo` | Boolean | Autonomous mode (`true` disables gates, `false` enables confirmation per action). |
-| `map` | Boolean | Codebase Index Map toggle (`true` includes map in context, `false` excludes). |
-| `description` | String | Skill summary description shown in menus. |
+| `map` | Boolean | Codebase Index-Map toggle (`true` includes map in context, `false` excludes). |
+| `ipython` | Boolean | Python kernel harness toggle (`true` uses single-tool `exec_python`, `false` uses classic JSON tools). |
+| `description` | String | Skill summary description shown in menus and telemetry. |
 
 ---
 

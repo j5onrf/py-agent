@@ -317,9 +317,9 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
         body_tools = {**body, "messages": messages, "stream": True}
         if is_agent:
             active_skill = os.environ.get("AI_ACTIVE_SKILL", "")
-            is_py_profile = "py-" in active_skill.lower() or "-py" in active_skill.lower() or active_skill.lower().endswith("py")
-            use_ipython = is_py_profile or (ipython and ipython.is_ipython_enabled())
-            body_tools["tools"] = ipython.IPYTHON_TOOL if (use_ipython and ipython) else EDIT_TOOLS
+            st = get_state()
+            is_py_profile = st.get("ipython_mode", False) or "py-" in active_skill.lower() or "-py" in active_skill.lower() or active_skill.lower().endswith("py")
+            body_tools["tools"] = ipython.IPYTHON_TOOL if (is_py_profile and ipython) else EDIT_TOOLS
 
         if spinner:
             try: spinner.update("Working...")

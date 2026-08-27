@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.0] - Pure Standard In-Memory Architecture"""
+"""Py Agent [j5onrf] [v0.9.9.01] - Pure Standard In-Memory Architecture"""
 
 import json
 import os
@@ -158,22 +158,21 @@ def run_interactive_chat(args: list[str]) -> None:
         clean_name = selected_profile if selected_profile != "init" else "pi/pro"
         profile_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
         if not profile_content and clean_name != "init":
-            ui._console.print(
-                f"[dim yellow][sys] Skill '{clean_name}' not found. Using minimal agent prompt.[/dim yellow]"
-            )
+            ui._console.print(f"[dim yellow][sys] Skill '{clean_name}' not found. Using minimal agent prompt.[/dim yellow]")
         active_system_prompt = profile_content or BASE_PROMPT_AGENT
         os.environ["AI_ACTIVE_SKILL"] = clean_name
+        
+        # Honor frontmatter map override first, with -map suffix fallback
+        st = core.get_state()
+        if "use_map" in st:
+            use_map = bool(st["use_map"])
+        elif "-map" in clean_name.lower() or "map-" in clean_name.lower():
+            use_map = True
     else:
-        clean_name = (
-            selected_profile
-            if (selected_profile and selected_profile != "pi/pro")
-            else "chat"
-        )
+        clean_name = selected_profile if (selected_profile and selected_profile != "pi/pro") else "chat"
         skill_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
         if not skill_content and clean_name != "chat":
-            ui._console.print(
-                f"[dim yellow][sys] Skill '{clean_name}' not found. Using minimal chat prompt.[/dim yellow]"
-            )
+            ui._console.print(f"[dim yellow][sys] Skill '{clean_name}' not found. Using minimal chat prompt.[/dim yellow]")
         active_system_prompt = skill_content or BASE_PROMPT_CHAT
         os.environ["AI_ACTIVE_SKILL"] = clean_name
 
