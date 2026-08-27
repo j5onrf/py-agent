@@ -22,7 +22,7 @@
 
 Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`) controlling a C++ backend `llama-server`. Built for extreme efficiency on quantized local models (`LFM2.5-8B-A1B`, `Qwen3.5-2B`, `Qwen3.6-35B-A3B`, `Qwen3.8-27B`) and cloud providers.
 
-🟢 **Active:** Official `Huggingface` Router endpoints: ([`Qwen/Qwen3.8-27B`](https://huggingface.co/Qwen/Qwen3.8-27B), [`Qwen/Qwen3.8-2.4T-A95B`](https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B), [`DeepSeek-V4-Flash-0731`](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731)).
+🟢 **Active:** Official `Huggingface` Router endpoints: ([`Qwen/Qwen3.8-27B`](https://huggingface.co/Qwen/Qwen3.8-27B), [`moonshotai/Kimi-K3`](https://huggingface.co/moonshotai/Kimi-K3), [`zai-org/GLM-5.3-Flash`](https://huggingface.co/zai-org/GLM-5.3-Flash), [`DeepSeek-V4-Flash-0731`](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731), [`Qwen/Qwen3.8-2.4T-A95B`](https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B)).
 
 - **Direct Shell Jaccard (`<plugins>`):** Sub-millisecond fuzzy intent routing for shell shortcuts, diagnostic tools, and custom plugins mapped in [`ai-context.md`](ai-context.md).
 - **Single-Turn Query (`ai <query>`):** Instant response piped straight back to your active shell prompt.
