@@ -140,10 +140,10 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 | Tier | Profiles | Model Scale | Overhead | Dynamic Behavior |
 | :--- | :--- | :--- | :--- | :--- |
 | **Custom** | `custom/<name>` | Universal / Custom | `~150t–300t` | Auto-scans `skills/profiles/custom/` for user `.md` templates (`base.md`, `base-map.md`, `base-py.md`). |
-| **Pro** | `pi/pro`, `claude/pro`, `hermes/pro` | Medium/Large Models (35B+) | `~180t–190t` | Fast 5-tool JSON agent (`read_file`, `edit_file`, `write_file`, `list_dir`, `run_command`). Index-Map is **OFF**. |
-| **Pro-Map** | `pi/pro-map`, `claude/pro-map`, `hermes/pro-map` | Medium/Large Models (35B+) | `~280t–290t` | **Auto-activates 10-tool Graph Mode** (+ `read_symbol`, `trace_symbol`, `blast_radius`, `find_symbol`, `architecture_overview`) and injects the Codebase Index-Map (**Map: ON**). |
-| **Py-Pro** | `pi/py-pro`, `claude/py-pro`, `hermes/py-pro`, `custom/*-py` | Medium/Large Models (35B+) | `~200t–210t` | **Auto-activates single-tool NOOA IPython Kernel** (`exec_python`) with stateful memory and surgical edit SDK. Index-Map is **OFF**. |
-| **Py-Pro-Map** | `pi/py-pro-map`, `claude/py-pro-map`, `hermes/py-pro-map` | Medium/Large Models (35B+) | `~300t–310t` | **Auto-activates both NOOA IPython Kernel AND the in-kernel `graph.*` SDK** with the Codebase Index-Map (**Map: ON**). |
+| **Pro** | `pi/pro`, `claude/pro`, `hermes/pro` | Medium/Large Models (27B+) | `~180t–190t` | Fast 5-tool JSON agent (`read_file`, `edit_file`, `write_file`, `list_dir`, `run_command`). Index-Map is **OFF**. |
+| **Pro-Map** | `pi/pro-map`, `claude/pro-map`, `hermes/pro-map` | Medium/Large Models (27B+) | `~280t–290t` | **Auto-activates 10-tool Graph Mode** (+ `read_symbol`, `trace_symbol`, `blast_radius`, `find_symbol`, `architecture_overview`) and injects the Codebase Index-Map (**Map: ON**). |
+| **Py-Pro** | `pi/py-pro`, `claude/py-pro`, `hermes/py-pro`, `custom/*-py` | Medium/Large Models (27B+) | `~200t–210t` | **Auto-activates single-tool NOOA IPython Kernel** (`exec_python`) with stateful memory and surgical edit SDK. Index-Map is **OFF**. |
+| **Py-Pro-Map** | `pi/py-pro-map`, `claude/py-pro-map`, `hermes/py-pro-map` | Medium/Large Models (27B+) | `~300t–310t` | **Auto-activates both NOOA IPython Kernel AND the in-kernel `graph.*` SDK** with the Codebase Index-Map (**Map: ON**). |
 
 * **Zero-Config Dynamic Triggers:**
   - Profiles with `*-py` or `ipython: true` automatically activate the in-kernel Python harness (`exec_python`).
@@ -159,7 +159,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 ## 3. Command Reference
 
 ```console
-╭─  ⚙ Help & Commands  ───────────────────────────────────────────────╮
+╭─  ⚙ Help & Commands  ──────────────────────────────────────────────╮
 │   Shortcuts: Esc: bypass  Ctrl+C: cancel                            │
 │                                                                     │
 │   Available commands:                                               │
