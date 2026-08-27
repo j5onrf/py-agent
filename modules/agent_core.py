@@ -650,7 +650,7 @@ def agentic_turn(
         body_tools = {**body, "messages": messages, "stream": True}
         if is_agent:
             active_skill = os.environ.get("AI_ACTIVE_SKILL", "")
-            is_py_profile = "py-" in active_skill.lower()
+            is_py_profile = "py-" in active_skill.lower() or "-py" in active_skill.lower()
             use_ipython = is_py_profile or (ipython and ipython.is_ipython_enabled())
             body_tools["tools"] = (
                 ipython.IPYTHON_TOOL if (use_ipython and ipython) else EDIT_TOOLS

@@ -138,7 +138,7 @@ Running `ai init <path>` sets the default workspace agent profile:
 | **Custom** | `custom/<name>` | Universal / Custom | `~150t–320t` | Dynamic auto-discovery of user-defined `.md` profiles placed in `skills/profiles/custom/`. |
 | **Pro** | `pi/pro`, `claude/pro`, `hermes/pro` | Medium/Large Models | `~280t–290t` | Full-scale codebase graph navigation, surgical edits (`edit_file`), and multi-file workflows. |
 | **Lite** | `pi/lite`, `claude/lite`, `hermes/lite` | Small/Medium Models | `~220t` | Native JSON tools (`read_file`, `edit_file`, `write_file`) optimized for zero tool-calling confusion. |
-| **Py-Pro** | `pi/py-pro`, `claude/py-pro`, `hermes/py-pro` | Medium/Large Models | `~300t–310t` | NOOA-enhanced IPython kernel harness (`exec_python`) with stateful memory and surgical edit SDK. |
+| **Py-Pro** | `pi/py-pro`, `claude/py-pro`, `hermes/py-pro`, `custom/*-py` | Medium/Large Models | `~300t–310t` | Auto-activates NOOA IPython kernel harness (`exec_python`) with stateful memory and surgical edit SDK. |
 
 * **Dynamic Custom Profiles:** Drop any number of custom `.md` profile files (e.g. `lfm.md`, `lfm-idx.md`, `deepseek.md`) into `~/.config/py-agent/skills/profiles/custom/` and they will all automatically populate under the `─── Custom ───` category in the selector.
 * **Interactive Toggles:** Press `Tab` to toggle Autonomous YOLO mode `[ON]/[OFF]`, or press `m` to toggle the AST Codebase Index-Map `[ON]/[OFF]` (defaults to `[OFF]`).
@@ -231,7 +231,8 @@ Full-screen async Textual interface powered by `uvloop` background workers. Laun
 
 Stateful Python REPL (NVIDIA Object-Oriented Agent architecture) keeping variables, DataFrames, and imports alive in kernel RAM across turns—saving up to 90% context tokens.
 
-- **Toggle / Execution:** `/py` to toggle ON/OFF, or `/py <code_or_cmd>` for instant cell execution.
+- **Auto-Activation:** Automatically activated in single-tool mode (`exec_python`) whenever any Py profile (`pi/py-pro`, `claude/py-pro`, `hermes/py-pro`, `custom/*-py`) is loaded.
+- **Toggle / Manual Execution:** Type `/py <code_or_cmd>` in active chat for instant one-line cell execution, or `/py` to manually toggle kernel mode on classic profiles.
 - **In-Kernel Harness Objects:**
   - `graph` — `.snippet(sym)`, `.trace(sym)`, `.blast_radius(sym)`, `.search(pat)`, `.architecture()`
   - `memory` — `.search(query)`, `.get_facts()`, `.add_fact(key, val)`

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.8.95] - Pure Standard In-Memory Architecture"""
+"""Py Agent [j5onrf] [v0.9.8.96] - Pure Standard In-Memory Architecture"""
 
 import json
 import os
@@ -333,23 +333,11 @@ def run_interactive_chat(args: list[str]) -> None:
                         cmd_payload = query.split(maxsplit=1)[1]
                         if not ipython.is_ipython_enabled():
                             ipython.toggle_ipython_mode(True)
-                            ui._console.print(
-                                "[cyan][sys] IPython harness enabled (exec_python single tool mode).[/cyan]\n"
-                            )
-                            if "py-" not in clean_name:
-                                ui._console.print(
-                                    f"[yellow][sys] Warning: Active profile ('{clean_name}') is a classic JSON skill. For best in-kernel SDK results, use a Py profile (e.g. pi/py-pro).[/yellow]\n"
-                                )
+                            ui._console.print("[cyan][sys] IPython harness enabled (exec_python single tool mode).[/cyan]\n")
                         query = cmd_payload
                     else:
                         active = ipython.toggle_ipython_mode()
-                        ui._console.print(
-                            f"[cyan][sys] IPython harness {'enabled (exec_python single tool mode)' if active else 'disabled (classic JSON tools)'}.[/cyan]\n"
-                        )
-                        if active and "py-" not in clean_name:
-                            ui._console.print(
-                                f"[yellow][sys] Warning: Active profile ('{clean_name}') is a classic JSON skill. For best in-kernel SDK results, use a Py profile (e.g. pi/py-pro).[/yellow]\n"
-                            )
+                        ui._console.print(f"[cyan][sys] IPython harness {'enabled (exec_python single tool mode)' if active else 'disabled (classic JSON tools)'}.[/cyan]\n")
                         continue
 
                 parts = query.split()
