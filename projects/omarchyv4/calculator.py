@@ -20,3 +20,10 @@ def divide(a, b):
     except ZeroDivisionError:
         raise ZeroDivisionError("Cannot divide by zero.")
     return result
+
+def power(base, exponent):
+    """
+    Calculate base raised to the exponent.
+    Returns base**exponent.
+    """
+    return base ** exponent

@@ -401,7 +401,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool]:
     )
     sys.stderr.flush()
 
-    current_idx, is_yolo, use_map, num_opts = 0, False, True, len(options)
+    current_idx, is_yolo, use_map, num_opts = 0, False, False, len(options)
     last_rendered_lines = 0
 
     try:

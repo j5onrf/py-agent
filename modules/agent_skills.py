@@ -127,17 +127,20 @@ def load_skill_content(skills_str: str, skills_dir: str, cfg_dir: str) -> str:
                 if meta:
                     try:
                         import agent_core
-
                         for k, v in meta.items():
-                            if k == "yolo":
-                                agent_core.save_state(
-                                    "yolo_mode",
-                                    True if str(v).lower() in ("true", "1") else False,
-                                )
-                            elif k in ("reasoning", "reasoning_active"):
-                                agent_core.save_state("reasoning_active", True)
-                    except Exception:
-                        pass
+                            k_l = str(k).lower().strip()
+                            if k_l == "yolo":
+                                agent_core.save_state("yolo_mode", str(v).lower() in ("true", "1"))
+                            elif k_l in ("reasoning", "reasoning_active"):
+                                agent_core.save_state("reasoning_active", str(v).lower() in ("true", "1"))
+                            elif k_l in ("reasoning_budget", "thinking_budget", "budget"):
+                                try:
+                                    b_val = max(0, int(v))
+                                    agent_core.save_state("reasoning_budget", b_val)
+                                    agent_core.save_state("reasoning_active", b_val > 0)
+                                except (ValueError, TypeError):
+                                    pass
+                    except Exception: pass
 
                 contents.append(body or raw)
             except (OSError, UnicodeDecodeError) as e:

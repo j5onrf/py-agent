@@ -83,12 +83,12 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
     sys_prompt += f"\n\n### ACTIVE PROJECT WORKSPACE:\nYour active project root directory is: {workspace}\n"
 
     agent_dir = os.path.join(workspace, ".agent")
-    use_map = True
+    use_map = False
     cfg_path = os.path.join(agent_dir, "config.json")
     if os.path.exists(cfg_path):
         try:
             with open(cfg_path, "r", encoding="utf-8") as cf:
-                use_map = json.load(cf).get("map", True)
+                use_map = json.load(cf).get("map", False)
         except Exception:
             pass
 

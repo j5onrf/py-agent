@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.8.94] - Pure Standard In-Memory Architecture"""
+"""Py Agent [j5onrf] [v0.9.8.95] - Pure Standard In-Memory Architecture"""
 
 import json
 import os
@@ -103,14 +103,15 @@ def workspace_db_counts(safe_name: str) -> tuple[int, int]:
                 cur = conn.cursor()
                 try:
                     turns = cur.execute(
-                        "SELECT COUNT(*) FROM turns WHERE workspace = ?", (safe_name,)
+                        "SELECT COUNT(*) FROM turns WHERE workspace = ?",
+                        (safe_name,),
                     ).fetchone()[0]
                 except sqlite3.OperationalError:
                     pass
                 try:
-                    facts = cur.execute("SELECT COUNT(*) FROM tpm_memories").fetchone()[
-                        0
-                    ]
+                    facts = cur.execute(
+                        "SELECT COUNT(*) FROM tpm_memories"
+                    ).fetchone()[0]
                 except sqlite3.OperationalError:
                     pass
         except sqlite3.Error:
@@ -176,7 +177,7 @@ def run_interactive_chat(args: list[str]) -> None:
     ensure_clean_agent_dir(workspace_path)
     cfg_file = os.path.join(workspace_path, ".agent", "config.json")
     selected_profile = "pi/pro" if is_agent else "chat"
-    is_yolo, use_map = False, True
+    is_yolo, use_map = False, False
 
     if is_agent:
         if not os.path.exists(cfg_file):
@@ -204,7 +205,7 @@ def run_interactive_chat(args: list[str]) -> None:
                     cfg_data = json.load(cf)
                     selected_profile = cfg_data.get("profile", "pi/pro")
                     is_yolo = cfg_data.get("yolo", False)
-                    use_map = cfg_data.get("map", True)
+                    use_map = cfg_data.get("map", False)
             except (OSError, json.JSONDecodeError):
                 pass
 
@@ -234,31 +235,29 @@ def run_interactive_chat(args: list[str]) -> None:
         active_system_prompt = skill_content or BASE_PROMPT_CHAT
 
     pending_query = " ".join(args[1:]) if len(args) > 1 else None
-    if (
-        use_map
-        and pending_query
-        and ("CODEBASE INDEX MAP" in pending_query or "index-map" in pending_query)
+    if pending_query and (
+        "CODEBASE INDEX MAP" in pending_query or "index-map" in pending_query
     ):
-        active_system_prompt += f"\n\n### CODESPACE MAP:\n{pending_query}"
-        pending_query = "[Workspace context loaded]"
-    elif (
-        not use_map
-        and pending_query
-        and ("CODEBASE INDEX MAP" in pending_query or "index-map" in pending_query)
-    ):
+        if use_map:
+            active_system_prompt += f"\n\n### CODESPACE MAP:\n{pending_query}"
         pending_query = None
 
     chat_history = [{"role": "system", "content": active_system_prompt}]
+    if is_agent and not pending_query:
+        chat_history.append(
+            {"role": "assistant", "content": "Agent: Workspace loaded. Awaiting instructions."}
+        )
 
     st = core.get_state()
     show_stats = st.get("show_stats", True)
     memory_active = st.get("memory_active", False)
-    reasoning_active, reasoning_budget = (
-        st.get("reasoning_active", False),
-        st.get("reasoning_budget", 500),
-    )
+    reasoning_active, reasoning_budget = st.get(
+        "reasoning_active", False
+    ), st.get("reasoning_budget", 500)
 
-    os.environ["AI_REASONIX_ACTIVE"] = "1" if st.get("reasonix_active", True) else "0"
+    os.environ["AI_REASONIX_ACTIVE"] = (
+        "1" if st.get("reasonix_active", True) else "0"
+    )
     os.environ["AI_SHOW_THINKING"] = "1" if st.get("show_thinking", True) else "0"
     if is_yolo or st.get("yolo_mode", False):
         os.environ["AI_CONFIRM_GATES"] = "0"
@@ -266,7 +265,9 @@ def run_interactive_chat(args: list[str]) -> None:
     if is_agent and memory_active:
         sync_md_to_sqlite(safe_name, workspace_path)
 
-    db_turns, tpm_count = workspace_db_counts(safe_name) if is_agent else (0, 0)
+    db_turns, tpm_count = (
+        workspace_db_counts(safe_name) if is_agent else (0, 0)
+    )
     sub_id = None
     if is_agent:
         try:
@@ -354,7 +355,10 @@ def run_interactive_chat(args: list[str]) -> None:
                 parts = query.split()
                 if parts and parts[0] in ("/task", "/loop", "/ralph"):
                     task_text = query.split(maxsplit=1)[1] if len(parts) > 1 else ""
-                    ralph_env = {**os.environ, "AI_WORKSPACE_PATH": workspace_path}
+                    ralph_env = {
+                        **os.environ,
+                        "AI_WORKSPACE_PATH": workspace_path,
+                    }
                     subprocess.run(
                         [sys.executable, f"{CFG_DIR}/tools/loop/ralph.py", task_text],
                         cwd=workspace_path,
@@ -373,7 +377,7 @@ def run_interactive_chat(args: list[str]) -> None:
                     time.sleep(0.5)
                     try:
                         active_skill_env = os.environ.get(
-                            "AI_ACTIVE_SKILL", clean_name or "default"
+                            "AI_ACTIVE_SKILL", clean_name or "chat"
                         )
                         tui_env = {
                             **os.environ,
@@ -387,14 +391,15 @@ def run_interactive_chat(args: list[str]) -> None:
                             env=tui_env,
                         )
                         st = core.get_state()
-                        reasoning_active, reasoning_budget = (
-                            st.get("reasoning_active", False),
-                            st.get("reasoning_budget", 500),
-                        )
+                        reasoning_active, reasoning_budget = st.get(
+                            "reasoning_active", False
+                        ), st.get("reasoning_budget", 500)
                         os.environ["AI_SHOW_THINKING"] = (
                             "1" if st.get("show_thinking", True) else "0"
                         )
-                        ui._console.print("[green][sys] Resumed CLI session.[/green]\n")
+                        ui._console.print(
+                            "[green][sys] Resumed CLI session.[/green]\n"
+                        )
                     except Exception as e:
                         ui._console.print(f"[red][sys] Failed TUI: {e}[/red]\n")
                     continue
@@ -407,7 +412,7 @@ def run_interactive_chat(args: list[str]) -> None:
                     if os.path.exists(web_bin):
                         try:
                             active_skill_env = os.environ.get(
-                                "AI_ACTIVE_SKILL", clean_name or "default"
+                                "AI_ACTIVE_SKILL", clean_name or "chat"
                             )
                             web_env = {
                                 **os.environ,
@@ -419,10 +424,9 @@ def run_interactive_chat(args: list[str]) -> None:
                             }
                             subprocess.run(["/bin/bash", web_bin], env=web_env)
                             st = core.get_state()
-                            reasoning_active, reasoning_budget = (
-                                st.get("reasoning_active", False),
-                                st.get("reasoning_budget", 500),
-                            )
+                            reasoning_active, reasoning_budget = st.get(
+                                "reasoning_active", False
+                            ), st.get("reasoning_budget", 500)
                             os.environ["AI_SHOW_THINKING"] = (
                                 "1" if st.get("show_thinking", True) else "0"
                             )
@@ -452,7 +456,7 @@ def run_interactive_chat(args: list[str]) -> None:
                     if os.path.exists(gui_bin):
                         try:
                             active_skill_env = os.environ.get(
-                                "AI_ACTIVE_SKILL", clean_name or "default"
+                                "AI_ACTIVE_SKILL", clean_name or "chat"
                             )
                             gui_env = {
                                 **os.environ,
@@ -467,10 +471,9 @@ def run_interactive_chat(args: list[str]) -> None:
                             )
                             subprocess.run(args, env=gui_env)
                             st = core.get_state()
-                            reasoning_active, reasoning_budget = (
-                                st.get("reasoning_active", False),
-                                st.get("reasoning_budget", 500),
-                            )
+                            reasoning_active, reasoning_budget = st.get(
+                                "reasoning_active", False
+                            ), st.get("reasoning_budget", 500)
                             os.environ["AI_SHOW_THINKING"] = (
                                 "1" if st.get("show_thinking", True) else "0"
                             )
@@ -539,7 +542,9 @@ def run_interactive_chat(args: list[str]) -> None:
                             new_val = not (
                                 os.environ.get("AI_SHOW_THINKING", "1") == "1"
                             )
-                            os.environ["AI_SHOW_THINKING"] = "1" if new_val else "0"
+                            os.environ["AI_SHOW_THINKING"] = (
+                                "1" if new_val else "0"
+                            )
                             core.save_state("show_thinking", new_val)
                             ui._console.print(
                                 f"[yellow][sys] Thinking display {'enabled' if new_val else 'hidden'}.[/yellow]\n"
@@ -569,7 +574,9 @@ def run_interactive_chat(args: list[str]) -> None:
                     continue
 
                 if query in ("/sync", "/re"):
-                    sys.stdout.write("\033[2m[sys] Syncing codespace map...\033[0m\r")
+                    sys.stdout.write(
+                        "\033[2m[sys] Syncing codespace map...\033[0m\r"
+                    )
                     sys.stdout.flush()
                     subprocess.run(
                         [
@@ -605,14 +612,16 @@ def run_interactive_chat(args: list[str]) -> None:
                             for msg in chat_history:
                                 if "### CODESPACE MAP:" in msg["content"]:
                                     msg["content"] = (
-                                        msg["content"].split("### CODESPACE MAP:")[0]
+                                        msg["content"].split(
+                                            "### CODESPACE MAP:"
+                                        )[0]
                                         + f"### CODESPACE MAP:\n{new_map}"
                                     )
                                     updated = True
                             if not updated:
-                                chat_history[0]["content"] += (
-                                    f"\n\n### CODESPACE MAP:\n{new_map}"
-                                )
+                                chat_history[0][
+                                    "content"
+                                ] += f"\n\n### CODESPACE MAP:\n{new_map}"
                             ui._console.print(
                                 "\r\x1b[2K[green][sys] Map synchronized.[/green]\n"
                             )
@@ -658,7 +667,6 @@ def run_interactive_chat(args: list[str]) -> None:
                         except OSError:
                             pass
 
-                    # Direct in-memory database purge
                     sessions.clear_turns(safe_name)
                     memories.tpm_clear(safe_name)
 
@@ -675,18 +683,20 @@ def run_interactive_chat(args: list[str]) -> None:
                     )
                     continue
 
-            if query.startswith(("/", "-")) and query.split()[0] in ("/skill", "/s"):
+            if query.startswith(("/", "-")) and query.split()[0] in (
+                "/skill",
+                "/s",
+            ):
                 parts = query.split(maxsplit=1)
                 sub_cmd = parts[1].strip().lower() if len(parts) > 1 else ""
                 if sub_cmd in ("off", "clear", "reset", "none", "remove"):
                     chat_history[0]["content"] = active_system_prompt
-                    os.environ["AI_ACTIVE_SKILL"] = clean_name or "default"
+                    os.environ["AI_ACTIVE_SKILL"] = clean_name or "chat"
                     ui._console.print(
-                        f"[green][sys] On-demand skill removed. Reverted to base skill: [bold]{clean_name or 'default'}[/bold].[/green]\n"
+                        f"[green][sys] On-demand skill removed. Reverted to base skill: [bold]{clean_name or 'chat'}[/bold].[/green]\n"
                     )
                     continue
 
-                # Run skill selector directly in-memory across all skill directories
                 chat_history, loaded_name = skills.run_skill_selector(
                     safe_name, query, SKILLS_DIR, STOP_WORDS, chat_history
                 )
@@ -726,7 +736,6 @@ def run_interactive_chat(args: list[str]) -> None:
                             past_memory = res_mem
                     except Exception:
                         pass
-                # Direct in-memory TPM fact retrieval
                 tpm_context = memories.tpm_get(safe_name)
 
             if re.match(r"^/?([ftba])(?:\s+(\d+))?$", query.lower()):
@@ -754,7 +763,9 @@ def run_interactive_chat(args: list[str]) -> None:
             )
             if sys_ctx == "__ABORT_TURN__":
                 sys_ctx = ""
-            comb_ctx = "\n\n".join(filter(None, [tpm_context, past_memory, sys_ctx]))
+            comb_ctx = "\n\n".join(
+                filter(None, [tpm_context, past_memory, sys_ctx])
+            )
             prompt = (
                 f"<context>\n{comb_ctx}\n</context>\n\nUser Question: {query}"
                 if comb_ctx
@@ -777,7 +788,6 @@ def run_interactive_chat(args: list[str]) -> None:
                 chat_history.append({"role": "assistant", "content": ans})
                 tts.speak_response(ans)
                 if is_agent:
-                    # Direct in-memory SQLite turn logging
                     sessions.log_turn(safe_name, query, ans)
 
                     if match := re.search(
@@ -786,7 +796,9 @@ def run_interactive_chat(args: list[str]) -> None:
                     ):
                         try:
                             readline.set_startup_hook(
-                                lambda: readline.insert_text(match.group(1).strip())
+                                lambda: readline.insert_text(
+                                    match.group(1).strip()
+                                )
                             )
                         except Exception:
                             pass
@@ -844,12 +856,16 @@ def run_direct_query(args: list[str]) -> None:
         {"role": "system", "content": active_p},
         {
             "role": "user",
-            "content": f"<context>\n{sys_ctx}\n</context>\n\nUser Question: {query}"
-            if sys_ctx
-            else f"User Question: {query}",
+            "content": (
+                f"<context>\n{sys_ctx}\n</context>\n\nUser Question: {query}"
+                if sys_ctx
+                else f"User Question: {query}"
+            ),
         },
     ]
-    core.stream_response(messages, prefix="AI:", show_stats=False, thinking_budget=0)
+    core.stream_response(
+        messages, prefix="AI:", show_stats=False, thinking_budget=0
+    )
     sys.exit(0)
 
 
@@ -899,9 +915,11 @@ def main() -> None:
             )
             sys.exit(0)
         elif args[0] in ("--talk", "--talk-chat"):
-            run_interactive_chat(args) if (
-                args[0] == "--talk-chat" or len(args) == 1
-            ) else run_direct_query(args)
+            (
+                run_interactive_chat(args)
+                if (args[0] == "--talk-chat" or len(args) == 1)
+                else run_direct_query(args)
+            )
             sys.exit(0)
         else:
             run_matching_search(args)
