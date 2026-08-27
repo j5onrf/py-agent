@@ -1,5 +1,6 @@
 ---
 description: "Ultra-lean LFM agent (5 basic tools: read, edit, write, list, command)"
+map: false
 reasoning_budget: 350
 ---
 # Custom Liquid AI Agent Profile (Lean)

@@ -1,5 +1,6 @@
 ---
 description: "Full AST Graph-enabled LFM agent (Codebase Index Map + Graph intelligence tools)"
+map: true
 reasoning_budget: 350
 ---
 # Custom Liquid AI Agent Profile (Graph-Indexed)
