@@ -466,7 +466,7 @@ class LocalAITUI(App):
             if self.is_agent and len(self.history) == 1: self.history.append({"role": "assistant", "content": "Agent: Workspace loaded. Awaiting instructions."})
 
     def get_db_status_string(self) -> str:
-        return "stateless" if not self.is_agent else (f"active • {self.tpm_count} facts" if self.memory_active else "disabled")
+        return f"active • {self.tpm_count} facts" if (self.is_agent and self.memory_active) else "stateless"
 
     def update_welcome_banner(self) -> None:
         try:

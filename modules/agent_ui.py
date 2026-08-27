@@ -178,7 +178,7 @@ def draw_session_box(
     table.add_row("model:", model_name)
     table.add_row("directory:", display_dir)
     table.add_row("skill:", clean_name or "chat")
-    mem_status = f"active ({tpm_count} facts, {db_turns} turns)" if memory_active else "disabled"
+    mem_status = f"active ({tpm_count} facts, {db_turns} turns)" if memory_active else "stateless"
     table.add_row("database:", mem_status if is_agent else "stateless")
 
     STYLES = {
