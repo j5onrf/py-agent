@@ -94,7 +94,7 @@ TOOL_VERBS: dict[str, str] = getattr(tools, "TOOL_VERBS", {})
 
 DEFAULTS = {
     "spell_active": True, "show_stats": True, "memory_active": False, "box_style": 1, "yolo_mode": False,
-    "show_thinking": True, "reasoning_active": False, "reasoning_budget": 500, "render_markdown": True,
+    "show_thinking": True, "reasoning_active": False, "reasoning_budget": 500,
     "compact_mode": 0, "sidebar_hidden": False, "footer_hidden": True, "tips_card_hidden": False, "tui_theme": "code1",
     "voice_auto_submit": True, "tts_enabled": False, "tui_borders_enabled": True
 }
@@ -299,7 +299,6 @@ class RichStreamer:
             return
 
         show_think = os.environ.get("AI_SHOW_THINKING", "1") == "1"
-        render_md = os.environ.get("AI_RENDER_MARKDOWN", "1") == "1"
 
         if self.phase == "THINKING" and show_think and self.think_hdr_printed:
             sep = "" if self.acc_think.endswith("\n") else "\r\n"
@@ -307,7 +306,7 @@ class RichStreamer:
             self.phase = "ANSWER"
 
         if self.ans_started and self.acc_ans.strip():
-            if render_md and sys.stdout.isatty():
+            if sys.stdout.isatty():
                 _clear_lines(False, self.acc_ans)
                 p_clean = self.prefix.strip()
                 p_style = "bold green" if "Agent" in p_clean else "bold cyan"
@@ -376,7 +375,7 @@ def _confirm_gate(reason: str, spinner: Any) -> bool:
 def _print_tool_output(spinner: Any, text: str) -> None:
     if sys.stdout.isatty() and text.strip():
         if spinner: spinner.stop("Done")
-        if os.environ.get("AI_RENDER_MARKDOWN", "1") == "1" and any(k in text for k in ("#", "|", "```")):
+        if any(k in text for k in ("#", "|", "```")):
             _console_err.print(Markdown(text, code_theme="ansi_dark"))
         else: _console_err.print(text)
 
@@ -392,16 +391,6 @@ def _run_edit_tool(name: str, args: dict[str, Any], workspace: str, spinner: Any
 def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, str], body: dict[str, Any], timeout: int, spinner: Any, show_stats: bool = False, is_agent: bool = False) -> str | None:
     workspace = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
     is_local = "localhost" in url or "127.0.0.1" in url or body.get("model") == "local-model"
-
-    if is_agent and messages and messages[0]["role"] == "system" and "### EDIT MODE" not in messages[0]["content"]:
-        tools_header = (
-            f"### ACTIVE DEVELOPER AGENT MODE:\n"
-            f"Workspace Root: {workspace}\n"
-            f"CRITICAL DIRECTIVE: Do NOT output conversational chatter or explain what you will do. "
-            f"You MUST immediately execute actions by calling available tools (run_command, read_file, write_file, list_dir, read_symbol).\n\n"
-        )
-        messages[0]["content"] = tools_header + messages[0]["content"]
-
     resolved_model, streamer, res = None, None, None
     max_ctx = int(os.environ.get("AI_MAX_TOKENS", 8192))
 

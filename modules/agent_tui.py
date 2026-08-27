@@ -297,8 +297,7 @@ class LocalAITUI(App):
         Binding("pagedown", "scroll_page_down", "Page Down", show=False),
         Binding("shift+up", "scroll_up", "Scroll Up", show=False),
         Binding("shift+down", "scroll_down", "Scroll Down", show=False),
-        Binding("ctrl+q", "quit", "Exit TUI", show=False),
-        Binding("escape", "quit", "Exit TUI", show=False),
+        Binding("ctrl+q", "quit", "Exit TUI", show=True),
     ]
 
     def watch_theme(self, theme: str) -> None:
@@ -351,10 +350,10 @@ class LocalAITUI(App):
                         inherited_skill = data.get("profile") or data.get("skill")
                 except (OSError, json.JSONDecodeError): pass
         if not inherited_skill or inherited_skill.lower() in ("default", "none", ""):
-            inherited_skill = "default" if self.is_agent else "chat"
+            inherited_skill = "pi/pro" if self.is_agent else "chat"
 
         skills_split = [s for s in inherited_skill.split() if s]
-        self.base_skill = skills_split[0] if skills_split else ("default" if self.is_agent else "chat")
+        self.base_skill = skills_split[0] if skills_split else ("pi/pro" if self.is_agent else "chat")
         self.on_demand_skill = skills_split[1] if len(skills_split) > 1 else None
         self.active_skill = f"{self.base_skill} {self.on_demand_skill}".strip() if self.on_demand_skill else self.base_skill
 
@@ -440,10 +439,25 @@ class LocalAITUI(App):
             if self.is_agent:
                 sys_p = (s_content or BASE_PROMPT_AGENT) + f"\n\n### ACTIVE PROJECT WORKSPACE:\nYour active project root directory is: {self.workspace_path}\nCapabilities: read_symbol, trace_symbol, blast_radius, find_symbol, architecture_overview, read_file, edit_file, write_file, list_dir, run_command.\n"
                 try:
-                    if os.path.exists(self.workspace_path):
-                        if map_files := [f for f in os.listdir(self.workspace_path) if f.startswith("index-map-") and f.endswith(".txt")]:
-                            with open(os.path.join(self.workspace_path, map_files[0]), "r", encoding="utf-8", errors="ignore") as mf:
-                                if cmap := mf.read().strip(): sys_p += f"\n\n### CODESPACE MAP:\n{cmap}\n"
+                    agent_dir = os.path.join(self.workspace_path, ".agent")
+                    cfg_path = os.path.join(agent_dir, "config.json")
+                    use_map = True
+                    if os.path.exists(cfg_path):
+                        try:
+                            with open(cfg_path, "r", encoding="utf-8") as cf:
+                                use_map = json.load(cf).get("map", True)
+                        except Exception: pass
+
+                    if use_map:
+                        search_dirs = [agent_dir, self.workspace_path]
+                        for s_dir in search_dirs:
+                            if os.path.exists(s_dir):
+                                map_files = [f for f in os.listdir(s_dir) if f.startswith("index-map-") and f.endswith(".txt")]
+                                if map_files:
+                                    with open(os.path.join(s_dir, map_files[0]), "r", encoding="utf-8", errors="ignore") as mf:
+                                        if cmap := mf.read().strip():
+                                            sys_p += f"\n\n### CODESPACE MAP:\n{cmap}\n"
+                                            break
                 except (OSError, UnicodeDecodeError): pass
             else:
                 sys_p = s_content or BASE_PROMPT_CHAT
@@ -460,7 +474,7 @@ class LocalAITUI(App):
                 t = Table(show_header=False, box=None, padding=(0, 2), expand=False)
                 cmd_style = "bold #89b4fa" if "code" in self.theme else ("bold #0265dc" if not self.is_dark_theme else "bold cyan")
                 t.add_column("Key", style=cmd_style, justify="left"); t.add_column("Action", style="default")
-                for k, a in [("Tab", "Plan / Build Mode"), ("Ctrl+B", "Toggle Sidebar Panel"), ("Ctrl+T", "Cycle Themes"), ("Ctrl+O", "Copy Latest Response"), ("▲ Show", "Toggle Bottom Shortcut Bar"), ("/help", "View All Commands")]:
+                for k, a in [("Tab", "Plan / Build Mode"), ("Ctrl+B", "Toggle Sidebar Panel"), ("Ctrl+T", "Cycle Themes"), ("Ctrl+O", "Copy Latest Response"), ("Ctrl+Q", "Quit TUI"), ("/help", "View All Commands")]:
                     t.add_row(k, a)
                 self.query_one("#welcome-banner", Static).update(Panel(t, title=" ∿ PyTUI ", title_align="left", border_style=self.border_accent, box=ROUNDED, expand=False))
         except Exception: pass
@@ -481,7 +495,7 @@ class LocalAITUI(App):
                     yield Static(f"[dim]Dir[/dim]     {format_dir_path(self.workspace_path)}", id="lbl-dir", classes="sidebar-val")
                     yield Static(f"[dim]Skill[/dim]   {self.active_skill}", id="lbl-skill", classes="sidebar-val")
                     yield Static(f"[dim]Mode[/dim]    {self.agent_mode}", id="lbl-mode", classes="sidebar-val")
-                    yield Static("[dim]Harness[/dim] Native Tools", id="lbl-harness", classes="sidebar-val")
+                    yield Static("[dim]Harness[/dim] Chat Mode", id="lbl-harness", classes="sidebar-val")
                     yield Static("[dim]Image[/dim]   None", id="lbl-image", classes="sidebar-val")
 
                 with Vertical(classes="sidebar-section"):
@@ -499,7 +513,7 @@ class LocalAITUI(App):
                     with Horizontal(id="card-tips-header"):
                         yield Static("Quick Tips", id="lbl-tips-title")
                         yield CloseCardButton("×", id="btn-close-tips")
-                    yield Static("Tab: Switch Mode\nCtrl+B: Sidebar\nCtrl+F: Borders\nCtrl+G: Compact\nCtrl+T: Themes\n/tok: Context\n/py: Harness\n/v: Voice To Text\n/tts: Text To Speech\n/task: Goal\n/help: Commands", id="lbl-tips-body")
+                    yield Static("Tab: Switch Mode\nCtrl+B: Sidebar\nCtrl+F: Borders\nCtrl+G: Compact\nCtrl+T: Themes\nCtrl+Q: Exit TUI\n/tok: Context\n/py: Harness\n/v: Voice To Text\n/tts: Text To Speech\n/task: Goal\n/help: Commands", id="lbl-tips-body")
 
         with Horizontal(id="footer-bar"): yield Footer(id="footer-keys")
 
@@ -527,8 +541,10 @@ class LocalAITUI(App):
         self.lbl_database, self.lbl_stats = self.query_one("#lbl-database", Static), self.query_one("#lbl-stats", Static)
         self.lbl_voice, self.lbl_tts, self.lbl_image = self.query_one("#lbl-voice", Static), self.query_one("#lbl-tts", Static), self.query_one("#lbl-image", Static)
 
-        if hasattr(ipython, "is_ipython_enabled"):
-            self.lbl_harness.update("[dim]Harness[/dim] " + ("NOOA IPython" if ipython.is_ipython_enabled() else "Native Tools"))
+        is_py_profile = "py-" in self.active_skill.lower()
+        use_ipython = (is_py_profile or (ipython and ipython.is_ipython_enabled())) if self.is_agent else False
+        if hasattr(self, "lbl_harness"):
+            self.lbl_harness.update("[dim]Harness[/dim] " + ("NOOA IPython" if use_ipython else ("Native Tools" if self.is_agent else "Chat Mode")))
 
         if hasattr(voice, "is_bridge_running"):
             is_act = voice.is_bridge_running()
@@ -881,7 +897,7 @@ class LocalAITUI(App):
                 try: tpm_ctx = core.run_mod("ai-agent-memories", "tpm-get", self.safe_name)
                 except (OSError, subprocess.SubprocessError): pass
 
-            assistant_msg = Message("Agent", "Thinking...")
+            assistant_msg = Message("Agent" if self.is_agent else "AI", "Thinking...")
             self.call_from_thread(self.chat_area.mount, assistant_msg)
             self.call_from_thread(self.chat_area.scroll_end, animate=False)
 
@@ -902,7 +918,7 @@ class LocalAITUI(App):
             budget_val = self.reasoning_budget if enable_think else 0
             think_kwargs = {"thinking_budget_tokens": budget_val, "reasoning_budget": budget_val, "chat_template_kwargs": {"enable_thinking": enable_think}}
 
-            for _round in range(10):
+            for _round in range(10 if self.is_agent else 1):
                 accumulated, in_thinking, tool_calls_map = "", False, {}
                 configs = agent_cloud.get_active_configs(self.history) if agent_cloud else []
 
@@ -965,7 +981,7 @@ class LocalAITUI(App):
                 self.call_from_thread(self.chat_area.scroll_end, animate=False)
 
                 calls = [v for _, v in sorted(tool_calls_map.items())] if tool_calls_map else None
-                if not calls:
+                if not calls or not self.is_agent:
                     self.history.append({"role": "assistant", "content": accumulated})
                     break
 
@@ -1016,12 +1032,12 @@ class LocalAITUI(App):
             if hasattr(tts, "speak_response"):
                 tts.speak_response(accumulated)
 
-            if user_text:
+            if user_text and self.is_agent:
                 try:
                     core.run_mod("ai-agent-sessions", "log-turn", self.safe_name, user_text, accumulated)
                     self.refresh_db_counts()
                     if hasattr(self, "lbl_database"): self.call_from_thread(self.lbl_database.update, f"[dim]DB State[/dim]  {self.get_db_status_string()}")
-                    if self.is_agent and self.memory_active:
+                    if self.memory_active:
                         threading.Thread(target=core.background_tpm_update, args=(user_text, accumulated, self.safe_name, self.workspace_path), daemon=True).start()
                 except (OSError, subprocess.SubprocessError): pass
 

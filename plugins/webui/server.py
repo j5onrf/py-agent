@@ -44,12 +44,12 @@ def detect_workspace_mode(workspace: str) -> tuple[bool, str, bool]:
     if ws_real == home or not os.path.exists(os.path.join(workspace, ".agent")):
         return False, (inherited_skill or "chat"), False
 
-    selected_profile, is_yolo = inherited_skill or "default", False
+    selected_profile, is_yolo = inherited_skill or "pi/pro", False
     if os.path.exists(cfg_file):
         try:
             with open(cfg_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                selected_profile = inherited_skill or data.get("profile", "default")
+                selected_profile = inherited_skill or data.get("profile", "pi/pro")
                 is_yolo = data.get("yolo", False)
         except Exception:
             pass
@@ -59,11 +59,11 @@ def detect_workspace_mode(workspace: str) -> tuple[bool, str, bool]:
 
 def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) -> str:
     if not is_agent:
-        clean_name = profile_name if (profile_name and profile_name != "default") else "chat"
+        clean_name = profile_name if profile_name else "chat"
         skill_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
         return skill_content or BASE_PROMPT_CHAT
 
-    clean_name = profile_name if profile_name not in ("default", "init") else "init"
+    clean_name = profile_name if profile_name != "init" else "pi/pro"
     profile_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
 
     if profile_content:
@@ -81,7 +81,16 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
     sys_prompt += f"\n\n### ACTIVE PROJECT WORKSPACE:\nYour active project root directory is: {workspace}\n"
 
     agent_dir = os.path.join(workspace, ".agent")
-    if os.path.exists(agent_dir):
+    use_map = True
+    cfg_path = os.path.join(agent_dir, "config.json")
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as cf:
+                use_map = json.load(cf).get("map", True)
+        except Exception:
+            pass
+
+    if use_map and os.path.exists(agent_dir):
         for f in os.listdir(agent_dir):
             if f.startswith("index-map-") and f.endswith(".txt"):
                 try:

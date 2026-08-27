@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.8.91] - Pure Standard In-Memory Architecture"""
+"""Py Agent [j5onrf] [v0.9.8.92] - Pure Standard In-Memory Architecture"""
 
 import json
 import os
@@ -130,21 +130,24 @@ def run_interactive_chat(args: list[str]) -> None:
 
     ensure_clean_agent_dir(workspace_path)
     cfg_file = os.path.join(workspace_path, ".agent", "config.json")
-    selected_profile, is_yolo = "default", False
+    selected_profile = "pi/pro" if is_agent else "chat"
+    is_yolo, use_map = False, True
 
     if is_agent:
         if not os.path.exists(cfg_file):
-            selected_profile, is_yolo = ui.select_workspace_profile(os.path.basename(workspace_path))
+            selected_profile, is_yolo, use_map = ui.select_workspace_profile(os.path.basename(workspace_path))
             try:
                 os.makedirs(os.path.dirname(cfg_file), exist_ok=True)
                 with open(cfg_file, "w", encoding="utf-8") as cf:
-                    json.dump({"profile": selected_profile, "yolo": is_yolo, "created_at": time.strftime("%Y-%m-%d %H:%M")}, cf, indent=2)
+                    json.dump({"profile": selected_profile, "yolo": is_yolo, "map": use_map, "created_at": time.strftime("%Y-%m-%d %H:%M")}, cf, indent=2)
             except OSError: pass
         else:
             try:
                 with open(cfg_file, "r", encoding="utf-8") as cf:
                     cfg_data = json.load(cf)
-                    selected_profile, is_yolo = cfg_data.get("profile", "default"), cfg_data.get("yolo", False)
+                    selected_profile = cfg_data.get("profile", "pi/pro")
+                    is_yolo = cfg_data.get("yolo", False)
+                    use_map = cfg_data.get("map", True)
             except (OSError, json.JSONDecodeError): pass
 
     for arg in args:
@@ -152,22 +155,24 @@ def run_interactive_chat(args: list[str]) -> None:
             selected_profile = arg.lstrip("-").lower()
 
     if is_agent:
-        clean_name = selected_profile if selected_profile not in ("default", "init") else "init"
+        clean_name = selected_profile if selected_profile != "init" else "pi/pro"
         profile_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
-        if not profile_content and clean_name not in ("default", "init"):
+        if not profile_content and clean_name != "init":
             ui._console.print(f"[dim yellow][sys] Skill '{clean_name}' not found. Using minimal agent prompt.[/dim yellow]")
         active_system_prompt = profile_content or BASE_PROMPT_AGENT
     else:
-        clean_name = selected_profile if (selected_profile and selected_profile != "default") else "chat"
+        clean_name = selected_profile if (selected_profile and selected_profile != "pi/pro") else "chat"
         skill_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
         if not skill_content and clean_name != "chat":
             ui._console.print(f"[dim yellow][sys] Skill '{clean_name}' not found. Using minimal chat prompt.[/dim yellow]")
         active_system_prompt = skill_content or BASE_PROMPT_CHAT
 
     pending_query = " ".join(args[1:]) if len(args) > 1 else None
-    if pending_query and ("CODEBASE INDEX MAP" in pending_query or "index-map" in pending_query):
+    if use_map and pending_query and ("CODEBASE INDEX MAP" in pending_query or "index-map" in pending_query):
         active_system_prompt += f"\n\n### CODESPACE MAP:\n{pending_query}"
         pending_query = "[Workspace context loaded]"
+    elif not use_map and pending_query and ("CODEBASE INDEX MAP" in pending_query or "index-map" in pending_query):
+        pending_query = None
 
     chat_history = [{"role": "system", "content": active_system_prompt}]
 
@@ -176,7 +181,6 @@ def run_interactive_chat(args: list[str]) -> None:
     memory_active = st.get("memory_active", False)
     reasoning_active, reasoning_budget = st.get("reasoning_active", False), st.get("reasoning_budget", 500)
 
-    os.environ["AI_RENDER_MARKDOWN"] = "1" if st.get("render_markdown", True) else "0"
     os.environ["AI_REASONIX_ACTIVE"] = "1" if st.get("reasonix_active", True) else "0"
     os.environ["AI_SHOW_THINKING"] = "1" if st.get("show_thinking", True) else "0"
     if is_yolo or st.get("yolo_mode", False): os.environ["AI_CONFIRM_GATES"] = "0"
@@ -320,13 +324,6 @@ def run_interactive_chat(args: list[str]) -> None:
                     if is_agent and memory_active:
                         sync_md_to_sqlite(safe_name, workspace_path)
                     ui._console.print(f"[green][sys] Memory & TPM facts {'enabled' if memory_active else 'disabled'}.[/green]\n")
-                    continue
-
-                if query in ("/md", "/markdown"):
-                    new_md = not (os.environ.get("AI_RENDER_MARKDOWN", "1") == "1")
-                    os.environ["AI_RENDER_MARKDOWN"] = "1" if new_md else "0"
-                    core.save_state("render_markdown", new_md)
-                    ui._console.print(f"[green][sys] Markdown rendering {'enabled' if new_md else 'disabled'}.[/green]\n")
                     continue
 
                 if query in ("/g", "/yolo"):

@@ -115,7 +115,16 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
     sys_prompt += "Capabilities: read_symbol, trace_symbol, blast_radius, find_symbol, architecture_overview, read_file, write_file, list_dir, run_command.\n\n"
 
     agent_dir = os.path.join(workspace, ".agent")
-    if os.path.exists(agent_dir):
+    use_map = True
+    cfg_path = os.path.join(agent_dir, "config.json")
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as cf:
+                use_map = json.load(cf).get("map", True)
+        except Exception:
+            pass
+
+    if use_map and os.path.exists(agent_dir):
         for f in os.listdir(agent_dir):
             if f.startswith("index-map-") and f.endswith(".txt"):
                 try:

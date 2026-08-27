@@ -269,7 +269,6 @@ def show_help() -> None:
         ("/t \\[N|show|hide]", "Set reasoning budget or show/hide"),
         ("/g, /yolo", "Toggle confirmation gates (YOLO / autonomous mode)"),
         ("/m", "Toggle database memory"),
-        ("/md", "Toggle markdown"),
         ("/stats", "Generation speed stats"),
         ("/tok", "Context token usage"),
         ("/sync", "Sync index"),
@@ -291,12 +290,10 @@ def show_help() -> None:
     ), "\n")
 
 
-def select_workspace_profile(workspace_name: str) -> tuple[str, bool]:
-    """Renders the workspace profile selector menu with minimal confirmation for YOLO mode."""
+def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool]:
+    """Renders the workspace profile selector menu with toggles for YOLO and AST Map."""
     options = [
-        ("default",        "Default Assistant", "~120t", "Agents"),
-
-        ("pi/pro",         "Pi Pro",         "~280t", None),
+        ("pi/pro",         "Pi Pro",         "~280t", "Agents"),
         ("claude/pro",     "Claude Pro",     "~290t", None),
         ("hermes/pro",     "Hermes Pro",     "~280t", None),
         ("pi/lite",        "Pi Lite",        "~220t", None),
@@ -311,7 +308,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool]:
     sys.stderr.write(f"\n\033[1;36m[ai init]\033[0m Select default Agent Profile for workspace \033[1;33m{workspace_name}\033[0m:\n\n\033[?25l")
     sys.stderr.flush()
 
-    current_idx, is_yolo, num_opts = 0, False, len(options)
+    current_idx, is_yolo, use_map, num_opts = 0, False, True, len(options)
     last_rendered_lines = 0
 
     try:
@@ -322,10 +319,10 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool]:
             lines_count = 0
             sub_idx = 1
             for idx, (k, lbl, d, cat) in enumerate(options):
-                if cat or k in ("pi/pro", "pi/lite", "pi/py-pro"):
+                if cat:
                     sub_idx = 1
 
-                if idx > 0 and (cat or k in ("pi/pro", "pi/lite")):
+                if idx > 0 and cat:
                     sys.stderr.write("\r\x1b[K\n")
                     lines_count += 1
 
@@ -342,7 +339,8 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool]:
                 sub_idx += 1
 
             yolo_badge = "\033[1;33m[ON]\033[0m" if is_yolo else "\033[90m[OFF]\033[0m"
-            sys.stderr.write(f"\r\x1b[K\n\r\x1b[K\033[2m  :: ↵ select  ↑/↓ navigate  Tab: YOLO {yolo_badge}\033[2m  Esc: default\033[0m")
+            map_badge = "\033[1;32m[ON]\033[0m" if use_map else "\033[90m[OFF]\033[0m"
+            sys.stderr.write(f"\r\x1b[K\n\r\x1b[K\033[2m  :: ↵ select  ↑/↓ navigate  Tab: YOLO {yolo_badge}\033[2m  m: Map {map_badge}\033[2m  Esc: {options[0][0]}\033[0m")
             lines_count += 1
             sys.stderr.flush()
 
@@ -350,10 +348,12 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool]:
 
             char = get_key()
             if char in ('\t', 'y', 'Y'): is_yolo = not is_yolo
+            elif char in ('m', 'M'): use_map = not use_map
             elif char in ('\x03', '\x1b'):
-                sys.stderr.write(f"\x1b[{last_rendered_lines}A\r\x1b[J\033[1;32m✓ Profile set to: Default{' (Autonomous YOLO)' if is_yolo else ''}\033[0m\n\n")
+                key, label = options[0][0], options[0][1]
+                sys.stderr.write(f"\x1b[{last_rendered_lines}A\r\x1b[J\033[1;32m✓ Profile set to: {label}{' (Autonomous YOLO)' if is_yolo else ''}{' [Map: OFF]' if not use_map else ''}\033[0m\n\n")
                 sys.stderr.flush()
-                return "default", is_yolo
+                return key, is_yolo, use_map
             elif char in ('\r', '\n', ''):
                 key, label = options[current_idx][0], options[current_idx][1]
                 sys.stderr.write(f"\x1b[{last_rendered_lines}A\r\x1b[J")
@@ -364,9 +364,9 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool]:
                     sys.stderr.write("y\n" if c == 'y' else "n\n")
                     sys.stderr.flush()
                     if c == 'y': is_yolo = True
-                sys.stderr.write(f"\033[1;32m✓ Profile set to: {label}{' (Autonomous YOLO)' if is_yolo else ''}\033[0m\n\n")
+                sys.stderr.write(f"\033[1;32m✓ Profile set to: {label}{' (Autonomous YOLO)' if is_yolo else ''}{' [Map: OFF]' if not use_map else ''}\033[0m\n\n")
                 sys.stderr.flush()
-                return key, is_yolo
+                return key, is_yolo, use_map
             elif char in ('\x1b[A', '\x1b[B'):
                 current_idx = (current_idx + (1 if char == '\x1b[B' else -1) + num_opts) % num_opts
     finally:
