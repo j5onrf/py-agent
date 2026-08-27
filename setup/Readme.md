@@ -2,7 +2,7 @@
 
 * **Verified Backend:** `llama.cpp` (Build `10125` / Commit `720d7fa40`)
 * **Compilation Target:** Native CachyOS `x86-64-v4` (AVX-512, VNNI, F16C) via `GNU 16.1.1`
-* **Supported Models:** Qwen Base GGUF Series (2B, 35B) & MiniCPM Series (1B)
+* **Supported Models:** Qwen Base GGUF Series (2B, 35B)
 
 This directory contains deployment scripts and process management tools for `llama-server`. The configuration supports dynamic, per-request thinking toggles (`/t <tokens>`) without splitting VRAM or restarting server instances.
 
@@ -62,8 +62,8 @@ MODELS_DIR = "/home/user/models"
 SERV_DIR = "/home/user/models/serv"
 
 LOCAL_MODELS = [
-    {"name": "Qwen 3.5 2B Base", "file": "Qwen3.5-2B.gguf", "script": "serv-2b.sh"},
-    {"name": "Qwen 3.6 35B Base", "file": "Qwen3.6-35B.gguf", "script": "serv-35b.sh"},
+    {"name": "Qwen 3.5 2B", "file": "Qwen3.5-2B.gguf", "script": "q2b.sh"},
+    {"name": "Qwen 3.6 35B", "file": "Qwen3.6-35B.gguf", "script": "q35b.sh"},
 ]
 ```
 

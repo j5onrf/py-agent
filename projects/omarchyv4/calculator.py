@@ -27,3 +27,9 @@ def power(base, exponent):
     Returns base**exponent.
     """
     return base ** exponent
+
+def square(n):
+    """
+    Square a number.
+    """
+    return n ** 2

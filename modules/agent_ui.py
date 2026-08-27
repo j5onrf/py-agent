@@ -368,7 +368,7 @@ def show_help() -> None:
 
 
 def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool]:
-    """Renders the workspace profile selector menu with dynamic custom profiles, YOLO, and AST Map toggles."""
+    """Renders the workspace profile selector menu with dynamic custom profiles, YOLO, and Index-Map toggles."""
     custom_dir = os.path.join(CFG_DIR, "skills", "profiles", "custom")
     custom_opts = []
 
@@ -383,15 +383,19 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool]:
         custom_opts[0] = (custom_opts[0][0], custom_opts[0][1], custom_opts[0][2], "Custom")
 
     standard_agents = [
-        ("pi/pro", "Pi Pro", "~280t", "Agents"),
-        ("claude/pro", "Claude Pro", "~290t", None),
-        ("hermes/pro", "Hermes Pro", "~280t", None),
-        ("pi/lite", "Pi Lite", "~220t", None),
-        ("claude/lite", "Claude Lite", "~220t", None),
-        ("hermes/lite", "Hermes Lite", "~220t", None),
-        ("pi/py-pro", "Pi Py-Pro", "~300t", "Py"),
-        ("claude/py-pro", "Claude Py-Pro", "~310t", None),
-        ("hermes/py-pro", "Hermes Py-Pro", "~300t", None),
+        ("pi/pro",         "Pi Pro",         "~180t", "Agents"),
+        ("claude/pro",     "Claude Pro",     "~190t", None),
+        ("hermes/pro",     "Hermes Pro",     "~180t", None),
+        ("pi/pro-map",     "Pi Pro-Map",     "~280t", None),
+        ("claude/pro-map", "Claude Pro-Map", "~290t", None),
+        ("hermes/pro-map", "Hermes Pro-Map", "~280t", None),
+
+        ("pi/py-pro",         "Pi Py-Pro",         "~200t", "Py"),
+        ("claude/py-pro",     "Claude Py-Pro",     "~210t", None),
+        ("hermes/py-pro",     "Hermes Py-Pro",     "~200t", None),
+        ("pi/py-pro-map",     "Pi Py-Pro-Map",     "~300t", None),
+        ("claude/py-pro-map", "Claude Py-Pro-Map", "~310t", None),
+        ("hermes/py-pro-map", "Hermes Py-Pro-Map", "~300t", None),
     ]
 
     options = custom_opts + standard_agents
@@ -412,10 +416,10 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool]:
             lines_count = 0
             sub_idx = 1
             for idx, (k, lbl, d, cat) in enumerate(options):
-                if cat or k in ("pi/pro", "pi/lite", "pi/py-pro"):
+                if cat or k in ("pi/pro", "pi/pro-map", "pi/py-pro", "pi/py-pro-map"):
                     sub_idx = 1
 
-                if idx > 0 and cat:
+                if idx > 0 and (cat or k in ("pi/pro-map", "pi/py-pro-map")):
                     sys.stderr.write("\r\x1b[K\n")
                     lines_count += 1
 
@@ -438,7 +442,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool]:
             yolo_badge = "\033[1;33m[ON]\033[0m" if is_yolo else "\033[90m[OFF]\033[0m"
             map_badge = "\033[1;32m[ON]\033[0m" if use_map else "\033[90m[OFF]\033[0m"
             sys.stderr.write(
-                f"\r\x1b[K\n\r\x1b[K\033[2m  :: ↵ select  ↑/↓ navigate  Tab: YOLO {yolo_badge}\033[2m  m: Map {map_badge}\033[2m  Esc: default\033[0m"
+                f"\r\x1b[K\n\r\x1b[K\033[2m  :: ↵ select  ↑/↓ navigate  Tab: YOLO {yolo_badge}\033[2m  m: Map {map_badge}\033[2m  Esc: {options[0][0]}\033[0m"
             )
             lines_count += 1
             sys.stderr.flush()
@@ -453,7 +457,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool]:
             elif char in ("\x03", "\x1b"):
                 key, label = options[0][0], options[0][1]
                 sys.stderr.write(
-                    f"\x1b[{last_rendered_lines}A\r\x1b[J\033[1;32m✓ Profile set to: {label}{' (Autonomous YOLO)' if is_yolo else ''}{' [Map: OFF]' if not use_map else ''}\033[0m\n\n"
+                    f"\x1b[{last_rendered_lines}A\r\x1b[J\033[1;32m✓ Profile set to: {label}{' (Autonomous YOLO)' if is_yolo else ''}{' [Map: ON]' if use_map else ''}\033[0m\n\n"
                 )
                 sys.stderr.flush()
                 return key, is_yolo, use_map
@@ -469,7 +473,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool]:
                     if c == "y":
                         is_yolo = True
                 sys.stderr.write(
-                    f"\033[1;32m✓ Profile set to: {label}{' (Autonomous YOLO)' if is_yolo else ''}{' [Map: OFF]' if not use_map else ''}\033[0m\n\n"
+                    f"\033[1;32m✓ Profile set to: {label}{' (Autonomous YOLO)' if is_yolo else ''}{' [Map: ON]' if use_map else ''}\033[0m\n\n"
                 )
                 sys.stderr.flush()
                 return key, is_yolo, use_map

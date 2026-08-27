@@ -175,10 +175,17 @@ def _get_graph_engine():
 
 
 def _safe_path(workspace: str, p: str) -> str:
-    if not p:
-        return os.path.realpath(workspace)
-    p = os.path.expanduser(urllib.parse.unquote(str(p).strip()))
-    return os.path.realpath(p if os.path.isabs(p) else os.path.join(workspace, p))
+    if not p: return os.path.realpath(workspace)
+    clean_p = os.path.expanduser(urllib.parse.unquote(str(p).strip().strip('"\'\\')))
+    ws_real = os.path.realpath(workspace)
+    
+    # Path healing: if 2B model wrote "/file.py" instead of "file.py"
+    if clean_p.startswith("/") and not clean_p.startswith(ws_real):
+        rel_candidate = clean_p.lstrip("/")
+        if os.path.exists(os.path.join(ws_real, rel_candidate)) or "/" not in rel_candidate:
+            clean_p = rel_candidate
+
+    return os.path.realpath(clean_p if os.path.isabs(clean_p) else os.path.join(ws_real, clean_p))
 
 
 def _is_outside_workspace(workspace: str, full_path: str) -> bool:

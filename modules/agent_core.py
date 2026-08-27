@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Core Module - Handles streaming SSE, tool gates, and Rich rendering [High-Performance SQLite Edition]"""
+"""Core Module - Streaming SSE, tool execution, & Rich rendering [High-Performance Edition]"""
 
 import json
 import os
@@ -26,436 +26,210 @@ from rich.text import Text
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
 STATE_FILE: str = os.path.join(CFG_DIR, ".state.json")
 SESSIONS_DIR: str = os.path.join(CFG_DIR, "projects", "database")
-
 _console, _console_err, _session = Console(), Console(stderr=True), requests.Session()
 
-# Pre-compiled regular expressions
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 RE_THINKING_TITLE = re.compile(r"^\s*Thinking Process:\s*", re.IGNORECASE)
 RE_FINAL_ANSWER = re.compile(r"^\s*Final Answer:\s*", re.IGNORECASE)
 RE_MULTIPLE_NEWLINES = re.compile(r"\n{2,}")
 RE_JSON_OBJECT = re.compile(r"\{[\s\S]*\}")
-RE_ABS_PATH = re.compile(r"/(?:[a-zA-Z0-9_\-\.]+/)*[a-zA-Z0-9_\-\.]*")
-RE_TOOL_CALL_BLOCK = re.compile(
-    r"<\|tool_call_start\|>.*?<\|tool_call_end\|>", re.DOTALL
-)
+RE_TOOL_CALL_BLOCK = re.compile(r"<\|tool_call_start\|>.*?<\|tool_call_end\|>", re.DOTALL)
 RE_MD_JSON_WRAPPER = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.DOTALL)
-RE_XML_TOOL_TAGS = re.compile(r"<\|?[a-zA-Z_]+_call_?(?:start|end)?\|?>", re.DOTALL)
+RE_XML_TOOL_TAGS = re.compile(r"<\|?[a-zA-Z_]+_call_?(?:start|end)?\|?>|<parameter=[^>]+>|</parameter>", re.DOTALL)
 
 
 def _heal_tool_args(raw: str) -> dict[str, Any]:
-    """Self-healing JSON tool argument parser (Unsloth-inspired)."""
-    if not raw or not raw.strip():
-        return {}
-
+    """High-performance self-healing JSON tool argument parser (Unsloth-inspired)."""
+    if not raw or not raw.strip(): return {}
     cleaned = raw.strip()
-    if m := RE_MD_JSON_WRAPPER.search(cleaned):
-        cleaned = m.group(1).strip()
-
+    if m := RE_MD_JSON_WRAPPER.search(cleaned): cleaned = m.group(1).strip()
     cleaned = RE_XML_TOOL_TAGS.sub("", cleaned).strip()
 
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
-        pass
+    try: return json.loads(cleaned)
+    except json.JSONDecodeError: pass
 
     healed = re.sub(r"(?<!\\)'", '"', cleaned)
     healed = re.sub(r"(\b[a-zA-Z_][a-zA-Z0-9_]*\b)\s*:", r'"\1":', healed)
     healed = re.sub(r",\s*([\]}])", r"\1", healed)
 
-    open_braces = healed.count("{") - healed.count("}")
-    open_brackets = healed.count("[") - healed.count("]")
-    if open_brackets > 0:
-        healed += "]" * open_brackets
-    if open_braces > 0:
-        healed += "}" * open_braces
+    ob, cb = healed.count("{"), healed.count("}")
+    ok, ck = healed.count("["), healed.count("]")
+    if ok > ck: healed += "]" * (ok - ck)
+    if ob > cb: healed += "}" * (ob - cb)
 
-    try:
-        return json.loads(healed)
+    try: return json.loads(healed)
     except json.JSONDecodeError:
-        extracted = {}
-        for k, v in re.findall(
-            r'"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s*:\s*["\']?([^,"\']+)["\']?', cleaned
-        ):
-            extracted[k] = v.strip()
-        return extracted
+        return {k: v.strip() for k, v in re.findall(r'"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s*:\s*["\']?([^,"\']+)["\']?', cleaned)}
 
 
-BINARY_EXTENSIONS = frozenset(
-    {
-        ".db",
-        ".sqlite",
-        ".sqlite3",
-        ".bin",
-        ".pyc",
-        ".so",
-        ".dll",
-        ".exe",
-        ".png",
-        ".jpg",
-        ".jpeg",
-        ".gif",
-        ".zip",
-        ".tar",
-        ".gz",
-        ".7z",
-        ".pdf",
-        ".docx",
-        ".xlsx",
-        ".db-wal",
-        ".db-shm",
-    }
-)
-
-_TPM_SKIP_QUERIES = frozenset(
-    {
-        "hello",
-        "hi",
-        "hey",
-        "exit",
-        "quit",
-        "q",
-        "/clear",
-        "/reset",
-        "/stats",
-        "/tok",
-        "/m",
-        "/r",
-    }
-)
-_TPM_BLACKLIST = frozenset(
-    {
-        "files",
-        "file",
-        "file_list",
-        "project",
-        "code",
-        "description",
-        "features",
-        "dependencies",
-        "project_type",
-        "directory",
-        "folder",
-        "workspace",
-    }
-)
+BINARY_EXTENSIONS = frozenset({".db", ".sqlite", ".sqlite3", ".bin", ".pyc", ".so", ".dll", ".exe", ".png", ".jpg", ".jpeg", ".gif", ".zip", ".tar", ".gz", ".7z", ".pdf", ".docx", ".xlsx", ".db-wal", ".db-shm"})
+_TPM_SKIP_QUERIES = frozenset({"hello", "hi", "hey", "exit", "quit", "q", "/clear", "/reset", "/stats", "/tok", "/m", "/r"})
+_TPM_BLACKLIST = frozenset({"files", "file", "file_list", "project", "code", "description", "features", "dependencies", "project_type", "directory", "folder", "workspace"})
 
 EDIT_TOOLS: list[dict[str, Any]] = getattr(tools, "EDIT_TOOLS", [])
 TOOL_VERBS: dict[str, str] = getattr(tools, "TOOL_VERBS", {})
 
 DEFAULTS = {
-    "show_stats": True,
-    "memory_active": False,
-    "box_style": 1,
-    "yolo_mode": False,
-    "show_thinking": True,
-    "reasoning_active": False,
-    "reasoning_budget": 500,
-    "compact_mode": 0,
-    "sidebar_hidden": False,
-    "footer_hidden": True,
-    "tips_card_hidden": False,
-    "tui_theme": "code1",
-    "voice_auto_submit": True,
-    "tts_enabled": False,
-    "tui_borders_enabled": True,
+    "show_stats": True, "memory_active": False, "box_style": 1, "yolo_mode": False,
+    "show_thinking": True, "reasoning_active": False, "reasoning_budget": 500,
+    "compact_mode": 0, "sidebar_hidden": False, "footer_hidden": True, "tips_card_hidden": False,
+    "tui_theme": "code1", "voice_auto_submit": True, "tts_enabled": False, "tui_borders_enabled": True
 }
 
-try:
-    import agent_usage as usage_log
-except ImportError:
-    usage_log = None
-
-try:
-    import speed_test
-except ImportError:
-    speed_test = None
+try: import agent_usage as usage_log
+except ImportError: usage_log = None
+try: import speed_test
+except ImportError: speed_test = None
 
 _state_cache: dict[str, Any] = {}
 _state_mtime: float = 0.0
-_server_alive_cache: dict[str, tuple[bool, float]] = {}
 
 
 def get_state(key: str = "", default: Any = None) -> Any:
-    """Retrieves state with mtime-based filesystem caching."""
     global _state_cache, _state_mtime
     try:
         if os.path.exists(STATE_FILE):
             mtime = os.path.getmtime(STATE_FILE)
             if mtime != _state_mtime or not _state_cache:
-                with open(STATE_FILE, "r", encoding="utf-8") as f:
-                    _state_cache = json.load(f)
+                with open(STATE_FILE, "r", encoding="utf-8") as f: _state_cache = json.load(f)
                 _state_mtime = mtime
-        else:
-            _state_cache = {}
-    except (OSError, json.JSONDecodeError):
-        pass
-
+    except (OSError, json.JSONDecodeError): pass
     merged = {**DEFAULTS, **_state_cache}
     return merged.get(key, default) if key else merged
 
 
 def save_state(key: str, value: Any) -> None:
-    """Persists state atomically and updates in-memory cache."""
     global _state_cache, _state_mtime
     st = get_state()
     st[key] = value
     tmp = f"{STATE_FILE}.tmp"
     try:
         os.makedirs(CFG_DIR, exist_ok=True)
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(st, f, indent=2)
+        with open(tmp, "w", encoding="utf-8") as f: json.dump(st, f, indent=2)
         os.replace(tmp, STATE_FILE)
-        _state_cache = st
-        _state_mtime = os.path.getmtime(STATE_FILE)
+        _state_cache, _state_mtime = st, os.path.getmtime(STATE_FILE)
     except OSError:
-        try:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-        except OSError:
-            pass
+        if os.path.exists(tmp): os.remove(tmp)
 
 
 def workspace_safe_name(workspace_path: str, home_dir: str = "") -> str:
-    home, ws = (
-        os.path.realpath(home_dir or os.path.expanduser("~")),
-        os.path.realpath(workspace_path),
-    )
+    home, ws = os.path.realpath(home_dir or os.path.expanduser("~")), os.path.realpath(workspace_path)
     return "home" if ws == home else (ws.replace("/", "-").strip("-.") or "home")
 
 
-def run_mod(module_name: str, *args: str, input_data: str | None = None) -> str:
-    """Fallback runner for specialized shell/python submodules."""
-    for sub in ("modules", ""):
-        path = os.path.join(CFG_DIR, sub, module_name)
-        if os.path.exists(path):
-            try:
-                res = subprocess.run(
-                    [sys.executable, path, *args],
-                    input=input_data,
-                    capture_output=True,
-                    text=True,
-                    timeout=15,
-                )
-                return res.stdout.strip() if res.returncode == 0 else ""
-            except (OSError, subprocess.SubprocessError, TimeoutError):
-                return ""
-    return ""
-
-
-def background_tpm_update(
-    user_msg: str, assistant_msg: str, workspace: str, workspace_path: str
-) -> None:
-    """Async background worker with zero-subprocess in-memory SQLite storage."""
+def background_tpm_update(user_msg: str, assistant_msg: str, workspace: str, workspace_path: str) -> None:
     clean = user_msg.lower().strip()
-    if len(clean) < 8 or clean in _TPM_SKIP_QUERIES:
-        return
+    if len(clean) < 8 or clean in _TPM_SKIP_QUERIES: return
     try:
         ex_facts = memories.tpm_get(workspace)
-        sys_p = 'You are an async memory compiler. Extract ONLY persistent facts, roles, or preferences about the HUMAN USER (e.g. {"user_role": "python dev", "preferred_style": "concise"}). Do NOT extract project code descriptions, file listings, or software features. Output ONLY a flat JSON object or {} if no user facts exist.'
-        payload = {
-            "messages": [
-                {"role": "system", "content": sys_p},
-                {
-                    "role": "user",
-                    "content": f"### Profile:\n{ex_facts or 'None'}\n\n### Turn:\nUser: {user_msg}\nAssistant: {assistant_msg}\n\nJSON:",
-                },
-            ],
-            "stream": False,
-        }
-        req = urlreq.Request(
-            "http://localhost:8080/v1/chat/completions",
-            data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
+        sys_p = 'You are an async memory compiler. Extract ONLY persistent facts, roles, or preferences about the HUMAN USER. Output ONLY a flat JSON object or {} if no user facts exist.'
+        payload = {"messages": [{"role": "system", "content": sys_p}, {"role": "user", "content": f"### Profile:\n{ex_facts or 'None'}\n\n### Turn:\nUser: {user_msg}\nAssistant: {assistant_msg}\n\nJSON:"}], "stream": False}
+        req = urlreq.Request("http://localhost:8080/v1/chat/completions", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST")
         with urlreq.urlopen(req, timeout=10) as resp:
-            out = json.loads(resp.read().decode())["choices"][0]["message"].get(
-                "content", ""
-            )
-        if m := RE_JSON_OBJECT.search(out):
-            if parsed := {
-                str(k).strip().lower(): str(v).strip()
-                for k, v in json.loads(m.group(0)).items()
-                if k and v is not None and str(k).strip().lower() not in _TPM_BLACKLIST
-            }:
-                memories.tpm_reconcile(workspace, parsed)
-                if res := memories.tpm_get(workspace):
-                    if (
-                        workspace_path
-                        and os.path.isdir(workspace_path)
-                        and os.path.realpath(workspace_path)
-                        not in (
-                            os.path.realpath(os.path.expanduser("~")),
-                            os.path.realpath(CFG_DIR),
-                        )
-                    ):
-                        md_dir = os.path.join(workspace_path, ".agent")
-                        os.makedirs(md_dir, exist_ok=True)
-                        with open(
-                            os.path.join(md_dir, "tpm.md"), "w", encoding="utf-8"
-                        ) as f:
-                            f.write(res + "\n")
-    except Exception:
-        pass
+            out = json.loads(resp.read().decode())["choices"][0]["message"].get("content", "")
+        if (m := RE_JSON_OBJECT.search(out)) and (parsed := {str(k).strip().lower(): str(v).strip() for k, v in json.loads(m.group(0)).items() if k and v is not None and str(k).strip().lower() not in _TPM_BLACKLIST}):
+            memories.tpm_reconcile(workspace, parsed)
+            if (res := memories.tpm_get(workspace)) and workspace_path and os.path.isdir(workspace_path) and os.path.realpath(workspace_path) not in (os.path.realpath(os.path.expanduser("~")), os.path.realpath(CFG_DIR)):
+                md_dir = os.path.join(workspace_path, ".agent")
+                os.makedirs(md_dir, exist_ok=True)
+                with open(os.path.join(md_dir, "tpm.md"), "w", encoding="utf-8") as f: f.write(res + "\n")
+    except Exception: pass
 
 
 def _clear_lines(stream_err: bool, text: str, extra_top: int = 0) -> None:
-    if not text:
-        return
+    if not text: return
     cols = shutil.get_terminal_size((80, 24)).columns or 80
-    lines = text.split("\n")
-    rows = extra_top + sum(
-        max(1, (len(ANSI_ESCAPE.sub("", l.replace("\t", "    "))) + cols - 1) // cols)
-        for l in lines
-    )
-    up = max(0, rows - 1)
+    up = max(0, extra_top + sum(max(1, (len(ANSI_ESCAPE.sub("", l.replace("\t", "    "))) + cols - 1) // cols) for l in text.split("\n")) - 1)
     target = sys.stderr if stream_err else sys.stdout
     try:
         target.write(f"\r\033[{up}A\033[J" if up > 0 else "\r\033[J")
         target.flush()
-    except OSError:
-        pass
+    except OSError: pass
 
 
 class RichStreamer:
-    def __init__(
-        self, prefix: str = "", active: bool = True, spinner: Any = None
-    ) -> None:
-        self.prefix, self.active, self.spinner = (
-            prefix,
-            active and sys.stdout.isatty(),
-            spinner,
-        )
-        (
-            self.acc_think,
-            self.acc_ans,
-            self.phase,
-            self.think_hdr_printed,
-            self.ans_started,
-        ) = "", "", "INIT", False, False
+    def __init__(self, prefix: str = "", active: bool = True, spinner: Any = None) -> None:
+        self.prefix, self.active, self.spinner = prefix, active and sys.stdout.isatty(), spinner
+        self.acc_think, self.acc_ans, self.phase, self.think_hdr_printed, self.ans_started = "", "", "INIT", False, False
 
     def _stop_spinner(self, done_msg: str | None = None) -> None:
         if self.spinner:
-            try:
-                self.spinner.stop(done_msg=done_msg)
-            except (AttributeError, RuntimeError, OSError):
-                pass
+            try: self.spinner.stop(done_msg=done_msg)
+            except Exception: pass
 
     def start(self) -> None:
         if self.active:
-            try:
-                sys.stdout.write("\033[?25h")
-                sys.stdout.flush()
-            except OSError:
-                pass
+            try: sys.stdout.write("\033[?25h"); sys.stdout.flush()
+            except OSError: pass
 
     def update(self, token: str) -> None:
         if not self.active:
-            if "<think>" in token and self.phase != "THINKING":
-                self.phase, token = "THINKING", token.replace("<think>", "")
-            if "</think>" in token:
-                self.phase, token = (
-                    "ANSWER",
-                    token.split("</think>", 1)[1] if "</think>" in token else "",
-                )
+            if "<think>" in token and self.phase != "THINKING": self.phase, token = "THINKING", token.replace("<think>", "")
+            if "</think>" in token: self.phase, token = "ANSWER", token.split("</think>", 1)[1] if "</think>" in token else ""
             if self.phase != "THINKING" and token:
-                try:
-                    formatted = token.replace("\r\n", "\n").replace("\n", "\r\n")
-                    sys.stdout.write(formatted)
-                    sys.stdout.flush()
-                except OSError:
-                    pass
+                try: sys.stdout.write(token.replace("\r\n", "\n").replace("\n", "\r\n")); sys.stdout.flush()
+                except OSError: pass
             return
 
         show_think = os.environ.get("AI_SHOW_THINKING", "1") == "1"
-
         if "<think>" in token and self.phase != "THINKING":
             self.phase, token = "THINKING", token.replace("<think>", "")
-            if self.spinner:
-                self.spinner.update("Thinking...")
+            if self.spinner: self.spinner.update("Thinking...")
 
         if "</think>" in token:
             parts = token.split("</think>", 1)
-            if parts[0]:
-                self.update(parts[0])
+            if parts[0]: self.update(parts[0])
             if show_think and self.think_hdr_printed:
                 sep = "" if self.acc_think.endswith("\n") else "\r\n"
-                _console_err.print(
-                    f"{sep}[dim]╰────────────────────────────────────────────────────────[/dim]"
-                )
+                _console_err.print(f"{sep}[dim]╰────────────────────────────────────────────────────────[/dim]")
                 sys.stderr.flush()
             self.phase = "ANSWER"
-            if len(parts) > 1 and parts[1]:
-                self.update(parts[1])
+            if len(parts) > 1 and parts[1]: self.update(parts[1])
             return
 
         if self.phase == "THINKING":
-            tok = RE_MULTIPLE_NEWLINES.sub(
-                "\n", RE_THINKING_TITLE.sub("", token.replace("\\n", "\n"))
-            )
-            if self.acc_think.endswith("\n") and tok.startswith("\n"):
-                tok = tok.lstrip("\r\n")
+            tok = RE_MULTIPLE_NEWLINES.sub("\n", RE_THINKING_TITLE.sub("", token.replace("\\n", "\n")))
+            if self.acc_think.endswith("\n") and tok.startswith("\n"): tok = tok.lstrip("\r\n")
             self.acc_think += tok
             if show_think and tok:
                 if not self.think_hdr_printed and tok.strip():
                     self.think_hdr_printed = True
                     self._stop_spinner()
-                    _console_err.print(
-                        "[dim]╭─ ⚙ ────────────────────────────────────────────────────[/dim]"
-                    )
+                    _console_err.print("[dim]╭─ ⚙ ────────────────────────────────────────────────────[/dim]")
                     tok = tok.lstrip("\r\n")
                 if tok:
-                    try:
-                        out_tok = tok.replace("\r\n", "\n").replace("\n", "\r\n")
-                        sys.stderr.write(out_tok)
-                        sys.stderr.flush()
-                    except OSError:
-                        pass
+                    try: sys.stderr.write(tok.replace("\r\n", "\n").replace("\n", "\r\n")); sys.stderr.flush()
+                    except OSError: pass
         else:
             tok = RE_FINAL_ANSWER.sub("", token.replace("\\n", "\n"))
             if not self.ans_started:
                 tok = tok.lstrip("\r\n\t ")
-                if not tok:
-                    return
+                if not tok: return
                 self._stop_spinner()
                 self.ans_started, p_clean = True, self.prefix.strip()
                 p_str = f"{p_clean} " if p_clean else ""
                 p_style = "\033[1;32m" if "Agent" in p_clean else "\033[1;36m"
                 if p_str:
-                    try:
-                        sys.stdout.write(f"{p_style}{p_str}\033[0m")
-                        sys.stdout.flush()
-                    except OSError:
-                        pass
+                    try: sys.stdout.write(f"{p_style}{p_str}\033[0m"); sys.stdout.flush()
+                    except OSError: pass
                 self.acc_ans += p_str
 
             self.acc_ans += tok
             if tok:
-                try:
-                    out_tok = tok.replace("\r\n", "\n").replace("\n", "\r\n")
-                    sys.stdout.write(out_tok)
-                    sys.stdout.flush()
-                except OSError:
-                    pass
+                try: sys.stdout.write(tok.replace("\r\n", "\n").replace("\n", "\r\n")); sys.stdout.flush()
+                except OSError: pass
 
     def stop(self, interrupted: bool = False) -> None:
         self._stop_spinner()
         if interrupted:
-            try:
-                sys.stdout.write("\033[?25h\r\n")
-                sys.stdout.flush()
-            except OSError:
-                pass
+            try: sys.stdout.write("\033[?25h\r\n"); sys.stdout.flush()
+            except OSError: pass
             return
 
         show_think = os.environ.get("AI_SHOW_THINKING", "1") == "1"
-
         if self.phase == "THINKING" and show_think and self.think_hdr_printed:
             sep = "" if self.acc_think.endswith("\n") else "\r\n"
-            _console_err.print(
-                f"{sep}[dim]╰────────────────────────────────────────────────────────[/dim]"
-            )
+            _console_err.print(f"{sep}[dim]╰────────────────────────────────────────────────────────[/dim]")
             self.phase = "ANSWER"
 
         if self.ans_started and self.acc_ans.strip():
@@ -464,577 +238,261 @@ class RichStreamer:
                 p_clean = self.prefix.strip()
                 p_style = "bold green" if "Agent" in p_clean else "bold cyan"
                 p_str = f"{p_clean} " if p_clean else ""
-                ans_body = (
-                    self.acc_ans[len(p_str) :]
-                    if p_str and self.acc_ans.startswith(p_str)
-                    else self.acc_ans
-                )
-                clean_md = (
-                    RE_FINAL_ANSWER.sub("", ans_body).replace("\\n", "\n").strip()
-                )
-                if p_str:
-                    _console.print(Text(p_str, style=p_style), end="")
-                try:
-                    _console.print(Markdown(clean_md, code_theme="ansi_dark"))
-                except Exception:
-                    sys.stdout.write(f"{ans_body}\r\n")
-                    sys.stdout.flush()
+                ans_body = self.acc_ans[len(p_str):] if p_str and self.acc_ans.startswith(p_str) else self.acc_ans
+                clean_md = RE_FINAL_ANSWER.sub("", ans_body).replace("\\n", "\n").strip()
+                if p_str: _console.print(Text(p_str, style=p_style), end="")
+                try: _console.print(Markdown(clean_md, code_theme="ansi_dark"))
+                except Exception: sys.stdout.write(f"{ans_body}\r\n"); sys.stdout.flush()
             else:
-                try:
-                    sys.stdout.write("\r\n")
-                    sys.stdout.flush()
-                except OSError:
-                    pass
+                try: sys.stdout.write("\r\n"); sys.stdout.flush()
+                except OSError: pass
 
 
-def _log_turn_usage(
-    model: str,
-    in_tok: int,
-    out_tok: int,
-    cost: float,
-    show_stats: bool,
-    ctx_used: int | None = None,
-    user_msg: str = "",
-    assistant_msg: str = "",
-) -> None:
+def _log_turn_usage(model: str, in_tok: int, out_tok: int, cost: float, show_stats: bool, ctx_used: int | None = None, user_msg: str = "", assistant_msg: str = "") -> None:
     try:
         ws = os.environ.get("AI_WORKSPACE_PATH")
-        if (
-            ws
-            and os.path.isdir(ws)
-            and os.path.realpath(ws)
-            not in (
-                os.path.realpath(os.path.expanduser("~")),
-                os.path.realpath(CFG_DIR),
-            )
-        ):
+        if ws and os.path.isdir(ws) and os.path.realpath(ws) not in (os.path.realpath(os.path.expanduser("~")), os.path.realpath(CFG_DIR)):
             agent_dir = os.path.join(ws, ".agent")
             os.makedirs(agent_dir, exist_ok=True)
-            with open(
-                os.path.join(agent_dir, "session.jsonl"), "a", encoding="utf-8"
-            ) as f:
-                f.write(
-                    json.dumps(
-                        {
-                            "timestamp": int(time.time()),
-                            "user_msg": user_msg,
-                            "assistant_msg": assistant_msg,
-                            "model": model,
-                            "in_tok": in_tok,
-                            "out_tok": out_tok,
-                        }
-                    )
-                    + "\n"
-                )
-    except OSError:
-        pass
-    if not usage_log:
-        return
+            with open(os.path.join(agent_dir, "session.jsonl"), "a", encoding="utf-8") as f:
+                f.write(json.dumps({"timestamp": int(time.time()), "user_msg": user_msg, "assistant_msg": assistant_msg, "model": model, "in_tok": in_tok, "out_tok": out_tok}) + "\n")
+    except OSError: pass
+    if not usage_log: return
     try:
         usage_log.record(model, in_tok, out_tok, cost)
         if show_stats and sys.stdout.isatty():
-            ctx_max = (
-                int(os.environ.get("AI_MAX_TOKENS", 8192))
-                if ctx_used is not None
-                else None
-            )
+            ctx_max = int(os.environ.get("AI_MAX_TOKENS", 8192)) if ctx_used is not None else None
             print(usage_log.turn_line(in_tok, out_tok, cost, ctx_used, ctx_max))
-    except (OSError, TypeError, ValueError, KeyError):
-        pass
+    except Exception: pass
 
 
-def _process_stream_chunk(
-    content: str, reasoning: str, in_think_block: bool
-) -> tuple[str, bool, bool]:
+def _process_stream_chunk(content: str, reasoning: str, in_think_block: bool) -> tuple[str, bool, bool]:
     if content:
-        if "Final Answer:" in content:
-            content = RE_FINAL_ANSWER.sub("", content).lstrip()
-        if "<|tool_call" in content:
-            content = (
-                RE_TOOL_CALL_BLOCK.sub("", content)
-                .replace("<|tool_call_start|>", "")
-                .replace("<|tool_call_end|>", "")
-            )
-    if reasoning:
-        return (
-            (f"<think>{reasoning}", True, True)
-            if not in_think_block
-            else (reasoning, True, True)
-        )
+        if "Final Answer:" in content: content = RE_FINAL_ANSWER.sub("", content).lstrip()
+        if "<|tool_call" in content: content = RE_TOOL_CALL_BLOCK.sub("", content).replace("<|tool_call_start|>", "").replace("<|tool_call_end|>", "")
+    if reasoning: return (f"<think>{reasoning}", True, True) if not in_think_block else (reasoning, True, True)
     if content:
-        if in_think_block and "</think>" not in content:
-            return f"</think>{content}", False, False
-        in_think = (
-            True
-            if "<think>" in content
-            else (False if "</think>" in content else in_think_block)
-        )
+        if in_think_block and "</think>" not in content: return f"</think>{content}", False, False
+        in_think = True if "<think>" in content else (False if "</think>" in content else in_think_block)
         return content, in_think, in_think
     return "", False, in_think_block
 
 
-def _calc_turn_tokens(
-    ans_text: str,
-    messages: list[dict[str, Any]],
-    captured_usage: dict[str, Any] | None,
-    is_local: bool,
-) -> tuple[int, int]:
+def _calc_turn_tokens(ans_text: str, messages: list[dict[str, Any]], captured_usage: dict[str, Any] | None, is_local: bool) -> tuple[int, int]:
     if captured_usage and "completion_tokens" in captured_usage:
-        return captured_usage.get("prompt_tokens", 0), captured_usage.get(
-            "completion_tokens", 0
-        )
+        return captured_usage.get("prompt_tokens", 0), captured_usage.get("completion_tokens", 0)
     if is_local:
-        return sum(
-            get_accurate_token_count(m.get("content") or "") for m in messages
-        ), get_accurate_token_count(ans_text)
-    return sum(len(str(m.get("content") or "")) for m in messages) // 4, len(
-        ans_text
-    ) // 4
+        return sum(get_accurate_token_count(m.get("content") or "") for m in messages), get_accurate_token_count(ans_text)
+    return sum(len(str(m.get("content") or "")) for m in messages) // 4, len(ans_text) // 4
 
 
 def _confirm_gate(reason: str, spinner: Any) -> bool:
-    if spinner:
-        spinner.stop()
-    is_tty = (
-        hasattr(sys, "__stdout__") and sys.__stdout__ and sys.__stdout__.isatty()
-    ) or sys.stdout.isatty()
+    if spinner: spinner.stop()
+    is_tty = (hasattr(sys, "__stdout__") and sys.__stdout__ and sys.__stdout__.isatty()) or sys.stdout.isatty()
     return is_tty and ui.confirm_tool(reason)
 
 
 def _print_tool_output(spinner: Any, text: str) -> None:
     if sys.stdout.isatty() and text.strip():
-        if spinner:
-            spinner.stop("Done")
-        if any(k in text for k in ("#", "|", "```")):
-            _console_err.print(Markdown(text, code_theme="ansi_dark"))
-        else:
-            _console_err.print(text)
+        if spinner: spinner.stop("Done")
+        if any(k in text for k in ("#", "|", "```")): _console_err.print(Markdown(text, code_theme="ansi_dark"))
+        else: _console_err.print(text)
 
 
-def _run_edit_tool(
-    name: str, args: dict[str, Any], workspace: str, spinner: Any = None
-) -> str:
-    return tools.run_tool(
-        name,
-        args,
-        workspace,
-        confirm_gate_fn=lambda r: _confirm_gate(r, spinner),
-        print_output_fn=lambda t: _print_tool_output(spinner, t),
-    )
+def _run_edit_tool(name: str, args: dict[str, Any], workspace: str, spinner: Any = None) -> str:
+    return tools.run_tool(name, args, workspace, confirm_gate_fn=lambda r: _confirm_gate(r, spinner), print_output_fn=lambda t: _print_tool_output(spinner, t))
 
 
-def agentic_turn(
-    messages: list[dict[str, Any]],
-    url: str,
-    headers: dict[str, str],
-    body: dict[str, Any],
-    timeout: int,
-    spinner: Any,
-    show_stats: bool = False,
-    is_agent: bool = False,
-) -> str | None:
+def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, str], body: dict[str, Any], timeout: int, spinner: Any, show_stats: bool = False, is_agent: bool = False) -> str | None:
     workspace = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
-    is_local = (
-        "localhost" in url or "127.0.0.1" in url or body.get("model") == "local-model"
-    )
+    is_local = "localhost" in url or "127.0.0.1" in url or body.get("model") == "local-model"
     resolved_model, streamer, res = None, None, None
     max_ctx = int(os.environ.get("AI_MAX_TOKENS", 8192))
 
     for _round in range(10):
-        # Auto-compact older tool outputs if context exceeds 80% limit mid-turn
-        if sum(
-            get_accurate_token_count(m.get("content") or "") for m in messages
-        ) > int(max_ctx * 0.8):
+        # Little-coder mid-turn context compaction watchdog at 80% boundary
+        if sum(get_accurate_token_count(m.get("content") or "") for m in messages) > int(max_ctx * 0.8):
             messages = prune_history(messages, max_tokens=int(max_ctx * 0.6))
 
         body_tools = {**body, "messages": messages, "stream": True}
         if is_agent:
             active_skill = os.environ.get("AI_ACTIVE_SKILL", "")
-            is_py_profile = "py-" in active_skill.lower() or "-py" in active_skill.lower()
+            is_py_profile = "py-" in active_skill.lower() or "-py" in active_skill.lower() or active_skill.lower().endswith("py")
             use_ipython = is_py_profile or (ipython and ipython.is_ipython_enabled())
-            body_tools["tools"] = (
-                ipython.IPYTHON_TOOL if (use_ipython and ipython) else EDIT_TOOLS
-            )
+            body_tools["tools"] = ipython.IPYTHON_TOOL if (use_ipython and ipython) else EDIT_TOOLS
 
         if spinner:
-            try:
-                spinner.update("Working...")
-            except (AttributeError, RuntimeError):
-                pass
+            try: spinner.update("Working...")
+            except Exception: pass
             spinner.start("Working...")
         try:
-            res = _session.post(
-                url,
-                json=body_tools,
-                headers={"Content-Type": "application/json", **headers},
-                timeout=timeout,
-                stream=True,
-            )
+            res = _session.post(url, json=body_tools, headers={"Content-Type": "application/json", **headers}, timeout=timeout, stream=True)
             if res.status_code != 200:
                 err_text = res.text[:200].replace("\n", " ").strip()
-                if spinner:
-                    spinner.stop()
-                if _round < 8 and ("parse error" in err_text or "tool call" in err_text):
-                    sys.stderr.write(
-                        f"\r\033[1;33m▲ [sys] Recovering from model JSON formatting error. Retrying round {_round + 2}...\033[0m\r\n"
-                    )
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": "Notice: Previous tool call had a JSON formatting/escaping error. Please re-issue the tool call with clean string arguments.",
-                        }
-                    )
-                    continue
-                sys.stderr.write(
-                    f"\r\033[1;31m[error] Server HTTP {res.status_code}: {err_text}\033[0m\r\n"
-                )
+                if spinner: spinner.stop()
+                sys.stderr.write(f"\r\033[1;31m[error] Server HTTP {res.status_code}: {err_text}\033[0m\r\n")
                 return None
 
-            first_chunk, acc_content, tool_calls_map, in_think_block, captured_usage = (
-                True,
-                [],
-                {},
-                False,
-                None,
-            )
+            first_chunk, acc_content, tool_calls_map, in_think_block, captured_usage = True, [], {}, False, None
 
             for line in res.iter_lines():
-                if not line:
-                    continue
+                if not line: continue
                 line_str = line.decode("utf-8", errors="ignore").strip()
-                if not line_str.startswith("data:"):
-                    continue
+                if not line_str.startswith("data:"): continue
                 data_str = line_str[5:].strip()
-                if data_str == "[DONE]":
-                    break
+                if data_str == "[DONE]": break
 
                 try:
                     data = json.loads(data_str)
                     captured_usage = data.get("usage") or captured_usage
                     resolved_model = data.get("model") or resolved_model
                     choices = data.get("choices", [{}])
-                    if not choices:
-                        continue
+                    if not choices: continue
 
                     finish_reason = choices[0].get("finish_reason")
                     delta = choices[0].get("delta", {})
 
                     content = delta.get("content", "") or ""
-                    reasoning = (
-                        delta.get("reasoning_content", "")
-                        or delta.get("thinking", "")
-                        or delta.get("reasoning", "")
-                        or ""
-                    )
+                    reasoning = delta.get("reasoning_content", "") or delta.get("thinking", "") or delta.get("reasoning", "") or ""
 
                     if spinner:
-                        try:
-                            spinner.update("Thinking..." if reasoning else "Working...")
-                        except (AttributeError, RuntimeError):
-                            pass
+                        try: spinner.update("Thinking..." if reasoning else "Working...")
+                        except Exception: pass
 
-                    chunk_to_stream, is_thinking, in_think_block = (
-                        _process_stream_chunk(content, reasoning, in_think_block)
-                    )
+                    chunk_to_stream, is_thinking, in_think_block = _process_stream_chunk(content, reasoning, in_think_block)
 
                     if chunk_to_stream:
                         if first_chunk:
                             first_chunk = False
-                            if os.environ.get("AI_SHOW_THINKING", "1") == "1":
-                                spinner.stop()
-                            streamer = RichStreamer(
-                                prefix="Agent:" if is_agent else "AI:", spinner=spinner
-                            )
+                            if os.environ.get("AI_SHOW_THINKING", "1") == "1": spinner.stop()
+                            streamer = RichStreamer(prefix="Agent:" if is_agent else "AI:", spinner=spinner)
                             streamer.start()
-                            if speed_test and show_stats:
-                                speed_test.start()
+                            if speed_test and show_stats: speed_test.start()
 
-                        if streamer:
-                            streamer.update(chunk_to_stream)
+                        if streamer: streamer.update(chunk_to_stream)
                         acc_content.append(chunk_to_stream)
-                        if speed_test and show_stats:
-                            speed_test.count_token(
-                                chunk_to_stream, is_thinking=is_thinking
-                            )
+                        if speed_test and show_stats: speed_test.count_token(chunk_to_stream, is_thinking=is_thinking)
 
                     for tc in delta.get("tool_calls", []):
                         idx = tc.get("index", 0)
-                        tc_entry = tool_calls_map.setdefault(
-                            idx,
-                            {
-                                "id": tc.get("id", ""),
-                                "type": "function",
-                                "function": {
-                                    "name": tc.get("function", {}).get("name", ""),
-                                    "arguments": "",
-                                },
-                            },
-                        )
-                        if tc.get("function", {}).get("name"):
-                            tc_entry["function"]["name"] = tc["function"]["name"]
-                        tc_entry["function"]["arguments"] += tc.get("function", {}).get(
-                            "arguments", ""
-                        )
+                        tc_entry = tool_calls_map.setdefault(idx, {"id": tc.get("id", ""), "type": "function", "function": {"name": tc.get("function", {}).get("name", ""), "arguments": ""}})
+                        if tc.get("function", {}).get("name"): tc_entry["function"]["name"] = tc["function"]["name"]
+                        tc_entry["function"]["arguments"] += tc.get("function", {}).get("arguments", "")
 
-                    if finish_reason in ("stop", "length") and not tool_calls_map:
-                        break
-                except (
-                    json.JSONDecodeError,
-                    KeyError,
-                    IndexError,
-                    TypeError,
-                    ValueError,
-                ):
-                    pass
+                    if finish_reason in ("stop", "length") and not tool_calls_map: break
+                except Exception: pass
 
-            if streamer:
-                streamer.stop()
-            elif not first_chunk:
-                print()
+            if streamer: streamer.stop()
+            elif not first_chunk: print()
 
             ans_text = "".join(acc_content)
-            in_tok, out_tok = _calc_turn_tokens(
-                ans_text, messages, captured_usage, is_local
-            )
+            in_tok, out_tok = _calc_turn_tokens(ans_text, messages, captured_usage, is_local)
 
             if speed_test and show_stats and not first_chunk:
-                speed_test.end(
-                    actual_out_tokens=out_tok,
-                    is_local=is_local,
-                    resolved_model=resolved_model,
-                    active_model=body.get("model"),
-                )
+                speed_test.end(actual_out_tokens=out_tok, is_local=is_local, resolved_model=resolved_model, active_model=body.get("model"))
 
-            calls = (
-                [val for _, val in sorted(tool_calls_map.items())]
-                if tool_calls_map
-                else None
-            )
+            calls = [val for _, val in sorted(tool_calls_map.items())] if tool_calls_map else None
             if not calls or not is_agent:
-                tool_toks = sum(
-                    get_accurate_token_count(m.get("content") or "")
-                    for m in messages
-                    if m.get("role") in ("assistant", "tool")
-                )
+                tool_toks = sum(get_accurate_token_count(m.get("content") or "") for m in messages if m.get("role") in ("assistant", "tool"))
                 final_out = max(out_tok, tool_toks)
-                if spinner:
-                    spinner.stop("Done" if ans_text and ans_text.strip() else None)
-                user_msg = next(
-                    (
-                        m.get("content", "") or ""
-                        for m in reversed(messages)
-                        if m.get("role") == "user"
-                    ),
-                    "",
-                )
-                _log_turn_usage(
-                    resolved_model or body.get("model") or "local-model",
-                    in_tok,
-                    final_out,
-                    0.0,
-                    show_stats,
-                    in_tok + final_out,
-                    user_msg=user_msg,
-                    assistant_msg=ans_text,
-                )
+                if spinner: spinner.stop("Done" if ans_text and ans_text.strip() else None)
+                user_msg = next((m.get("content", "") or "" for m in reversed(messages) if m.get("role") == "user"), "")
+                _log_turn_usage(resolved_model or body.get("model") or "local-model", in_tok, final_out, 0.0, show_stats, in_tok + final_out, user_msg=user_msg, assistant_msg=ans_text)
                 return ans_text if ans_text else "(No response generated)"
 
-            messages.append(
-                {"role": "assistant", "content": ans_text or None, "tool_calls": calls}
-            )
+            messages.append({"role": "assistant", "content": ans_text or None, "tool_calls": calls})
 
             for tc in calls:
                 fname = tc.get("function", {}).get("name", "")
                 raw_args = tc.get("function", {}).get("arguments") or ""
                 args = _heal_tool_args(raw_args)
-                brief = str(
-                    args.get("symbol") or args.get("path") or args.get("command") or ""
-                )[:100]
+                brief = str(args.get("symbol") or args.get("path") or args.get("command") or "")[:100]
                 verb = TOOL_VERBS.get(fname, "working")
 
-                _console_err.print(
-                    f"[dim]∗ {verb} • [cyan]{fname}[/cyan] [italic]{brief}[/italic][/dim]"
-                )
-                if spinner:
-                    spinner.stop()
+                _console_err.print(f"[dim]∗ {verb} • [cyan]{fname}[/cyan] [italic]{brief}[/italic][/dim]")
+                if spinner: spinner.stop()
 
-                try:
-                    result = _run_edit_tool(fname, args, workspace, spinner)
-                except (
-                    OSError,
-                    subprocess.SubprocessError,
-                    ValueError,
-                    TypeError,
-                    KeyError,
-                ) as e:
-                    result = f"[tool error] {e}"
+                try: result = _run_edit_tool(fname, args, workspace, spinner)
+                except Exception as e: result = f"[tool error] {e}"
 
-                pruned_result = (
-                    result
-                    if len(result) <= 1500
-                    else result[:1200]
-                    + f"\n... [Reasonix Harness: Snipped {len(result) - 1200} chars for context stability]"
-                )
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tc.get("id", ""),
-                        "name": fname,
-                        "content": pruned_result,
-                    }
-                )
+                pruned_result = result if len(result) <= 1500 else result[:1200] + f"\n... [Reasonix Harness: Snipped {len(result) - 1200} chars for context stability]"
+                messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": fname, "content": pruned_result})
 
         except KeyboardInterrupt:
             if streamer:
-                try:
-                    streamer.stop(interrupted=True)
-                except (AttributeError, RuntimeError, OSError):
-                    pass
+                try: streamer.stop(interrupted=True)
+                except Exception: pass
             if spinner:
-                try:
-                    spinner.stop()
-                except (AttributeError, RuntimeError, OSError):
-                    pass
+                try: spinner.stop()
+                except Exception: pass
             raise
-        except (
-            requests.RequestException,
-            OSError,
-            TimeoutError,
-            ValueError,
-            TypeError,
-        ) as e:
+        except Exception as e:
             sys.stderr.write(f"\033[90m[sys] API response error: {e}\033[0m\r\n")
             return None
         finally:
             if res is not None:
-                try:
-                    res.close()
-                except Exception:
-                    pass
-            if spinner:
-                spinner.stop()
-
+                try: res.close()
+                except Exception: pass
+            if spinner: spinner.stop()
     return None
 
 
-def stream_response(
-    messages: list[dict[str, Any]],
-    prefix: str = "AI: ",
-    cfg_dir: str = "",
-    show_stats: bool = False,
-    thinking_budget: int = 0,
-    is_agent: bool = False,
-) -> str | None:
+def stream_response(messages: list[dict[str, Any]], prefix: str = "AI: ", cfg_dir: str = "", show_stats: bool = False, thinking_budget: int = 0, is_agent: bool = False) -> str | None:
     spinner = ui.InlineSpinner()
     try:
         configs = agent_cloud.get_active_configs(messages)
         enable_think = thinking_budget > 0
         budget_val = thinking_budget if enable_think else 0
-        think_kwargs = {
-            "thinking_budget_tokens": budget_val,
-            "reasoning_budget": budget_val,
-            "chat_template_kwargs": {"enable_thinking": enable_think},
-        }
+        think_kwargs = {"thinking_budget_tokens": budget_val, "reasoning_budget": budget_val, "chat_template_kwargs": {"enable_thinking": enable_think}}
 
         if not configs:
-            configs = [
-                (
-                    "http://localhost:8080/v1/chat/completions",
-                    {},
-                    {"messages": messages, "stream": True, **think_kwargs},
-                    180,
-                )
-            ]
+            configs = [("http://localhost:8080/v1/chat/completions", {}, {"messages": messages, "stream": True, **think_kwargs}, 180)]
 
         url, headers, body, timeout = configs[0]
-        if (
-            "localhost" in url
-            or "127.0.0.1" in url
-            or body.get("model") == "local-model"
-        ):
+        if "localhost" in url or "127.0.0.1" in url or body.get("model") == "local-model":
             body = {**body, **think_kwargs}
 
-        ans = agentic_turn(
-            messages,
-            url,
-            headers,
-            body,
-            timeout,
-            spinner,
-            show_stats,
-            is_agent=is_agent,
-        )
-        if spinner:
-            spinner.stop("Done")
+        ans = agentic_turn(messages, url, headers, body, timeout, spinner, show_stats, is_agent=is_agent)
+        if spinner: spinner.stop("Done")
         return ans
     except KeyboardInterrupt:
         if spinner:
-            try:
-                spinner.stop()
-            except (AttributeError, RuntimeError, OSError):
-                pass
+            try: spinner.stop()
+            except Exception: pass
         sys.stderr.write("\r\x1b[2K\033[90m[sys] Interrupted.\033[0m\033[0m\r\n")
         return None
 
 
-def get_accurate_token_count(
-    text: Any, server_url: str = "http://localhost:8080"
-) -> int:
-    return (
-        max(1, (len(text if isinstance(text, str) else str(text)) * 10) // 36)
-        if text
-        else 0
-    )
+def get_accurate_token_count(text: Any, server_url: str = "http://localhost:8080") -> int:
+    return max(1, (len(text if isinstance(text, str) else str(text)) * 10) // 36) if text else 0
 
 
-def show_memory_status(
-    messages: list[dict[str, Any]],
-    max_context: int = 8192,
-    server_url: str = "http://localhost:8080",
-) -> None:
-    total_toks = sum(
-        get_accurate_token_count(m.get("content") or "", server_url) for m in messages
-    )
+def show_memory_status(messages: list[dict[str, Any]], max_context: int = 8192, server_url: str = "http://localhost:8080") -> None:
+    total_toks = sum(get_accurate_token_count(m.get("content") or "", server_url) for m in messages)
     pct = (total_toks / max_context) * 100
     bar = "█" * int(pct / 5) + "░" * (20 - int(pct / 5))
     color = "green" if pct < 70 else "yellow" if pct < 90 else "red"
 
-    _console.print(
-        Panel(
-            Group(
-                Text.assemble(
-                    ("Context Window: ", "dim"),
-                    (f"{total_toks}", f"bold {color}"),
-                    (f"/{max_context} tokens ", "dim"),
-                    (f"({pct:.1f}%)", f"bold {color}"),
-                ),
-                Text(f"[{bar}]", style=color),
-            ),
-            title="Memory & Context Status",
-            title_align="left",
-            border_style="bright_black",
-            box=ROUNDED,
-            expand=False,
-        )
-    )
+    _console.print(Panel(
+        Group(
+            Text.assemble(("Context Window: ", "dim"), (f"{total_toks}", f"bold {color}"), (f"/{max_context} tokens ", "dim"), (f"({pct:.1f}%)", f"bold {color}")),
+            Text(f"[{bar}]", style=color)
+        ),
+        title="Memory & Context Status", title_align="left", border_style="bright_black", box=ROUNDED, expand=False
+    ))
 
 
-def prune_history(
-    history: list[dict[str, Any]], max_tokens: int | None = None
-) -> list[dict[str, Any]]:
-    if len(history) <= 1:
-        return history
+def prune_history(history: list[dict[str, Any]], max_tokens: int | None = None) -> list[dict[str, Any]]:
+    if len(history) <= 1: return history
     limit = max_tokens or int(os.environ.get("AI_MAX_TOKENS", 8192))
     history = [m for m in history if m.get("role") != "tool"]
-
     sys_prompt = history[0]
     curr = get_accurate_token_count(sys_prompt.get("content", ""))
     selected = []
 
     for msg in reversed(history[1:]):
         toks = get_accurate_token_count(msg.get("content", ""))
-        if curr + toks > limit and selected:
-            break
+        if curr + toks > limit and selected: break
         selected.append(msg)
         curr += toks
 

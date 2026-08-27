@@ -106,27 +106,31 @@ All auto-created agent metadata files are strictly isolated inside `project/.age
 
 ## 2. Profile Selector (`ai init`)
 
-Running `ai init <path>` sets the default workspace agent profile:
+Running `ai init <path>` initializes a workspace and opens the interactive profile selector:
 
 ```console
-[ai init] Select default Agent Profile for workspace session-test:
+[ai init] Select default Agent Profile for workspace my-project:
 
   ─── Custom ────────────────────────
-  ❯  1. Custom Lfm           (~150t)
-     2. Custom Lfm-Idx       (~320t)
+  ❯  1. Custom Base          (~150t)  <-- Lean (5 tools, Map: OFF)
+     2. Custom Base-Map      (~300t)  <-- Index-Map (10 tools, Map: ON)
+     3. Custom Base-Py       (~280t)  <-- In-Kernel (Map: OFF)
 
   ─── Agents ────────────────────────
-     1. Pi Pro               (~280t)
-     2. Claude Pro           (~290t)
-     3. Hermes Pro           (~280t)
-     1. Pi Lite              (~220t)
-     2. Claude Lite          (~220t)
-     3. Hermes Lite          (~220t)
+     1. Pi Pro               (~180t)  <-- Fast 5-Tool JSON Agent
+     2. Claude Pro           (~190t)
+     3. Hermes Pro           (~180t)
+     1. Pi Pro-Map           (~280t)  <-- 10-Tool Index-Map Agent
+     2. Claude Pro-Map       (~290t)
+     3. Hermes Pro-Map       (~280t)
 
   ─── Py ────────────────────────────
-     1. Pi Py-Pro            (~300t)
-     2. Claude Py-Pro        (~310t)
-     3. Hermes Py-Pro        (~300t)
+     1. Pi Py-Pro            (~200t)  <-- Lean Python Kernel REPL
+     2. Claude Py-Pro        (~210t)
+     3. Hermes Py-Pro        (~200t)
+     1. Pi Py-Pro-Map        (~300t)  <-- Python Kernel + Index-Map SDK
+     2. Claude Py-Pro-Map    (~310t)
+     3. Hermes Py-Pro-Map    (~300t)
 
   :: ↵ select  ↑/↓ navigate  Tab: YOLO [OFF]  m: Map [OFF]  Esc: default
 ```
@@ -135,16 +139,18 @@ Running `ai init <path>` sets the default workspace agent profile:
 
 | Tier | Profiles | Model Scale | Overhead | Behavior |
 | :--- | :--- | :--- | :--- | :--- |
-| **Custom** | `custom/<name>` | Universal / Custom | `~150t–320t` | Dynamic auto-discovery of user-defined `.md` profiles placed in `skills/profiles/custom/`. |
-| **Pro** | `pi/pro`, `claude/pro`, `hermes/pro` | Medium/Large Models | `~280t–290t` | Full-scale codebase graph navigation, surgical edits (`edit_file`), and multi-file workflows. |
-| **Lite** | `pi/lite`, `claude/lite`, `hermes/lite` | Small/Medium Models | `~220t` | Native JSON tools (`read_file`, `edit_file`, `write_file`) optimized for zero tool-calling confusion. |
-| **Py-Pro** | `pi/py-pro`, `claude/py-pro`, `hermes/py-pro`, `custom/*-py` | Medium/Large Models | `~300t–310t` | Auto-activates NOOA IPython kernel harness (`exec_python`) with stateful memory and surgical edit SDK. |
+| **Custom** | `custom/<name>` | Universal / Custom | `~150t–300t` | Dynamic auto-discovery of user `.md` templates in `skills/profiles/custom/` (`base.md`, `base-map.md`, `base-py.md`). |
+| **Pro** | `pi/pro`, `claude/pro`, `hermes/pro` | Medium/Large Models (35B+) | `~180t–190t` | Fast 5-tool JSON agent (`read_file`, `edit_file`, `write_file`, `list_dir`, `run_command`) with Index-Map OFF. |
+| **Pro-Map** | `pi/pro-map`, `claude/pro-map`, `hermes/pro-map` | Medium/Large Models (35B+) | `~280t–290t` | Full 10-tool graph agent (+ `read_symbol`, `trace_symbol`, `blast_radius`, `find_symbol`, `architecture_overview`) with Index-Map ON. |
+| **Py-Pro** | `pi/py-pro`, `claude/py-pro`, `hermes/py-pro`, `custom/*-py` | Medium/Large Models (35B+) | `~200t–210t` | Single-tool `exec_python` persistent in-kernel Python REPL with Index-Map OFF. |
+| **Py-Pro-Map** | `pi/py-pro-map`, `claude/py-pro-map`, `hermes/py-pro-map` | Medium/Large Models (35B+) | `~300t–310t` | In-kernel `exec_python` persistent Python REPL with full in-kernel `graph.*` SDK and Index-Map ON. |
 
-* **Dynamic Custom Profiles:** Drop any number of custom `.md` profile files (e.g. `lfm.md`, `lfm-idx.md`, `deepseek.md`) into `~/.config/py-agent/skills/profiles/custom/` and they will all automatically populate under the `─── Custom ───` category in the selector.
+* **Dynamic Custom Profiles:** Drop any number of custom `.md` profile files (e.g. `base.md`, `base-map.md`, `base-py.md`, `deepseek.md`) into `~/.config/py-agent/skills/profiles/custom/` and they will all automatically populate under the `─── Custom ───` category in the selector.
 * **Interactive Toggles:** Press `Tab` to toggle Autonomous YOLO mode `[ON]/[OFF]`, or press `m` to toggle the AST Codebase Index-Map `[ON]/[OFF]` (defaults to `[OFF]`).
 * **Reset Workspace Profile:** Type `/reset` in chat (or delete `.agent/config.json`). This purges workspace settings so `ai init` prompts for a new profile selection on next launch.
 * **Skill Frontmatter Overrides:** Add `---` YAML headers to skill `.md` files to set `reasoning_budget`, `yolo`, `map`, or `description` automatically on load.
 * **Customize Skills:** Modify or create profile `.md` files in `~/.config/py-agent/skills/profiles/`.
+
 
 ---
 

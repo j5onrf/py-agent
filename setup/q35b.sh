@@ -17,14 +17,14 @@ if command -v lsof >/dev/null 2>&1; then
     fi
 fi
 
-# Launch wrapped in UWSM
+# Launch wrapped in UWSM   --no-ui \
 exec uwsm app -- "$LLAMA_SERVER_BIN" \
   -m "$MODEL_PATH" \
   -c 8192 \
   -np 1 \
   -t 6 \
   -b 512 \
-  -ub 128 \
+  -ub 512 \
   --cache-type-k q8_0 \
   --cache-type-v q8_0 \
   --flash-attn on \
@@ -40,5 +40,4 @@ exec uwsm app -- "$LLAMA_SERVER_BIN" \
   --min-p 0.05 \
   --repeat-penalty 1.05 \
   --repeat-last-n 128 \
-  --no-ui \
   --port "$PORT" >> "$LOG_FILE" 2>&1
