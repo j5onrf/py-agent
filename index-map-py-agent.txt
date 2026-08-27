@@ -1,7 +1,8 @@
-# CODEBASE INDEX MAP | Generated: 2026-08-26 20:52 | Workspace: py-agent | Path: ~/.config/py-agent
+# CODEBASE INDEX MAP | Generated: 2026-08-26 21:09 | Workspace: py-agent | Path: ~/.config/py-agent
 # Active symbols and structural connections mapped in the local index.
 # -----------------------------------------------------------------------------------------
 # Codebase Modules & Active Architecture:
+#   ├── .active_cd.802931        - home/j5/.config/py-agent/projects/omarchyv4
 #   ├── .env                     - ~/.config/local-ai/.env
 #   ├── .env.example             - ==============================================================================
 #   ├── .gitignore               - Secrets & Credentials
@@ -15,7 +16,7 @@
 #   ├── SECURITY.md              - Security Policy
 #   ├── ai-agent.py              - Py Agent [j5onrf] [v0.9.8.93] - Pure Standard In-Memory Architecture
 #   ├── ai-context.md            - Py-Agent Plugins
-#   ├── ai-hook.sh               - Production Local-AI Shell Hook v0.9.8.5
+#   ├── ai-hook.sh               - Production Py-Agent Shell Hook v0.9.9
 #   ├── logo.svg                 - <svg xmlns="http://www.w3.org/2000/svg" viewBox="121 101 270 310">
 #   ├── server.pem               - -----BEGIN PRIVATE KEY-----
 #   ├── modules/Readme.md        - Privacy-First
@@ -36,6 +37,7 @@
 #   ├── modules/ai-agent-memories - SQLite-backed semantic recall and Temporal Personality Memory (TPM) manager [In-Memory Module & CLI]
 #   ├── modules/ai-agent-sessions - SQLite-backed session, checkpoint, and turn logger with sub-agent registry [In-Memory Module & CLI]
 #   ├── modules/chat             - Unified Agentic Brainstorm, Thinking & Follow-up Recommendation Engine.
+#   ├── modules/index-map-modules.txt - CODEBASE INDEX MAP | Generated: 2026-08-26 20:53 | Workspace: modules | Path: ~/.config/py-agent/mod
 #   ├── modules/model-select.py  - Fully Dynamic TUI Model Selector driven by OpenRouter & HuggingFace Router Rankings
 #   └── modules/speed_test.py    - Precise token generation & TPS speed test statistics tracker
 # -----------------------------------------------------------------------------------------
@@ -47,7 +49,7 @@
 [markdown:SECURITY.md] title:Security Policy
 [python:ai-agent.py] imp:agent_context,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tts,agent_ui,agent_voice,contextlib,json,os,re,readline,shutil,sqlite3,subprocess,sys,threading,time | fn:load_env_file,workspace_db_counts,ensure_clean_agent_dir,sync_md_to_sqlite,clean_exit,run_interactive_chat,run_direct_query,run_matching_search,main
 [markdown:ai-context.md] title:Py-Agent Plugins
-[shell:ai-hook.sh] sum:Production Local-AI Shell Hook v0.9.8.5
+[shell:ai-hook.sh] sum:Production Py-Agent Shell Hook v0.9.9
 [svg:logo.svg] sum:<svg xmlns="http://www.w3.org/2000/svg" viewBox="121 101 270 310">
 [markdown:modules/Readme.md] title:Privacy-First
 [python:modules/agent_cloud.py] imp:os,re,typing | fn:get_active_configs
