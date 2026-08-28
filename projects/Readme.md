@@ -216,9 +216,10 @@ Cross-platform React desktop and WebUI workspace for `py-agent`, powered by a cu
 
 ## 5. llama.cpp WebAgent Gateway (`/webui`)
 
-Autonomous tool-execution streaming reverse proxy for the official `llama.cpp` WebUI. Launch via `/webui` (or `/web`).
+Autonomous tool-execution streaming reverse proxy for the official `llama.cpp` WebUI with auxiliary Gemini Flash Lite vision support. Launch via `/webui` (or `/web`).
 
 * **How It Works:** Spawns a lightweight Python proxy (`server.py`) on port 3000 that wraps `llama-server` (`http://127.0.0.1:8080`). It intercepts `/v1/chat/completions` to inject active workspace skill profiles, shorthand codebase index maps (`.agent/index-map-*.txt`), and multi-round agent tool calls (`read_file`, `edit_file`, `write_file`, `run_command`, AST graph tools) directly into the web chat stream.
+* **Gemini Flash Lite Vision Pre-Processing:** Gives text-only local models (e.g. `Hermes 3.6 35B`) instant multimodal vision without requiring a local CLIP `mmproj`. Intercepts `/props` to unlock drag-and-drop image uploads in the official WebUI, then extracts verbatim OCR code, stack traces, line numbers, and UI hierarchy via Gemini Flash Lite (`GEM_VOICE` / `GEM_MODEL` in `.env`) before streaming to the local model (100% dormant during text-only chat).
 * **0s Prefix KV Cache Reuse:** Uses byte-identical prompt formatting aligned with the CLI engine for sub-100ms time-to-first-token.
 * **Native Metrics & Timings:** Preserves 100% of official `llama.cpp` web frontend features—including live TPS speed metrics, token timing badges, sampler controls, and gzip decompression.
 * **CLI Suspension:** Typing `/webui` suspends the terminal session, launches the proxy, opens `http://127.0.0.1:3000` via `xdg-open`, and cleanly resumes the terminal session upon exit.

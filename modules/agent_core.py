@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Core Module - Streaming SSE, tool execution, & Rich rendering [High-Performance Edition]"""
 
+import base64
 import json
 import os
 import re
@@ -36,6 +37,147 @@ RE_JSON_OBJECT = re.compile(r"\{[\s\S]*\}")
 RE_TOOL_CALL_BLOCK = re.compile(r"<\|tool_call_start\|>.*?<\|tool_call_end\|>", re.DOTALL)
 RE_MD_JSON_WRAPPER = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.DOTALL)
 RE_XML_TOOL_TAGS = re.compile(r"<\|?[a-zA-Z_]+_call_?(?:start|end)?\|?>|<parameter=[^>]+>|</parameter>", re.DOTALL)
+
+
+def _get_gemini_config() -> tuple[str, str]:
+    """Resolve Gemini API key and model from environment or local .env configs."""
+    api_key = os.environ.get("GEM_VOICE", "") or os.environ.get("GEMINI_API_KEY", "")
+    model = os.environ.get("GEM_MODEL", "") or os.environ.get("GEMINI_VISION_MODEL", "gemini-3.5-flash-lite")
+
+    if not api_key:
+        for env_path in (os.path.join(CFG_DIR, ".env"), os.path.expanduser("~/.config/local-ai/.env"), ".env"):
+            if os.path.isfile(env_path):
+                try:
+                    with open(env_path, "r", encoding="utf-8") as f:
+                        for raw_line in f:
+                            line = raw_line.strip()
+                            if line.startswith("#"):
+                                continue
+                            if (line.startswith("GEM_VOICE=") or line.startswith("GEMINI_API_KEY=")) and not api_key:
+                                api_key = line.split("=", 1)[1].strip().strip("'\"")
+                            if (line.startswith("GEM_MODEL=") or line.startswith("GEMINI_VISION_MODEL=")) and not os.environ.get("GEM_MODEL"):
+                                model = line.split("=", 1)[1].strip().strip("'\"")
+                except Exception:
+                    pass
+    return api_key.strip(), model.strip() or "gemini-3.5-flash-lite"
+
+
+def describe_image_gemini(image_target: Any) -> str:
+    """Extract OCR, tracebacks, and UI details from an image using Gemini 3.5 Flash Lite."""
+    api_key, model_name = _get_gemini_config()
+    if not api_key:
+        return "[Error: GEM_VOICE or GEMINI_API_KEY not configured in .env for vision pre-processing]"
+
+    mime_type = "image/png"
+    b64_data = ""
+
+    try:
+        if isinstance(image_target, dict):
+            b64_data = image_target.get("data", "")
+            mime_type = image_target.get("mimeType", image_target.get("mime_type", "image/png"))
+        elif isinstance(image_target, str):
+            if image_target.startswith("data:image/"):
+                header, b64_data = image_target.split(",", 1)
+                mime_type = header.split(";")[0].replace("data:", "")
+            elif image_target.startswith(("http://", "https://")):
+                req = urlreq.Request(image_target, headers={"User-Agent": "Py-Agent/Vision"})
+                with urlreq.urlopen(req, timeout=15) as resp:
+                    raw_bytes = resp.read()
+                b64_data = base64.b64encode(raw_bytes).decode("utf-8")
+                if ".jpg" in image_target.lower() or ".jpeg" in image_target.lower():
+                    mime_type = "image/jpeg"
+                elif ".webp" in image_target.lower():
+                    mime_type = "image/webp"
+            else:
+                exp_path = os.path.expanduser(image_target)
+                if exp_path.startswith("file://"):
+                    exp_path = exp_path[7:]
+                if os.path.isfile(exp_path):
+                    ext = os.path.splitext(exp_path)[1].lower()
+                    mime_map = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".png": "image/png"}
+                    mime_type = mime_map.get(ext, "image/png")
+                    with open(exp_path, "rb") as f:
+                        b64_data = base64.b64encode(f.read()).decode("utf-8")
+                else:
+                    b64_data = image_target.strip()
+    except Exception as e:
+        return f"[Error loading image for vision processing: {e}]"
+
+    if not b64_data:
+        return "[Error: Empty image payload]"
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+    sys_instruction = (
+        "Extract all technical details verbatim: exact OCR code, compiler error messages, "
+        "stack traces, line numbers, filenames, terminal commands, directory paths, and UI layout hierarchy. "
+        "Be concise, precise, and preserve exact syntax."
+    )
+
+    payload = {
+        "contents": [{
+            "parts": [
+                {"text": sys_instruction},
+                {"inline_data": {"mime_type": mime_type, "data": b64_data}}
+            ]
+        }],
+        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 2048}
+    }
+
+    try:
+        req = urlreq.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
+        with urlreq.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+        extracted = "".join(p.get("text", "") for p in parts if "text" in p).strip()
+        return extracted or "[No text or UI elements detected in image]"
+    except Exception as e:
+        return f"[Vision Pre-Processing Exception: {e}]"
+
+
+def preprocess_multimodal_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Transforms multimodal image payloads into technical OCR descriptions for text-only local models."""
+    processed = []
+    _, model_name = _get_gemini_config()
+
+    for msg in messages:
+        content = msg.get("content")
+        if isinstance(content, list):
+            text_parts, visual_analyses = [], []
+            for item in content:
+                if isinstance(item, str):
+                    text_parts.append(item)
+                    continue
+                if not isinstance(item, dict):
+                    text_parts.append(str(item))
+                    continue
+                item_type = item.get("type", "")
+                if item_type == "text":
+                    text_parts.append(item.get("text", ""))
+                elif item_type in ("image", "image_url", "input_image"):
+                    if "data" in item:
+                        target = {"data": item["data"], "mimeType": item.get("mimeType", item.get("mime_type", "image/png"))}
+                    else:
+                        url_obj = item.get("image_url", item.get("image", ""))
+                        target = url_obj.get("url", url_obj) if isinstance(url_obj, dict) else str(url_obj)
+                    if target:
+                        analysis = describe_image_gemini(target)
+                        visual_analyses.append(f"[Visual Analysis ({model_name})]:\n{analysis}")
+
+            combined_parts = []
+            if visual_analyses:
+                combined_parts.extend(visual_analyses)
+            user_text = "\n".join(tp.strip() for tp in text_parts if tp.strip())
+            if user_text:
+                if visual_analyses:
+                    combined_parts.append(f"User Question: {user_text}")
+                else:
+                    combined_parts.append(user_text)
+
+            new_msg = {**msg, "content": "\n\n".join(combined_parts)}
+            processed.append(new_msg)
+        else:
+            processed.append(msg)
+    return processed
 
 
 def _heal_tool_args(raw: str) -> dict[str, Any]:
@@ -309,8 +451,12 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
     resolved_model, streamer, res = None, None, None
     max_ctx = int(os.environ.get("AI_MAX_TOKENS", 8192))
 
+    # Pre-process multimodal image payloads for text-only local models
+    if is_local:
+        messages = preprocess_multimodal_messages(messages)
+
     for _round in range(10):
-        # Little-coder mid-turn context compaction watchdog at 80% boundary
+        # Context compaction watchdog at 80% boundary
         if sum(get_accurate_token_count(m.get("content") or "") for m in messages) > int(max_ctx * 0.8):
             messages = prune_history(messages, max_tokens=int(max_ctx * 0.6))
 

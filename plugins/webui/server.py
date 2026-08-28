@@ -123,6 +123,19 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                 except Exception:
                     pass
 
+            # Intercept /props to unlock multimodal upload support in official llama.cpp WebUI
+            parsed = urllib.parse.urlparse(self.path)
+            if parsed.path.rstrip("/") in ("/props", "/v1/props"):
+                try:
+                    data = json.loads(body.decode("utf-8"))
+                    data["has_clip_model"] = True
+                    data["modalities"] = {"vision": True, "audio": False}
+                    data["chat_template_kwargs"] = data.get("chat_template_kwargs", {})
+                    data["chat_template_kwargs"]["supports_vision"] = True
+                    body = json.dumps(data).encode("utf-8")
+                except Exception:
+                    pass
+
             self.send_response(resp.status_code)
             for k, v in resp.headers.items():
                 if k.lower() not in (
@@ -199,6 +212,9 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
         workspace = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
         is_agent, profile_name, _ = detect_workspace_mode(workspace)
         messages = body.get("messages", [])
+
+        # Preprocess multimodal image payloads via Gemini 3.5 Flash Lite
+        messages = core.preprocess_multimodal_messages(messages)
 
         # Inject Py-Agent system prompt
         sys_context = assemble_system_prompt(workspace, is_agent, profile_name)
