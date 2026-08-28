@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """ACP (Agent Client Protocol) stdio Bridge for PyCode / T3 Code WebApp [In-Memory Edition]
-Connects PyCode GUI directly to py-agent engine and local llama.cpp server.
+Connects PyCode GUI directly to py-agent engine and local llama.cpp server with full multimodal vision.
 """
 
 import json
@@ -63,9 +63,12 @@ def send_acp_chunk(session_id: str, text: str, is_thought: bool = False) -> None
             "sessionId": session_id,
             "update": {
                 "sessionUpdate": update_type,
-                "content": {"type": "text", "text": text},
-            },
-        },
+                "content": {
+                    "type": "text",
+                    "text": text
+                }
+            }
+        }
     }
     sys.stdout.write(json.dumps(payload) + "\n")
     sys.stdout.flush()
@@ -75,18 +78,17 @@ def detect_workspace_mode(workspace: str) -> tuple[bool, str, bool]:
     home = os.path.realpath(os.path.expanduser("~"))
     ws_real = os.path.realpath(workspace)
     cfg_file = os.path.join(workspace, ".agent", "config.json")
-
     inherited_skill = os.environ.get("AI_ACTIVE_SKILL")
 
     if ws_real == home or not os.path.exists(os.path.join(workspace, ".agent")):
         return False, (inherited_skill or "chat"), False
 
-    selected_profile, is_yolo = inherited_skill or "default", False
+    selected_profile, is_yolo = inherited_skill or "pi/pro", False
     if os.path.exists(cfg_file):
         try:
             with open(cfg_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                selected_profile = inherited_skill or data.get("profile", "default")
+                selected_profile = inherited_skill or data.get("profile", "pi/pro")
                 is_yolo = data.get("yolo", False)
         except Exception:
             pass
@@ -98,21 +100,18 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
     safe_name = core.workspace_safe_name(workspace)
 
     if not is_agent:
-        skill_content = skills.load_skill_content("chat", SKILLS_DIR, CFG_DIR)
+        clean_name = profile_name if (profile_name and profile_name != "pi/pro") else "chat"
+        skill_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
         return skill_content or BASE_PROMPT_CHAT
 
-    clean_name = profile_name if profile_name not in ("default", "init") else "init"
+    clean_name = profile_name if profile_name != "init" else "pi/pro"
     profile_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
-
+    
     if profile_content:
-        profile_content = profile_content.replace(
-            'Reply ONLY with: "Workspace loaded. Awaiting instructions."',
-            "Execute the requested action immediately.",
-        )
+        profile_content = profile_content.replace('Reply ONLY with: "Workspace loaded. Awaiting instructions."', "Execute the requested action immediately.")
 
     sys_prompt = profile_content or BASE_PROMPT_AGENT
     sys_prompt += f"\n\n### ACTIVE PROJECT WORKSPACE:\nYour active project root directory is: {workspace}\n"
-    sys_prompt += "Capabilities: read_symbol, trace_symbol, blast_radius, find_symbol, architecture_overview, read_file, write_file, list_dir, run_command.\n\n"
 
     agent_dir = os.path.join(workspace, ".agent")
     use_map = "-map" in profile_name.lower()
@@ -128,12 +127,7 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
         for f in os.listdir(agent_dir):
             if f.startswith("index-map-") and f.endswith(".txt"):
                 try:
-                    with open(
-                        os.path.join(agent_dir, f),
-                        "r",
-                        encoding="utf-8",
-                        errors="ignore",
-                    ) as mf:
+                    with open(os.path.join(agent_dir, f), "r", encoding="utf-8", errors="ignore") as mf:
                         sys_prompt += f"### CODESPACE MAP:\n{mf.read().strip()}\n\n"
                         break
                 except OSError:
@@ -150,48 +144,22 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
     return sys_prompt
 
 
-def handle_acp_prompt(
-    req_id: Any,
-    session_id: str,
-    prompt_items: list[dict[str, Any]],
-    workspace: str,
-    params: dict[str, Any] | None = None,
-) -> None:
+def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str, Any]], workspace: str, params: dict[str, Any] | None = None) -> None:
     CANCELLED_SESSIONS.discard(session_id)
-    user_text = " ".join(
-        item.get("text", "")
-        for item in prompt_items
-        if isinstance(item, dict) and item.get("type") == "text"
-    ).strip()
-    if not user_text:
-        user_text = "Hello"
-
     safe_name = core.workspace_safe_name(workspace)
     is_agent, profile_name, is_yolo = detect_workspace_mode(workspace)
 
     raw_mode = (params or {}).get("runtimeMode", "")
-    opt_mode = next(
-        (
-            opt.get("value")
-            for opt in (params or {}).get("options", [])
-            if opt.get("id") == "mode"
-        ),
-        None,
-    )
+    opt_mode = next((opt.get("value") for opt in (params or {}).get("options", []) if opt.get("id") == "mode"), None)
 
     if opt_mode == "build" or raw_mode == "full-access":
         is_yolo = True
     elif opt_mode == "plan" or raw_mode == "supervised":
         is_yolo = False
 
-    if is_agent and is_yolo:
-        os.environ["AI_CONFIRM_GATES"] = "0"
-        core.save_state("yolo_mode", True)
-    else:
-        os.environ["AI_CONFIRM_GATES"] = "1"
-        core.save_state("yolo_mode", False)
+    os.environ["AI_CONFIRM_GATES"] = "0" if (is_agent and is_yolo) else "1"
+    core.save_state("yolo_mode", is_yolo)
 
-    # Inherit active reasoning configuration from CLI state
     st = core.get_state()
     reasoning_active = st.get("reasoning_active", False)
     reasoning_budget = st.get("reasoning_budget", 500) if reasoning_active else 0
@@ -202,7 +170,7 @@ def handle_acp_prompt(
     think_kwargs = {
         "thinking_budget_tokens": budget_val,
         "reasoning_budget": budget_val,
-        "chat_template_kwargs": {"enable_thinking": enable_think},
+        "chat_template_kwargs": {"enable_thinking": enable_think}
     }
 
     if session_id not in SESSION_HISTORIES:
@@ -210,27 +178,40 @@ def handle_acp_prompt(
         SESSION_HISTORIES[session_id] = [{"role": "system", "content": sys_context}]
 
     messages = SESSION_HISTORIES[session_id]
-    messages.append({"role": "user", "content": user_text})
 
-    configs = (
-        agent_cloud.get_active_configs(messages)
-        if hasattr(agent_cloud, "get_active_configs")
-        else []
-    )
+    # Convert ACP prompt_items into standard multimodal payload
+    multimodal_content = []
+    text_chunks = []
+
+    for item in prompt_items:
+        if not isinstance(item, dict):
+            continue
+        itype = item.get("type", "")
+        if itype == "text":
+            txt = item.get("text", "")
+            if txt:
+                text_chunks.append(txt)
+                multimodal_content.append({"type": "text", "text": txt})
+        elif itype in ("image", "image_url"):
+            data = item.get("data") or item.get("image") or ""
+            mime = item.get("mimeType") or item.get("mime_type") or "image/png"
+            url = item.get("image_url", {}).get("url") if isinstance(item.get("image_url"), dict) else item.get("url")
+            
+            if not url and data:
+                url = f"data:{mime};base64,{data}" if not data.startswith("data:") else data
+            
+            if url:
+                multimodal_content.append({"type": "image_url", "image_url": {"url": url}})
+
+    user_text = " ".join(text_chunks).strip() or "Describe this image."
+    has_images = any(i.get("type") == "image_url" for i in multimodal_content)
+    turn_content = multimodal_content if has_images else user_text
+
+    messages.append({"role": "user", "content": turn_content})
+
+    configs = agent_cloud.get_active_configs(messages) if hasattr(agent_cloud, "get_active_configs") else []
     if not configs:
-        configs = [
-            (
-                "http://localhost:8080/v1/chat/completions",
-                {},
-                {
-                    "messages": messages,
-                    "stream": True,
-                    "model": "local-model",
-                    **think_kwargs,
-                },
-                180,
-            )
-        ]
+        configs = [("http://localhost:8080/v1/chat/completions", {}, {"messages": messages, "stream": True, "model": "local-model", **think_kwargs}, 180)]
 
     accumulated_ans = ""
     in_think_block = False
@@ -245,34 +226,26 @@ def handle_acp_prompt(
             round_text = ""
 
             url, headers, base_body, timeout = configs[0]
-            is_local = (
-                "localhost" in url
-                or "127.0.0.1" in url
-                or base_body.get("model") == "local-model"
-            )
+            is_local = "localhost" in url or "127.0.0.1" in url or base_body.get("model") == "local-model"
 
-            body = {"messages": messages, "stream": True, **base_body}
+            body = {
+                "messages": messages,
+                "stream": True,
+                **base_body
+            }
             if is_local:
                 body.update(think_kwargs)
             if is_agent:
-                body["tools"] = tools.EDIT_TOOLS
+                is_py = "-py" in profile_name.lower() or "py-" in profile_name.lower()
+                body["tools"] = ipython.IPYTHON_TOOL if (is_py and ipython) else tools.EDIT_TOOLS
 
             res = None
             try:
-                res = core._session.post(
-                    url,
-                    json=body,
-                    headers={"Content-Type": "application/json", **headers},
-                    timeout=timeout,
-                    stream=True,
-                )
+                res = core._session.post(url, json=body, headers={"Content-Type": "application/json", **headers}, timeout=timeout, stream=True)
                 ACTIVE_RESPONSES[session_id] = res
 
                 if res.status_code != 200:
-                    send_acp_chunk(
-                        session_id,
-                        f"\n[Error: LLM HTTP {res.status_code}: {res.text[:100]}]\n",
-                    )
+                    send_acp_chunk(session_id, f"\n[Error: LLM HTTP {res.status_code}: {res.text[:100]}]\n")
                     break
 
                 for line in res.iter_lines():
@@ -295,21 +268,14 @@ def handle_acp_prompt(
                         delta = choices[0].get("delta", {})
 
                         text_chunk = delta.get("content") or ""
-                        thinking_chunk = (
-                            delta.get("reasoning_content")
-                            or delta.get("thinking")
-                            or delta.get("reasoning")
-                            or ""
-                        )
+                        thinking_chunk = delta.get("reasoning_content") or delta.get("thinking") or delta.get("reasoning") or ""
 
                         if thinking_chunk:
                             if enable_think:
                                 if not in_think_block:
                                     in_think_block = True
                                     send_acp_chunk(session_id, "> *Thinking...* ")
-                                send_acp_chunk(
-                                    session_id, thinking_chunk.replace("\n", "\n> ")
-                                )
+                                send_acp_chunk(session_id, thinking_chunk.replace("\n", "\n> "))
 
                         elif text_chunk:
                             if in_think_block and "</think>" not in text_chunk:
@@ -326,9 +292,7 @@ def handle_acp_prompt(
                             if "</think>" in text_chunk:
                                 parts = text_chunk.split("</think>", 1)
                                 if parts[0] and show_thinking:
-                                    send_acp_chunk(
-                                        session_id, parts[0].replace("\n", "\n> ")
-                                    )
+                                    send_acp_chunk(session_id, parts[0].replace("\n", "\n> "))
                                 in_think_block = False
                                 if show_thinking:
                                     send_acp_chunk(session_id, "\n\n")
@@ -337,9 +301,7 @@ def handle_acp_prompt(
                         if text_chunk:
                             if in_think_block:
                                 if show_thinking:
-                                    send_acp_chunk(
-                                        session_id, text_chunk.replace("\n", "\n> ")
-                                    )
+                                    send_acp_chunk(session_id, text_chunk.replace("\n", "\n> "))
                             else:
                                 accumulated_ans += text_chunk
                                 round_text += text_chunk
@@ -348,26 +310,10 @@ def handle_acp_prompt(
                         if is_agent:
                             for tc in delta.get("tool_calls", []):
                                 idx = tc.get("index", 0)
-                                tc_entry = tool_calls_map.setdefault(
-                                    idx,
-                                    {
-                                        "id": tc.get("id", ""),
-                                        "type": "function",
-                                        "function": {
-                                            "name": tc.get("function", {}).get(
-                                                "name", ""
-                                            ),
-                                            "arguments": "",
-                                        },
-                                    },
-                                )
+                                tc_entry = tool_calls_map.setdefault(idx, {"id": tc.get("id", ""), "type": "function", "function": {"name": tc.get("function", {}).get("name", ""), "arguments": ""}})
                                 if tc.get("function", {}).get("name"):
-                                    tc_entry["function"]["name"] = tc["function"][
-                                        "name"
-                                    ]
-                                tc_entry["function"]["arguments"] += tc.get(
-                                    "function", {}
-                                ).get("arguments", "")
+                                    tc_entry["function"]["name"] = tc["function"]["name"]
+                                tc_entry["function"]["arguments"] += tc.get("function", {}).get("arguments", "")
 
                     except (json.JSONDecodeError, KeyError, IndexError):
                         pass
@@ -388,23 +334,13 @@ def handle_acp_prompt(
                 send_acp_chunk(session_id, "\n\n*(Generation stopped)*")
                 break
 
-            calls = (
-                [val for _, val in sorted(tool_calls_map.items())]
-                if tool_calls_map
-                else None
-            )
+            calls = [val for _, val in sorted(tool_calls_map.items())] if tool_calls_map else None
 
             if not calls or not is_agent:
                 messages.append({"role": "assistant", "content": round_text})
                 break
 
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": round_text or None,
-                    "tool_calls": calls,
-                }
-            )
+            messages.append({"role": "assistant", "content": round_text or None, "tool_calls": calls})
 
             for tc in calls:
                 if session_id in CANCELLED_SESSIONS:
@@ -419,40 +355,18 @@ def handle_acp_prompt(
                 except Exception as e:
                     result = f"[error] tool execution failed: {e}"
 
-                pruned_result = (
-                    result
-                    if len(result) <= 2000
-                    else result[:1500] + f"\n... [Snipped {len(result) - 1500} chars]"
-                )
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tc.get("id", ""),
-                        "name": fname,
-                        "content": pruned_result,
-                    }
-                )
+                pruned_result = result if len(result) <= 2000 else result[:1500] + f"\n... [Snipped {len(result) - 1500} chars]"
+                messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": fname, "content": pruned_result})
 
-        if (
-            is_agent
-            and user_text
-            and accumulated_ans
-            and session_id not in CANCELLED_SESSIONS
-        ):
+        if is_agent and user_text and accumulated_ans and session_id not in CANCELLED_SESSIONS:
             try:
                 sessions.log_turn(safe_name, user_text, accumulated_ans)
                 if core.get_state("memory_active", False):
-                    core.background_tpm_update(
-                        user_text, accumulated_ans, safe_name, workspace
-                    )
+                    core.background_tpm_update(user_text, accumulated_ans, safe_name, workspace)
             except Exception:
                 pass
 
-        if (
-            tts.is_tts_enabled()
-            and accumulated_ans
-            and session_id not in CANCELLED_SESSIONS
-        ):
+        if tts.is_tts_enabled() and accumulated_ans and session_id not in CANCELLED_SESSIONS:
             try:
                 tts.speak_response(accumulated_ans)
             except Exception:
@@ -480,36 +394,20 @@ def main():
                     except OSError:
                         pass
                     if text and active_session_id:
-                        active_cwd = SESSION_WORKSPACES.get(
-                            active_session_id, default_workspace
-                        )
-                        sys.stdout.write(
-                            json.dumps(
-                                {
-                                    "jsonrpc": "2.0",
-                                    "method": "session/update",
-                                    "params": {
-                                        "sessionId": active_session_id,
-                                        "update": {
-                                            "sessionUpdate": "user_message_chunk",
-                                            "content": {"type": "text", "text": text},
-                                        },
-                                    },
+                        active_cwd = SESSION_WORKSPACES.get(active_session_id, default_workspace)
+                        sys.stdout.write(json.dumps({
+                            "jsonrpc": "2.0",
+                            "method": "session/update",
+                            "params": {
+                                "sessionId": active_session_id,
+                                "update": {
+                                    "sessionUpdate": "user_message_chunk",
+                                    "content": {"type": "text", "text": text}
                                 }
-                            )
-                            + "\n"
-                        )
+                            }
+                        }) + "\n")
                         sys.stdout.flush()
-                        threading.Thread(
-                            target=handle_acp_prompt,
-                            args=(
-                                None,
-                                active_session_id,
-                                [{"type": "text", "text": text}],
-                                active_cwd,
-                            ),
-                            daemon=True,
-                        ).start()
+                        threading.Thread(target=handle_acp_prompt, args=(None, active_session_id, [{"type": "text", "text": text}], active_cwd), daemon=True).start()
             except Exception:
                 pass
 
@@ -530,40 +428,33 @@ def main():
         params = req.get("params", {})
 
         if method == "initialize":
-            send_rpc_response(
-                req_id,
-                result={
-                    "protocolVersion": 1,
-                    "agentCapabilities": {"sessionCapabilities": {"list": {}}},
-                    "agentInfo": {"name": "py-agent", "version": "1.0.0"},
+            send_rpc_response(req_id, result={
+                "protocolVersion": 1,
+                "agentCapabilities": {
+                    "sessionCapabilities": {
+                        "list": {}
+                    }
                 },
-            )
+                "agentInfo": {
+                    "name": "py-agent",
+                    "version": "1.0.0"
+                }
+            })
         elif method == "authenticate":
             send_rpc_response(req_id, result={})
         elif method in ("session/new", "createSession", "session/create"):
-            active_session_id = (
-                params.get("sessionId") or f"pyagent-{uuid.uuid4().hex[:8]}"
-            )
+            active_session_id = params.get("sessionId") or f"pyagent-{uuid.uuid4().hex[:8]}"
             session_cwd = params.get("cwd") or default_workspace
             SESSION_WORKSPACES[active_session_id] = os.path.realpath(session_cwd)
             send_rpc_response(req_id, result={"sessionId": active_session_id})
         elif method in ("session/list", "listSessions"):
             active_cwd = SESSION_WORKSPACES.get(active_session_id, default_workspace)
-            send_rpc_response(
-                req_id,
-                result={
-                    "sessions": [{"sessionId": active_session_id, "cwd": active_cwd}]
-                },
-            )
+            send_rpc_response(req_id, result={"sessions": [{"sessionId": active_session_id, "cwd": active_cwd}]})
         elif method in ("session/prompt", "prompt"):
             req_session_id = params.get("sessionId") or active_session_id
             active_cwd = SESSION_WORKSPACES.get(req_session_id, default_workspace)
             prompt_items = params.get("prompt", [])
-            threading.Thread(
-                target=handle_acp_prompt,
-                args=(req_id, req_session_id, prompt_items, active_cwd, params),
-                daemon=True,
-            ).start()
+            threading.Thread(target=handle_acp_prompt, args=(req_id, req_session_id, prompt_items, active_cwd, params), daemon=True).start()
         elif method in ("session/cancel", "cancel"):
             req_session_id = params.get("sessionId") or active_session_id
             CANCELLED_SESSIONS.add(req_session_id)
