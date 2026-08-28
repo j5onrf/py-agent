@@ -30,7 +30,7 @@ Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`)
 - **Multi-Turn Chat (`ai`):** Persistent interactive terminal session with memory context.
 - **Workspace Agent (`ai init <path>`):** Full codebase graph indexing, path-healing file editing, and sub-agent concurrency.
 - **Native GUI IDE (`/pyc`):** Cross-platform React desktop & browser development workspace powered by [PyCode](https://github.com/j5onrf/pycode).
-| **llama.cpp WebAgent Gateway** | Full autonomous agent tool execution (`list_dir`, `write_file`, AST graph) + Gemini Flash Lite multimodal vision for text-only local models. | `/webui` |
+- **llama.cpp WebAgent (`/webui`):** Autonomous tool-enabled web gateway on top of official `llama-server` UI (`http://127.0.0.1:3000`).
 
 ---
 
@@ -49,7 +49,7 @@ Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`)
 | **System Admin & Diagnostics** | Live health monitoring, AUR/security audits, system optimization, status routing, and git commit hooks. | [`tools/agentic/system/`](tools/agentic/system) |
 | **Model Select TUI** | Real-time **[Cloud Connection](modules/Readme.md)** TUI, key toggles, and endpoint selector. | `model select` |
 | **Interactive Textual PyTUI** | Full-screen **[Textual](modules/Readme.md)** TUI workspace with JSON-RPC 2.0 sub-agent socket IPC powered by a C-speed `uvloop` event loop. | `/tui` |
-| **llama.cpp WebAgent Gateway** | Full autonomous agent tool execution (`list_dir`, `write_file`, AST graph) injected directly into official `llama.cpp` WebUI. | `/webui` |
+| **llama.cpp WebAgent Gateway** | Full autonomous agent tool execution (`list_dir`, `write_file`, AST graph) + Gemini multimodal vision for text-only local models. | `/webui` |
 
 ---
 
@@ -243,7 +243,7 @@ AI_MAX_TOKENS="8192"
 - [x] **Self-Healing Tool Parser:** Unsloth-inspired resilient JSON argument healer auto-balancing brackets, stripping leaked XML tokens, and repairing unescaped newlines for small local models.
 - [x] **Scaffold-Model Fit & Surgical Edits:** Exact string replacements (`edit_file`), accidental overwrite protection on `write_file`, line-windowed reading, and read-before-edit invariants inspired by [little-coder](https://github.com/itayinbarr/little-coder).
 - [x] **[PyCode](https://github.com/j5onrf/pycode) Cross-Platform GUI (T3 Fork):** Local-first React desktop and WebUI workspace connected via ACP (Agent Client Protocol) stdio JSON-RPC bridge (`/pyc`, `/pyc web`)—featuring real-time token/thought streaming, custom vector branding, theme-reactive ambient aurora glow toggle, and automatic workspace AST indexing.
-- [x] **llama.cpp WebAgent Gateway:** Real-time tool execution (`list_dir`, `write_file`, AST index maps), Gemini Flash Lite vision pre-processing, and streaming proxy for the official `llama.cpp` WebUI (`/webui`).
+- [x] **llama.cpp WebAgent Gateway:** Real-time tool execution (`list_dir`, `write_file`, AST index maps), Gemini vision pre-processing, and streaming proxy for the official `llama.cpp` WebUI (`/webui`).
 - [ ] **PyBot Integration ([OpenBot](https://github.com/CopilotKit/OpenBot) Plugin):** Embedded web assistant & customizable agent widget plugin to bring `py-agent` intelligence to browser overlays and multi-surface chat bots.
 - [ ] **Context Stress Testing:** Continuous context-window pressure tests across quantized local engines.
 - [ ] **Automated File Containment Validation:** Zero-trust security verification on traversal boundaries.
