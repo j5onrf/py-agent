@@ -160,7 +160,8 @@ class Message(Static):
                 if "</think>" in aft:
                     th, rest = aft.split("</think>", 1)
                     if show_th and th.strip():
-                        items.append(Text("⚙ Thinking:\n", style="bold " + b_col))
+                        th_toks = len(th.split())
+                        items.append(Text(f"✦ Thought ({th_toks} tokens)\n", style="bold " + b_col))
                         items.append(_format_tui_reasonix_text(th.strip(), app_t))
                         items.append(Text("\n\n"))
                     if rest.strip():
@@ -168,10 +169,10 @@ class Message(Static):
                         items.append(Markdown(clean_r, code_theme=code_fmt))
                 else:
                     if show_th and aft.strip():
-                        items.append(Text("⚙ Thinking...\n", style="bold " + b_col))
+                        items.append(Text("✦ Thinking...\n", style="bold italic " + b_col))
                         items.append(_format_tui_reasonix_text(aft.strip(), app_t))
                     else:
-                        items.append(Text("Thinking...", style="italic dim"))
+                        items.append(Text("✦ Thinking...", style="bold italic " + b_col))
 
                 valid = [x for x in items if x is not None]
                 body = Group(*valid) if valid else Text("...", style="italic dim")

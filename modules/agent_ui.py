@@ -32,7 +32,7 @@ RE_UNSAFE_SHELL_CHARS: re.Pattern = re.compile(r'[\[\]{}()=\'"",;|<>#]')
 class InlineSpinner:
     """A thread-safe, lightweight console spinner tracking elapsed operation runtime."""
 
-    def __init__(self, chars: str = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏") -> None:
+    def __init__(self, chars: tuple[str, ...] | list[str] | str = ("✦ [∿ · ·]", "✦ [· ∿ ·]", "✦ [· · ∿]", "✦ [· ∿ ·]")) -> None:
         self.chars, self.active, self.thread, self.message, self.start_time = (
             chars,
             False,
@@ -42,21 +42,31 @@ class InlineSpinner:
         )
         self._lock = threading.Lock()
 
+    def _get_theme_color(self) -> str:
+        try:
+            import agent_core as core
+            box = core.get_state("box_style", 1)
+            colors = {1: "\033[1;32m", 2: "\033[1;34m", 3: "\033[1;36m", 4: "\033[1;37m", 5: "\033[1;32m"}
+            return colors.get(box, "\033[1;32m")
+        except Exception:
+            return "\033[1;32m"
+
     def _spin(self) -> None:
         idx, char_len = 0, len(self.chars)
+        color = self._get_theme_color()
         while self.active:
             try:
                 char, elapsed = self.chars[idx % char_len], time.time() - self.start_time
                 with self._lock:
                     msg = self.message
                 sys.stderr.write(
-                    f"\r\x1b[K\033[1;32m{char}\033[0m \033[36m{msg}\033[0m \033[2m{elapsed:.1f}s\033[0m"
+                    f"\r\x1b[K{color}{char}\033[0m \033[36m{msg}\033[0m \033[2m{elapsed:.1f}s\033[0m"
                 )
                 sys.stderr.flush()
             except OSError:
                 pass
             idx += 1
-            time.sleep(0.08)
+            time.sleep(0.14)
         try:
             sys.stderr.write("\r\x1b[2K\r")
             sys.stderr.flush()
