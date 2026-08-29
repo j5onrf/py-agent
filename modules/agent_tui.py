@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Production Minimal Textual TUI for Py Agent Engine"""
+"""Production Minimal Textual TUI for Py Agent Engine [Compact Edition]"""
 
-import base64, json, os, re, sqlite3, subprocess, sys, threading, time, urllib.request as urlreq
+import base64, json, os, re, sqlite3, subprocess, sys, threading, time, urllib.parse, requests
 from collections.abc import Iterator
 from contextlib import closing
 from typing import Any
@@ -42,6 +42,7 @@ FINAL_ANSWER_RE = re.compile(r'^\s*Final Answer:\s*', re.I)
 THINK_TAGS_RE = re.compile(r'<think>.*?</think>', re.DOTALL)
 BASE_PROMPT_CHAT, BASE_PROMPT_AGENT = "Active, natural conversational assistant.", "Active local workspace developer agent."
 _CACHED_CLIPBOARD_TOOL: list[str] | None = None
+_http_session = requests.Session()
 
 
 def format_dir_path(p: str) -> str:
@@ -74,16 +75,20 @@ def copy_to_clipboard(text: str) -> bool:
 
 
 def _format_tui_reasonix_text(text: str, theme: str = "code1") -> Text:
-    style = {"code1": "bold #89b4fa", "code2": "bold #ff9e64", "dark": "bold cyan", "mono": "bold white"}.get(theme, "bold cyan")
+    badge_style = {"code1": "bold #89b4fa", "code2": "bold #ff9e64", "dark": "bold cyan", "mono": "bold white"}.get(theme, "bold cyan")
+    body_style = "#a6adc8" if theme in ("code1", "code2") else ("#b0b0b0" if theme == "dark" else "white")
     res, last_empty = Text(), False
     for line in text.splitlines():
         if not (clean := line.strip()):
             if not last_empty: res.append("\n"); last_empty = True
             continue
         last_empty = False
-        if m := REASONIX_STEP_RE.match(clean): res.append(f"{m.group(0).strip()}\n", style=style)
-        else: res.append(f"{line}\n", style="italic dim")
-    return res.rstrip()
+        if m := REASONIX_STEP_RE.match(clean):
+            res.append(f"{m.group(0).strip()}\n", style=badge_style)
+        else:
+            res.append(f"{clean}\n", style=body_style)
+    res.rstrip()
+    return res
 
 
 code1_theme = Theme(name="code1", primary="#89b4fa", secondary="#a6adc8", accent="#89b4fa", background="#11121d", surface="#161726", panel="#1b1c2b")
@@ -111,10 +116,13 @@ class Message(Static):
     def update_content(self, new_content: Any) -> None:
         self.msg_content = new_content
         self._cached_render = None
-        self.refresh()
+        self.refresh(layout=True)
 
     def render(self) -> Any:
-        app_t, c_mode, b_on = getattr(self.app, "theme", "code1"), getattr(self.app, "compact_mode", 0), getattr(self.app, "borders_enabled", True)
+        app_t = getattr(self.app, "theme", "code1")
+        c_mode = getattr(self.app, "compact_mode", 0)
+        b_on = getattr(self.app, "borders_enabled", True)
+
         if self._cached_render and (self._cached_theme, self._cached_compact, self._cached_borders) == (app_t, c_mode, b_on):
             return self._cached_render
 
@@ -127,27 +135,50 @@ class Message(Static):
         b_col = getattr(self.app, "border_accent", "#89b4fa")
 
         if self.sender == "User":
-            raw = self.msg_content if isinstance(self.msg_content, str) else next((i["text"] for i in self.msg_content if isinstance(i, dict) and i.get("type") == "text"), "[Multimodal Payload]")
-            txt = raw.split("User Question:", 1)[-1].strip() if "User Question:" in raw else raw
+            if isinstance(self.msg_content, str): raw = self.msg_content
+            elif isinstance(self.msg_content, list): raw = next((str(i.get("text", "")) for i in self.msg_content if isinstance(i, dict) and i.get("type") == "text"), "[Attached Image]")
+            else: raw = str(self.msg_content or "")
+
+            raw_str = str(raw or "")
+            txt = raw_str.split("User Question:", 1)[-1].strip() if "User Question:" in raw_str else raw_str
+            txt = txt or "[Image Query]"
+
             if c_mode == 0:
                 fg = "white" if app_t in ("mono", "grok", "dark") else ("#303446" if not is_d else "#c8d3f5")
                 res = Panel(Text(txt, style=fg), box=LEFT_BAR, border_style=b_col, style=f"on {bg_col}", padding=(0, 2))
             else: res = Text(txt, style=u_style)
         else:
-            txt, show_th = str(self.msg_content or ""), os.environ.get("AI_SHOW_THINKING", "1") == "1"
-            if "<think>" in txt:
+            txt, show_th = str(self.msg_content or "").strip(), os.environ.get("AI_SHOW_THINKING", "1") == "1"
+
+            if not txt:
+                body = Text("...", style="italic dim")
+            elif "<think>" in txt:
                 bef, aft = txt.split("<think>", 1)
-                items = [Markdown(bef.strip(), code_theme=code_fmt)] if bef.strip() else []
+                items = []
+                if bef.strip():
+                    items.append(Markdown(bef.strip(), code_theme=code_fmt))
                 if "</think>" in aft:
                     th, rest = aft.split("</think>", 1)
-                    if show_th and th.strip(): items.append(Panel(_format_tui_reasonix_text(th.strip(), app_t), title="⚙", title_align="left", border_style=b_col, box=ROUNDED, expand=True))
-                    if rest.strip(): items.append(Markdown(MULTI_NEWLINE_RE.sub('\n\n', CLEAN_CODE_BLOCKS_RE.sub('```\n', rest.strip())), code_theme=code_fmt))
-                elif show_th and aft.strip():
-                    items.append(Panel(_format_tui_reasonix_text(aft.strip(), app_t), title="⚙ Thinking...", title_align="left", border_style=b_col, box=ROUNDED, expand=True))
-                body = Group(*items) if items else Text("Thinking...", style="italic dim")
+                    if show_th and th.strip():
+                        items.append(Text("⚙ Thinking:\n", style="bold " + b_col))
+                        items.append(_format_tui_reasonix_text(th.strip(), app_t))
+                        items.append(Text("\n\n"))
+                    if rest.strip():
+                        clean_r = MULTI_NEWLINE_RE.sub('\n\n', CLEAN_CODE_BLOCKS_RE.sub('```\n', rest.strip()))
+                        items.append(Markdown(clean_r, code_theme=code_fmt))
+                else:
+                    if show_th and aft.strip():
+                        items.append(Text("⚙ Thinking...\n", style="bold " + b_col))
+                        items.append(_format_tui_reasonix_text(aft.strip(), app_t))
+                    else:
+                        items.append(Text("Thinking...", style="italic dim"))
+
+                valid = [x for x in items if x is not None]
+                body = Group(*valid) if valid else Text("...", style="italic dim")
             else:
-                cl = MULTI_NEWLINE_RE.sub('\n\n', CLEAN_CODE_BLOCKS_RE.sub('```\n', txt.strip()))
-                body = Markdown(cl, code_theme=code_fmt) if cl else Text("...", style="italic dim")
+                cl = MULTI_NEWLINE_RE.sub('\n\n', CLEAN_CODE_BLOCKS_RE.sub('```\n', txt))
+                body = Markdown(cl, code_theme=code_fmt) if cl.strip() else Text("...", style="italic dim")
+
             res = Panel(body, box=ROUNDED if b_on else NO_BOX, border_style=("dim " + b_col) if b_on else b_col, style=f"on {bg_col}", padding=(0, 2)) if c_mode == 0 else body
 
         self._cached_render, self._cached_theme, self._cached_compact, self._cached_borders = res, app_t, c_mode, b_on
@@ -568,11 +599,24 @@ class LocalAITUI(App):
             else: self.notify("Usage: /skill <query> or /s off")
         elif root in ("/compact", "/c"): self.action_toggle_compact()
         elif root in ("/t", "/thinking"):
-            if args and args.isdigit():
-                v = int(args); self.reasoning_budget, self.reasoning_active = max(0, v), v > 0
-                core.save_state("reasoning_active", self.reasoning_active); core.save_state("reasoning_budget", self.reasoning_budget)
-                self.set_reasoning(f"{self.reasoning_budget} tokens" if self.reasoning_active else "Disabled")
-                self.notify(f"Reasoning set to {self.reasoning_budget} tokens.")
+            if args:
+                sub = args.strip().lower()
+                if sub in ("hide", "off", "mute", "quiet"):
+                    os.environ["AI_SHOW_THINKING"] = "0"; core.save_state("show_thinking", False)
+                    for c in self.chat_area.children:
+                        if isinstance(c, Message): c.refresh(layout=True)
+                    self.notify("Thinking display hidden.")
+                elif sub in ("show", "on", "visible"):
+                    os.environ["AI_SHOW_THINKING"] = "1"; core.save_state("show_thinking", True)
+                    for c in self.chat_area.children:
+                        if isinstance(c, Message): c.refresh(layout=True)
+                    self.notify("Thinking display enabled.")
+                elif sub.isdigit():
+                    v = int(sub); self.reasoning_budget, self.reasoning_active = max(0, v), v > 0
+                    core.save_state("reasoning_active", self.reasoning_active); core.save_state("reasoning_budget", self.reasoning_budget)
+                    self.set_reasoning(f"{self.reasoning_budget} tokens" if self.reasoning_active else "Disabled")
+                    self.notify(f"Deep reasoning set to {self.reasoning_budget} tokens.")
+                else: self.action_toggle_reasoning()
             else: self.action_toggle_reasoning()
         else: self.notify(f"Unknown command '{root}'. Type [bold]/help[/bold] for commands.")
 
@@ -630,24 +674,26 @@ class LocalAITUI(App):
                     body["stream"], body["messages"] = True, self.history
                     if "localhost" in url or "127.0.0.1" in url: body.update(think_kw)
                     if self.is_agent and hasattr(core, "EDIT_TOOLS"): body["tools"] = core.EDIT_TOOLS
-                    req = urlreq.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json", **headers}, method="POST")
                     try:
-                        resp = urlreq.urlopen(req, timeout=timeout)
-                        if resp.status == 200: response = resp; break
+                        resp = _http_session.post(url, json=body, headers={"Content-Type": "application/json", **headers}, timeout=timeout, stream=True)
+                        if resp.status_code == 200: response = resp; break
                     except Exception: continue
 
                 if not response: raise Exception("Failed to connect to AI engine.")
 
                 with response:
                     self.active_response = response
-                    for line in response:
+                    for line in response.iter_lines():
                         if self.generation_cancelled: break
-                        if not (dec := line.decode("utf-8", errors="ignore").strip()).startswith("data:"): continue
-                        if (dec := dec[5:].strip()) == "[DONE]": break
+                        if not line: continue
+                        line_str = line.decode("utf-8", errors="ignore").strip()
+                        if not line_str.startswith("data:"): continue
+                        if (dec := line_str[5:].strip()) == "[DONE]": break
                         try:
                             if not (choices := json.loads(dec).get("choices", [{}])): continue
                             delta = choices[0].get("delta", {})
-                            tc_chunk, th_chunk = delta.get("content") or "", delta.get("reasoning_content") or delta.get("thinking") or delta.get("reasoning") or ""
+                            tc_chunk = delta.get("content") or ""
+                            th_chunk = delta.get("reasoning_content") or delta.get("thinking") or delta.get("reasoning") or ""
                             if tc_chunk and "Final Answer:" in tc_chunk: tc_chunk = FINAL_ANSWER_RE.sub('', tc_chunk).lstrip()
 
                             for tc in delta.get("tool_calls", []):
@@ -666,7 +712,7 @@ class LocalAITUI(App):
                                 accumulated += tc_chunk
 
                             now = time.perf_counter()
-                            if (tc_chunk or th_chunk) and (now - last_ui >= 0.08):
+                            if (tc_chunk or th_chunk) and (now - last_ui >= 0.05):
                                 last_ui = now
                                 self.call_from_thread(assistant_msg.update_content, accumulated)
                                 self.call_from_thread(self.chat_area.scroll_end, animate=False)
@@ -715,7 +761,13 @@ class LocalAITUI(App):
 
             self.stats_turns += 1
             self.call_from_thread(self.update_stats_ui, self.stats_turns, tps, tot_el)
-            if hasattr(tts, "speak_response"): tts.speak_response(accumulated)
+            
+            # Direct TTS Speech Synthesis Trigger (strips <think> and speaks cleanly)
+            if accumulated:
+                clean_speech = THINK_TAGS_RE.sub('', accumulated).replace("Final Answer:", "").strip()
+                if clean_speech and hasattr(tts, "speak_response"):
+                    tts.speak_response(clean_speech)
+
             if user_txt:
                 try:
                     core.run_mod("ai-agent-sessions", "log-turn", self.safe_name, user_txt, accumulated)
@@ -789,6 +841,9 @@ class LocalAITUI(App):
     def enable_input(self) -> None: self.chat_input.disabled, _ = False, self.chat_input.focus()
 
     def action_stop_generation(self) -> None:
+        if hasattr(tts, "stop_tts"):
+            try: tts.stop_tts()
+            except Exception: pass
         if self.chat_input.disabled or getattr(self, "entering_gate_authorization", False):
             self.generation_cancelled = True
             if getattr(self, "entering_gate_authorization", False):
