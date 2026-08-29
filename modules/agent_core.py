@@ -44,9 +44,9 @@ _state_cache: dict[str, Any] = {}
 _state_mtime: float = 0.0
 
 
-def _get_gemini_config() -> tuple[str, str]:
-    k = os.environ.get("GEM_VOICE", "") or os.environ.get("GEMINI_API_KEY", "")
-    m = os.environ.get("GEM_MODEL", "") or os.environ.get("GEMINI_VISION_MODEL", "gemini-3.5-flash-lite")
+def _get_img_config() -> tuple[str, str]:
+    k = os.environ.get("IMG_VOICE", "") or os.environ.get("IMG_KEY", "")
+    m = os.environ.get("IMG_MODEL", "") or "gemini-3.5-flash-lite"
     if not k:
         for p in (os.path.join(CFG_DIR, ".env"), os.path.expanduser("~/.config/local-ai/.env"), ".env"):
             if os.path.isfile(p):
@@ -54,15 +54,17 @@ def _get_gemini_config() -> tuple[str, str]:
                     with open(p, "r", encoding="utf-8") as f:
                         for l in f:
                             if (s := l.strip()) and not s.startswith("#"):
-                                if (s.startswith("GEM_VOICE=") or s.startswith("GEMINI_API_KEY=")) and not k: k = s.split("=", 1)[1].strip().strip("'\"")
-                                if (s.startswith("GEM_MODEL=") or s.startswith("GEMINI_VISION_MODEL=")) and not os.environ.get("GEM_MODEL"): m = s.split("=", 1)[1].strip().strip("'\"")
+                                if (s.startswith("IMG_VOICE=") or s.startswith("IMG_KEY=")) and not k:
+                                    k = s.split("=", 1)[1].strip().strip("'\"")
+                                if s.startswith("IMG_MODEL=") and not os.environ.get("IMG_MODEL"):
+                                    m = s.split("=", 1)[1].strip().strip("'\"")
                 except Exception: pass
     return k.strip(), m.strip() or "gemini-3.5-flash-lite"
 
 
 def describe_image_gemini(target: Any) -> str:
-    key, model = _get_gemini_config()
-    if not key: return "[Error: GEM_VOICE or GEMINI_API_KEY not configured for vision]"
+    key, model = _get_img_config()
+    if not key: return "[Error: IMG_VOICE not configured in .env for vision]"
     mime, b64 = "image/png", ""
     try:
         if isinstance(target, dict):
@@ -105,7 +107,7 @@ def describe_image_gemini(target: Any) -> str:
 
 
 def preprocess_multimodal_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    processed, (_, model) = [], _get_gemini_config()
+    processed, (_, model) = [], _get_img_config()
     for msg in messages:
         c = msg.get("content")
         if isinstance(c, str):
