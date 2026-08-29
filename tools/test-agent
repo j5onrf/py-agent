@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified All-in-One Local-AI Diagnostic & Live Functional Suite"""
+"""Unified All-in-One Py-Agent Complete Diagnostic & System Test Suite"""
 
 import importlib
 import json
@@ -11,33 +11,37 @@ import sys
 import tempfile
 
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
-sys.path.insert(0, os.path.join(CFG_DIR, "modules"))
-sys.path.insert(0, CFG_DIR)
+MODULES_DIR = os.path.join(CFG_DIR, "modules")
 
-GREEN, RED, CYAN, YELLOW, RESET = (
+if MODULES_DIR not in sys.path:
+    sys.path.insert(0, MODULES_DIR)
+if CFG_DIR not in sys.path:
+    sys.path.insert(0, CFG_DIR)
+
+GREEN, RED, CYAN, YELLOW, DIM, RESET = (
     "\033[1;32m",
     "\033[1;31m",
     "\033[1;36m",
     "\033[1;33m",
+    "\033[2m",
     "\033[0m",
 )
 
 
 def print_result(name: str, passed: bool, detail: str = ""):
-    if passed:
-        print(f"  {GREEN}✔ PASS{RESET} : {name:<48} {GREEN}{detail}{RESET}")
-    else:
-        print(f"  {RED}✖ FAIL{RESET} : {name:<48} {RED}{detail}{RESET}")
+    badge = f"  {GREEN}✔ PASS{RESET}" if passed else f"  {RED}✖ FAIL{RESET}"
+    det_str = f" {GREEN}{detail}{RESET}" if passed else f" {RED}{detail}{RESET}"
+    print(f"{badge} : {name:<48}{det_str}")
 
 
 print(f"\n{CYAN}======================================================================{RESET}")
-print(f"{CYAN}           PY AGENT ALL-IN-ONE DIAGNOSTIC & SANITY SUITE              {RESET}")
+print(f"{CYAN}           PY AGENT ALL-IN-ONE Diagnostic & System Test Suite           {RESET}")
 print(f"{CYAN}======================================================================{RESET}\n")
 
 all_passed = True
 
-# --- PASS 1: GRANULAR BYTECODE COMPILATION (22 FILES) ---
-print(f"{CYAN}[Pass 1/8] Bytecode Compilation (Granular 22 Files){RESET}")
+# --- PASS 1: GRANULAR BYTECODE COMPILATION (21 FILES) ---
+print(f"{CYAN}[Pass 1/8] Bytecode Compilation (Granular 21 Files){RESET}")
 files_to_compile = [
     "ai-agent.py",
     "modules/agent_core.py",
@@ -62,14 +66,20 @@ files_to_compile = [
     "plugins/pycode/bridge.py",
 ]
 
+p1 = True
 for f in files_to_compile:
     full_path = os.path.join(CFG_DIR, f)
-    try:
-        py_compile.compile(full_path, doraise=True)
-        print_result(f, True)
-    except Exception as e:
-        print_result(f, False, str(e))
-        all_passed = False
+    if os.path.isfile(full_path):
+        try:
+            py_compile.compile(full_path, doraise=True)
+            print_result(f, True)
+        except Exception as e:
+            print_result(f, False, str(e))
+            p1 = False
+    else:
+        print_result(f, False, "File missing")
+        p1 = False
+all_passed = all_passed and p1
 
 # --- PASS 2: GRANULAR MODULE IMPORTS ---
 print(f"\n{CYAN}[Pass 2/8] Module Imports & Cross-Dependencies{RESET}")
@@ -87,13 +97,15 @@ modules_to_import = [
     "speed_test",
 ]
 
+p2 = True
 for mod in modules_to_import:
     try:
         importlib.import_module(mod)
         print_result(f"import {mod}", True)
     except Exception as e:
         print_result(f"import {mod}", False, str(e))
-        all_passed = False
+        p2 = False
+all_passed = all_passed and p2
 
 # --- PASS 3: DATABASE SUBCOMMAND PROBES ---
 print(f"\n{CYAN}[Pass 3/8] SQLite Subsystem & Subcommand Probes{RESET}")
@@ -153,8 +165,8 @@ except Exception as e:
 sandbox_dir = tempfile.mkdtemp(prefix="local_ai_test_")
 
 try:
-    # --- PASS 4: STATE ENGINE & MEMORY DEFAULTS ---
-    print(f"\n{CYAN}[Pass 4/8] State Machine, Caching Engine & Defaults{RESET}")
+    # --- PASS 4: STATE ENGINE, VISION & JSON HEALER ---
+    print(f"\n{CYAN}[Pass 4/8] State Machine, Vision Pipeline & JSON Healer{RESET}")
     import agent_core as core
 
     core.save_state("test_key_sanity", 99999)
@@ -164,7 +176,28 @@ try:
 
     p4_b = core.DEFAULTS.get("memory_active") is False
     print_result("Default Memory Opt-in Setting", p4_b, "memory_active=False")
-    all_passed = all_passed and p4_a and p4_b
+
+    # Vision Pipeline Config Probe (Optional key check - does not fail if missing)
+    try:
+        v_key, v_model = core._get_img_config()
+        key_detail = f"{v_model} (Key: {v_key[:4]}***)" if (v_key and len(v_key) > 5) else f"{v_model} (No key set - Optional)"
+        print_result("Multimodal Vision Config", True, key_detail)
+        p4_c = True
+    except Exception as e:
+        print_result("Multimodal Vision Config", False, str(e))
+        p4_c = False
+
+    # Self-Healing JSON Argument Parser
+    healed = core._heal_tool_args("{symbol: 'my_func', path: 'test.py', 'unclosed': [1, 2")
+    p4_d = healed.get("symbol") == "my_func" and healed.get("path") == "test.py"
+    print_result("Self-Healing JSON Tool Parser", p4_d, f"Parsed: {healed}")
+
+    # Accurate Token Estimator
+    toks = core.get_accurate_token_count("def test(): return True")
+    p4_e = toks > 0
+    print_result("Accurate Token Estimator", p4_e, f"{toks} tokens measured")
+
+    all_passed = all_passed and (p4_a and p4_b and p4_c and p4_d and p4_e)
 
     # --- PASS 5: LIVE TOOL EXECUTION, SURGICAL EDITS & AST GUARDS ---
     print(f"\n{CYAN}[Pass 5/8] Live Tool Execution Engine, edit_file & AST Guards{RESET}")
@@ -213,10 +246,13 @@ try:
         "Blocked overwrite without overwrite=true",
     )
 
-    # 6. List directory
+    # 6. List directory (Explicit & Empty-Path In-Bounds Resolution)
     res_l = tools.run_tool("list_dir", {"path": "."}, sandbox_dir)
-    p5_f = "test_script.py" in res_l
-    print_result("list_dir", p5_f, f"Entries: {res_l.splitlines()}")
+    full_empty = tools._safe_path(sandbox_dir, "")
+    is_bounded = not tools._is_outside_workspace(sandbox_dir, full_empty)
+    res_l_empty = tools.run_tool("list_dir", {}, sandbox_dir)
+    p5_f = "test_script.py" in res_l and is_bounded and "test_script.py" in res_l_empty
+    print_result("list_dir (In-Bounds Empty Path Resolution)", p5_f, f"Entries: {res_l.splitlines()}")
 
     # 7. Subprocess execution
     old_gates = os.environ.get("AI_CONFIRM_GATES")
@@ -298,18 +334,32 @@ try:
         print_result("ai-context.md exists", False, "File missing")
         all_passed = False
 
-    # --- PASS 8: SPEND LEDGER & PRICING ---
-    print(f"\n{CYAN}[Pass 8/8] Spend Ledger & Cost Engine{RESET}")
+    # --- PASS 8: SPEND LEDGER, TTS SANITIZER & TUI REASONIX GLIMMER ---
+    print(f"\n{CYAN}[Pass 8/8] Spend Ledger, TTS Sanitizer & TUI Reasonix Glimmer{RESET}")
     import agent_usage as usage
+    import agent_tts as tts
+    import agent_tui as tui
 
     orig_ledger = usage.LEDGER_PATH
     try:
         usage.LEDGER_PATH = os.path.join(sandbox_dir, "test_ledger.json")
         usage.record("gemini", 1000000, 1000000, 0.0)
         line = usage.turn_line(1000000, 1000000, 4.50, 2000000, 8192)
-        p8 = "$4.50" in line
-        print_result("Dummy Test Spend Accounting", p8, f"Summary: {line.strip()}")
-        all_passed = all_passed and p8
+        p8_a = "$4.50" in line
+        print_result("Spend Accounting Ledger", p8_a, f"Summary: {line.strip()}")
+
+        # TTS Speech Text Sanitizer
+        cleaned_speech = tts.clean_text_for_speech("<think>Plan</think> Here is `answer`: 12:30")
+        p8_b = "<think>" not in cleaned_speech and "`" not in cleaned_speech and "12 30" in cleaned_speech
+        print_result("TTS Speech Text Sanitizer", p8_b, f"Cleaned: '{cleaned_speech}'")
+
+        # TUI Reasonix Step Formatter & Live Glimmer
+        step_fmt = tui._format_tui_reasonix_text("1. **Analyze:** Check\n2. **Execute:** Run")
+        glim_fmt = tui._glimmer_tui_text("✦ Thinking...")
+        p8_c = step_fmt is not None and glim_fmt is not None
+        print_result("TUI Reasonix Formatter & Live Glimmer", p8_c, "Step badges & Glimmer active")
+
+        all_passed = all_passed and (p8_a and p8_b and p8_c)
     finally:
         usage.LEDGER_PATH = orig_ledger
 

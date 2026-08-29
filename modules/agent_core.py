@@ -154,6 +154,47 @@ def _heal_tool_args(raw: str) -> dict[str, Any]:
         return {k: v.strip() for k, v in re.findall(r'"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s*:\s*["\']?([^,"\']+)["\']?', cl)}
 
 
+def _extract_text_tool_calls(text: str) -> list[dict[str, Any]] | None:
+    """Extract tool calls when models stream JSON into text content instead of tool_calls."""
+    if not text or not text.strip(): return None
+    raw = text.strip()
+
+    # 1. XML tags
+    tag_matches = re.findall(r"(?:<tool_call>|<\|tool_call_start\|>)(.*?)(?:</tool_call>|<\|tool_call_end\|>|$)", raw, re.DOTALL)
+    if tag_matches:
+        calls = []
+        for idx, tm in enumerate(tag_matches):
+            cl = tm.replace("<|tool_call_argument_start|>", "").replace("<|tool_call_argument_end|>", "").strip()
+            parsed = _heal_tool_args(cl)
+            if isinstance(parsed, dict) and "name" in parsed:
+                args = parsed.get("arguments") if isinstance(parsed.get("arguments"), dict) else {k: v for k, v in parsed.items() if k not in ("name", "type", "id")}
+                calls.append({"id": f"call_{int(time.time()*1000)}_{idx}", "type": "function", "function": {"name": parsed["name"], "arguments": json.dumps(args)}})
+        if calls: return calls
+
+    # 2. Markdown wrapped JSON block
+    if (m := RE_MD_JSON_WRAPPER.search(raw)):
+        raw = m.group(1).strip()
+
+    # 3. Direct JSON object
+    if (m := RE_JSON_OBJECT.search(raw)):
+        blob = m.group(0).strip()
+        try:
+            parsed = _heal_tool_args(blob)
+            if isinstance(parsed, dict) and "name" in parsed:
+                args = parsed.get("arguments") if isinstance(parsed.get("arguments"), dict) else {k: v for k, v in parsed.items() if k not in ("name", "type", "id")}
+                return [{"id": f"call_{int(time.time()*1000)}", "type": "function", "function": {"name": parsed["name"], "arguments": json.dumps(args)}}]
+            elif isinstance(parsed, list):
+                calls = []
+                for idx, item in enumerate(parsed):
+                    if isinstance(item, dict) and "name" in item:
+                        args = item.get("arguments") if isinstance(item.get("arguments"), dict) else {k: v for k, v in item.items() if k not in ("name", "type", "id")}
+                        calls.append({"id": f"call_{int(time.time()*1000)}_{idx}", "type": "function", "function": {"name": item["name"], "arguments": json.dumps(args)}})
+                if calls: return calls
+        except Exception: pass
+
+    return None
+
+
 def get_state(key: str = "", default: Any = None) -> Any:
     global _state_cache, _state_mtime
     try:
@@ -266,7 +307,7 @@ class RichStreamer:
             if show and tok:
                 if not self.think_hdr_printed and tok.strip():
                     self.think_hdr_printed = True; self._stop_spinner()
-                    _console_err.print("[dim]╭─ ✦ Thinking ───────────────────────────────────────────[/dim]")
+                    _console_err.print("[dim]╭─ ⚙ ────────────────────────────────────────────────────[/dim]")
                     tok = tok.lstrip("\r\n")
                 if tok:
                     try: sys.stderr.write(tok.replace("\r\n", "\n").replace("\n", "\r\n")); sys.stderr.flush()
@@ -376,6 +417,16 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
     resolved_model, streamer, res, max_ctx = None, None, None, int(os.environ.get("AI_MAX_TOKENS", 8192))
     if is_local: messages = preprocess_multimodal_messages(messages)
 
+    # 1. Critical Directive Header (Enforces immediate action)
+    if is_agent and messages and messages[0]["role"] == "system" and "### ACTIVE DEVELOPER AGENT MODE" not in messages[0]["content"]:
+        tools_header = (
+            f"### ACTIVE DEVELOPER AGENT MODE:\n"
+            f"Workspace Root: {ws}\n"
+            f"CRITICAL DIRECTIVE: Do NOT output conversational chatter or explain what you will do. "
+            f"You MUST immediately execute actions by calling available tools (run_command, read_file, write_file, list_dir, read_symbol).\n\n"
+        )
+        messages[0]["content"] = tools_header + messages[0]["content"]
+
     for _round in range(10):
         if sum(get_accurate_token_count(m.get("content") or "") for m in messages) > int(max_ctx * 0.8):
             messages = prune_history(messages, max_tokens=int(max_ctx * 0.6))
@@ -446,6 +497,13 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
                 speed_test.end(actual_out_tokens=out_tok, is_local=is_local, resolved_model=resolved_model, active_model=body.get("model"))
 
             calls = [val for _, val in sorted(tool_calls_map.items())] if tool_calls_map else None
+            
+            # 2. Text Tool Fallback Parser (Intercepts raw JSON streamed to content)
+            if not calls and is_agent:
+                calls = _extract_text_tool_calls(ans_text)
+                if calls and streamer and sys.stdout.isatty():
+                    _clear_lines(False, streamer.acc_ans)
+
             if not calls or not is_agent:
                 tool_toks = sum(get_accurate_token_count(m.get("content") or "") for m in messages if m.get("role") in ("assistant", "tool"))
                 final_out = max(out_tok, tool_toks)
