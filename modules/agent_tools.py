@@ -189,6 +189,8 @@ def _safe_path(workspace: str, p: str) -> str:
 
 
 def _is_outside_workspace(workspace: str, full_path: str) -> bool:
+    if not full_path:
+        return False
     root = os.path.realpath(workspace)
     return full_path != root and not full_path.startswith(root + os.sep)
 
@@ -234,7 +236,7 @@ def run_tool(
     gates_active = os.environ.get("AI_CONFIRM_GATES", "1") == "1"
     denial = "[denied] User declined tool execution."
     raw_path = args.get("path", "")
-    full = _safe_path(workspace, raw_path) if raw_path else ""
+    full = _safe_path(workspace, raw_path)
 
     def _gate(reason: str) -> bool:
         if confirm_gate_fn:

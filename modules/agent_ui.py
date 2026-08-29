@@ -51,22 +51,41 @@ class InlineSpinner:
         except Exception:
             return "\033[1;32m"
 
+    def _glimmer(self, text: str, t: float) -> str:
+        """Sweeps a luminous gradient wave of light across the text from left to right."""
+        pos = (t * 2.2) % (len(text) + 8) - 4
+        rendered = []
+        for i, ch in enumerate(text):
+            dist = abs(i - pos)
+            if dist < 3.0:
+                intensity = max(0.0, 1.0 - (dist / 3.0))
+                # Shimmer highlight (soft green/cyan glow peaking to bright white)
+                r = int(120 + (255 - 120) * intensity)
+                g = int(210 + (255 - 210) * intensity)
+                b = int(160 + (255 - 160) * intensity)
+                rendered.append(f"\033[1;38;2;{r};{g};{b}m{ch}\033[0m")
+            else:
+                rendered.append(f"\033[38;2;110;120;140m{ch}\033[0m")
+        return "".join(rendered)
+
     def _spin(self) -> None:
-        idx, char_len = 0, len(self.chars)
+        idx, char_len, tick = 0, len(self.chars), 0.0
         color = self._get_theme_color()
         while self.active:
             try:
-                char, elapsed = self.chars[idx % char_len], time.time() - self.start_time
+                char, elapsed = self.chars[int(idx) % char_len], time.time() - self.start_time
                 with self._lock:
                     msg = self.message
+                glim_msg = self._glimmer(msg, tick)
                 sys.stderr.write(
-                    f"\r\x1b[K{color}{char}\033[0m \033[36m{msg}\033[0m \033[2m{elapsed:.1f}s\033[0m"
+                    f"\r\x1b[K{color}{char}\033[0m {glim_msg} \033[2m{elapsed:.1f}s\033[0m"
                 )
                 sys.stderr.flush()
             except OSError:
                 pass
-            idx += 1
-            time.sleep(0.14)
+            idx += 0.4
+            tick += 0.25
+            time.sleep(0.05)
         try:
             sys.stderr.write("\r\x1b[2K\r")
             sys.stderr.flush()

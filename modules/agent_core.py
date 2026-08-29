@@ -266,7 +266,7 @@ class RichStreamer:
             if show and tok:
                 if not self.think_hdr_printed and tok.strip():
                     self.think_hdr_printed = True; self._stop_spinner()
-                    _console_err.print("[dim]╭─ ⚙ ────────────────────────────────────────────────────[/dim]")
+                    _console_err.print("[dim]╭─ ✦ Thinking ───────────────────────────────────────────[/dim]")
                     tok = tok.lstrip("\r\n")
                 if tok:
                     try: sys.stderr.write(tok.replace("\r\n", "\n").replace("\n", "\r\n")); sys.stderr.flush()
@@ -276,8 +276,9 @@ class RichStreamer:
             if not self.ans_started:
                 tok = tok.lstrip("\r\n\t ")
                 if not tok: return
-                self._stop_spinner(); self.ans_started, p_clean = True, self.prefix.strip()
-                p_str = f"{p_clean} " if p_clean else ""
+                self._stop_spinner()
+                self.ans_started, p_clean = True, self.prefix.strip().rstrip(":")
+                p_str = f"{p_clean}: " if p_clean else ""
                 p_style = "\033[1;32m" if "Agent" in p_clean else "\033[1;36m"
                 if p_str:
                     try: sys.stdout.write(f"{p_style}{p_str}\033[0m"); sys.stdout.flush()
@@ -300,13 +301,19 @@ class RichStreamer:
         if self.ans_started and self.acc_ans.strip():
             if sys.stdout.isatty():
                 _clear_lines(False, self.acc_ans)
-                p_clean = self.prefix.strip()
-                p_str, p_style = (f"{p_clean} " if p_clean else ""), ("bold green" if "Agent" in p_clean else "bold cyan")
-                ans_body = self.acc_ans[len(p_str):] if (p_str and self.acc_ans.startswith(p_str)) else self.acc_ans
-                clean_md = RE_FINAL_ANSWER.sub("", ans_body).replace("\\n", "\n").strip()
-                if p_str: _console.print(Text(p_str, style=p_style), end="")
-                try: _console.print(Markdown(clean_md, code_theme="ansi_dark"))
-                except Exception: sys.stdout.write(f"{ans_body}\r\n"); sys.stdout.flush()
+                p_clean = self.prefix.strip().rstrip(":")
+                p_style = "bold green" if "Agent" in p_clean else "bold cyan"
+                ans_body = self.acc_ans
+                if p_clean and ans_body.startswith(p_clean):
+                    ans_body = ans_body[len(p_clean):].lstrip(": ")
+
+                clean_md = RE_MULTIPLE_NEWLINES.sub("\n\n", RE_FINAL_ANSWER.sub("", ans_body).replace("\\n", "\n").strip())
+                if p_clean:
+                    _console.print(f"[{p_style}]{p_clean}:[/{p_style}]")
+                try:
+                    _console.print(Markdown(clean_md, code_theme="ansi_dark"))
+                except Exception:
+                    sys.stdout.write(f"{clean_md}\r\n"); sys.stdout.flush()
             else:
                 try: sys.stdout.write("\r\n"); sys.stdout.flush()
                 except OSError: pass
@@ -379,10 +386,11 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
             is_py = get_state("ipython_mode", False) or "py-" in skill or "-py" in skill or skill.endswith("py")
             body_tools["tools"] = ipython.IPYTHON_TOOL if (is_py and ipython) else EDIT_TOOLS
 
-        if spinner:
-            try: spinner.update("Working...")
+        show_think = os.environ.get("AI_SHOW_THINKING", "1") == "1"
+        if spinner and (not show_think or is_agent):
+            try: spinner.update("Thinking...")
             except Exception: pass
-            spinner.start("Working...")
+            spinner.start("Thinking...")
         try:
             res = _session.post(url, json=body_tools, headers={"Content-Type": "application/json", **headers}, timeout=timeout, stream=True)
             if res.status_code != 200:
@@ -448,11 +456,11 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
 
             messages.append({"role": "assistant", "content": ans_text or None, "tool_calls": calls})
             for tc in calls:
+                if spinner: spinner.stop()
                 fname, raw_args = tc.get("function", {}).get("name", ""), tc.get("function", {}).get("arguments") or ""
                 args = _heal_tool_args(raw_args)
                 brief = str(args.get("symbol") or args.get("path") or args.get("command") or "")[:100]
                 _console_err.print(f"[dim]∗ {TOOL_VERBS.get(fname, 'working')} • [cyan]{fname}[/cyan] [italic]{brief}[/italic][/dim]")
-                if spinner: spinner.stop()
                 try: res_str = _run_edit_tool(fname, args, ws, spinner)
                 except Exception as e: res_str = f"[tool error] {e}"
                 pruned = res_str if len(res_str) <= 1500 else res_str[:1200] + f"\n... [Reasonix Harness: Snipped {len(res_str) - 1200} chars for context stability]"

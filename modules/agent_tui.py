@@ -74,6 +74,28 @@ def copy_to_clipboard(text: str) -> bool:
     return True
 
 
+def _glimmer_tui_text(title: str, theme: str = "code1") -> Text:
+    """Renders a sweeping luminous gradient wave across the Thinking header."""
+    pos = (time.time() * 3.5) % (len(title) + 8) - 4
+    res = Text()
+    for i, ch in enumerate(title):
+        dist = abs(i - pos)
+        if dist < 3.0:
+            intensity = max(0.0, 1.0 - (dist / 3.0))
+            if theme == "code2":
+                r, g, b = 255, int(158 + (255 - 158) * intensity), int(100 + (255 - 100) * intensity)
+            elif theme in ("mono", "grok"):
+                v = int(160 + (255 - 160) * intensity); r = g = b = v
+            else:
+                r, g, b = int(137 + (255 - 137) * intensity), int(180 + (255 - 180) * intensity), int(250 + (255 - 250) * intensity)
+            res.append(ch, style=f"bold #{r:02x}{g:02x}{b:02x}")
+        else:
+            base_col = "#ff9e64" if theme == "code2" else ("#a0a0a0" if theme in ("mono", "grok") else "#89b4fa")
+            res.append(ch, style=f"bold dim {base_col}")
+    res.append("\n")
+    return res
+
+
 def _format_tui_reasonix_text(text: str, theme: str = "code1") -> Text:
     badge_style = {"code1": "bold #89b4fa", "code2": "bold #ff9e64", "dark": "bold cyan", "mono": "bold white"}.get(theme, "bold cyan")
     body_style = "#a6adc8" if theme in ("code1", "code2") else ("#b0b0b0" if theme == "dark" else "white")
@@ -168,11 +190,10 @@ class Message(Static):
                         clean_r = MULTI_NEWLINE_RE.sub('\n\n', CLEAN_CODE_BLOCKS_RE.sub('```\n', rest.strip()))
                         items.append(Markdown(clean_r, code_theme=code_fmt))
                 else:
+                    # Active reasoning: render live glimmering wave across header
+                    items.append(_glimmer_tui_text("✦ Thinking...", app_t))
                     if show_th and aft.strip():
-                        items.append(Text("✦ Thinking...\n", style="bold italic " + b_col))
                         items.append(_format_tui_reasonix_text(aft.strip(), app_t))
-                    else:
-                        items.append(Text("✦ Thinking...", style="bold italic " + b_col))
 
                 valid = [x for x in items if x is not None]
                 body = Group(*valid) if valid else Text("...", style="italic dim")
