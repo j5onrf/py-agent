@@ -28,7 +28,11 @@ from rich.text import Text
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
 STATE_FILE: str = os.path.join(CFG_DIR, ".state.json")
 SESSIONS_DIR: str = os.path.join(CFG_DIR, "projects", "database")
-_console, _console_err, _session = Console(), Console(stderr=True), requests.Session()
+def _get_console(stderr: bool = False) -> Console:
+    cols = max(40, shutil.get_terminal_size((80, 24)).columns - 2)
+    return Console(stderr=stderr, width=cols)
+
+_console, _console_err, _session = _get_console(False), _get_console(True), requests.Session()
 
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 RE_THINKING_TITLE = re.compile(r"^\s*Thinking Process:\s*", re.IGNORECASE)
@@ -403,13 +407,20 @@ class RichStreamer:
                 p_str = f"{p_clean} " if p_clean else ""
                 ans_body = self.acc_ans[len(p_str):] if p_str and self.acc_ans.startswith(p_str) else self.acc_ans
                 clean_md = RE_FINAL_ANSWER.sub("", ans_body).replace("\\n", "\n").strip()
-                if p_str:
-                    _console.print(Text(p_str, style=p_style), end="")
-                try:
-                    _console.print(Markdown(clean_md, code_theme="ansi_dark"))
-                except Exception:
-                    sys.stdout.write(f"{ans_body}\r\n")
-                    sys.stdout.flush()
+                
+                # Check if output is a simple single-paragraph or complex markdown
+                if "\n" not in clean_md and not any(ch in clean_md for ch in ("#", "```", "|", "- ")):
+                    # Plain inline output: print prefix + text together with zero wrap overflow
+                    _console.print(Text.assemble((p_str, p_style), (clean_md, "white")))
+                else:
+                    # Multi-line/Block Markdown: prefix on line 1, clean markdown starting immediately below
+                    if p_str:
+                        _console.print(Text(p_str, style=p_style))
+                    try:
+                        _console.print(Markdown(clean_md, code_theme="ansi_dark"))
+                    except Exception:
+                        sys.stdout.write(f"{ans_body}\r\n")
+                        sys.stdout.flush()
             else:
                 try:
                     sys.stdout.write("\r\n")

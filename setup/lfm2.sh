@@ -28,7 +28,10 @@ fi
 export OMP_PROC_BIND=CLOSE
 export OMP_PLACES=cores
 
-# 4. Launch wrapped in UWSM
+# 4. Remove memory locking ceiling
+ulimit -l unlimited 2>/dev/null
+
+# 5. Launch wrapped in UWSM (Optimized Native AVX-512 / VNNI Engine)
 exec uwsm app -- taskset -c "$PHYSICAL_CORES" "$LLAMA_SERVER_BIN" \
   -m "$MODEL_PATH" \
   --alias "LFM2.5-8B-A1B" \
@@ -39,7 +42,7 @@ exec uwsm app -- taskset -c "$PHYSICAL_CORES" "$LLAMA_SERVER_BIN" \
   -b 512 \
   -ub 512 \
   --flash-attn on \
-  --mlock \
+  --load-mode mlock \
   --warmup \
   --jinja \
   --temp 0.2 \
