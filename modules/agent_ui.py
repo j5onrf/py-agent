@@ -375,6 +375,7 @@ def show_help() -> None:
         ("/s <query>, /s off", "Skills"),
         ("-save <tag>", "Save session checkpoint"),
         ("-load", "Load or clone checkpoint"),
+        ("/gnd [budget|on|off]", "Search grounding (gemini/ddg)"),
         ("/f, /tk, /b, /a", "Follow-up, Thinking, Brainstorm, or All"),
         ("file <path>", "Load file into context"),
         ("exit, quit, q", "Exit"),

@@ -164,7 +164,6 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 │                                                                     │
 │   Available commands:                                               │
 │  /h                          - Help menu                            │
-│  /gnd [budget|on|off]        - Google Search grounding              │
 │  /pyc, /pyc web              - Desktop IDE or WebUI (PyCode)        │
 │  /webui, /web                - llama.cpp WebAgent gateway           │
 │  /tui                        - Textual PyTUI                        │
@@ -184,6 +183,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 │  /s <q>, /s off              - Load or unload on-demand skill       │
 │  -save <tag>                 - Save session checkpoint              │
 │  -load                       - Load or clone checkpoint             │
+│  /gnd [budget|on|off]        - Search grounding (gemini/ddg)        │
 │  /f, /tk, /b, /a             - Follow-up, Think, Brainstorm, All    │
 │  file <path>                 - Load file into context               │
 │  exit, quit, q               - Exit                                 │
