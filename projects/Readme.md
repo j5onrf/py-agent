@@ -177,7 +177,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 │  /m                          - Toggle database memory & TPM facts   │
 │  /stats                      - Generation speed stats               │
 │  /tok                        - Context token usage                  │
-│  /sync                       - Sync index                           │
+│  /sync                       - Sync index-map                       │
 │  /clear, /c                  - Soft clear active chat history       │
 │  /reset, /purge              - Hard reset (.agent & database)       │
 │  /s <q>, /s off              - Load or unload on-demand skill       │
@@ -204,7 +204,7 @@ Cross-platform React desktop and WebUI workspace for `py-agent`, powered by a cu
 ### Installation
 ```bash
 ~/.config/py-agent/plugins/pycode/setup.sh
-# (or run: install-pycode)
+# (or run: install pycode)
 ```
 
 ### Launch Modes

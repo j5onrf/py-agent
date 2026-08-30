@@ -1,6 +1,6 @@
 import unittest
 
-from calculator import add, multiply, subtract, divide
+from calculator import add, multiply, subtract, divide, power, modulo
 
 class TestCalculator(unittest.TestCase):
     def test_divide(self):
@@ -29,6 +29,17 @@ class TestCalculator(unittest.TestCase):
         self.assertEqual(multiply(2, 3), 6)
         self.assertEqual(multiply(-1, 1), -1)
         self.assertEqual(multiply(0, 5), 0)
+
+    def test_power(self):
+        self.assertEqual(power(2, 3), 8)
+        self.assertEqual(power(0, 5), 0)
+        self.assertEqual(power(-2, 2), 4)
+
+    def test_modulo(self):
+        self.assertEqual(modulo(10, 3), 1)
+        self.assertEqual(modulo(-10, 3), 2)  # Python's modulo behavior
+        with self.assertRaises(ZeroDivisionError):
+            result = modulo(5, 0)
 
 
 if __name__ == "__main__":
