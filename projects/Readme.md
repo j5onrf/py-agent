@@ -159,12 +159,13 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 ## 3. Command Reference
 
 ```console
-╭─  ⚙ Help & Commands  ──────────────────────────────────────────────╮
+╭─  ⚙ Help & Commands  ───────────────────────────────────────────────╮
 │   Shortcuts: Esc: bypass  Ctrl+C: cancel                            │
 │                                                                     │
 │   Available commands:                                               │
 │  /h                          - Help menu                            │
-│  /pyc, /pyc web              - Desktop GUI or WebUI                 │
+│  /gnd [budget|on|off]        - Google Search grounding              │
+│  /pyc, /pyc web              - Desktop GUI or WebUI (PyCode)        │
 │  /webui, /web                - llama.cpp WebAgent gateway           │
 │  /tui                        - Textual TUI                          │
 │  /v [auto], /voice           - Voice to text                        │
@@ -426,17 +427,29 @@ Real-time reasoning trace step extraction and cognitive phase formatting inside 
 - **Show / Hide Thinking:** `/t show` or `/t hide` — Toggle real-time thinking panel visibility while reasoning mode stays active.
 - **Quick Toggle:** `/t` — Toggle deep reasoning mode ON/OFF.
 
+#### 🟢 AFTER (Replace):
+```markdown
 ---
 
 ## 17. Voice Bridge & Neural Audio (`/v` & `/tts`)
 
 - **Voice to Text (`/v` / `/v auto`):** HTTPS bridge (`:9999`) for mobile/tablet dictation. Use `/v` for prompt review, `/v auto` for auto-submit.
-- **Neural TTS (`/tts`):** Reads responses aloud via PipeWire & Kokoro; auto-filters code and `<think>` blocks.
+- **Neural TTS (`/tts`):** Reads responses aloud via PipeWire & Kokoro; auto-filters code and `<think>` blocks silently.
 - **Stop Speech:** Run `pkill -9 -f "pw-play|koko"`, type `stop talking`, or bind `Super+Shift+X`.
 
 ---
 
-## 18. Environment Variables & Context Limits
+## 18. Google Search Grounding (`/gnd`)
+
+Real-time web search grounding via Gemini (`gemini-2.5-flash`) with DuckDuckGo fallback.
+
+- **Toggle Search:** `/gnd` — Turn grounding ON / OFF.
+- **Set Output Budget:** `/gnd <N>` — Set search token budget (e.g. `/gnd 700`, `/gnd 500`). Default: **700 tokens** (balanced for fast CPU prefill).
+- **Explicit States:** `/gnd on` or `/gnd off`
+- **Surface Sync:** PyCode (`/pyc`), PyTUI (`/tui`), and llama.cpp WebAgent (`/webui`, `/web`) inherit your active `/gnd` settings automatically.
+---
+
+## 19. Environment Variables & Context Limits
 
 Override max context token limits or model defaults:
 ```bash

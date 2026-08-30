@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.05] - Pure Standard In-Memory Architecture"""
+"""Py Agent [j5onrf] [v0.9.9.07] - Pure Standard In-Memory Architecture"""
 
 import json
 import os
@@ -162,7 +162,6 @@ def run_interactive_chat(args: list[str]) -> None:
         active_system_prompt = profile_content or BASE_PROMPT_AGENT
         os.environ["AI_ACTIVE_SKILL"] = clean_name
         
-        # Honor frontmatter map override first, with -map suffix fallback
         st = core.get_state()
         if "use_map" in st:
             use_map = bool(st["use_map"])
@@ -218,10 +217,27 @@ def run_interactive_chat(args: list[str]) -> None:
                 parts = query.split()
                 cmd = parts[0].lower() if parts else ""
 
-                if cmd in ("/gnd", "/ground", "/web"):
-                    gnd_active = not core.get_state("grounding_active", False)
-                    core.save_state("grounding_active", gnd_active)
-                    ui._console.print(f"[green][sys] Google Search grounding via Gemini {'enabled' if gnd_active else 'disabled'}.[/green]\n")
+                if cmd in ("/gnd", "/ground"):
+                    if len(parts) > 1:
+                        sub = parts[1].lower()
+                        if sub in ("off", "disable", "false", "0"):
+                            core.save_state("grounding_active", False)
+                            ui._console.print("[yellow][sys] Google Search grounding disabled.[/yellow]\n")
+                        elif sub in ("on", "enable", "true"):
+                            core.save_state("grounding_active", True)
+                            g_bud = core.get_state("grounding_budget", 700)
+                            ui._console.print(f"[green][sys] Google Search grounding enabled (budget: {g_bud} tokens).[/green]\n")
+                        elif sub.isdigit():
+                            g_bud = max(0, int(sub))
+                            gnd_active = g_bud > 0
+                            core.save_state("grounding_active", gnd_active)
+                            core.save_state("grounding_budget", g_bud)
+                            ui._console.print(f"[green][sys] Google Search grounding {'enabled' if gnd_active else 'disabled'} (budget: {g_bud} tokens).[/green]\n")
+                    else:
+                        gnd_active = not core.get_state("grounding_active", False)
+                        g_bud = core.get_state("grounding_budget", 700)
+                        core.save_state("grounding_active", gnd_active)
+                        ui._console.print(f"[green][sys] Google Search grounding {'enabled (budget: ' + str(g_bud) + ' tokens)' if gnd_active else 'disabled'}.[/green]\n")
                     continue
 
                 if cmd in ("/v", "/voice"):

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Py-Agent Official WebUI Gateway [j5onrf]
-Streams 100% official llama.cpp WebUI with full TPS speed and token timing metrics.
+Streams 100% official llama.cpp WebUI with full TPS speed, multimodal vision, and live Google Search Grounding.
 """
 
 import gzip
@@ -57,10 +57,15 @@ def detect_workspace_mode(workspace: str) -> tuple[bool, str, bool]:
 
 
 def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) -> str:
+    use_gnd = core.get_state("grounding_active", False)
+
     if not is_agent:
         clean_name = profile_name if profile_name else "chat"
         skill_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
-        return skill_content or BASE_PROMPT_CHAT
+        prompt = skill_content or BASE_PROMPT_CHAT
+        if use_gnd:
+            prompt += "\n\nCRITICAL GROUNDING DIRECTIVE: You have access to live Google Search via the 'web_search' tool. Always call web_search for real-time facts, current dates, market prices, or recent software releases. When tool results are returned, you MUST base your final answer strictly on the verified live tool data and disregard any outdated pre-training knowledge."
+        return prompt
 
     clean_name = profile_name if profile_name != "init" else "pi/pro"
     profile_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
@@ -75,7 +80,7 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
         f"### ACTIVE DEVELOPER AGENT MODE:\n"
         f"Workspace Root: {workspace}\n"
         f"CRITICAL DIRECTIVES:\n"
-        f"1. Immediately execute actions using available tools (read_file, edit_file, write_file, list_dir, run_command, read_symbol).\n"
+        f"1. Immediately execute actions using available tools (read_file, edit_file, write_file, list_dir, run_command, read_symbol, web_search).\n"
         f"2. Use relative paths from Workspace Root. Avoid repeating identical tool queries.\n\n"
     )
 
@@ -106,6 +111,9 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
                         break
                 except OSError:
                     pass
+
+    if use_gnd:
+        sys_prompt += "\n\nCRITICAL GROUNDING DIRECTIVE: When tool results from 'web_search' are returned, you MUST base your final answer strictly on the verified live tool data and disregard any outdated pre-training knowledge."
 
     return sys_prompt
 
@@ -211,9 +219,10 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
 
         workspace = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
         is_agent, profile_name, _ = detect_workspace_mode(workspace)
+        use_gnd = core.get_state("grounding_active", False)
         messages = body.get("messages", [])
 
-        # Preprocess multimodal image payloads via Gemini 3.5 Flash Lite
+        # Preprocess multimodal image payloads via Gemini Flash Lite
         messages = core.preprocess_multimodal_messages(messages)
 
         # Inject Py-Agent system prompt
@@ -240,12 +249,19 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
         os.environ["AI_CONFIRM_GATES"] = "0"
 
         try:
-            for _round in range(10 if is_agent else 1):
+            for _round in range(10 if (is_agent or use_gnd) else 1):
                 req_body = {**body, "messages": messages, "stream": True}
                 if "stream_options" not in req_body:
                     req_body["stream_options"] = {"include_usage": True}
+
+                active_tools = []
                 if is_agent:
-                    req_body["tools"] = tools.EDIT_TOOLS
+                    active_tools = list(tools.EDIT_TOOLS)
+                if use_gnd and hasattr(tools, "WEB_TOOL"):
+                    active_tools.append(tools.WEB_TOOL)
+
+                if active_tools:
+                    req_body["tools"] = active_tools
                 else:
                     req_body.pop("tools", None)
 
@@ -296,7 +312,7 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                             if content:
                                 acc_content.append(content)
 
-                            if is_agent:
+                            if is_agent or use_gnd:
                                 for tc in delta.get("tool_calls", []):
                                     idx = tc.get("index", 0)
                                     call_id = tc.get("id") or f"call_{_round}_{idx}"
@@ -331,8 +347,11 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                     else None
                 )
                 ans_text = "".join(acc_content)
+                has_web_call = use_gnd and any(
+                    c.get("function", {}).get("name") == "web_search" for c in (calls or [])
+                )
 
-                if not calls or not is_agent:
+                if not calls or (not is_agent and not has_web_call):
                     accumulated_ans = ans_text
                     break
 
@@ -352,21 +371,36 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                     fname = tc.get("function", {}).get("name", "")
                     raw_args = tc.get("function", {}).get("arguments", "")
                     args = core._heal_tool_args(raw_args)
-                    verb = tools.TOOL_VERBS.get(fname, "working")
                     cid = tc.get("id") or f"call_{_round}_0"
 
-                    start_msg = f"\n\n> ⚙️ **{verb.title()}** • `{fname}`...\n"
-                    self.wfile.write(
-                        f"data: {json.dumps({'choices': [{'delta': {'content': start_msg}}]})}\n\n".encode()
-                    )
-                    self.wfile.flush()
-
-                    try:
-                        result = tools.run_tool(
-                            fname, args, workspace, confirm_gate_fn=lambda r: True
+                    if fname == "web_search":
+                        query_term = str(args.get("query", "")).strip()
+                        start_msg = f"\n\n> 🔍 **Searching Google** • `{query_term}`...\n"
+                        self.wfile.write(
+                            f"data: {json.dumps({'choices': [{'delta': {'content': start_msg}}]})}\n\n".encode()
                         )
-                    except Exception as e:
-                        result = f"[tool error] {e}"
+                        self.wfile.flush()
+                        try:
+                            result = (
+                                tools.search_web_gemini(query_term)
+                                if hasattr(tools, "search_web_gemini")
+                                else tools.run_tool(fname, args, workspace)
+                            )
+                        except Exception as e:
+                            result = f"[tool error] {e}"
+                    else:
+                        verb = tools.TOOL_VERBS.get(fname, "working")
+                        start_msg = f"\n\n> ⚙️ **{verb.title()}** • `{fname}`...\n"
+                        self.wfile.write(
+                            f"data: {json.dumps({'choices': [{'delta': {'content': start_msg}}]})}\n\n".encode()
+                        )
+                        self.wfile.flush()
+                        try:
+                            result = tools.run_tool(
+                                fname, args, workspace, confirm_gate_fn=lambda r: True
+                            )
+                        except Exception as e:
+                            result = f"[tool error] {e}"
 
                     pruned = (
                         result

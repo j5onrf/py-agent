@@ -277,11 +277,20 @@ def search_web_gemini(query: str) -> str:
             models_to_try.append(fallback)
 
     if key:
-        sys_prompt = "You are a dense factual search summarizer. Extract the exact facts, version numbers, dates, or code solutions to answer the query in under 120 words. No conversational fluff."
+        budget = 700
+        for p in (os.path.join(CFG_DIR, ".state.json"),):
+            if os.path.isfile(p):
+                try:
+                    with open(p, "r", encoding="utf-8") as sf:
+                        budget = int(json.load(sf).get("grounding_budget", 700))
+                except Exception:
+                    pass
+
+        sys_prompt = "You are a dense factual research engine. Extract the exact facts, version numbers, dates, tables, and solutions directly from search results. Be thorough with data and numbers, but keep explanations dense, concise, and under 250 words without conversational filler."
         payload = {
             "contents": [{"parts": [{"text": f"{sys_prompt}\n\nSearch Query: {query}"}]}],
             "tools": [{"google_search": {}}],
-            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 300}
+            "generationConfig": {"temperature": 0.1, "maxOutputTokens": max(350, budget)}
         }
         data_bytes = json.dumps(payload).encode("utf-8")
 

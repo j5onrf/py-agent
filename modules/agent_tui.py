@@ -64,8 +64,8 @@ def copy_to_clipboard(text: str) -> bool:
     try:
         sys.stdout.write(f"\x1b]52;c;{base64.b64encode(text.encode()).decode()}\x07"); sys.stdout.flush()
     except OSError: pass
-    tools = [_CACHED_CLIPBOARD_TOOL] if _CACHED_CLIPBOARD_TOOL else [["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"], ["pbcopy"], ["clip.exe"]]
-    for tool in filter(None, tools):
+    tools_list = [_CACHED_CLIPBOARD_TOOL] if _CACHED_CLIPBOARD_TOOL else [["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"], ["pbcopy"], ["clip.exe"]]
+    for tool in filter(None, tools_list):
         try:
             p = subprocess.Popen(tool, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
             p.communicate(input=text.encode(), timeout=1.0)
@@ -190,7 +190,6 @@ class Message(Static):
                         clean_r = MULTI_NEWLINE_RE.sub('\n\n', CLEAN_CODE_BLOCKS_RE.sub('```\n', rest.strip()))
                         items.append(Markdown(clean_r, code_theme=code_fmt))
                 else:
-                    # Active reasoning: render live glimmering wave across header
                     items.append(_glimmer_tui_text("✦ Thinking...", app_t))
                     if show_th and aft.strip():
                         items.append(_format_tui_reasonix_text(aft.strip(), app_t))
@@ -411,7 +410,7 @@ class LocalAITUI(App):
             if self.query("#welcome-banner"):
                 t = Table(show_header=False, box=None, padding=(0, 2), expand=False)
                 t.add_column("Key", style="bold #89b4fa" if "code" in self.theme else "bold cyan"); t.add_column("Action", style="default")
-                for k, a in [("Tab", "Plan / Build Mode"), ("Ctrl+B", "Toggle Sidebar"), ("Ctrl+T", "Cycle Themes"), ("Ctrl+I", "Attach Image"), ("Ctrl+O", "Copy Response"), ("Ctrl+Q", "Quit TUI"), ("/help", "Commands")]: t.add_row(k, a)
+                for k, a in [("Tab", "Plan / Build Mode"), ("Ctrl+B", "Toggle Sidebar"), ("Ctrl+T", "Cycle Themes"), ("Ctrl+I", "Attach Image"), ("/gnd", "Toggle Grounding"), ("Ctrl+O", "Copy Response"), ("Ctrl+Q", "Quit TUI"), ("/help", "Commands")]: t.add_row(k, a)
                 self.query_one("#welcome-banner", Static).update(Panel(t, title=" ∿ PyTUI ", title_align="left", border_style=self.border_accent, box=ROUNDED, expand=False))
         except Exception: pass
 
@@ -466,7 +465,8 @@ class LocalAITUI(App):
         self.lbl_database, self.lbl_stats, self.lbl_voice, self.lbl_tts, self.lbl_image = self.query_one("#lbl-database", Static), self.query_one("#lbl-stats", Static), self.query_one("#lbl-voice", Static), self.query_one("#lbl-tts", Static), self.query_one("#lbl-image", Static)
         self.lbl_grounding = self.query_one("#lbl-grounding", Static)
         gnd_on = core.get_state("grounding_active", False)
-        self.lbl_grounding.update(f"[dim]Gnd[/dim]        {'Active' if gnd_on else 'Disabled'}")
+        g_bud = core.get_state("grounding_budget", 700)
+        self.lbl_grounding.update(f"[dim]Gnd[/dim]        {f'{g_bud}t' if gnd_on else 'Disabled'}")
 
         use_ip = ("py-" in self.active_skill.lower() or (ipython and ipython.is_ipython_enabled())) if self.is_agent else False
         self.lbl_harness.update("[dim]Harness[/dim] " + ("NOOA IPython" if use_ip else ("Native Tools" if self.is_agent else "Chat Mode")))
@@ -556,18 +556,37 @@ class LocalAITUI(App):
         if root in ("/help", "/h"):
             t = Table(show_header=False, box=None, padding=(0, 1), expand=False)
             t.add_column("Command", style="bold #89b4fa" if "code" in self.theme else "bold cyan"); t.add_column("Description", style="default")
-            for c, d in [("/h", "Help"), ("/gnd", "Google Grounding"), ("/v", "Voice to text"), ("/tts", "Text to speech"), ("/py", "NOOA IPython"), ("Tab", "Plan/Build"), ("/task", "Task Loop"), ("/copy", "Copy transcript"), ("/m", "Memory toggle"), ("/clear, /c", "Clear chat"), ("/reset", "Hard reset"), ("/tok", "Tokens"), ("/sync", "Sync AST index"), ("/s <q>", "Load Skill"), ("/t <toks>", "Reasoning"), ("Ctrl+I", "Attach Image"), ("file <p>", "Load File"), ("q", "Exit")]: t.add_row(c, d)
+            for c, d in [("/help, /h", "Help"), ("/gnd", "Google Grounding"), ("/v", "Voice to text"), ("/tts", "Text to speech"), ("/py", "NOOA IPython"), ("Tab", "Plan/Build"), ("/task", "Task Loop"), ("/copy", "Copy transcript"), ("/m", "Memory toggle"), ("/clear, /c", "Clear chat"), ("/reset", "Hard reset"), ("/tok", "Tokens"), ("/sync", "Sync AST index"), ("/s <q>", "Load Skill"), ("/t <toks>", "Reasoning"), ("Ctrl+I", "Attach Image"), ("file <p>", "Load File"), ("q", "Exit")]: t.add_row(c, d)
             await self.chat_area.mount(Static(Group(Text(""), Panel(t, title="Commands", title_align="left", border_style=self.border_accent, box=ROUNDED, expand=False))))
             self.chat_area.scroll_end(animate=False)
         elif root == "/theme":
             if args and args.strip().lower() in self.THEMES: self.theme = args.strip().lower(); self.notify(f"Theme: [bold]{self.theme}[/bold].", css_class="theme-notice")
             else: self.action_cycle_theme()
-        elif root in ("/gnd", "/ground", "/web"):
-            act = not core.get_state("grounding_active", False)
-            core.save_state("grounding_active", act)
-            if hasattr(self, "lbl_grounding"):
-                self.lbl_grounding.update(f"[dim]Gnd[/dim]        {'Active' if act else 'Disabled'}")
-            self.notify(f"Google Search grounding via Gemini {'enabled' if act else 'disabled'}.")
+        elif root in ("/gnd", "/ground"):
+            if args:
+                sub = args.strip().lower()
+                if sub in ("off", "disable", "false", "0"):
+                    core.save_state("grounding_active", False)
+                    if hasattr(self, "lbl_grounding"): self.lbl_grounding.update("[dim]Gnd[/dim]        Disabled")
+                    self.notify("Google Search grounding disabled.")
+                elif sub in ("on", "enable", "true"):
+                    core.save_state("grounding_active", True)
+                    b_val = core.get_state("grounding_budget", 700)
+                    if hasattr(self, "lbl_grounding"): self.lbl_grounding.update(f"[dim]Gnd[/dim]        {b_val}t")
+                    self.notify(f"Google Search grounding enabled ({b_val} tokens).")
+                elif sub.isdigit():
+                    b_val = max(0, int(sub))
+                    act = b_val > 0
+                    core.save_state("grounding_active", act)
+                    core.save_state("grounding_budget", b_val)
+                    if hasattr(self, "lbl_grounding"): self.lbl_grounding.update(f"[dim]Gnd[/dim]        {f'{b_val}t' if act else 'Disabled'}")
+                    self.notify(f"Google Search grounding {'enabled' if act else 'disabled'} (budget: {b_val} tokens).")
+            else:
+                act = not core.get_state("grounding_active", False)
+                b_val = core.get_state("grounding_budget", 700)
+                core.save_state("grounding_active", act)
+                if hasattr(self, "lbl_grounding"): self.lbl_grounding.update(f"[dim]Gnd[/dim]        {f'{b_val}t' if act else 'Disabled'}")
+                self.notify(f"Google Search grounding {'enabled' if act else 'disabled'} ({b_val} tokens).")
         elif root in ("/py", "/ipython"):
             act = ipython.toggle_ipython_mode(True if args else None) if ipython else False
             if hasattr(self, "lbl_harness"): self.lbl_harness.update("[dim]Harness[/dim] " + ("NOOA IPython" if act else "Native Tools"))
@@ -807,7 +826,6 @@ class LocalAITUI(App):
             self.stats_turns += 1
             self.call_from_thread(self.update_stats_ui, self.stats_turns, tps, tot_el)
             
-            # Direct TTS Speech Synthesis Trigger (strips <think> and speaks cleanly)
             if accumulated:
                 clean_speech = THINK_TAGS_RE.sub('', accumulated).replace("Final Answer:", "").strip()
                 if clean_speech and hasattr(tts, "speak_response"):

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """ACP (Agent Client Protocol) stdio Bridge for PyCode / T3 Code WebApp [In-Memory Edition]
-Connects PyCode GUI directly to py-agent engine and local llama.cpp server with full multimodal vision.
+Connects PyCode GUI directly to py-agent engine and local llama.cpp server with full multimodal vision and grounding.
 """
 
 import json
@@ -24,6 +24,7 @@ if MODULES_DIR not in sys.path:
 
 import agent_cloud
 import agent_core as core
+import agent_ipython as ipython
 import agent_memories as memories
 import agent_sessions as sessions
 import agent_skills as skills
@@ -98,11 +99,15 @@ def detect_workspace_mode(workspace: str) -> tuple[bool, str, bool]:
 
 def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) -> str:
     safe_name = core.workspace_safe_name(workspace)
+    use_gnd = core.get_state("grounding_active", False)
 
     if not is_agent:
         clean_name = profile_name if (profile_name and profile_name != "pi/pro") else "chat"
         skill_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
-        return skill_content or BASE_PROMPT_CHAT
+        prompt = skill_content or BASE_PROMPT_CHAT
+        if use_gnd:
+            prompt += "\n\nCRITICAL GROUNDING DIRECTIVE: You have access to live Google Search via the 'web_search' tool. Always call web_search for real-time facts, current dates, market prices, or recent software releases. When tool results are returned, you MUST base your final answer strictly on the verified live tool data and disregard any outdated pre-training knowledge."
+        return prompt
 
     clean_name = profile_name if profile_name != "init" else "pi/pro"
     profile_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
@@ -161,6 +166,7 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
     core.save_state("yolo_mode", is_yolo)
 
     st = core.get_state()
+    use_gnd = st.get("grounding_active", False)
     reasoning_active = st.get("reasoning_active", False)
     reasoning_budget = st.get("reasoning_budget", 500) if reasoning_active else 0
     enable_think = reasoning_active and reasoning_budget > 0
@@ -173,9 +179,12 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
         "chat_template_kwargs": {"enable_thinking": enable_think}
     }
 
+    sys_context = assemble_system_prompt(workspace, is_agent, profile_name)
     if session_id not in SESSION_HISTORIES:
-        sys_context = assemble_system_prompt(workspace, is_agent, profile_name)
         SESSION_HISTORIES[session_id] = [{"role": "system", "content": sys_context}]
+    else:
+        if SESSION_HISTORIES[session_id] and SESSION_HISTORIES[session_id][0].get("role") == "system":
+            SESSION_HISTORIES[session_id][0]["content"] = sys_context
 
     messages = SESSION_HISTORIES[session_id]
 
@@ -204,6 +213,18 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
                 multimodal_content.append({"type": "image_url", "image_url": {"url": url}})
 
     user_text = " ".join(text_chunks).strip() or "Describe this image."
+
+    # Intercept /gnd slash command directly in PyCode GUI
+    if user_text.lower().strip() in ("/gnd", "/ground", "/web"):
+        cur_gnd = not core.get_state("grounding_active", False)
+        core.save_state("grounding_active", cur_gnd)
+        status_msg = f"\n*Google Search grounding via Gemini {'enabled' if cur_gnd else 'disabled'}.*\n"
+        send_acp_chunk(session_id, status_msg)
+        messages.append({"role": "user", "content": user_text})
+        messages.append({"role": "assistant", "content": status_msg})
+        send_rpc_response(req_id, result={"stopReason": "end_turn"})
+        return
+
     has_images = any(i.get("type") == "image_url" for i in multimodal_content)
     turn_content = multimodal_content if has_images else user_text
 
@@ -215,7 +236,7 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
 
     accumulated_ans = ""
     in_think_block = False
-    max_rounds = 10 if is_agent else 1
+    max_rounds = 10 if (is_agent or use_gnd) else 1
 
     try:
         for _round in range(max_rounds):
@@ -235,9 +256,16 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
             }
             if is_local:
                 body.update(think_kwargs)
+
+            active_tools = []
             if is_agent:
                 is_py = "-py" in profile_name.lower() or "py-" in profile_name.lower()
-                body["tools"] = ipython.IPYTHON_TOOL if (is_py and ipython) else tools.EDIT_TOOLS
+                active_tools = list(ipython.IPYTHON_TOOL) if (is_py and ipython) else list(tools.EDIT_TOOLS)
+            if use_gnd and hasattr(tools, "WEB_TOOL"):
+                active_tools.append(tools.WEB_TOOL)
+
+            if active_tools:
+                body["tools"] = active_tools
 
             res = None
             try:
@@ -307,7 +335,7 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
                                 round_text += text_chunk
                                 send_acp_chunk(session_id, text_chunk, is_thought=False)
 
-                        if is_agent:
+                        if is_agent or use_gnd:
                             for tc in delta.get("tool_calls", []):
                                 idx = tc.get("index", 0)
                                 tc_entry = tool_calls_map.setdefault(idx, {"id": tc.get("id", ""), "type": "function", "function": {"name": tc.get("function", {}).get("name", ""), "arguments": ""}})
@@ -335,8 +363,9 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
                 break
 
             calls = [val for _, val in sorted(tool_calls_map.items())] if tool_calls_map else None
+            has_web_call = use_gnd and any(c.get("function", {}).get("name") == "web_search" for c in (calls or []))
 
-            if not calls or not is_agent:
+            if not calls or (not is_agent and not has_web_call):
                 messages.append({"role": "assistant", "content": round_text})
                 break
 
@@ -349,11 +378,20 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
                 raw_args = tc.get("function", {}).get("arguments") or ""
                 args = core._heal_tool_args(raw_args)
 
-                send_acp_chunk(session_id, f"\n\n*Running tool: `{fname}`...*\n")
-                try:
-                    result = tools.run_tool(fname, args, workspace)
-                except Exception as e:
-                    result = f"[error] tool execution failed: {e}"
+                # Strategy A: Safe Read-Only Exception for web_search
+                if fname == "web_search":
+                    query_term = str(args.get("query", "")).strip()
+                    send_acp_chunk(session_id, f"\n\n*Searching Google for: `{query_term}`...*\n")
+                    try:
+                        result = tools.search_web_gemini(query_term) if hasattr(tools, "search_web_gemini") else tools.run_tool(fname, args, workspace)
+                    except Exception as e:
+                        result = f"[error] web search failed: {e}"
+                else:
+                    send_acp_chunk(session_id, f"\n\n*Running tool: `{fname}`...*\n")
+                    try:
+                        result = tools.run_tool(fname, args, workspace)
+                    except Exception as e:
+                        result = f"[error] tool execution failed: {e}"
 
                 pruned_result = result if len(result) <= 2000 else result[:1500] + f"\n... [Snipped {len(result) - 1500} chars]"
                 messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": fname, "content": pruned_result})
@@ -465,7 +503,10 @@ def main():
                     pass
             send_rpc_response(req_id, result={})
         elif method == "tools/list":
-            send_rpc_response(req_id, result={"tools": tools.EDIT_TOOLS})
+            t_list = list(tools.EDIT_TOOLS)
+            if core.get_state("grounding_active", False) and hasattr(tools, "WEB_TOOL"):
+                t_list.append(tools.WEB_TOOL)
+            send_rpc_response(req_id, result={"tools": t_list})
         elif method == "shutdown":
             send_rpc_response(req_id, result={"status": "ok"})
             break
