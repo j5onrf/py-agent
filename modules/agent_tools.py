@@ -149,6 +149,25 @@ TOOL_VERBS = {
     "write_file": "updating",
     "list_dir": "checking",
     "run_command": "executing",
+    "web_search": "searching Google",
+}
+
+WEB_TOOL: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "web_search",
+        "description": "Search live Google Search via Gemini Grounding for current facts, latest documentation, releases, or solutions.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Dense keyword search query (e.g. 'Arch linux kernel latest release 2026')",
+                }
+            },
+            "required": ["query"],
+        },
+    },
 }
 
 _graph_module = None
@@ -224,6 +243,51 @@ def run_graph_cmd(cmd_name: str, arg: str, workspace: str) -> str:
         return out or f"[error] '{cmd_name}' returned no results for '{arg}'."
     except (OSError, subprocess.SubprocessError, TimeoutError) as e:
         return f"[error] failed to run graph command {cmd_name}: {e}"
+
+
+def search_web_gemini(query: str) -> str:
+    """Runs Google Search grounding via Gemini API and returns a compact, low-token summary."""
+    import urllib.request as urlreq
+
+    key = os.environ.get("GND_KEY", "") or os.environ.get("GEM_VOICE", "") or os.environ.get("IMG_VOICE", "") or os.environ.get("GEMINI_API_KEY", "")
+    model = os.environ.get("GND_MODEL", "") or os.environ.get("GEM_MODEL", "") or os.environ.get("IMG_MODEL", "") or "gemini-2.5-flash"
+
+    if not key:
+        for p in (os.path.join(CFG_DIR, ".env"), os.path.expanduser("~/.config/local-ai/.env"), ".env"):
+            if os.path.isfile(p):
+                try:
+                    with open(p, "r", encoding="utf-8") as f:
+                        for l in f:
+                            s = l.strip()
+                            if s and not s.startswith("#"):
+                                if any(s.startswith(x) for x in ("GND_KEY=", "GEM_VOICE=", "IMG_VOICE=", "GEMINI_API_KEY=")) and not key:
+                                    key = s.split("=", 1)[1].strip().strip("'\"")
+                                if any(s.startswith(x) for x in ("GND_MODEL=", "GEM_MODEL=", "IMG_MODEL=")) and not os.environ.get("GND_MODEL"):
+                                    model = s.split("=", 1)[1].strip().strip("'\"")
+                except Exception:
+                    pass
+
+    if not key:
+        return "[error] GND_KEY or Gemini API key not found in .env."
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+    sys_prompt = "You are a dense factual search summarizer. Extract the exact facts, version numbers, dates, or code solutions to answer the query in under 120 words. No conversational fluff."
+    
+    payload = {
+        "contents": [{"parts": [{"text": f"{sys_prompt}\n\nSearch Query: {query}"}]}],
+        "tools": [{"google_search": {}}],
+        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 300}
+    }
+
+    try:
+        req = urlreq.Request(url, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST")
+        with urlreq.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode())
+        parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+        text = "".join(p.get("text", "") for p in parts if "text" in p).strip()
+        return text or "[web_search returned no results]"
+    except Exception as e:
+        return f"[web_search error: {e}]"
 
 
 def run_tool(
@@ -500,7 +564,19 @@ def run_tool(
         except OSError as e:
             return f"[error] failed to list files: {e}"
 
-    # 4. Shell Execution
+    # 4. Web Search Grounding
+    if name == "web_search":
+        q = args.get("query", "").strip()
+        if not q:
+            return "[error] Parameter 'query' cannot be empty."
+        if confirm_gate_fn and gates_active and not _gate(f"search Google for: '{q}'"):
+            return denial
+        out = search_web_gemini(q)
+        if print_output_fn:
+            print_output_fn(out)
+        return out
+
+    # 5. Shell Execution
     if name == "run_command":
         cmd = args.get("command", "")
         expanded = cmd.replace("~", os.path.expanduser("~"))

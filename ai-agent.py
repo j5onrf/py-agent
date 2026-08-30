@@ -218,6 +218,12 @@ def run_interactive_chat(args: list[str]) -> None:
                 parts = query.split()
                 cmd = parts[0].lower() if parts else ""
 
+                if cmd in ("/gnd", "/ground", "/web"):
+                    gnd_active = not core.get_state("grounding_active", False)
+                    core.save_state("grounding_active", gnd_active)
+                    ui._console.print(f"[green][sys] Google Search grounding via Gemini {'enabled' if gnd_active else 'disabled'}.[/green]\n")
+                    continue
+
                 if cmd in ("/v", "/voice"):
                     is_auto = len(parts) > 1 and parts[1].lower() == "auto"
                     active, auto_mode = voice.toggle_voice_bridge(auto_toggle=is_auto)

@@ -558,6 +558,10 @@ class LocalAITUI(App):
         elif root == "/theme":
             if args and args.strip().lower() in self.THEMES: self.theme = args.strip().lower(); self.notify(f"Theme: [bold]{self.theme}[/bold].", css_class="theme-notice")
             else: self.action_cycle_theme()
+        elif root in ("/gnd", "/ground", "/web"):
+            act = not core.get_state("grounding_active", False)
+            core.save_state("grounding_active", act)
+            self.notify(f"Google Search grounding via Gemini {'enabled' if act else 'disabled'}.")
         elif root in ("/py", "/ipython"):
             act = ipython.toggle_ipython_mode(True if args else None) if ipython else False
             if hasattr(self, "lbl_harness"): self.lbl_harness.update("[dim]Harness[/dim] " + ("NOOA IPython" if act else "Native Tools"))

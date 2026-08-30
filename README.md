@@ -2,7 +2,7 @@
   <img alt="py-agent" src="logo.svg" height="130" />
 </div>
 
-<h1 align="center">Py Agent <img src="https://shieldcn.dev/badge/version-v0.9.9.05.svg?variant=secondary" alt="Version"><a href="https://github.com/j5onrf/py-agent"></a></h1>
+<h1 align="center">Py Agent <img src="https://shieldcn.dev/badge/version-v0.9.9.06.svg?variant=secondary" alt="Version"><a href="https://github.com/j5onrf/py-agent"></a></h1>
 
 <p align="center">
   <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/github/last-commit/j5onrf/py-agent.svg?color=emerald&variant=secondary" alt="Last Commit"></a>
@@ -205,6 +205,10 @@ OPENAI_MODEL="gpt-luna"
 # ── 6. x.AI Grok ─────────────────────────────────────────────────────────────
 # XAI_API_KEY="xai-YourGrokKeyHere"
 XAI_MODEL="grok-5.6"
+
+# ── Google Search Grounding (/gnd) ───────────────────────────────────────────
+# GND_KEY="AIzaSyYourGeminiApiKeyHere"
+# GND_MODEL="gemini-3.5-flash-lite"
 
 # ── Voice Bridge Transcription (Optional) ────────────────────────────────────
 # GEM_VOICE="AIzaSyYourGeminiApiKeyHere"

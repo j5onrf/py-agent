@@ -497,11 +497,27 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
             messages = prune_history(messages, max_tokens=int(max_ctx * 0.6))
 
         body_tools = {**body, "messages": messages, "stream": True}
+        st = get_state()
+        use_gnd = st.get("grounding_active", False)
+
         if is_agent:
-            active_skill = os.environ.get("AI_ACTIVE_SKILL", "")
-            st = get_state()
-            is_py_profile = st.get("ipython_mode", False) or "py-" in active_skill.lower() or "-py" in active_skill.lower() or active_skill.lower().endswith("py")
-            body_tools["tools"] = ipython.IPYTHON_TOOL if (is_py_profile and ipython) else EDIT_TOOLS
+            active_skill = os.environ.get("AI_ACTIVE_SKILL", "").lower()
+            is_py_profile = st.get("ipython_mode", False) or "py-" in active_skill or "-py" in active_skill or active_skill.endswith("py")
+            use_map = "-map" in active_skill or "map-" in active_skill or st.get("use_map", False)
+
+            if is_py_profile and ipython:
+                active_tools = list(ipython.IPYTHON_TOOL)
+            elif use_map:
+                active_tools = list(EDIT_TOOLS)
+            else:
+                active_tools = list(getattr(tools, "LEAN_TOOLS", EDIT_TOOLS))
+
+            if use_gnd and hasattr(tools, "WEB_TOOL"):
+                active_tools.append(tools.WEB_TOOL)
+
+            body_tools["tools"] = active_tools
+        elif use_gnd and hasattr(tools, "WEB_TOOL"):
+            body_tools["tools"] = [tools.WEB_TOOL]
 
         if spinner:
             try:
@@ -592,7 +608,9 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
                 speed_test.end(actual_out_tokens=out_tok, is_local=is_local, resolved_model=resolved_model, active_model=body.get("model"))
 
             calls = [val for _, val in sorted(tool_calls_map.items())] if tool_calls_map else None
-            if not calls or not is_agent:
+            has_web_call = use_gnd and any(c.get("function", {}).get("name") == "web_search" for c in (calls or []))
+
+            if not calls or (not is_agent and not has_web_call):
                 tool_toks = sum(get_accurate_token_count(m.get("content") or "") for m in messages if m.get("role") in ("assistant", "tool"))
                 final_out = max(out_tok, tool_toks)
                 if spinner:
