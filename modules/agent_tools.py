@@ -270,12 +270,7 @@ def search_web_gemini(query: str) -> str:
         key = key or env_vars.get("GND_KEY") or env_vars.get("GEM_VOICE") or env_vars.get("IMG_VOICE") or env_vars.get("GEMINI_API_KEY", "")
         model = model or env_vars.get("GND_MODEL") or "gemini-2.5-flash"
 
-    # Prioritize 2.5-flash / 2.5-flash-lite for free tier Google Search Grounding
-    models_to_try = [model]
-    for fallback in ("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.5-flash"):
-        if fallback not in models_to_try:
-            models_to_try.append(fallback)
-
+    # If Gemini API key is configured, run Google Grounding with model cascade
     if key:
         budget = 700
         for p in (os.path.join(CFG_DIR, ".state.json"),):
@@ -286,7 +281,18 @@ def search_web_gemini(query: str) -> str:
                 except Exception:
                     pass
 
-        sys_prompt = "You are a dense factual research engine. Extract the exact facts, version numbers, dates, tables, and solutions directly from search results. Be thorough with data and numbers, but keep explanations dense, concise, and under 250 words without conversational filler."
+        models_to_try = [model]
+        for fallback in ("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.5-flash"):
+            if fallback not in models_to_try:
+                models_to_try.append(fallback)
+
+        if budget >= 1500:
+            sys_prompt = "You are an exhaustive factual search researcher. Extract comprehensive data, full changelogs, complete API specifications, tables, and code solutions directly from the search results. Maintain exact numbers and verbatim quotes without omitting details."
+        elif budget <= 550:
+            sys_prompt = "You are an ultra-concise factual search engine. Extract only the exact core answer, version numbers, or dates in under 60 words without conversational filler."
+        else:
+            sys_prompt = "You are a dense factual research engine. Extract the exact facts, version numbers, dates, tables, and solutions directly from search results. Be thorough with data and numbers, but keep explanations concise and under 200 words without conversational filler."
+
         payload = {
             "contents": [{"parts": [{"text": f"{sys_prompt}\n\nSearch Query: {query}"}]}],
             "tools": [{"google_search": {}}],
@@ -307,15 +313,17 @@ def search_web_gemini(query: str) -> str:
             except Exception:
                 continue
 
-    # Zero-dependency instant DuckDuckGo search fallback if Google API quota is exhausted
+    # Zero-dependency instant DuckDuckGo search fallback (if key is missing OR API is exhausted)
     try:
         import html as htmllib
         ddg_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote_plus(query)}"
         req = urlreq.Request(ddg_url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"})
         with urlreq.urlopen(req, timeout=8) as resp:
             page_html = resp.read().decode("utf-8", errors="ignore")
+        # Scale DDG snippet count dynamically based on the active budget
+        max_snippets = 5 if budget >= 1500 else (2 if budget <= 550 else 3)
         snippets = re.findall(r'<a class="result__snippet[^>]*>(.*?)</a>', page_html, re.DOTALL)
-        clean = [htmllib.unescape(re.sub(r'<[^>]+>', '', s).strip()) for s in snippets[:3] if s.strip()]
+        clean = [htmllib.unescape(re.sub(r'<[^>]+>', '', s).strip()) for s in snippets[:max_snippets] if s.strip()]
         if clean:
             return "\n\n".join(clean)
     except Exception:

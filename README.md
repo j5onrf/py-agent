@@ -64,7 +64,7 @@ Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`)
 | **Integrity** | **Type-Safe & AST Guard** | [Pydantic AI](https://github.com/pydantic/pydantic-ai) schemas + [OpenAI Agents](https://github.com/openai/openai-agents-python)-style self-correcting `.py`/`.json` file writes. |
 | **Resilience** | **Self-Healing Tool Calls** | [Unsloth](https://github.com/unslothai/unsloth)-inspired heuristic parser fixing malformed JSON/XML arguments on the fly before tool execution. |
 | **Optimization** | **Token-Slasher** | Custom [`tools/`](tools/) and [`skills/`](skills/) integration built for minimal token consumption. |
-| **Grounding** | **Web Search Engine** | Real-time factual search retrieval (`/gnd`) with Gemini Grounding and DuckDuckGo safety fallback in CLI & TUI. |
+- [x] **Google Search Grounding (/gnd):** On-demand live web grounding via Gemini Search tool with automatic model cascade and resilient fallback for real-time facts across CLI, TUI, WebUI, and PyCode.
 | **Voice-to-Text** | **Tablet/Phone Bridge** | Zero-latency HTTPS voice bridge with Gemini cloud transcription and native Wayland virtual typing (`wtype`) directly into PyCode IDE and CLI (`/v [auto]`). |
 | **Text-to-Speech** | **Neural Kokoro TTS** | Local PipeWire audio reader (`/tts`) using `koko` with silent code block and thinking tag filtering. |
 
@@ -253,7 +253,7 @@ AI_MAX_TOKENS="8192"
 - [x] **Scaffold-Model Fit & Surgical Edits:** Exact string replacements (`edit_file`), accidental overwrite protection on `write_file`, line-windowed reading, and read-before-edit invariants inspired by [little-coder](https://github.com/itayinbarr/little-coder).
 - [x] **[PyCode](https://github.com/j5onrf/pycode) Cross-Platform GUI (T3 Fork):** Local-first React desktop and WebUI workspace connected via ACP (Agent Client Protocol) stdio JSON-RPC bridge (`/pyc`, `/pyc web`)—featuring real-time token/thought streaming, custom vector branding, theme-reactive ambient aurora glow toggle, and automatic workspace AST indexing.
 - [x] **llama.cpp WebAgent Gateway:** Real-time tool execution (`list_dir`, `write_file`, AST index maps), Gemini vision pre-processing, and streaming proxy for the official `llama.cpp` WebUI (`/webui`).
-- [x] **Google Search Grounding (/gnd):** On-demand live web grounding via Gemini Search tool with automatic model cascade and resilient fallback for real-time facts in both CLI and PyTUI.
+- [x] **Google Search Grounding (/gnd):** Live web grounding via Gemini Search tool (`/gnd [budget]`) with automatic DuckDuckGo keyless fallback for real-time facts across CLI, TUI, WebUI, and PyCode.
 - [ ] **PyBot Integration ([OpenBot](https://github.com/CopilotKit/OpenBot) Plugin):** Embedded web assistant & customizable agent widget plugin to bring `py-agent` intelligence to browser overlays and multi-surface chat bots.
 - [ ] **Context Stress Testing:** Continuous context-window pressure tests across quantized local engines.
 - [ ] **Automated File Containment Validation:** Zero-trust security verification on traversal boundaries.

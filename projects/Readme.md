@@ -441,12 +441,17 @@ Real-time reasoning trace step extraction and cognitive phase formatting inside 
 
 ## 18. Google Search Grounding (`/gnd`)
 
-Real-time web search grounding via Gemini (`gemini-2.5-flash`) with DuckDuckGo fallback.
+Real-time web search grounding via Gemini (`gemini-2.5-flash`) with automatic keyless DuckDuckGo fallback.
 
 - **Toggle Search:** `/gnd` — Turn grounding ON / OFF.
-- **Set Output Budget:** `/gnd <N>` — Set search token budget (e.g. `/gnd 700`, `/gnd 500`). Default: **700 tokens** (balanced for fast CPU prefill).
-- **Explicit States:** `/gnd on` or `/gnd off`
+- **Set Output Budget:** `/gnd <N>` — Set search token budget:
+  - `/gnd 700` — **Default:** Fast factual search (~1.0s prefill).
+  - `/gnd 2000` — **Detailed:** Full changelogs, API specs, tables, and code solutions.
+  - `/gnd 500` — **Lean:** Minimal single-fact lookup.
+  - `/gnd off` — Disable search grounding completely.
+- **Zero-Key Fallback:** Seamlessly queries DuckDuckGo if no Gemini API key is configured or if quotas are reached.
 - **Surface Sync:** PyCode (`/pyc`), PyTUI (`/tui`), and llama.cpp WebAgent (`/webui`, `/web`) inherit your active `/gnd` settings automatically.
+
 ---
 
 ## 19. Environment Variables & Context Limits
