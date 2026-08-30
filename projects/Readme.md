@@ -427,8 +427,6 @@ Real-time reasoning trace step extraction and cognitive phase formatting inside 
 - **Show / Hide Thinking:** `/t show` or `/t hide` — Toggle real-time thinking panel visibility while reasoning mode stays active.
 - **Quick Toggle:** `/t` — Toggle deep reasoning mode ON/OFF.
 
-#### 🟢 AFTER (Replace):
-```markdown
 ---
 
 ## 17. Voice Bridge & Neural Audio (`/v` & `/tts`)
