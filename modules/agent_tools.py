@@ -246,48 +246,73 @@ def run_graph_cmd(cmd_name: str, arg: str, workspace: str) -> str:
 
 
 def search_web_gemini(query: str) -> str:
-    """Runs Google Search grounding via Gemini API and returns a compact, low-token summary."""
+    """Runs Google Search grounding via Gemini API with free-tier fallback and DDG safety net."""
+    import urllib.error as urlerr
     import urllib.request as urlreq
 
     key = os.environ.get("GND_KEY", "") or os.environ.get("GEM_VOICE", "") or os.environ.get("IMG_VOICE", "") or os.environ.get("GEMINI_API_KEY", "")
-    model = os.environ.get("GND_MODEL", "") or os.environ.get("GEM_MODEL", "") or os.environ.get("IMG_MODEL", "") or "gemini-2.5-flash"
+    model = os.environ.get("GND_MODEL", "")
 
-    if not key:
+    # Load from .env with strict priority if not in os.environ
+    if not key or not model:
+        env_vars = {}
         for p in (os.path.join(CFG_DIR, ".env"), os.path.expanduser("~/.config/local-ai/.env"), ".env"):
             if os.path.isfile(p):
                 try:
                     with open(p, "r", encoding="utf-8") as f:
                         for l in f:
-                            s = l.strip()
-                            if s and not s.startswith("#"):
-                                if any(s.startswith(x) for x in ("GND_KEY=", "GEM_VOICE=", "IMG_VOICE=", "GEMINI_API_KEY=")) and not key:
-                                    key = s.split("=", 1)[1].strip().strip("'\"")
-                                if any(s.startswith(x) for x in ("GND_MODEL=", "GEM_MODEL=", "IMG_MODEL=")) and not os.environ.get("GND_MODEL"):
-                                    model = s.split("=", 1)[1].strip().strip("'\"")
+                            if (s := l.strip()) and not s.startswith("#") and "=" in s:
+                                k, v = s.split("=", 1)
+                                env_vars[k.strip()] = v.strip().strip("'\"")
                 except Exception:
                     pass
 
-    if not key:
-        return "[error] GND_KEY or Gemini API key not found in .env."
+        key = key or env_vars.get("GND_KEY") or env_vars.get("GEM_VOICE") or env_vars.get("IMG_VOICE") or env_vars.get("GEMINI_API_KEY", "")
+        model = model or env_vars.get("GND_MODEL") or "gemini-2.5-flash"
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
-    sys_prompt = "You are a dense factual search summarizer. Extract the exact facts, version numbers, dates, or code solutions to answer the query in under 120 words. No conversational fluff."
-    
-    payload = {
-        "contents": [{"parts": [{"text": f"{sys_prompt}\n\nSearch Query: {query}"}]}],
-        "tools": [{"google_search": {}}],
-        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 300}
-    }
+    # Prioritize 2.5-flash / 2.5-flash-lite for free tier Google Search Grounding
+    models_to_try = [model]
+    for fallback in ("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.5-flash"):
+        if fallback not in models_to_try:
+            models_to_try.append(fallback)
 
+    if key:
+        sys_prompt = "You are a dense factual search summarizer. Extract the exact facts, version numbers, dates, or code solutions to answer the query in under 120 words. No conversational fluff."
+        payload = {
+            "contents": [{"parts": [{"text": f"{sys_prompt}\n\nSearch Query: {query}"}]}],
+            "tools": [{"google_search": {}}],
+            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 300}
+        }
+        data_bytes = json.dumps(payload).encode("utf-8")
+
+        for m in models_to_try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={key}"
+            req = urlreq.Request(url, data=data_bytes, headers={"Content-Type": "application/json"}, method="POST")
+            try:
+                with urlreq.urlopen(req, timeout=12) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                text = "".join(p.get("text", "") for p in parts if "text" in p).strip()
+                if text:
+                    return text
+            except Exception:
+                continue
+
+    # Zero-dependency instant DuckDuckGo search fallback if Google API quota is exhausted
     try:
-        req = urlreq.Request(url, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST")
-        with urlreq.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read().decode())
-        parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-        text = "".join(p.get("text", "") for p in parts if "text" in p).strip()
-        return text or "[web_search returned no results]"
-    except Exception as e:
-        return f"[web_search error: {e}]"
+        import html as htmllib
+        ddg_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote_plus(query)}"
+        req = urlreq.Request(ddg_url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"})
+        with urlreq.urlopen(req, timeout=8) as resp:
+            page_html = resp.read().decode("utf-8", errors="ignore")
+        snippets = re.findall(r'<a class="result__snippet[^>]*>(.*?)</a>', page_html, re.DOTALL)
+        clean = [htmllib.unescape(re.sub(r'<[^>]+>', '', s).strip()) for s in snippets[:3] if s.strip()]
+        if clean:
+            return "\n\n".join(clean)
+    except Exception:
+        pass
+
+    return f"[web_search: No results found for '{query}']"
 
 
 def run_tool(

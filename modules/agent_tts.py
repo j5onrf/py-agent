@@ -7,8 +7,9 @@ CFG_DIR = os.path.expanduser("~/.config/py-agent")
 VOICE_FILE = os.path.expanduser("~/.config/koko_current_voice")
 
 RE_THINK_BLOCK = re.compile(r'<think>.*?</think>', re.DOTALL)
-RE_CODE_BLOCK = re.compile(r'```.*?```', re.DOTALL)
-RE_MARKDOWN_CHARS = re.compile(r'[*_#`~>\[\]()|]')
+RE_CODE_BLOCK = re.compile(r'```[\s\S]*?(?:```|$)', re.DOTALL)
+RE_INLINE_CODE = re.compile(r'`[^`\n]+`')
+RE_MARKDOWN_CHARS = re.compile(r'[*_#~>\[\]()|]')
 RE_TIME_COLON = re.compile(r'(\b\d{1,2}):(\d{2}\b)')
 
 try: import agent_core as core
@@ -36,7 +37,8 @@ def toggle_tts(enable: bool | None = None) -> bool:
 def clean_text_for_speech(text: str) -> str:
     if not text: return ""
     clean = RE_THINK_BLOCK.sub('', text)
-    clean = RE_CODE_BLOCK.sub('code block omitted', clean)
+    clean = RE_CODE_BLOCK.sub('', clean)
+    clean = RE_INLINE_CODE.sub('', clean)
     clean = RE_TIME_COLON.sub(r'\1 \2', clean)
     clean = clean.replace(':', ', ')
     clean = RE_MARKDOWN_CHARS.sub('', clean).strip()

@@ -283,6 +283,9 @@ def run_interactive_chat(args: list[str]) -> None:
                     continue
 
                 if cmd in ("/g", "/yolo"):
+                    if not is_agent:
+                        ui._console.print("[dim yellow][sys] Autonomous / YOLO mode is disabled in Chat mode.[/dim yellow]\n")
+                        continue
                     new_yolo = not (os.environ.get("AI_CONFIRM_GATES", "1") == "0")
                     os.environ["AI_CONFIRM_GATES"] = "0" if new_yolo else "1"
                     core.save_state("yolo_mode", new_yolo)

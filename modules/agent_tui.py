@@ -25,7 +25,7 @@ from textual.widgets import Footer, Input, Static
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
 sys.path.append(os.path.join(CFG_DIR, "modules"))
 
-import agent_cloud, agent_core as core, agent_ipython as ipython, agent_skills as skills, agent_tts as tts, agent_tui_async as tui_async, agent_ui as ui, agent_voice as voice
+import agent_cloud, agent_core as core, agent_ipython as ipython, agent_skills as skills, agent_tools as tools, agent_tts as tts, agent_tui_async as tui_async, agent_ui as ui, agent_voice as voice
 
 CONTEXT_FILE = os.path.join(CFG_DIR, "ai-context.md")
 SKILLS_DIR, SESSIONS_DIR = os.path.join(CFG_DIR, "skills"), os.path.join(CFG_DIR, "projects", "database")
@@ -361,7 +361,7 @@ class LocalAITUI(App):
         if hasattr(self, "lbl_mode"): self.lbl_mode.update(f"[dim]Mode[/dim]    {m}")
 
     def set_reasoning(self, t: str) -> None:
-        if hasattr(self, "lbl_reasoning"): self.lbl_reasoning.update(f"[dim]Reasoning[/dim] {t}")
+        if hasattr(self, "lbl_reasoning"): self.lbl_reasoning.update(f"[dim]Reasoning[/dim]  {t}")
 
     def action_prompt_image_url(self) -> None:
         if getattr(self, "entering_image_url", False):
@@ -432,9 +432,10 @@ class LocalAITUI(App):
                     yield Static("[dim]Image[/dim]   None", id="lbl-image", classes="sidebar-val")
                 with Vertical(classes="sidebar-section"):
                     yield Static("SETTINGS", classes="sidebar-label")
-                    yield Static("[dim]Reasoning[/dim] Disabled", id="lbl-reasoning", classes="sidebar-val")
-                    yield Static("[dim]Voice[/dim]   Disabled", id="lbl-voice", classes="sidebar-val")
-                    yield Static("[dim]TTS[/dim]     Disabled", id="lbl-tts", classes="sidebar-val")
+                    yield Static("[dim]Reasoning[/dim]  Disabled", id="lbl-reasoning", classes="sidebar-val")
+                    yield Static("[dim]Gnd[/dim]        Disabled", id="lbl-grounding", classes="sidebar-val")
+                    yield Static("[dim]Voice[/dim]      Disabled", id="lbl-voice", classes="sidebar-val")
+                    yield Static("[dim]TTS[/dim]        Disabled", id="lbl-tts", classes="sidebar-val")
                 with Vertical(classes="sidebar-section"):
                     yield Static("CONTEXT & MEMORY", classes="sidebar-label")
                     yield Static(f"[dim]DB State[/dim]  {self.get_db_status_string()}", id="lbl-database", classes="sidebar-val")
@@ -442,7 +443,7 @@ class LocalAITUI(App):
                 with Vertical(id="card-tips"):
                     with Horizontal(id="card-tips-header"):
                         yield Static("Quick Tips", id="lbl-tips-title"); yield CloseCardButton("×", id="btn-close-tips")
-                    yield Static("Tab: Switch Mode\nCtrl+B: Sidebar\nCtrl+F: Borders\nCtrl+G: Compact\nCtrl+T: Themes\nCtrl+I: Vision Image\nCtrl+Q: Exit TUI\n/tok: Context\n/py: Harness\n/v: Voice\n/tts: Speak\n/task: Goal\n/help: Help", id="lbl-tips-body")
+                    yield Static("Tab: Switch Mode\nCtrl+B: Sidebar\nCtrl+F: Borders\nCtrl+G: Compact\nCtrl+T: Themes\nCtrl+I: Vision Image\nCtrl+Q: Exit TUI\n/gnd: Grounding\n/tok: Context\n/py: Harness\n/v: Voice\n/tts: Speak\n/task: Goal\n/help: Help", id="lbl-tips-body")
         with Horizontal(id="footer-bar"): yield Footer(id="footer-keys")
 
     def action_close_tips_card(self) -> None:
@@ -463,11 +464,14 @@ class LocalAITUI(App):
         self.chat_input = self.query_one("#chat-input", Input)
         self.lbl_skill, self.lbl_mode, self.lbl_harness, self.lbl_reasoning = self.query_one("#lbl-skill", Static), self.query_one("#lbl-mode", Static), self.query_one("#lbl-harness", Static), self.query_one("#lbl-reasoning", Static)
         self.lbl_database, self.lbl_stats, self.lbl_voice, self.lbl_tts, self.lbl_image = self.query_one("#lbl-database", Static), self.query_one("#lbl-stats", Static), self.query_one("#lbl-voice", Static), self.query_one("#lbl-tts", Static), self.query_one("#lbl-image", Static)
+        self.lbl_grounding = self.query_one("#lbl-grounding", Static)
+        gnd_on = core.get_state("grounding_active", False)
+        self.lbl_grounding.update(f"[dim]Gnd[/dim]        {'Active' if gnd_on else 'Disabled'}")
 
         use_ip = ("py-" in self.active_skill.lower() or (ipython and ipython.is_ipython_enabled())) if self.is_agent else False
         self.lbl_harness.update("[dim]Harness[/dim] " + ("NOOA IPython" if use_ip else ("Native Tools" if self.is_agent else "Chat Mode")))
-        if hasattr(voice, "is_bridge_running"): self.lbl_voice.update(f"[dim]Voice[/dim]   {'Active' if voice.is_bridge_running() else 'Disabled'}")
-        if hasattr(tts, "is_tts_enabled"): self.lbl_tts.update(f"[dim]TTS[/dim]     {'Active' if tts.is_tts_enabled() else 'Disabled'}")
+        if hasattr(voice, "is_bridge_running"): self.lbl_voice.update(f"[dim]Voice[/dim]      {'Active' if voice.is_bridge_running() else 'Disabled'}")
+        if hasattr(tts, "is_tts_enabled"): self.lbl_tts.update(f"[dim]TTS[/dim]        {'Active' if tts.is_tts_enabled() else 'Disabled'}")
 
         os.environ["AI_SHOW_THINKING"] = "1" if core.get_state("show_thinking", True) else "0"
         self.set_skill(self.active_skill); self.set_mode(self.agent_mode)
@@ -552,7 +556,7 @@ class LocalAITUI(App):
         if root in ("/help", "/h"):
             t = Table(show_header=False, box=None, padding=(0, 1), expand=False)
             t.add_column("Command", style="bold #89b4fa" if "code" in self.theme else "bold cyan"); t.add_column("Description", style="default")
-            for c, d in [("/help, /h", "Help"), ("/v", "Voice to text"), ("/tts", "Text to speech"), ("/py", "NOOA IPython"), ("Tab", "Plan/Build"), ("/task", "Task Loop"), ("/copy", "Copy transcript"), ("/m", "Memory toggle"), ("/clear, /c", "Clear chat"), ("/reset", "Hard reset"), ("/tok", "Tokens"), ("/sync", "Sync AST index"), ("/s <q>", "Load Skill"), ("/t <toks>", "Reasoning"), ("Ctrl+I", "Attach Image"), ("file <p>", "Load File"), ("q", "Exit")]: t.add_row(c, d)
+            for c, d in [("/h", "Help"), ("/gnd", "Google Grounding"), ("/v", "Voice to text"), ("/tts", "Text to speech"), ("/py", "NOOA IPython"), ("Tab", "Plan/Build"), ("/task", "Task Loop"), ("/copy", "Copy transcript"), ("/m", "Memory toggle"), ("/clear, /c", "Clear chat"), ("/reset", "Hard reset"), ("/tok", "Tokens"), ("/sync", "Sync AST index"), ("/s <q>", "Load Skill"), ("/t <toks>", "Reasoning"), ("Ctrl+I", "Attach Image"), ("file <p>", "Load File"), ("q", "Exit")]: t.add_row(c, d)
             await self.chat_area.mount(Static(Group(Text(""), Panel(t, title="Commands", title_align="left", border_style=self.border_accent, box=ROUNDED, expand=False))))
             self.chat_area.scroll_end(animate=False)
         elif root == "/theme":
@@ -561,6 +565,8 @@ class LocalAITUI(App):
         elif root in ("/gnd", "/ground", "/web"):
             act = not core.get_state("grounding_active", False)
             core.save_state("grounding_active", act)
+            if hasattr(self, "lbl_grounding"):
+                self.lbl_grounding.update(f"[dim]Gnd[/dim]        {'Active' if act else 'Disabled'}")
             self.notify(f"Google Search grounding via Gemini {'enabled' if act else 'disabled'}.")
         elif root in ("/py", "/ipython"):
             act = ipython.toggle_ipython_mode(True if args else None) if ipython else False
@@ -569,11 +575,11 @@ class LocalAITUI(App):
             if args: self.run_worker(lambda: self.process_query_worker(args), thread=True)
         elif root in ("/v", "/voice"):
             act, auto = voice.toggle_voice_bridge(auto_toggle=(bool(args) and args.strip().lower() == "auto")) if hasattr(voice, "toggle_voice_bridge") else (False, False)
-            if hasattr(self, "lbl_voice"): self.lbl_voice.update(f"[dim]Voice[/dim]   {'Active' if act else 'Disabled'}")
+            if hasattr(self, "lbl_voice"): self.lbl_voice.update(f"[dim]Voice[/dim]      {'Active' if act else 'Disabled'}")
             self.notify(f"Voice {'active' if act else 'disabled'}.")
         elif root in ("/tts", "/talk", "/tol"):
             act = tts.toggle_tts() if hasattr(tts, "toggle_tts") else False
-            if hasattr(self, "lbl_tts"): self.lbl_tts.update(f"[dim]TTS[/dim]     {'Active' if act else 'Disabled'}")
+            if hasattr(self, "lbl_tts"): self.lbl_tts.update(f"[dim]TTS[/dim]        {'Active' if act else 'Disabled'}")
             self.notify(f"TTS {'enabled' if act else 'disabled'}.")
         elif root in ("/task", "/loop", "/goal"): await self.handle_task_command(args)
         elif root in ("exit", "quit", "q"): self.exit()
@@ -583,8 +589,11 @@ class LocalAITUI(App):
             if hasattr(self, "lbl_database"): self.lbl_database.update(f"[dim]DB State[/dim]  {self.get_db_status_string()}")
             self.notify(f"Memory {'enabled' if self.memory_active else 'disabled'}.")
         elif root in ("/plan", "/build", "/g", "/yolo"):
-            if not self.is_agent: self.notify("Plan/Build is for project workspaces only.", sys_prefix=False)
-            else: self.action_toggle_plan_build(); self.notify(f"Mode: [bold]{self.agent_mode}[/bold].")
+            if not self.is_agent:
+                self.notify("Autonomous / YOLO mode is disabled in Chat mode.", sys_prefix=False)
+            else:
+                self.action_toggle_plan_build()
+                self.notify(f"Mode: [bold]{self.agent_mode}[/bold].")
         elif root in ("/clear", "/c"):
             self.history.clear(); self.stats_turns = 0; self.update_stats_ui(0, 0.0, 0.0)
             if hasattr(self, "lbl_image"): self.lbl_image.update("[dim]Image[/dim]   None")
@@ -695,11 +704,19 @@ class LocalAITUI(App):
                 configs = agent_cloud.get_active_configs(self.history) if agent_cloud else []
                 if not configs: configs = [("http://localhost:8080/v1/chat/completions", {}, {"messages": self.history, "stream": True, "model": "local-model", **think_kw}, 180)]
 
+                st = core.get_state()
+                use_gnd = st.get("grounding_active", False)
+                active_tools = []
+                if self.is_agent and hasattr(core, "EDIT_TOOLS"):
+                    active_tools = list(core.EDIT_TOOLS)
+                if use_gnd and hasattr(tools, "WEB_TOOL"):
+                    active_tools.append(tools.WEB_TOOL)
+
                 response = None
                 for url, headers, body, timeout in configs:
                     body["stream"], body["messages"] = True, self.history
                     if "localhost" in url or "127.0.0.1" in url: body.update(think_kw)
-                    if self.is_agent and hasattr(core, "EDIT_TOOLS"): body["tools"] = core.EDIT_TOOLS
+                    if active_tools: body["tools"] = active_tools
                     try:
                         resp = _http_session.post(url, json=body, headers={"Content-Type": "application/json", **headers}, timeout=timeout, stream=True)
                         if resp.status_code == 200: response = resp; break
@@ -749,7 +766,9 @@ class LocalAITUI(App):
                 self.call_from_thread(self.chat_area.scroll_end, animate=False)
 
                 calls = [v for _, v in sorted(tool_map.items())] if tool_map else None
-                if not calls:
+                has_web_call = use_gnd and any(c.get("function", {}).get("name") == "web_search" for c in (calls or []))
+
+                if not calls or (not self.is_agent and not has_web_call):
                     self.history.append({"role": "assistant", "content": accumulated}); break
 
                 self.history.append({"role": "assistant", "content": accumulated or None, "tool_calls": calls})
