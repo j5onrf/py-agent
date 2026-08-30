@@ -159,15 +159,15 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 ## 3. Command Reference
 
 ```console
-╭─  ⚙ Help & Commands  ───────────────────────────────────────────────╮
+╭─  ∿ Help & Commands  ───────────────────────────────────────────────╮
 │   Shortcuts: Esc: bypass  Ctrl+C: cancel                            │
 │                                                                     │
 │   Available commands:                                               │
 │  /h                          - Help menu                            │
 │  /gnd [budget|on|off]        - Google Search grounding              │
-│  /pyc, /pyc web              - Desktop GUI or WebUI (PyCode)        │
+│  /pyc, /pyc web              - Desktop IDE or WebUI (PyCode)        │
 │  /webui, /web                - llama.cpp WebAgent gateway           │
-│  /tui                        - Textual TUI                          │
+│  /tui                        - Textual PyTUI                        │
 │  /v [auto], /voice           - Voice to text                        │
 │  /tts                        - Text out loud                        │
 │  /py [code_or_cmd]           - Toggle or execute via IPython        │

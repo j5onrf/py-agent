@@ -345,7 +345,7 @@ class RichStreamer:
                 if not self.think_hdr_printed and tok.strip():
                     self.think_hdr_printed = True
                     self._stop_spinner()
-                    _console_err.print("[dim]╭─ ⚙ ────────────────────────────────────────────────────[/dim]")
+                    _console_err.print("[dim]╭─ ∿ ────────────────────────────────────────────────────[/dim]")
                     tok = tok.lstrip("\r\n")
                 if tok:
                     try:
