@@ -156,38 +156,43 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 
 ---
 
-## 3. Command Reference
+## 3. Command Reference (`/help`)
 
 ```console
 ╭─  ∿ Help & Commands  ───────────────────────────────────────────────╮
-│   Shortcuts: Esc: bypass  Ctrl+C: cancel                            │
+│   Shortcuts: Esc (Bypass)  •  Ctrl+C (Cancel)  •  q / exit (Quit)   │
 │                                                                     │
-│   Available commands:                                               │
-│  /h                          - Help menu                            │
-│  /pyc, /pyc web              - Desktop IDE or WebUI (PyCode)        │
-│  /webui, /web                - llama.cpp WebAgent gateway           │
-│  /tui                        - Textual PyTUI                        │
-│  /v [auto], /voice           - Voice to text                        │
-│  /tts                        - Text out loud                        │
-│  /py [code_or_cmd]           - Toggle or execute via IPython        │
-│  /box [1-5]                  - Box style preset                     │
-│  /task [goal]                - Autonomous task loop                 │
-│  /t [N|show|hide]            - Set reasoning budget or show/hide    │
-│  /g, /yolo                   - Toggle confirmation gates (YOLO)     │
-│  /m                          - Toggle database memory               │
-│  /md                         - Toggle Markdown (raw stream)         │
-│  /stats                      - Generation speed stats               │
-│  /tok                        - Context token usage                  │
-│  /sync                       - Sync index-map                       │
-│  /clear, /c                  - Soft clear active chat history       │
-│  /reset, /purge              - Hard reset (.agent & database)       │
-│  /s <q>, /s off              - Load or unload on-demand skill       │
-│  -save <tag>                 - Save session checkpoint              │
-│  -load                       - Load or clone checkpoint             │
-│  /gnd [budget|on|off]        - Search grounding (gemini/ddg)        │
-│  /f, /tk, /b, /a             - Follow-up, Think, Brainstorm, All    │
-│  file <path>                 - Load file into context               │
-│  exit, quit, q               - Exit                                 │
+│   Surfaces & Audio                                                  │
+│   /pyc, /pyc web         - Launch PyCode IDE (Desktop / WebUI)      │
+│   /webui, /web           - Launch WebAgent UI (llama.cpp)           │
+│   /tui                   - Launch interactive terminal UI (PyTUI)   │
+│   /v [auto], /voice      - Toggle voice-to-text bridge              │
+│   /tts                   - Toggle neural text-to-speech             │
+│                                                                     │
+│   Agent & Execution                                                 │
+│   /py [code]             - Toggle or execute via IPython kernel     │
+│   /task [goal]           - Start autonomous task loop               │
+│   /t [N|show|hide]       - Configure reasoning budget & display     │
+│   /g, /yolo              - Toggle tool confirmation gates (YOLO)    │
+│   /gnd [budget|on|off]   - Search grounding (Gemini / DDG)          │
+│   /s <query|off>         - Load or unload on-demand skill           │
+│   /f, /tk, /b, /a        - Follow-up, Think, Brainstorm, All modes  │
+│                                                                     │
+│   Memory & Workspace                                                │
+│   /m                     - Toggle SQLite memory & facts (TPM)       │
+│   /tok                   - Show context token breakdown             │
+│   /sync                  - Synchronize codebase index-map           │
+│   file <path>            - Load file contents into context          │
+│                                                                     │
+│   Session Management                                                │
+│   /box [1-5]             - Switch banner box style preset           │
+│   /stats                 - Toggle generation speed & TPS stats      │
+│   /md                    - Toggle Markdown stream rendering         │
+│   /clear, /c             - Clear active chat history                │
+│   /reset, /purge         - Reset workspace (.agent & database)      │
+│   -save <tag>            - Save session checkpoint                  │
+│   -load                  - Restore session checkpoint               │
+│   exit, quit, q          - Exit session                             │
 ╰─────────────────────────────────────────────────────────────────────╯
 ```
 

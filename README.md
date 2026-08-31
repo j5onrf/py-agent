@@ -231,7 +231,7 @@ AI_MAX_TOKENS="8192"
 
 | Surface | Installation Command | Requirement |
 | :--- | :--- | :--- |
-| **Desktop IDE (<a href="https://github.com/j5onrf/pycode">PyCode</a>)** | `install-pycode`<br><sub>(or `~/.config/py-agent/plugins/pycode/setup.sh`)</sub> | Node.js 20+, pnpm |
+| **Desktop IDE (<a href="https://github.com/j5onrf/pycode">PyCode</a>)** | `install pycode`<br><sub>(or `~/.config/py-agent/plugins/pycode/setup.sh`)</sub> | Node.js 20+, pnpm |
 | **Textual PyTUI** | `sudo pacman -S python-textual python-uvloop && yay -S python-sqlite-vec` | uvloop & sqlite-vec |
 
 
