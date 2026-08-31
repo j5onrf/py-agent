@@ -7,7 +7,7 @@
 
 ## 1. Model Fleet & Agent Reliability Tiers
 
-> **Core Philosophy:** Models under **27B** parameters are strictly designated for instant interactive chat, intent classification, or single-shot tool execution. Autonomous, multi-step developer agents with self-correction and test loops require **27B+ dense** or **35B+ MoE** architectures.
+> **Core Philosophy:** Models under **~27B** parameters are strictly designated for instant interactive chat, intent classification, or single-shot tool execution. Autonomous, multi-step developer agents with self-correction and test loops require **27B+ dense** or **35B+ MoE** architectures.
 
 | Tier | Example Models | Reliability & Use Case | Recommended Hardware Target |
 | :--- | :--- | :--- | :--- |
