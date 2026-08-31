@@ -367,6 +367,7 @@ def show_help() -> None:
         ("/t \\[N|show|hide]", "Set reasoning budget or show/hide"),
         ("/g, /yolo", "Toggle confirmation gates (YOLO / autonomous mode)"),
         ("/m", "Toggle database memory"),
+        ("/md", "Toggle Markdown (raw stream)"),
         ("/stats", "Generation speed stats"),
         ("/tok", "Context token usage"),
         ("/sync", "Sync index"),
