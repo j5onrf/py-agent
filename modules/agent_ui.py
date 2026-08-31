@@ -345,9 +345,11 @@ def show_help() -> None:
     header = Text.assemble(
         ("  Shortcuts: ", "dim"),
         ("Esc", "bold yellow"),
-        (": bypass  ", "dim"),
+        (": bypass  •  ", "dim"),
         ("Ctrl+C", "bold yellow"),
-        (": cancel", "dim"),
+        (": cancel  •  ", "dim"),
+        ("q / exit", "bold yellow"),
+        (": quit", "dim"),
     )
 
     cmd_table = Table(show_header=False, box=None, padding=(0, 1))
@@ -356,31 +358,32 @@ def show_help() -> None:
 
     cmds = [
         ("/h", "Help menu"),
-        ("/pyc, /pyc web", "Desktop GUI or WebUI"),
-        ("/webui, /web", "llama.cpp WebAgent gateway"),
-        ("/tui", "Textual UI"),
+        ("/pyc, /pyc web", "PyCode IDE (Desktop / Web)"),
+        ("/webui, /web", "WebUI gateway (llama.cpp)"),
+        ("/tui", "Terminal UI (PyTUI)"),
         ("/v \\[auto], /voice", "Voice to text"),
-        ("/tts", "Text out loud"),
-        ("/py \\[code_or_cmd]", "Toggle or execute via IPython"),
+        ("/tts", "Text to speech (Kokoro)"),
+        ("/py \\[code]", "IPython kernel execution"),
         ("/box \\[1-5]", "Box style preset"),
         ("/task \\[goal]", "Autonomous task loop"),
-        ("/t \\[N|show|hide]", "Set reasoning budget or show/hide"),
-        ("/g, /yolo", "Toggle confirmation gates (YOLO / autonomous mode)"),
+        ("/t \\[N|show|hide]", "Reasoning budget & display"),
+        ("/g, /yolo", "Toggle confirmation gates (YOLO)"),
         ("/m", "Toggle database memory"),
-        ("/md", "Toggle Markdown (raw stream)"),
+        ("/md", "Toggle Markdown stream"),
         ("/stats", "Generation speed stats"),
         ("/tok", "Context token usage"),
-        ("/sync", "Sync index"),
+        ("/sync", "Sync codebase index-map"),
         ("/clear, /c", "Soft clear active chat history"),
         ("/reset, /purge", "Hard reset (.agent & database purge)"),
-        ("/s <query>, /s off", "Skills"),
-        ("-save <tag>", "Save session checkpoint"),
-        ("-load", "Load or clone checkpoint"),
-        ("/gnd [budget|on|off]", "Search grounding (gemini/ddg)"),
-        ("/f, /tk, /b, /a", "Follow-up, Thinking, Brainstorm, or All"),
+        ("/s <query|off>", "Load or unload skill"),
+        ("-save <tag>", "Save checkpoint"),
+        ("-load", "Restore checkpoint"),
+        ("/gnd \\[budget|on|off]", "Search grounding (Gemini/DDG)"),
+        ("/f, /tk, /b, /a", "Follow-up, Think, Brainstorm, All"),
         ("file <path>", "Load file into context"),
         ("exit, quit, q", "Exit"),
     ]
+
     for cmd, desc in cmds:
         cmd_table.add_row(cmd, f"[dim]-[/dim] {desc}")
 
