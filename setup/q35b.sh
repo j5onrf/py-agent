@@ -1,33 +1,55 @@
 #!/usr/bin/env bash
 
-# Configuration
+# ==========================================
+# Configuration & Hardware Tuning
+# ==========================================
 PORT=8080
-MODEL_PATH="/home/user/models/Hermes3.6-35B-A3B.gguf"
+HOST="127.0.0.1"
+MODEL_PATH="/home/user/models/Herm3.6-35B-A3B.gguf"
 LOG_DIR="/home/user/models/serv"
 LOG_FILE="$LOG_DIR/server.log"
-
 LLAMA_SERVER_BIN="/home/user/llama.cpp/build/bin/llama-server"
+
 mkdir -p "$LOG_DIR"
 
+# 1. Clean up lingering port processes
 if command -v lsof >/dev/null 2>&1; then
-    TARGET_PID=$(lsof -t -i :$PORT)
+    TARGET_PID=$(lsof -t -i :"$PORT")
     if [ -n "$TARGET_PID" ]; then
         kill -15 "$TARGET_PID" 2>/dev/null || kill -9 "$TARGET_PID" 2>/dev/null
         sleep 0.5
     fi
 fi
 
-# Launch wrapped in UWSM   --no-ui \
-exec uwsm app -- "$LLAMA_SERVER_BIN" \
+# 2. Extract Physical Core IDs (bypasses SMT / Hyper-Threading)
+PHYSICAL_CORES=$(lscpu -p=CPU,CORE | grep -v '^#' | sort -u -k2,2 -t, | cut -d, -f1 | paste -sd, -)
+
+# 3. Allocator and Thread Binding (CachyOS x86-64-v4 mimalloc)
+if [ -f /usr/lib/libmimalloc.so ]; then
+    export LD_PRELOAD=/usr/lib/libmimalloc.so
+fi
+export OMP_PROC_BIND=CLOSE
+export OMP_PLACES=cores
+
+# 4. Remove memory locking ceiling
+ulimit -l unlimited 2>/dev/null
+
+# 5. Launch wrapped in UWSM (Optimized Native AVX-512 / VNNI Engine)
+exec uwsm app -- taskset -c "$PHYSICAL_CORES" "$LLAMA_SERVER_BIN" \
   -m "$MODEL_PATH" \
+  --alias "Hermes3.6-35B-A3B" \
+  --host "$HOST" \
+  --port "$PORT" \
   -c 8192 \
   -np 1 \
   -t 6 \
+  -tb 6 \
   -b 512 \
-  -ub 512 \
-  --cache-type-k q8_0 \
-  --cache-type-v q8_0 \
+  -ub 256 \
   --flash-attn on \
+  --load-mode mlock \
+  --warmup \
+  --no-ui \
   --reasoning on \
   --reasoning-format auto \
   --reasoning-budget-message "\n" \
@@ -39,5 +61,4 @@ exec uwsm app -- "$LLAMA_SERVER_BIN" \
   --top-p 0.95 \
   --min-p 0.05 \
   --repeat-penalty 1.05 \
-  --repeat-last-n 128 \
-  --port "$PORT" >> "$LOG_FILE" 2>&1
+  --repeat-last-n 128 >> "$LOG_FILE" 2>&1
