@@ -174,7 +174,8 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 │  /task [goal]                - Autonomous task loop                 │
 │  /t [N|show|hide]            - Set reasoning budget or show/hide    │
 │  /g, /yolo                   - Toggle confirmation gates (YOLO)     │
-│  /m                          - Toggle database memory & TPM facts   │
+│  /m                          - Toggle database memory               │
+│  /md                         - Toggle Markdown (raw stream)         │
 │  /stats                      - Generation speed stats               │
 │  /tok                        - Context token usage                  │
 │  /sync                       - Sync index-map                       │

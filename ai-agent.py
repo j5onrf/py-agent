@@ -189,6 +189,7 @@ def run_interactive_chat(args: list[str]) -> None:
     memory_active = st.get("memory_active", False)
     reasoning_active, reasoning_budget = st.get("reasoning_active", False), st.get("reasoning_budget", 500)
 
+    os.environ["AI_RENDER_MARKDOWN"] = "1" if st.get("render_markdown", True) else "0"
     os.environ["AI_REASONIX_ACTIVE"] = "1" if st.get("reasonix_active", True) else "0"
     os.environ["AI_SHOW_THINKING"] = "1" if st.get("show_thinking", True) else "0"
     if is_yolo or st.get("yolo_mode", False): os.environ["AI_CONFIRM_GATES"] = "0"
@@ -296,6 +297,13 @@ def run_interactive_chat(args: list[str]) -> None:
                     core.save_state("memory_active", memory_active)
                     if is_agent and memory_active: sync_md_to_sqlite(safe_name, workspace_path)
                     ui._console.print(f"[green][sys] Memory & TPM facts {'enabled' if memory_active else 'disabled'}.[/green]\n")
+                    continue
+
+                if cmd in ("/md"):
+                    new_md = not (os.environ.get("AI_RENDER_MARKDOWN", "1") == "1")
+                    os.environ["AI_RENDER_MARKDOWN"] = "1" if new_md else "0"
+                    core.save_state("render_markdown", new_md)
+                    ui._console.print(f"[green][sys] Markdown rendering {'enabled' if new_md else 'disabled'}.[/green]\n")
                     continue
 
                 if cmd in ("/g", "/yolo"):

@@ -204,7 +204,8 @@ DEFAULTS = {
     "show_stats": True, "memory_active": False, "box_style": 1, "yolo_mode": False,
     "show_thinking": True, "reasoning_active": False, "reasoning_budget": 500,
     "compact_mode": 0, "sidebar_hidden": False, "footer_hidden": True, "tips_card_hidden": False,
-    "tui_theme": "code1", "voice_auto_submit": True, "tts_enabled": False, "tui_borders_enabled": True
+    "tui_theme": "code1", "voice_auto_submit": True, "tts_enabled": False, "tui_borders_enabled": True,
+    "render_markdown": True
 }
 
 try: import agent_usage as usage_log
@@ -400,7 +401,8 @@ class RichStreamer:
             self.phase = "ANSWER"
 
         if self.ans_started and self.acc_ans.strip():
-            if sys.stdout.isatty():
+            render_md = os.environ.get("AI_RENDER_MARKDOWN", "1") == "1"
+            if sys.stdout.isatty() and render_md:
                 _clear_lines(False, self.acc_ans)
                 p_clean = self.prefix.strip()
                 p_style = "bold green" if "Agent" in p_clean else "bold cyan"
