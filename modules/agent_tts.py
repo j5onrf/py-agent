@@ -59,24 +59,10 @@ def speak_text(text: str) -> None:
                     if v := f.read().strip(): voice = v
             except OSError: pass
 
-        # Using shlex.quote to avoid any shell injection or escaping issues
-        quoted_text = shlex.quote(clean)
-        quoted_voice = shlex.quote(voice)
-
-        # CachyOS AVX-512 / OpenMP CPU performance flags
-        env_vars = "OMP_NUM_THREADS=4 OMP_WAIT_POLICY=PASSIVE"
-        
-        # Try direct streaming pipe to PipeWire first, fallback to /dev/shm
-        cmd = f'{env_vars} koko --style {quoted_voice} --speed 1.15 text {quoted_text} -o - 2>/dev/null | pw-play -'
-        
-        res = subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
-        # Fallback if binary does not support stdout '-' output
-        if res.returncode != 0:
-            wav_path = "/dev/shm/tts.wav"
+        wav_path = "/dev/shm/tts.wav"
         escaped = clean.replace('\\', '\\\\').replace('"', '\\"').replace('$', '\\$').replace('`', '\\`')
-        # 6 threads + nice -n -5 prevents thread starvation after Hermes LLM finishes
-        cmd = f'nice -n -5 env OMP_NUM_THREADS=6 OMP_WAIT_POLICY=PASSIVE koko --style "{voice}" --speed 1.15 text "{escaped}" -o {wav_path} 2>/dev/null && pw-play {wav_path}'
+        # nice -n -10 takes strong priority over lingering LLM CPU threads; OMP_NUM_THREADS=6 runs at your hardware sweet spot
+        cmd = f'nice -n -10 env OMP_NUM_THREADS=6 OMP_WAIT_POLICY=PASSIVE koko --style "{voice}" --speed 1.15 text "{escaped}" -o {wav_path} 2>/dev/null && pw-play {wav_path}'
         subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     threading.Thread(target=_run, daemon=True).start()
