@@ -215,6 +215,13 @@ def run_interactive_chat(args: list[str]) -> None:
                 q_lower = query.lower().strip()
                 if q_lower in ("exit", "quit", "q"): clean_exit(safe_name if is_agent else None)
 
+                # Strict 2-word silent kill
+                if q_lower.rstrip(".") in ("stop speech", "stop talking", "kill tts"):
+                    try: tts.stop_tts()
+                    except Exception: pass
+                    subprocess.run("killall -9 pw-play koko 2>/dev/null || true", shell=True)
+                    continue
+
                 parts = query.split()
                 cmd = parts[0].lower() if parts else ""
 

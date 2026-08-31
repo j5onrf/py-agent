@@ -59,9 +59,9 @@ ai init ~/.config/py-agent/projects/session-test-3 ---> session test 3, projects
 
 ```properties
 # --- Voice to Text ---
-~/.config/py-agent/modules/agent_voice.py ---> voice, voice query, voice to text, v2t
+~/.config/py-agent/modules/agent_voice.py ---> voice to text, v2t
 # --- Text to Speech (TTS) ---
-pkill -9 -f "pw-play|koko" ---> stop speech, kill tts
+# killall -9 pw-play koko 2>/dev/null || true --s ---> stop speech, stop talking, kill tts
 ```
 
 ## 5. Web & Files

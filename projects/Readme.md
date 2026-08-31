@@ -434,7 +434,7 @@ Real-time reasoning trace step extraction and cognitive phase formatting inside 
 
 - **Voice to Text (`/v` / `/v auto`):** HTTPS bridge (`:9999`) for mobile/tablet dictation. Use `/v` for prompt review, `/v auto` for auto-submit.
 - **Neural TTS (`/tts`):** Reads responses aloud via PipeWire & Kokoro; auto-filters code and `<think>` blocks silently.
-- **Stop Speech:** Run `pkill -9 -f "pw-play|koko"`, type `stop talking`, or bind `Super+Shift+X`.
+- **Stop Speech:** Say or type `stop talking`, `stop speech`, or `kill tts` for instant silent termination, run `killall -9 pw-play koko 2>/dev/null`, or bind `Super+Shift+X`.
 
 ---
 

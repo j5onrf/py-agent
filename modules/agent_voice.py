@@ -28,7 +28,12 @@ except ImportError:
 HTML_CONTENT = """<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- Disable client-side caching -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Voice to Text</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -104,7 +109,7 @@ HTML_CONTENT = """<!DOCTYPE html>
             if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
             if (mediaRecorder && mediaRecorder.state === "inactive") {
                 audioChunks = [];
-                mediaRecorder.start(250);
+                mediaRecorder.start(); // Collects everything into a single buffer until release
                 status.innerText = "Listening...";
                 btn.classList.add('recording');
                 updateVisualizer();
@@ -223,21 +228,6 @@ def transcribe_gemini(audio_data: bytes, mime_type: str = "audio/webm") -> str:
 
 
 def get_prompt_input(symbol: str = "❯") -> str:
-    global _auto_submit
-    if core:
-        _auto_submit = core.get_state().get("voice_auto_submit", True)
-
-    if os.path.exists(PENDING_FILE) and os.path.getsize(PENDING_FILE) > 0:
-        try:
-            with open(PENDING_FILE, "r", encoding="utf-8") as vf:
-                if text := vf.read().strip():
-                    os.remove(PENDING_FILE)
-                    sys.stdout.write(f"{text}\n")
-                    sys.stdout.flush()
-                    return text
-        except OSError:
-            pass
-
     try:
         return input(f"{symbol} ").strip()
     except (KeyboardInterrupt, EOFError):
@@ -262,8 +252,6 @@ class VoiceHandler(http.server.SimpleHTTPRequestHandler):
                 if query:
                     sys.stderr.write(f"[sys] Transcribed: {query}\n")
                     sys.stderr.flush()
-                    with open(PENDING_FILE, "w", encoding="utf-8") as f:
-                        f.write(query)
 
                     # Universal Wayland / Hyprland virtual typing into active window
                     try:
@@ -286,7 +274,10 @@ class VoiceHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         self.send_response(200)
-        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
         self.end_headers()
         self.wfile.write(HTML_CONTENT.encode("utf-8"))
 

@@ -160,6 +160,19 @@ def _exec_tool_cmd(cmd: str, interactive: bool = False) -> str:
 def run_local_tool(cmd: str) -> str: return _exec_tool_cmd(cmd, interactive=False)
 def run_interactive_tool(cmd: str) -> str: return _exec_tool_cmd(cmd, interactive=True)
 
+EXCLUDED_CONTEXT_TOOLS = (
+    "agent_voice.py",
+    "agent_tts.py",
+    "agent_tui.py",
+    "agent_ui.py",
+    "agent_core.py",
+    "agent_cloud.py",
+    "agent_usage.py",
+    "agent_tui_async.py",
+    "model-select.py",
+    "speed_test.py",
+)
+
 
 def get_system_context(query: str, context_file: str, stop_words: set[str], skills_dir: str, cfg_dir: str) -> str:
     if not (q_tokens := context.tokenize(query, stop_words)) or "\n" in query.strip(): return ""
@@ -167,6 +180,8 @@ def get_system_context(query: str, context_file: str, stop_words: set[str], skil
         ent_tokens = entry.get("tokens", [])
         if any(q_tokens[i:i + len(ent_tokens)] == ent_tokens for i in range(len(q_tokens) - len(ent_tokens) + 1)):
             tool = entry.get("cmd", "").replace("[TOOL]", "").strip()
+            if any(ex in tool for ex in EXCLUDED_CONTEXT_TOOLS):
+                continue
             if any(k in tool for k in ("read -p", "less", "fzf")): return run_interactive_tool(tool)
             if " --s" not in tool and not ui.confirm_tool(tool): return ""
 
