@@ -272,7 +272,7 @@ def draw_menu(selected, active_model, message=""):
     )
 
     sys.stdout.write(
-        f"\r\n   {bold}⚡ LOCAL-AI OFFLINE WORKSPACE{reset}\r\n   {dim}────────────────────────────────────────────────────────────{reset}\r\n\r\n"
+        f"\r\n   {bold}⚡ LOCAL-AI OFFLINE MODEL SELECT{reset}\r\n   {dim}────────────────────────────────────────────────────────────{reset}\r\n\r\n"
     )
 
     for i, model in enumerate(LOCAL_MODELS):
