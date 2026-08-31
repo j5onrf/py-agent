@@ -2,7 +2,6 @@
 
 * **Verified Backend:** `llama.cpp` (Build `10125` / Commit `720d7fa40`)
 * **Compilation Targets:** Native `x86-64-v4` / `AVX-512` / `AVX2` (CPU) | `CUDA` / `ROCm` / `Metal` (GPU)
-* **Architecture:** Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`) controlling a C++ backend `llama-server`. Built for extreme efficiency on fine-tuned quantized local models (`Qwen3.5-2B+` for instant chat, `Qwen3.6-35B-A3B` / `Qwen3.8-27B` for developer agents) and cloud providers.
 
 ---
 
