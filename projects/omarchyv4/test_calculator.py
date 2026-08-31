@@ -1,6 +1,6 @@
 import unittest
 
-from calculator import add, multiply, subtract, divide, power, modulo
+from calculator import add, multiply, subtract, divide, power, modulo, average, median
 
 class TestCalculator(unittest.TestCase):
     def test_divide(self):
@@ -40,6 +40,32 @@ class TestCalculator(unittest.TestCase):
         self.assertEqual(modulo(-10, 3), 2)  # Python's modulo behavior
         with self.assertRaises(ZeroDivisionError):
             result = modulo(5, 0)
+
+    def test_average(self):
+        # Test normal cases
+        self.assertAlmostEqual(average(1, 2, 3, 4, 5), 3.0)
+        self.assertAlmostEqual(average(10, 20), 15.0)
+        self.assertAlmostEqual(average(7), 7.0)
+        # Test negative values
+        self.assertAlmostEqual(average(-1, -2, -3), -2.0)
+        # Test empty input raises ValueError
+        with self.assertRaises(ValueError) as context:
+            average()
+        self.assertEqual(str(context.exception), "Cannot compute average of empty values")
+
+    def test_median(self):
+        # Test odd-length list
+        self.assertEqual(median([3, 1, 2]), 2)
+        self.assertEqual(median([5, 3, 1, 4, 2]), 3)
+        # Test even-length list
+        self.assertEqual(median([4, 1, 3, 2]), 2.5)
+        self.assertEqual(median([1, 2, 3, 4]), 2.5)
+        # Test single element
+        self.assertEqual(median([7]), 7)
+        # Test empty list raises ValueError
+        with self.assertRaises(ValueError) as context:
+            median([])
+        self.assertEqual(str(context.exception), "Cannot compute median of empty list")
 
 
 if __name__ == "__main__":

@@ -30,3 +30,27 @@ def modulo(a, b):
     if b == 0:
         raise ZeroDivisionError("Cannot modulo by zero")
     return a % b
+
+
+def average(*args):
+    """Return the arithmetic mean of given numbers.
+    Raises ValueError("Cannot compute average of empty values") if no arguments are provided.
+    """
+    if len(args) == 0:
+        raise ValueError("Cannot compute average of empty values")
+    return sum(args) / len(args)
+
+
+def median(numbers):
+    """Return the median of a list of numbers (handling both even and odd length lists).
+    Raises ValueError("Cannot compute median of empty list") if the list is empty.
+    """
+    if not numbers:
+        raise ValueError("Cannot compute median of empty list")
+    sorted_nums = sorted(numbers)
+    n = len(sorted_nums)
+    mid = n // 2
+    if n % 2 == 1:
+        return sorted_nums[mid]
+    else:
+        return (sorted_nums[mid - 1] + sorted_nums[mid]) / 2
