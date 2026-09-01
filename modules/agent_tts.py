@@ -1,19 +1,26 @@
 #!/usr/bin/env python3
 """Local-AI Kokoro Text-to-Speech Module [Zero-Lag Edition]"""
 
-import os, re, subprocess, threading, shlex
+import os
+import re
+import shlex
+import subprocess
+import threading
 
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
 VOICE_FILE = os.path.expanduser("~/.config/koko_current_voice")
 
-RE_THINK_BLOCK = re.compile(r'<think>.*?</think>', re.DOTALL)
+# Matches closed AND unclosed/truncated thinking blocks (<think>... to EOF)
+RE_THINK_BLOCK = re.compile(r'<think(?:ing)?>[\s\S]*?(?:</think(?:ing)?>|$)|<thought>[\s\S]*?(?:</thought>|$)', re.DOTALL | re.IGNORECASE)
 RE_CODE_BLOCK = re.compile(r'```[\s\S]*?(?:```|$)', re.DOTALL)
 RE_INLINE_CODE = re.compile(r'`[^`\n]+`')
 RE_MARKDOWN_CHARS = re.compile(r'[*_#~>\[\]()|]')
 RE_TIME_COLON = re.compile(r'(\b\d{1,2}):(\d{2}\b)')
 
-try: import agent_core as core
-except ImportError: core = None
+try:
+    import agent_core as core
+except ImportError:
+    core = None
 
 
 def stop_tts() -> None:
@@ -22,20 +29,25 @@ def stop_tts() -> None:
 
 def is_tts_enabled() -> bool:
     try:
-        if core: return bool(core.get_state("tts_enabled", False))
-    except Exception: pass
+        if core:
+            return bool(core.get_state("tts_enabled", False))
+    except Exception:
+        pass
     return False
 
 
 def toggle_tts(enable: bool | None = None) -> bool:
     new_state = (not is_tts_enabled()) if enable is None else enable
-    if not new_state: stop_tts()
-    if core: core.save_state("tts_enabled", new_state)
+    if not new_state:
+        stop_tts()
+    if core:
+        core.save_state("tts_enabled", new_state)
     return new_state
 
 
 def clean_text_for_speech(text: str) -> str:
-    if not text: return ""
+    if not text:
+        return ""
     clean = RE_THINK_BLOCK.sub('', text)
     clean = RE_CODE_BLOCK.sub('', clean)
     clean = RE_INLINE_CODE.sub('', clean)
@@ -46,9 +58,11 @@ def clean_text_for_speech(text: str) -> str:
 
 
 def speak_text(text: str) -> None:
-    if not text or not is_tts_enabled(): return
+    if not text or not is_tts_enabled():
+        return
     clean = clean_text_for_speech(text)
-    if not clean or len(clean) < 2: return
+    if not clean or len(clean) < 2:
+        return
 
     def _run():
         stop_tts()
@@ -56,12 +70,13 @@ def speak_text(text: str) -> None:
         if os.path.exists(VOICE_FILE):
             try:
                 with open(VOICE_FILE, "r", encoding="utf-8") as f:
-                    if v := f.read().strip(): voice = v
-            except OSError: pass
+                    if v := f.read().strip():
+                        voice = v
+            except OSError:
+                pass
 
         wav_path = "/dev/shm/tts.wav"
         escaped = clean.replace('\\', '\\\\').replace('"', '\\"').replace('$', '\\$').replace('`', '\\`')
-        # nice -n -10 takes strong priority over lingering LLM CPU threads; OMP_NUM_THREADS=6 runs at your hardware sweet spot
         cmd = f'nice -n -10 env OMP_NUM_THREADS=6 OMP_WAIT_POLICY=PASSIVE koko --style "{voice}" --speed 1.15 text "{escaped}" -o {wav_path} 2>/dev/null && pw-play {wav_path}'
         subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 

@@ -18,42 +18,28 @@ from rich.syntax import Syntax
 
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
 _console_err = Console(stderr=True)
-BINARY_EXTENSIONS = frozenset(
-    {
-        ".db",
-        ".sqlite",
-        ".sqlite3",
-        ".bin",
-        ".pyc",
-        ".so",
-        ".dll",
-        ".exe",
-        ".png",
-        ".jpg",
-        ".jpeg",
-        ".gif",
-        ".zip",
-        ".tar",
-        ".gz",
-        ".7z",
-        ".pdf",
-        ".docx",
-        ".xlsx",
-        ".db-wal",
-        ".db-shm",
-    }
-)
+BINARY_EXTENSIONS = frozenset({
+    ".db", ".sqlite", ".sqlite3", ".bin", ".pyc", ".so", ".dll", ".exe",
+    ".png", ".jpg", ".jpeg", ".gif", ".zip", ".tar", ".gz", ".7z",
+    ".pdf", ".docx", ".xlsx", ".db-wal", ".db-shm"
+})
 RE_ABS_PATH = re.compile(r"/(?:[a-zA-Z0-9_\-\.]+/)*[a-zA-Z0-9_\-\.]*")
 
 _SESSION_READ_FILES: set[str] = set()
 
+# Complete 10-Tool Suite
 EDIT_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
             "name": n,
             "description": d,
-            "parameters": {"type": "object", "properties": p, "required": r},
+            "parameters": {
+                "type": "object",
+                "properties": p,
+                "required": r,
+                "additionalProperties": False
+            },
         },
     }
     for n, d, p, r in [
@@ -102,10 +88,7 @@ EDIT_TOOLS: list[dict[str, Any]] = [
             "Surgically replace exact text (old_str) with new_str in a file without rewriting the whole file.",
             {
                 "path": {"type": "string"},
-                "old_str": {
-                    "type": "string",
-                    "description": "Exact text to find and replace.",
-                },
+                "old_str": {"type": "string", "description": "Exact text to find and replace."},
                 "new_str": {"type": "string", "description": "New replacement text."},
             },
             ["path", "old_str", "new_str"],
@@ -116,10 +99,7 @@ EDIT_TOOLS: list[dict[str, Any]] = [
             {
                 "path": {"type": "string"},
                 "content": {"type": "string"},
-                "overwrite": {
-                    "type": "boolean",
-                    "description": "Set true to confirm overwriting an existing file.",
-                },
+                "overwrite": {"type": "boolean", "description": "Set true to confirm overwriting an existing file."},
             },
             ["path", "content"],
         ),
@@ -136,6 +116,11 @@ EDIT_TOOLS: list[dict[str, Any]] = [
             ["command"],
         ),
     ]
+]
+
+# Lean 5-Tool Set for Compact Models (LFM, 8B, 7B, 2B)
+LEAN_TOOLS: list[dict[str, Any]] = [
+    t for t in EDIT_TOOLS if t["function"]["name"] in ("read_file", "edit_file", "write_file", "list_dir", "run_command")
 ]
 
 TOOL_VERBS = {
@@ -160,10 +145,7 @@ WEB_TOOL: dict[str, Any] = {
         "parameters": {
             "type": "object",
             "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Dense keyword search query (e.g. 'Arch linux kernel latest release 2026')",
-                }
+                "query": {"type": "string", "description": "Dense keyword search query."}
             },
             "required": ["query"],
         },
@@ -194,11 +176,11 @@ def _get_graph_engine():
 
 
 def _safe_path(workspace: str, p: str) -> str:
-    if not p: return os.path.realpath(workspace)
+    if not p:
+        return os.path.realpath(workspace)
     clean_p = os.path.expanduser(urllib.parse.unquote(str(p).strip().strip('"\'\\')))
     ws_real = os.path.realpath(workspace)
-    
-    # Path healing: if 2B model wrote "/file.py" instead of "file.py"
+
     if clean_p.startswith("/") and not clean_p.startswith(ws_real):
         rel_candidate = clean_p.lstrip("/")
         if os.path.exists(os.path.join(ws_real, rel_candidate)) or "/" not in rel_candidate:
@@ -236,9 +218,7 @@ def run_graph_cmd(cmd_name: str, arg: str, workspace: str) -> str:
     try:
         mod_path = os.path.join(CFG_DIR, "tools", "index-map", "index-map")
         cmd_args = [sys.executable, mod_path, cmd_name] + ([arg] if arg else [])
-        res = subprocess.run(
-            cmd_args, cwd=workspace, capture_output=True, text=True, timeout=12
-        )
+        res = subprocess.run(cmd_args, cwd=workspace, capture_output=True, text=True, timeout=12)
         out = (res.stdout or res.stderr or "").strip()
         return out or f"[error] '{cmd_name}' returned no results for '{arg}'."
     except (OSError, subprocess.SubprocessError, TimeoutError) as e:
@@ -247,13 +227,11 @@ def run_graph_cmd(cmd_name: str, arg: str, workspace: str) -> str:
 
 def search_web_gemini(query: str) -> str:
     """Runs Google Search grounding via Gemini API with free-tier fallback and DDG safety net."""
-    import urllib.error as urlerr
     import urllib.request as urlreq
 
     key = os.environ.get("GND_KEY", "") or os.environ.get("GEM_VOICE", "") or os.environ.get("IMG_VOICE", "") or os.environ.get("GEMINI_API_KEY", "")
     model = os.environ.get("GND_MODEL", "")
 
-    # Load from .env with strict priority if not in os.environ
     if not key or not model:
         env_vars = {}
         for p in (os.path.join(CFG_DIR, ".env"), os.path.expanduser("~/.config/local-ai/.env"), ".env"):
@@ -270,7 +248,6 @@ def search_web_gemini(query: str) -> str:
         key = key or env_vars.get("GND_KEY") or env_vars.get("GEM_VOICE") or env_vars.get("IMG_VOICE") or env_vars.get("GEMINI_API_KEY", "")
         model = model or env_vars.get("GND_MODEL") or "gemini-2.5-flash"
 
-    # If Gemini API key is configured, run Google Grounding with model cascade
     if key:
         budget = 700
         for p in (os.path.join(CFG_DIR, ".state.json"),):
@@ -286,13 +263,7 @@ def search_web_gemini(query: str) -> str:
             if fallback not in models_to_try:
                 models_to_try.append(fallback)
 
-        if budget >= 1500:
-            sys_prompt = "You are an exhaustive factual search researcher. Extract comprehensive data, full changelogs, complete API specifications, tables, and code solutions directly from the search results. Maintain exact numbers and verbatim quotes without omitting details."
-        elif budget <= 550:
-            sys_prompt = "You are an ultra-concise factual search engine. Extract only the exact core answer, version numbers, or dates in under 60 words without conversational filler."
-        else:
-            sys_prompt = "You are a dense factual research engine. Extract the exact facts, version numbers, dates, tables, and solutions directly from search results. Be thorough with data and numbers, but keep explanations concise and under 200 words without conversational filler."
-
+        sys_prompt = "You are a dense factual research engine. Extract exact facts, numbers, dates, and code solutions directly from search results under 200 words."
         payload = {
             "contents": [{"parts": [{"text": f"{sys_prompt}\n\nSearch Query: {query}"}]}],
             "tools": [{"google_search": {}}],
@@ -313,17 +284,14 @@ def search_web_gemini(query: str) -> str:
             except Exception:
                 continue
 
-    # Zero-dependency instant DuckDuckGo search fallback (if key is missing OR API is exhausted)
     try:
         import html as htmllib
         ddg_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote_plus(query)}"
-        req = urlreq.Request(ddg_url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"})
+        req = urlreq.Request(ddg_url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"})
         with urlreq.urlopen(req, timeout=8) as resp:
             page_html = resp.read().decode("utf-8", errors="ignore")
-        # Scale DDG snippet count dynamically based on the active budget
-        max_snippets = 5 if budget >= 1500 else (2 if budget <= 550 else 3)
         snippets = re.findall(r'<a class="result__snippet[^>]*>(.*?)</a>', page_html, re.DOTALL)
-        clean = [htmllib.unescape(re.sub(r'<[^>]+>', '', s).strip()) for s in snippets[:max_snippets] if s.strip()]
+        clean = [htmllib.unescape(re.sub(r'<[^>]+>', '', s).strip()) for s in snippets[:3] if s.strip()]
         if clean:
             return "\n\n".join(clean)
     except Exception:
@@ -339,6 +307,24 @@ def run_tool(
     confirm_gate_fn: Callable[[str], bool] | None = None,
     print_output_fn: Callable[[str], None] | None = None,
 ) -> str:
+    # Parameter Normalization (pi-agent pattern): Auto-heal common parameter aliases across models
+    if isinstance(args, dict):
+        if "path" not in args:
+            for alt in ("file", "filename", "filepath", "target", "file_path"):
+                if alt in args:
+                    args["path"] = args[alt]
+                    break
+        if "command" not in args:
+            for alt in ("cmd", "exec", "shell_command", "script"):
+                if alt in args:
+                    args["command"] = args[alt]
+                    break
+        if "content" not in args:
+            for alt in ("text", "code", "body", "data"):
+                if alt in args:
+                    args["content"] = args[alt]
+                    break
+
     gates_active = os.environ.get("AI_CONFIRM_GATES", "1") == "1"
     denial = "[denied] User declined tool execution."
     raw_path = args.get("path", "")
@@ -355,7 +341,6 @@ def run_tool(
     if name == "exec_python":
         try:
             import agent_ipython as ipython
-
             out = ipython.run_cell(args.get("code", ""), workspace, confirm_gate_fn)
             if print_output_fn:
                 print_output_fn(out)
@@ -396,15 +381,11 @@ def run_tool(
 
     # 3. File System Tools
     if name == "read_file":
-        if os.path.splitext(full)[1].lower() in BINARY_EXTENSIONS or os.path.isdir(
-            full
-        ):
+        if os.path.splitext(full)[1].lower() in BINARY_EXTENSIONS or os.path.isdir(full):
             return f"[error] Refused to read binary file or directory '{raw_path}'."
         if not os.path.isfile(full):
             return f"[error] File not found: {raw_path}"
-        if _is_outside_workspace(workspace, full) and not _gate(
-            f"OUT-OF-BOUNDS READ: {full}"
-        ):
+        if _is_outside_workspace(workspace, full) and not _gate(f"OUT-OF-BOUNDS READ: {full}"):
             return denial
         if confirm_gate_fn and gates_active and not _gate(f"read file {raw_path}"):
             return denial
@@ -447,9 +428,7 @@ def run_tool(
             return f"[error] File '{raw_path}' does not exist. Use write_file to create new files."
         if full not in _SESSION_READ_FILES and not bool(args.get("force", False)):
             return f"[error] You must inspect '{raw_path}' with read_file before calling edit_file to ensure your old_str matches exact lines and indentation."
-        if _is_outside_workspace(workspace, full) and not _gate(
-            f"OUT-OF-BOUNDS EDIT: {full}"
-        ):
+        if _is_outside_workspace(workspace, full) and not _gate(f"OUT-OF-BOUNDS EDIT: {full}"):
             return denial
 
         old_str = args.get("old_str", "")
@@ -492,17 +471,11 @@ def run_tool(
                 ):
                     _console_err.print(
                         "\n",
-                        Syntax(
-                            diff, "diff", theme="ansi_dark", background_color="default"
-                        ),
+                        Syntax(diff, "diff", theme="ansi_dark", background_color="default"),
                         "\n",
                     )
 
-            if (
-                confirm_gate_fn
-                and gates_active
-                and not _gate(f"surgically edit {raw_path}")
-            ):
+            if confirm_gate_fn and gates_active and not _gate(f"surgically edit {raw_path}"):
                 return denial
 
             with open(full, "w", encoding="utf-8") as f:
@@ -550,25 +523,15 @@ def run_tool(
                 ):
                     _console_err.print(
                         "\n",
-                        Syntax(
-                            diff, "diff", theme="ansi_dark", background_color="default"
-                        ),
+                        Syntax(diff, "diff", theme="ansi_dark", background_color="default"),
                         "\n",
                     )
             except OSError:
                 pass
 
-        if _is_outside_workspace(workspace, full) and not _gate(
-            f"OUT-OF-BOUNDS WRITE: {full}"
-        ):
+        if _is_outside_workspace(workspace, full) and not _gate(f"OUT-OF-BOUNDS WRITE: {full}"):
             return denial
-        if (
-            confirm_gate_fn
-            and gates_active
-            and not _gate(
-                f"{'overwrite' if os.path.exists(full) else 'create'} {raw_path}"
-            )
-        ):
+        if confirm_gate_fn and gates_active and not _gate(f"{'overwrite' if os.path.exists(full) else 'create'} {raw_path}"):
             return denial
 
         try:
@@ -581,32 +544,19 @@ def run_tool(
             return f"[error] failed to write file: {e}"
 
     if name == "list_dir":
-        if _is_outside_workspace(workspace, full) and not _gate(
-            f"OUT-OF-BOUNDS LIST DIR: {full}"
-        ):
+        if _is_outside_workspace(workspace, full) and not _gate(f"OUT-OF-BOUNDS LIST DIR: {full}"):
             return denial
-        if (
-            confirm_gate_fn
-            and gates_active
-            and not _gate(f"list directory {raw_path or '.'}")
-        ):
+        if confirm_gate_fn and gates_active and not _gate(f"list directory {raw_path or '.'}"):
             return denial
         try:
             entries = sorted(os.listdir(full))
-            res_str = (
-                "\n".join(
-                    (e + "/" if os.path.isdir(os.path.join(full, e)) else e)
-                    for e in entries
-                )
-                or "(empty)"
-            )
+            res_str = "\n".join((e + "/" if os.path.isdir(os.path.join(full, e)) else e) for e in entries) or "(empty)"
             if print_output_fn:
                 print_output_fn(res_str)
             return res_str
         except OSError as e:
             return f"[error] failed to list files: {e}"
 
-    # 4. Web Search Grounding
     if name == "web_search":
         q = args.get("query", "").strip()
         if not q:
@@ -618,23 +568,13 @@ def run_tool(
             print_output_fn(out)
         return out
 
-    # 5. Shell Execution
     if name == "run_command":
         cmd = args.get("command", "")
         expanded = cmd.replace("~", os.path.expanduser("~"))
         abs_paths = RE_ABS_PATH.findall(expanded)
         sys_prefixes = ("/bin/", "/usr/bin/", "/usr/local/bin/", "/sbin/", "/usr/sbin/")
-        target_paths = [
-            p for p in abs_paths if not any(p.startswith(sp) for sp in sys_prefixes)
-        ]
-        if (
-            ".." in cmd
-            or any(
-                _is_outside_workspace(workspace, p)
-                for p in target_paths
-                if os.path.exists(p) or os.path.isabs(p)
-            )
-        ) and not _gate(f"OUT-OF-BOUNDS EXECUTION: $ {cmd}"):
+        target_paths = [p for p in abs_paths if not any(p.startswith(sp) for sp in sys_prefixes)]
+        if (".." in cmd or any(_is_outside_workspace(workspace, p) for p in target_paths if os.path.exists(p) or os.path.isabs(p))) and not _gate(f"OUT-OF-BOUNDS EXECUTION: $ {cmd}"):
             return denial
 
         if confirm_gate_fn and gates_active:
@@ -645,23 +585,11 @@ def run_tool(
 
         shell = os.environ.get("SHELL") or "/bin/sh"
         try:
-            res = subprocess.run(
-                [shell, "-lc", cmd],
-                cwd=workspace,
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
-            out = (
-                (res.stdout or "") + (("\n" + res.stderr) if res.stderr else "")
-            ).strip()[:10000]
+            res = subprocess.run([shell, "-lc", cmd], cwd=workspace, capture_output=True, text=True, timeout=300)
+            out = ((res.stdout or "") + (("\n" + res.stderr) if res.stderr else "")).strip()[:10000]
             if print_output_fn:
                 print_output_fn(out)
-            return (
-                f"(exit {res.returncode})\n{out}"
-                if res.returncode != 0
-                else (out or "(exit 0, no output)")
-            )
+            return f"(exit {res.returncode})\n{out}" if res.returncode != 0 else (out or "(exit 0, no output)")
         except subprocess.TimeoutExpired:
             return "[error] command timed out after 300 seconds"
         except OSError as e:

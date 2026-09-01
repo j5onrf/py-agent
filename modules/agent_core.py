@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Core Module - Streaming SSE, tool execution, & Rich rendering [High-Performance Edition]"""
+"""Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [High-Performance Edition]"""
 
 import base64
 import json
@@ -28,9 +28,12 @@ from rich.text import Text
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
 STATE_FILE: str = os.path.join(CFG_DIR, ".state.json")
 SESSIONS_DIR: str = os.path.join(CFG_DIR, "projects", "database")
+
+
 def _get_console(stderr: bool = False) -> Console:
     cols = max(40, shutil.get_terminal_size((80, 24)).columns - 2)
     return Console(stderr=stderr, width=cols)
+
 
 _console, _console_err, _session = _get_console(False), _get_console(True), requests.Session()
 
@@ -41,8 +44,14 @@ RE_MULTIPLE_NEWLINES = re.compile(r"\n{2,}")
 RE_JSON_OBJECT = re.compile(r"\{[\s\S]*\}")
 RE_TOOL_CALL_BLOCK = re.compile(r"<\|tool_call_start\|>.*?<\|tool_call_end\|>", re.DOTALL)
 RE_MD_JSON_WRAPPER = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.DOTALL)
-RE_XML_TOOL_TAGS = re.compile(r"<\|?[a-zA-Z_]+_call_?(?:start|end)?\|?>|<parameter=[^>]+>|</parameter>", re.DOTALL)
+RE_XML_TOOL_TAGS = re.compile(r"<\|?[a-zA-Z_]+_call_?(?:start|end)?\|?>|</?tool_call>|</?function[^>]*>|</?parameter[^>]*>|<｜/?DSML｜(?:function_calls)?>", re.DOTALL)
 RE_ATTACHED_IMAGE = re.compile(r'\[(?:Attached\s+)?(?:image|file)[^\]]*?saved\s+at:\s*([^\]]+)\]', re.IGNORECASE)
+
+# High-Performance Top Stream Tool Interceptors (Hermes XML, Liquid/DeepSeek DSML, Standard JSON/XML)
+RE_HERMES_XML_TOOL = re.compile(r"<tool_call>\s*<function=(?P<name>[^>]+)>\s*(?P<params>[\s\S]*?)\s*</function>\s*</tool_call>", re.DOTALL)
+RE_HERMES_PARAM = re.compile(r"<parameter=(?P<key>[^>]+)>\s*(?P<val>[\s\S]*?)\s*</parameter>", re.DOTALL)
+RE_DSML_TOOL = re.compile(r"<｜DSML｜invoke\s+name=[\"'](?P<name>[^\"']+)[\"']\s+arguments=[\"'](?P<args>[\s\S]*?)[\"']\s*/>", re.DOTALL)
+RE_XML_TOOL = re.compile(r"<tool_call>\s*\{?[\s\S]*?\"name\":\s*\"(?P<name>[^\"]+)\"[\s\S]*?\"arguments\":\s*(?P<args>\{[\s\S]*?\})\s*\}?\s*</tool_call>", re.DOTALL)
 
 
 def _get_img_config() -> tuple[str, str]:
@@ -138,15 +147,19 @@ def preprocess_multimodal_messages(messages: list[dict[str, Any]]) -> list[dict[
                 if isinstance(it, str):
                     if paths := RE_ATTACHED_IMAGE.findall(it):
                         va.extend(f"[Visual Analysis ({model})]:\n{describe_image_gemini(p.strip().strip('\'\"'))}" for p in paths)
-                        if clean := RE_ATTACHED_IMAGE.sub("", it).strip(): tp.append(clean)
-                    else: tp.append(it)
+                        if clean := RE_ATTACHED_IMAGE.sub("", it).strip():
+                            tp.append(clean)
+                    else:
+                        tp.append(it)
                 elif isinstance(it, dict):
                     if it.get("type") == "text":
                         raw = it.get("text", "")
                         if paths := RE_ATTACHED_IMAGE.findall(raw):
                             va.extend(f"[Visual Analysis ({model})]:\n{describe_image_gemini(p.strip().strip('\'\"'))}" for p in paths)
-                            if clean := RE_ATTACHED_IMAGE.sub("", raw).strip(): tp.append(clean)
-                        elif raw: tp.append(raw)
+                            if clean := RE_ATTACHED_IMAGE.sub("", raw).strip():
+                                tp.append(clean)
+                        elif raw:
+                            tp.append(raw)
                     else:
                         res = describe_image_gemini(it)
                         if not res.startswith("[Error: Empty image"):
@@ -159,7 +172,7 @@ def preprocess_multimodal_messages(messages: list[dict[str, Any]]) -> list[dict[
 
 
 def _heal_tool_args(raw: str) -> dict[str, Any]:
-    """High-performance self-healing JSON tool argument parser (Unsloth-inspired)."""
+    """High-performance self-healing JSON tool argument parser."""
     if not raw or not raw.strip():
         return {}
     cleaned = raw.strip()
@@ -197,7 +210,6 @@ BINARY_EXTENSIONS = frozenset({
 _TPM_SKIP_QUERIES = frozenset({"hello", "hi", "hey", "exit", "quit", "q", "/clear", "/reset", "/stats", "/tok", "/m", "/r"})
 _TPM_BLACKLIST = frozenset({"files", "file", "file_list", "project", "code", "description", "features", "dependencies", "project_type", "directory", "folder", "workspace"})
 
-EDIT_TOOLS: list[dict[str, Any]] = getattr(tools, "EDIT_TOOLS", [])
 TOOL_VERBS: dict[str, str] = getattr(tools, "TOOL_VERBS", {})
 
 DEFAULTS = {
@@ -208,10 +220,14 @@ DEFAULTS = {
     "render_markdown": True
 }
 
-try: import agent_usage as usage_log
-except ImportError: usage_log = None
-try: import speed_test
-except ImportError: speed_test = None
+try:
+    import agent_usage as usage_log
+except ImportError:
+    usage_log = None
+try:
+    import speed_test
+except ImportError:
+    speed_test = None
 
 _state_cache: dict[str, Any] = {}
 _state_mtime: float = 0.0
@@ -409,13 +425,10 @@ class RichStreamer:
                 p_str = f"{p_clean} " if p_clean else ""
                 ans_body = self.acc_ans[len(p_str):] if p_str and self.acc_ans.startswith(p_str) else self.acc_ans
                 clean_md = RE_FINAL_ANSWER.sub("", ans_body).replace("\\n", "\n").strip()
-                
-                # Check if output is a simple single-paragraph or complex markdown
+
                 if "\n" not in clean_md and not any(ch in clean_md for ch in ("#", "```", "|", "- ")):
-                    # Plain inline output: print prefix + text together with zero wrap overflow
                     _console.print(Text.assemble((p_str, p_style), (clean_md, "white")))
                 else:
-                    # Multi-line/Block Markdown: prefix on line 1, clean markdown starting immediately below
                     if p_str:
                         _console.print(Text(p_str, style=p_style))
                     try:
@@ -521,9 +534,9 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
             if is_py_profile and ipython:
                 active_tools = list(ipython.IPYTHON_TOOL)
             elif use_map:
-                active_tools = list(EDIT_TOOLS)
+                active_tools = list(tools.EDIT_TOOLS)
             else:
-                active_tools = list(getattr(tools, "LEAN_TOOLS", EDIT_TOOLS))
+                active_tools = list(getattr(tools, "LEAN_TOOLS", tools.EDIT_TOOLS))
 
             if use_gnd and hasattr(tools, "WEB_TOOL"):
                 active_tools.append(tools.WEB_TOOL)
@@ -621,6 +634,58 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
                 speed_test.end(actual_out_tokens=out_tok, is_local=is_local, resolved_model=resolved_model, active_model=body.get("model"))
 
             calls = [val for _, val in sorted(tool_calls_map.items())] if tool_calls_map else None
+
+            # Universal Fallback: Handles Hermes XML, DeepSeek DSML, Mistral, and Standard XML/JSON
+            if not calls and ans_text and is_agent:
+                fallback_calls = []
+
+                # 1. Hermes 3.x XML Format (<function=name><parameter=k>v</parameter></function>)
+                for i, m in enumerate(RE_HERMES_XML_TOOL.finditer(ans_text)):
+                    fname = m.group("name").strip()
+                    raw_params = m.group("params")
+                    params = {pm.group("key").strip(): pm.group("val").strip() for pm in RE_HERMES_PARAM.finditer(raw_params)}
+                    fallback_calls.append({
+                        "id": f"call_hermes_{i}_{int(time.time())}",
+                        "type": "function",
+                        "function": {"name": fname, "arguments": json.dumps(params)}
+                    })
+
+                # 2. DeepSeek / LFM DSML Format (<｜DSML｜invoke name="name" arguments="..." />)
+                if not fallback_calls:
+                    for i, m in enumerate(RE_DSML_TOOL.finditer(ans_text)):
+                        raw_args = m.group("args").replace('\\"', '"').replace("\\\\", "\\")
+                        fallback_calls.append({
+                            "id": f"call_dsml_{i}_{int(time.time())}",
+                            "type": "function",
+                            "function": {"name": m.group("name"), "arguments": raw_args}
+                        })
+
+                # 3. Mistral Format ([TOOL_CALLS] [...])
+                if not fallback_calls:
+                    if mm := RE_MISTRAL_TOOL.search(ans_text):
+                        try:
+                            parsed_calls = json.loads(mm.group("calls"))
+                            for i, c in enumerate(parsed_calls):
+                                fallback_calls.append({
+                                    "id": f"call_mistral_{i}_{int(time.time())}",
+                                    "type": "function",
+                                    "function": {"name": c.get("name"), "arguments": json.dumps(c.get("arguments", {}))}
+                                })
+                        except Exception:
+                            pass
+
+                # 4. Standard XML/JSON (<tool_call>{"name": "...", "arguments": {...}}</tool_call>)
+                if not fallback_calls:
+                    for i, m in enumerate(RE_XML_TOOL.finditer(ans_text)):
+                        fallback_calls.append({
+                            "id": f"call_xml_{i}_{int(time.time())}",
+                            "type": "function",
+                            "function": {"name": m.group("name"), "arguments": m.group("args")}
+                        })
+
+                if fallback_calls:
+                    calls = fallback_calls
+
             has_web_call = use_gnd and any(c.get("function", {}).get("name") == "web_search" for c in (calls or []))
 
             if not calls or (not is_agent and not has_web_call):
@@ -692,7 +757,7 @@ def stream_response(messages: list[dict[str, Any]], prefix: str = "AI: ", cfg_di
 
         url, headers, body, timeout = configs[0]
         if "localhost" in url or "127.0.0.1" in url or body.get("model") == "local-model":
-            body = {**body, **think_kwargs}
+            body = {**body, "max_tokens": 2048, **think_kwargs}
 
         ans = agentic_turn(messages, url, headers, body, timeout, spinner, show_stats, is_agent=is_agent)
         if spinner:
@@ -728,19 +793,62 @@ def show_memory_status(messages: list[dict[str, Any]], max_context: int = 8192, 
 
 
 def prune_history(history: list[dict[str, Any]], max_tokens: int | None = None) -> list[dict[str, Any]]:
-    if len(history) <= 1:
+    """3-Zone Context Compactor inspired by pi-agent: Condenses older tool outputs
+
+    while preserving paired tool_call IDs and active working memory.
+    """
+    if len(history) <= 4:
         return history
+
     limit = max_tokens or int(os.environ.get("AI_MAX_TOKENS", 8192))
-    history = [m for m in history if m.get("role") != "tool"]
-    sys_prompt = history[0]
-    curr = get_accurate_token_count(sys_prompt.get("content", ""))
-    selected = []
+    sys_msg = history[0]
 
-    for msg in reversed(history[1:]):
-        toks = get_accurate_token_count(msg.get("content", ""))
-        if curr + toks > limit and selected:
+    # Zone 3: Keep the latest 4 messages (active working horizon) completely untouched
+    recent_tail = history[-4:]
+    middle_msgs = history[1:-4]
+
+    compacted_middle = []
+    for msg in middle_msgs:
+        role = msg.get("role")
+        content = msg.get("content") or ""
+
+        # Compact older tool output payloads into dense 1-line execution summaries
+        if role == "tool":
+            fname = msg.get("name", "tool")
+            line_count = len(content.splitlines())
+            
+            # Condense large file reads and diffs
+            if "### File:" in content or line_count > 10:
+                summary = f"[{fname}: {line_count} lines processed successfully]"
+            elif "Successfully edited" in content:
+                summary = f"[{fname}: applied targeted edit]"
+            elif "(exit 0" in content:
+                summary = f"[{fname}: command passed (exit 0)]"
+            elif "(exit" in content:
+                # Keep error trace summary intact
+                first_err = content.splitlines()[0] if content else "error"
+                summary = f"[{fname}: {first_err[:120]}]"
+            else:
+                summary = content if len(content) <= 150 else content[:120] + "... [snipped]"
+
+            compacted_middle.append({**msg, "content": summary})
+        else:
+            compacted_middle.append(msg)
+
+    # Calculate token load across compacted middle
+    assembled = [sys_msg]
+    curr_tokens = get_accurate_token_count(sys_msg.get("content", ""))
+    tail_tokens = sum(get_accurate_token_count(m.get("content") or "") for m in recent_tail)
+
+    budget_for_middle = max(500, limit - tail_tokens - curr_tokens)
+    selected_middle = []
+
+    # Pack middle from newest to oldest
+    for m in reversed(compacted_middle):
+        toks = get_accurate_token_count(m.get("content") or "")
+        if curr_tokens + toks > budget_for_middle and selected_middle:
             break
-        selected.append(msg)
-        curr += toks
+        selected_middle.append(m)
+        curr_tokens += toks
 
-    return [sys_prompt] + list(reversed(selected))
+    return [sys_msg] + list(reversed(selected_middle)) + recent_tail

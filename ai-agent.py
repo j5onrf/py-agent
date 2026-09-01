@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.07] - Pure Standard In-Memory Architecture"""
+"""Py Agent [j5onrf] [v0.9.9.09] - Pure Standard In-Memory Architecture"""
 
 import json
 import os
@@ -381,6 +381,15 @@ def run_interactive_chat(args: list[str]) -> None:
                     sessions.clear_turns(safe_name)
                     memories.tpm_clear(safe_name)
                     ui._console.print("[yellow][sys] Workspace reset complete. Launching 'ai init' next time will prompt for a new profile.[/yellow]\n")
+                    continue
+
+                if cmd in ("/compact", "/com", "/cpt"):
+                    before_toks = sum(core.get_accurate_token_count(m.get("content") or "") for m in chat_history)
+                    chat_history = core.prune_history(chat_history)
+                    after_toks = sum(core.get_accurate_token_count(m.get("content") or "") for m in chat_history)
+                    saved = max(0, before_toks - after_toks)
+                    pct = (saved / before_toks * 100) if before_toks > 0 else 0
+                    ui._console.print(f"[green][sys] Context compacted: {before_toks} → {after_toks} tokens (saved {saved}t / -{pct:.1f}%).[/green]\n")
                     continue
 
                 if cmd == "/tok":

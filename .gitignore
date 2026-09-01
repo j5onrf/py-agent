@@ -19,6 +19,7 @@ skills/system/mysys.md
 ai-history
 tools/agentic/fusion/logs/
 .agent/
+custom_spaces.json
 
 # Databases & SQLite WAL
 projects/database/*.db*

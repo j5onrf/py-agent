@@ -2,7 +2,8 @@
 
 # Configuration
 PORT=8080
-MODEL_PATH="/home/user/models/LFM2.5-8B-A1B.gguf"
+HOST="127.0.0.1"
+MODEL_PATH="/home/user/models/LFM2.5-8B-A1B-UD-Q4_K_XL.gguf"
 LOG_DIR="/home/user/models/serv"
 LOG_FILE="$LOG_DIR/server.log"
 LLAMA_SERVER_BIN="/home/user/llama.cpp/build/bin/llama-server"
@@ -21,7 +22,7 @@ fi
 # 2. Extract Physical Core IDs (bypasses SMT / Hyper-Threading)
 PHYSICAL_CORES=$(lscpu -p=CPU,CORE | grep -v '^#' | sort -u -k2,2 -t, | cut -d, -f1 | paste -sd, -)
 
-# 3. Allocator and Thread Binding
+# 3. Allocator and Thread Binding (CachyOS x86-64-v4 mimalloc)
 if [ -f /usr/lib/libmimalloc.so ]; then
     export LD_PRELOAD=/usr/lib/libmimalloc.so
 fi
@@ -34,13 +35,15 @@ ulimit -l unlimited 2>/dev/null
 # 5. Launch wrapped in UWSM (Optimized Native AVX-512 / VNNI Engine)
 exec uwsm app -- taskset -c "$PHYSICAL_CORES" "$LLAMA_SERVER_BIN" \
   -m "$MODEL_PATH" \
-  --alias "LFM2.5-8B-A1B" \
+  --alias "LFM2.5-8B-A1B-UD" \
+  --host "$HOST" \
+  --port "$PORT" \
   -c 8192 \
   -np 1 \
   -t 6 \
   -tb 6 \
   -b 512 \
-  -ub 512 \
+  -ub 256 \
   --flash-attn on \
   --load-mode mlock \
   --warmup \
@@ -52,5 +55,4 @@ exec uwsm app -- taskset -c "$PHYSICAL_CORES" "$LLAMA_SERVER_BIN" \
   --repeat-penalty 1.05 \
   --presence-penalty 0.1 \
   --repeat-last-n -1 \
-  --no-ui \
-  --port "$PORT" >> "$LOG_FILE" 2>&1
+  --no-ui >> "$LOG_FILE" 2>&1

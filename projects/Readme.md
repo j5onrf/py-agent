@@ -180,6 +180,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 │                                                                     │
 │   Memory & Workspace                                                │
 │   /m                     - Toggle SQLite memory & facts (TPM)       │
+│   /com, /compact         - 3-Zone compaction & token reclaim        │
 │   /tok                   - Show context token breakdown             │
 │   /sync                  - Synchronize codebase index-map           │
 │   file <path>            - Load file contents into context          │

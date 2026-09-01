@@ -35,7 +35,7 @@ LOCAL_MODELS = [
     },
     {
         "name": "LFM2.5-8B-A1B (Balanced / Lite Coding Agent)",
-        "file": "LFM2.5-8B-A1B.gguf",
+        "file": "LFM2.5-8B-A1B-UD-Q4_K_XL.gguf",
         "script": "lfm2.sh",
     },
     {

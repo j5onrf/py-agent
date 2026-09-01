@@ -371,6 +371,7 @@ def show_help() -> None:
         ("/m", "Toggle database memory"),
         ("/md", "Toggle Markdown stream"),
         ("/stats", "Generation speed stats"),
+        ("/com, /compact", "3-Zone context compaction"),
         ("/tok", "Context token usage"),
         ("/sync", "Sync codebase index-map"),
         ("/clear, /c", "Soft clear active chat history"),
