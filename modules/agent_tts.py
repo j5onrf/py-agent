@@ -3,12 +3,13 @@
 
 import os
 import re
-import shlex
 import subprocess
 import threading
 
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
 VOICE_FILE = os.path.expanduser("~/.config/koko_current_voice")
+SPEED_FILE = os.path.expanduser("~/.config/koko_speed")
+DEFAULT_SPEED = 1.15
 
 # Matches closed AND unclosed/truncated thinking blocks (<think>... to EOF)
 RE_THINK_BLOCK = re.compile(r'<think(?:ing)?>[\s\S]*?(?:</think(?:ing)?>|$)|<thought>[\s\S]*?(?:</thought>|$)', re.DOTALL | re.IGNORECASE)
@@ -34,6 +35,37 @@ def is_tts_enabled() -> bool:
     except Exception:
         pass
     return False
+
+
+def get_tts_speed() -> float:
+    """Gets current TTS speed from state, config file, or default (1.15)."""
+    try:
+        if core and (val := core.get_state("tts_speed", None)):
+            return float(val)
+    except Exception:
+        pass
+
+    if os.path.exists(SPEED_FILE):
+        try:
+            with open(SPEED_FILE, "r", encoding="utf-8") as f:
+                if v := f.read().strip():
+                    return float(v)
+        except (ValueError, OSError):
+            pass
+    return DEFAULT_SPEED
+
+
+def set_tts_speed(speed: float) -> float:
+    """Sets, clamps (0.5 - 2.5), and persists the TTS speed."""
+    clamped = max(0.5, min(2.5, round(float(speed), 2)))
+    if core:
+        core.save_state("tts_speed", clamped)
+    try:
+        with open(SPEED_FILE, "w", encoding="utf-8") as f:
+            f.write(str(clamped))
+    except OSError:
+        pass
+    return clamped
 
 
 def toggle_tts(enable: bool | None = None) -> bool:
@@ -75,9 +107,10 @@ def speak_text(text: str) -> None:
             except OSError:
                 pass
 
+        speed = get_tts_speed()
         wav_path = "/dev/shm/tts.wav"
         escaped = clean.replace('\\', '\\\\').replace('"', '\\"').replace('$', '\\$').replace('`', '\\`')
-        cmd = f'nice -n -10 env OMP_NUM_THREADS=6 OMP_WAIT_POLICY=PASSIVE koko --style "{voice}" --speed 1.15 text "{escaped}" -o {wav_path} 2>/dev/null && pw-play {wav_path}'
+        cmd = f'nice -n -10 env OMP_NUM_THREADS=6 OMP_WAIT_POLICY=PASSIVE koko --style "{voice}" --speed {speed} text "{escaped}" -o {wav_path} 2>/dev/null && pw-play {wav_path}'
         subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     threading.Thread(target=_run, daemon=True).start()

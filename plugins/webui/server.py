@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Py-Agent Official WebUI Gateway [j5onrf]
-Streams 100% official llama.cpp WebUI with full TPS speed, multimodal vision, and live Google Search Grounding.
+Streams official llama.cpp WebUI with dynamic CLI-state sync (Reasoning on/off, Vision, Grounding).
 """
 
 import gzip
@@ -131,7 +131,7 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                 except Exception:
                     pass
 
-            # Intercept /props to unlock multimodal upload support in official llama.cpp WebUI
+            # Sync dynamic properties (Reasoning on/off + Vision support)
             parsed = urllib.parse.urlparse(self.path)
             if parsed.path.rstrip("/") in ("/props", "/v1/props"):
                 try:
@@ -140,6 +140,9 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                     data["modalities"] = {"vision": True, "audio": False}
                     data["chat_template_kwargs"] = data.get("chat_template_kwargs", {})
                     data["chat_template_kwargs"]["supports_vision"] = True
+                    
+                    # Dynamically mirror CLI reasoning state into WebUI props
+                    data["chat_template_kwargs"]["enable_thinking"] = core.get_state("reasoning_active", False)
                     body = json.dumps(data).encode("utf-8")
                 except Exception:
                     pass
@@ -220,6 +223,7 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
         workspace = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
         is_agent, profile_name, _ = detect_workspace_mode(workspace)
         use_gnd = core.get_state("grounding_active", False)
+        reasoning_active = core.get_state("reasoning_active", False)
         messages = body.get("messages", [])
 
         # Preprocess multimodal image payloads via Gemini Flash Lite
@@ -253,6 +257,9 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                 req_body = {**body, "messages": messages, "stream": True}
                 if "stream_options" not in req_body:
                     req_body["stream_options"] = {"include_usage": True}
+
+                # Dynamically set thinking mode on every request
+                req_body.setdefault("chat_template_kwargs", {})["enable_thinking"] = reasoning_active
 
                 active_tools = []
                 if is_agent:
@@ -299,6 +306,16 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                     data_str = line_str[5:].strip()
                     if data_str == "[DONE]":
                         break
+
+                    # When reasoning is off, filter out reasoning_content chunks
+                    if not reasoning_active:
+                        try:
+                            parsed_data = json.loads(data_str)
+                            delta = parsed_data.get("choices", [{}])[0].get("delta", {})
+                            if "reasoning_content" in delta and not delta.get("content"):
+                                continue
+                        except Exception:
+                            pass
 
                     self.wfile.write(line + b"\n\n")
                     self.wfile.flush()

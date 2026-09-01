@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.09] - Pure Standard In-Memory Architecture"""
+"""Py Agent [j5onrf] [v0.9.9.10] - Pure Standard In-Memory Architecture"""
 
 import json
 import os
@@ -255,8 +255,24 @@ def run_interactive_chat(args: list[str]) -> None:
                     continue
 
                 if cmd in ("/tts", "/talk", "/tol"):
-                    active = tts.toggle_tts()
-                    ui._console.print(f"[cyan][sys] Text to speech {'enabled' if active else 'disabled'}.[/cyan]\n")
+                    if len(parts) > 1:
+                        arg = parts[1].lower().replace("x", "")
+                        if arg in ("def", "default", "reset"):
+                            sp = tts.set_tts_speed(1.15)
+                            ui._console.print(f"[cyan][sys] TTS speed reset to default ({sp}x).[/cyan]\n")
+                        else:
+                            try:
+                                val = float(arg)
+                                sp = tts.set_tts_speed(val)
+                                if not tts.is_tts_enabled():
+                                    tts.toggle_tts(True)
+                                ui._console.print(f"[cyan][sys] TTS speed set to {sp}x (TTS enabled).[/cyan]\n")
+                            except ValueError:
+                                ui._console.print("[dim yellow][sys] Usage: /tts [0.5 - 2.5 | reset][/dim yellow]\n")
+                    else:
+                        active = tts.toggle_tts()
+                        cur_speed = tts.get_tts_speed() if hasattr(tts, "get_tts_speed") else 1.15
+                        ui._console.print(f"[cyan][sys] Text to speech {'enabled' if active else 'disabled'} ({cur_speed}x).[/cyan]\n")
                     continue
 
                 if cmd in ("/py", "/ipython"):
