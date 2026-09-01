@@ -20,7 +20,7 @@
 
 <h2 align="center">Overview & Execution Modes</h2>
 
-Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`) controlling a C++ backend `llama-server`. Built for extreme efficiency on fine-tuned quantized local models (`Qwen3.5-2B+` for instant chat, `Qwen3.6-35B-A3B` / `Qwen3.8-27B` for developer agents) and cloud providers—supporting both **universal native JSON tool calling** and an advanced **stateful IPython kernel execution harness (`/py`)** for in-memory Python actions.
+Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`) controlling a C++ backend `llama-server`. Built for extreme efficiency on fine-tuned quantized local models (`Qwen3.5-2B+` for instant chat, `Qwen3.6-35B-A3B` / `Qwen3.8-27B` for developer agents) and cloud providers—supporting both universal native JSON tool calling and an advanced stateful IPython kernel execution harness (`/py`) for in-memory Python actions.
 
 🟢 **Active:** Official `Hugging Face` Router endpoints ([`Qwen/Qwen3.8-27B`](https://huggingface.co/Qwen/Qwen3.8-27B), [`moonshotai/Kimi-K3`](https://huggingface.co/moonshotai/Kimi-K3), [`zai-org/GLM-5.3-Flash`](https://huggingface.co/zai-org/GLM-5.3-Flash), [`DeepSeek-V4-Flash-0731`](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731), [`Qwen/Qwen3.8-2.4T-A95B`](https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B)).
 > 💡 *Use `model select` to auto-configure free community HF Spaces.*
