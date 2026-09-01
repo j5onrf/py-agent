@@ -29,12 +29,8 @@
 ## 1. Plugins
 
 ```properties
-# --- PyCode App & WebUI ---
-~/.config/py-agent/plugins/pycode/launch.sh ---> pycode
-~/.config/py-agent/plugins/pycode/launch.sh web ---> pycode web
-
 # --- PyCode Setup & Build ---
-~/.config/py-agent/plugins/pycode/setup.sh ---> install-pycode, pycode-setup
+~/.config/py-agent/plugins/pycode/setup.sh ---> install-pycode, setup-pycode, setup pycode
 ```
 
 ## 2. Workspaces
@@ -109,9 +105,6 @@ ai init ~/.config/py-agent/projects/session-test-3 ---> session test 3, projects
 # --- Hyprland State ---
 ~/.config/py-agent/tools/subsec/hyprstate/work ---> hyprstate work, hyprwork
 ~/.config/py-agent/tools/subsec/hyprstate/gitcom ---> hyprstate gitcom, gitcom
-# --- Custom TUI Applications ---
-~/.config/py-agent/tools/subsec/basepage-tui/basepage.py ---> basepage, basep
-~/.config/py-agent/tools/subsec/basepage-tui/basetracker.py ---> basetracker, baset
 ```
 
 ## 8. Tools & Utilities

@@ -29,7 +29,7 @@ Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`)
 - **Single-Turn Query (`ai <query>`):** Instant response piped straight back to your active shell prompt.
 - **Multi-Turn Chat (`ai`):** Persistent interactive terminal session with memory context.
 - **Workspace Agent (`ai init <path>`):** Full codebase graph indexing, path-healing file editing, and sub-agent concurrency.
-- **Native GUI IDE (`/pyc`):** Cross-platform React desktop & browser development workspace powered by [PyCode](https://github.com/j5onrf/pycode).
+- **Native IDE (`/pyc`):** Cross-platform React desktop & browser development workspace powered by [PyCode](https://github.com/j5onrf/pycode).
 - **llama.cpp WebAgent (`/webui`):** Autonomous tool-enabled web gateway on top of official `llama-server` UI (`http://127.0.0.1:3000`) with auxiliary Gemini vision pre-processing for text-only local models.
 
 ---
@@ -232,7 +232,7 @@ AI_MAX_TOKENS="8192"
 
 | Surface | Installation Command | Requirement |
 | :--- | :--- | :--- |
-| **Desktop IDE (<a href="https://github.com/j5onrf/pycode">PyCode</a>)** | `install pycode`<br><sub>(or `~/.config/py-agent/plugins/pycode/setup.sh`)</sub> | Node.js 20+, pnpm |
+| **Desktop IDE (<a href="https://github.com/j5onrf/pycode">PyCode</a>)** | `install-pycode`<br><sub>(or `~/.config/py-agent/plugins/pycode/setup.sh`)</sub> | Node.js 20+, pnpm |
 | **Textual PyTUI** | `sudo pacman -S python-textual python-uvloop && yay -S python-sqlite-vec` | uvloop & sqlite-vec |
 
 
@@ -267,6 +267,3 @@ AI_MAX_TOKENS="8192"
 
 * **License**: Licensed under the permissive [MODIFIED MIT LICENSE](LICENSE).
 * **Community:** Contributions are always welcome!
-
-
-

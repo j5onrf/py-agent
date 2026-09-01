@@ -9,6 +9,25 @@ PYAGENT_DIR="${HOME}/.config/py-agent"
 PYCODE_DIR="${HOME}/.config/pycode"
 REPO_URL="https://github.com/j5onrf/pycode.git"
 
+# Interactive Confirmation Gate (explicitly binds to /dev/tty for shell hook execution)
+if [[ "$1" != "-y" && "$1" != "--yes" ]]; then
+    echo -e "\n\033[1;36m[pycode-setup]\033[0m PyCode React Desktop & Web IDE Installer"
+    echo -e "Target path: \033[1;33m${PYCODE_DIR}\033[0m"
+    echo -e "This will download dependencies and build the PyCode workspace (~200MB).\n"
+
+    if [ -e /dev/tty ]; then
+        read -rp "Do you want to proceed with the installation? [y/N]: " confirm < /dev/tty
+    else
+        read -rp "Do you want to proceed with the installation? [y/N]: " confirm
+    fi
+
+    if [[ ! "$confirm" =~ ^[yY]([eE][sS])?$ ]]; then
+        echo -e "\n\033[1;33m[pycode-setup]\033[0m Installation cancelled by user.\n"
+        exit 0
+    fi
+    echo ""
+fi
+
 echo -e "\033[1;36m[pycode-setup]\033[0m Checking prerequisites..."
 
 # 1. Check Node.js
