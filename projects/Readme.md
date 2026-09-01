@@ -82,7 +82,7 @@ Switch CLI box styles using `/box [1-8]` (or type `/box` to cycle). Selection pe
 ```
 #### Style #6: Diamond Nodes
 ```console
-◈─  ∿ Py Agent  ───────────────────◈
+◈─  ∿ Py Agent  ────────────────────◈
 │     model:  Qwen3.6-35B-A3B.gguf  │
 │ directory:  ~                     │
 │     skill:  default               │
@@ -91,7 +91,7 @@ Switch CLI box styles using `/box [1-8]` (or type `/box` to cycle). Selection pe
 ```
 #### Style #7: Dashed / Cyberpunk
 ```console
-┌┄  ∿ Py Agent  ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┐
+┌┄  ∿ Py Agent  ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┐
 ┆     model:  Qwen3.6-35B-A3B.gguf  ┆
 ┆ directory:  ~                     ┆
 ┆     skill:  default               ┆

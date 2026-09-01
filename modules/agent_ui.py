@@ -31,9 +31,36 @@ RE_UNSAFE_SHELL_CHARS: re.Pattern = re.compile(r'[\[\]{}()=\'"",;|<>#]')
 BOX_DIAMOND = Box("◈─┬◈\n│ ││\n├─┼┤\n│ ││\n├─┼┤\n├─┼┤\n│ ││\n◈─┴◈\n")
 BOX_DASHED = Box("┌┄┬┐\n┆ ┆┆\n├┄┼┤\n┆ ┆┆\n├┄┼┤\n├┄┼┤\n┆ ┆┆\n└┄┴┘\n")
 
+# Single Source of Truth for Box Styles (1-8)
+STYLES = {
+    1: ("\u223f Py Agent", ROUNDED, "green", "bold bright_green"),
+    2: ("\u223f Py Agent", DOUBLE, "bright_blue", "bold bright_blue"),
+    3: ("\u223f Py Agent", SQUARE, "bright_yellow", "bold bright_yellow"),
+    4: ("\u223f Py Agent", HEAVY, "bright_cyan", "bold bright_white"),
+    5: ("Py Agent", HORIZONTALS, "dim white", "bold cyan"),
+    6: ("\u223f Py Agent", BOX_DIAMOND, "bright_cyan", "bold bright_white"),
+    7: ("\u223f Py Agent", BOX_DASHED, "bright_magenta", "bold bright_magenta"),
+}
+
+# Maps Rich color names to terminal ANSI colors so Omarchy themes apply everywhere
+RICH_TO_ANSI = {
+    "green": "\033[1;32m",
+    "bright_green": "\033[1;92m",
+    "blue": "\033[1;34m",
+    "bright_blue": "\033[1;94m",
+    "yellow": "\033[1;33m",
+    "bright_yellow": "\033[1;93m",
+    "cyan": "\033[1;36m",
+    "bright_cyan": "\033[1;96m",
+    "magenta": "\033[1;35m",
+    "bright_magenta": "\033[1;95m",
+    "dim white": "\033[37m",
+    "white": "\033[1;37m",
+}
+
 
 class InlineSpinner:
-    """A thread-safe, lightweight console spinner tracking elapsed operation runtime."""
+    """A thread-safe console spinner that dynamically matches the active Omarchy / Box theme."""
 
     def __init__(self, chars: tuple[str, ...] | list[str] | str = ("✦ [∿ · ·]", "✦ [· ∿ ·]", "✦ [· · ∿]", "✦ [· ∿ ·]")) -> None:
         self.chars, self.active, self.thread, self.message, self.start_time = (
@@ -46,48 +73,41 @@ class InlineSpinner:
         self._lock = threading.Lock()
 
     def _get_theme_color(self) -> str:
+        """Dynamically pulls the border color from the active box style preset."""
         try:
             import agent_core as core
             box = core.get_state("box_style", 1)
-            colors = {
-                1: "\033[1;32m", # 1: Green (Rounded)
-                2: "\033[1;34m", # 2: Blue (Double)
-                3: "\033[1;33m", # 3: Neon Yellow (Crisp Square)
-                4: "\033[1;36m", # 4: Cyan (Heavy Square)
-                5: "\033[1;37m", # 5: Dim White (Minimalist Line)
-                6: "\033[1;36m", # 6: Bright Cyan (Diamond Nodes)
-                7: "\033[1;35m", # 7: Purple/Pink (Cyberpunk)
-                8: "\033[1;32m", # 8: Green (Dual-Chamber Inset)
-            }
-            return colors.get(box, "\033[1;32m")
+            border_col = "green" if box == 8 else STYLES.get(box, STYLES[1])[2]
+            return RICH_TO_ANSI.get(border_col, "\033[1;32m")
         except Exception:
             return "\033[1;32m"
 
-    def _glimmer(self, text: str, t: float) -> str:
-        """Sweeps a luminous gradient wave of light across the text from left to right."""
+    def _glimmer(self, text: str, t: float, color: str) -> str:
+        """Sweeps a luminous wave across text using the active theme color."""
         pos = (t * 2.2) % (len(text) + 8) - 4
         rendered = []
         for i, ch in enumerate(text):
             dist = abs(i - pos)
-            if dist < 3.0:
-                intensity = max(0.0, 1.0 - (dist / 3.0))
-                r = int(120 + (255 - 120) * intensity)
-                g = int(210 + (255 - 210) * intensity)
-                b = int(160 + (255 - 160) * intensity)
-                rendered.append(f"\033[1;38;2;{r};{g};{b}m{ch}\033[0m")
+            if dist < 1.0:
+                # Bright white crest of the light wave
+                rendered.append(f"\033[1;37m{ch}\033[0m")
+            elif dist < 2.5:
+                # Theme color trail
+                rendered.append(f"{color}\033[1m{ch}\033[0m")
             else:
-                rendered.append(f"\033[38;2;110;120;140m{ch}\033[0m")
+                # Dim background text
+                rendered.append(f"\033[2m{ch}\033[0m")
         return "".join(rendered)
 
     def _spin(self) -> None:
         idx, char_len, tick = 0, len(self.chars), 0.0
-        color = self._get_theme_color()
         while self.active:
+            color = self._get_theme_color()
             try:
                 char, elapsed = self.chars[int(idx) % char_len], time.time() - self.start_time
                 with self._lock:
                     msg = self.message
-                glim_msg = self._glimmer(msg, tick)
+                glim_msg = self._glimmer(msg, tick, color)
                 sys.stderr.write(
                     f"\r\x1b[K{color}{char}\033[0m {glim_msg} \033[2m{elapsed:.1f}s\033[0m"
                 )
@@ -235,15 +255,6 @@ def draw_session_box(
             subtitle_align="right",
         )
     else:
-        STYLES = {
-            1: ("\u223f Py Agent", ROUNDED, "green", "bold bright_green"),
-            2: ("\u223f Py Agent", DOUBLE, "bright_blue", "bold bright_blue"),
-            3: ("\u223f Py Agent", SQUARE, "bright_yellow", "bold bright_yellow"),
-            4: ("\u223f Py Agent", HEAVY, "bright_cyan", "bold bright_white"),
-            5: ("Py Agent", HORIZONTALS, "dim white", "bold cyan"),
-            6: ("\u223f Py Agent", BOX_DIAMOND, "bright_cyan", "bold bright_white"),
-            7: ("\u223f Py Agent", BOX_DASHED, "bright_magenta", "bold bright_magenta"),
-        }
         base_title, box_type, border_col, title_style = STYLES.get(box_style, STYLES[1])
         title_text = f" {base_title} [sub-agent #{sub_id}] " if sub_id else f" {base_title} "
         panel = Panel(
