@@ -12,7 +12,7 @@ import urllib.request as urlreq
 from collections.abc import Callable
 from typing import Any
 
-from rich.box import DOUBLE, HEAVY, HORIZONTALS, ROUNDED
+from rich.box import Box, DOUBLE, HEAVY, HORIZONTALS, ROUNDED, SQUARE
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
@@ -27,6 +27,9 @@ except ImportError:
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
 _console, _console_err = Console(), Console(stderr=True)
 RE_UNSAFE_SHELL_CHARS: re.Pattern = re.compile(r'[\[\]{}()=\'"",;|<>#]')
+
+BOX_DIAMOND = Box("◈─┬◈\n│ ││\n├─┼┤\n│ ││\n├─┼┤\n├─┼┤\n│ ││\n◈─┴◈\n")
+BOX_DASHED = Box("┌┄┬┐\n┆ ┆┆\n├┄┼┤\n┆ ┆┆\n├┄┼┤\n├┄┼┤\n┆ ┆┆\n└┄┴┘\n")
 
 
 class InlineSpinner:
@@ -46,7 +49,16 @@ class InlineSpinner:
         try:
             import agent_core as core
             box = core.get_state("box_style", 1)
-            colors = {1: "\033[1;32m", 2: "\033[1;34m", 3: "\033[1;36m", 4: "\033[1;37m", 5: "\033[1;32m"}
+            colors = {
+                1: "\033[1;32m", # 1: Green (Rounded)
+                2: "\033[1;34m", # 2: Blue (Double)
+                3: "\033[1;33m", # 3: Neon Yellow (Crisp Square)
+                4: "\033[1;36m", # 4: Cyan (Heavy Square)
+                5: "\033[1;37m", # 5: Dim White (Minimalist Line)
+                6: "\033[1;36m", # 6: Bright Cyan (Diamond Nodes)
+                7: "\033[1;35m", # 7: Purple/Pink (Cyberpunk)
+                8: "\033[1;32m", # 8: Green (Dual-Chamber Inset)
+            }
             return colors.get(box, "\033[1;32m")
         except Exception:
             return "\033[1;32m"
@@ -59,7 +71,6 @@ class InlineSpinner:
             dist = abs(i - pos)
             if dist < 3.0:
                 intensity = max(0.0, 1.0 - (dist / 3.0))
-                # Shimmer highlight (soft green/cyan glow peaking to bright white)
                 r = int(120 + (255 - 120) * intensity)
                 g = int(210 + (255 - 210) * intensity)
                 b = int(160 + (255 - 160) * intensity)
@@ -183,7 +194,7 @@ def draw_session_box(
     sub_id: int | None = None,
     box_style: int = 1,
 ) -> None:
-    """Renders the system initialization box with customizable style presets (1-5)."""
+    """Renders the system initialization box with customizable style presets (1-8)."""
     display_dir = (
         workspace_path.replace(home_dir, "~", 1)
         if workspace_path.startswith(home_dir)
@@ -210,17 +221,13 @@ def draw_session_box(
     mem_status = f"active ({tpm_count} facts, {db_turns} turns)" if memory_active else "stateless"
     table.add_row("database:", mem_status if is_agent else "stateless")
 
-    STYLES = {
-        1: ("\u223f Py Agent", ROUNDED, "green", "bold bright_green"),
-        2: ("\u223f Py Agent", DOUBLE, "bright_blue", "bold bright_blue"),
-        3: ("\u223f Py Agent", HEAVY, "bright_cyan", "bold bright_white"),
-        4: ("Py Agent", HORIZONTALS, "dim white", "bold cyan"),
-    }
-
-    if box_style == 5:
+    # Style #8: Dual-Chamber Inset Header
+    if box_style == 8:
         title_str = f"  \u223f Py Agent [sub-agent #{sub_id}]" if sub_id else "  \u223f Py Agent"
+        max_val_len = max(len(model_name), len(display_dir), len(clean_name or "chat"), len(mem_status), 16)
+        sep_str = " " + "─" * (10 + 2 + max_val_len)
         panel = Panel(
-            Group(Text(title_str, style="bold bright_green"), Text(""), table),
+            Group(Text(title_str, style="bold bright_green"), Text(sep_str, style="dim green"), table),
             border_style="green",
             box=ROUNDED,
             expand=False,
@@ -228,6 +235,15 @@ def draw_session_box(
             subtitle_align="right",
         )
     else:
+        STYLES = {
+            1: ("\u223f Py Agent", ROUNDED, "green", "bold bright_green"),
+            2: ("\u223f Py Agent", DOUBLE, "bright_blue", "bold bright_blue"),
+            3: ("\u223f Py Agent", SQUARE, "bright_yellow", "bold bright_yellow"),
+            4: ("\u223f Py Agent", HEAVY, "bright_cyan", "bold bright_white"),
+            5: ("Py Agent", HORIZONTALS, "dim white", "bold cyan"),
+            6: ("\u223f Py Agent", BOX_DIAMOND, "bright_cyan", "bold bright_white"),
+            7: ("\u223f Py Agent", BOX_DASHED, "bright_magenta", "bold bright_magenta"),
+        }
         base_title, box_type, border_col, title_style = STYLES.get(box_style, STYLES[1])
         title_text = f" {base_title} [sub-agent #{sub_id}] " if sub_id else f" {base_title} "
         panel = Panel(
@@ -364,7 +380,7 @@ def show_help() -> None:
         ("/v \\[auto], /voice", "Voice to text"),
         ("/tts", "Text to speech (Kokoro)"),
         ("/py \\[code]", "IPython kernel execution"),
-        ("/box \\[1-5]", "Box style preset"),
+        ("/box \\[1-8]", "Box style preset"),
         ("/task \\[goal]", "Autonomous task loop"),
         ("/t \\[N|show|hide]", "Reasoning budget & display"),
         ("/g, /yolo", "Toggle confirmation gates (YOLO)"),

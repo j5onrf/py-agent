@@ -29,7 +29,7 @@ Agent: Workspace loaded. Awaiting instructions.
 
 ## UI Box Themes
 
-Switch CLI box styles using `/box [1-5]` (or type `/box` to cycle). Selection persists in `~/.config/py-agent/.state.json`.
+Switch CLI box styles using `/box [1-8]` (or type `/box` to cycle). Selection persists in `~/.config/py-agent/.state.json`.
 
 #### Style #1: Codex Rounded (Default)
 ```console
@@ -41,6 +41,9 @@ Switch CLI box styles using `/box [1-5]` (or type `/box` to cycle). Selection pe
 ╰────────────────── Ctrl+C to exit ─╯
 ```
 
+<details>
+<summary><b>💡 View Styles #2 – #8 (Click to Expand)</b></summary>
+
 #### Style #2: Double Border
 ```console
 ╔═  ∿ Py Agent  ════════════════════╗
@@ -50,8 +53,16 @@ Switch CLI box styles using `/box [1-5]` (or type `/box` to cycle). Selection pe
 ║  database:  stateless             ║
 ╚══════════════════ Ctrl+C to exit ─╝
 ```
-
-#### Style #3: Heavy Square
+#### Style #3: Crisp Square
+```console
+┌─  ∿ Py Agent  ────────────────────┐
+│     model:  Qwen3.6-35B-A3B.gguf  │
+│ directory:  ~                     │
+│     skill:  default               │
+│  database:  stateless             │
+└────────────────── Ctrl+C to exit ─┘
+```
+#### Style #4: Heavy Square
 ```console
 ┏━  ∿ Py Agent  ━━━━━━━━━━━━━━━━━━━━┓
 ┃     model:  Qwen3.6-35B-A3B.gguf  ┃
@@ -60,8 +71,7 @@ Switch CLI box styles using `/box [1-5]` (or type `/box` to cycle). Selection pe
 ┃  database:  stateless             ┃
 ┗━━━━━━━━━━━━━━━━━━ Ctrl+C to exit ━┛
 ```
-
-#### Style #4: Minimalist Line
+#### Style #5: Minimalist Line
 ```console
  ─  Py Agent  ──────────────────────
       model:  Qwen3.6-35B-A3B.gguf   
@@ -70,18 +80,37 @@ Switch CLI box styles using `/box [1-5]` (or type `/box` to cycle). Selection pe
    database:  stateless              
  ────────────────── Ctrl+C to exit ─ 
 ```
-
-#### Style #5: Classic In-Panel Codex
+#### Style #6: Diamond Nodes
+```console
+◈─  ∿ Py Agent  ───────────────────◈
+│     model:  Qwen3.6-35B-A3B.gguf  │
+│ directory:  ~                     │
+│     skill:  default               │
+│  database:  stateless             │
+◈────────────────── Ctrl+C to exit ─◈
+```
+#### Style #7: Dashed / Cyberpunk
+```console
+┌┄  ∿ Py Agent  ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┐
+┆     model:  Qwen3.6-35B-A3B.gguf  ┆
+┆ directory:  ~                     ┆
+┆     skill:  default               ┆
+┆  database:  stateless             ┆
+└┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ Ctrl+C to exit ─┘
+```
+#### Style #8: Dual-Chamber Inset
 ```console
 ╭───────────────────────────────────╮
-│  ∿ Py Agent                       │
-│                                   │
+│   ∿ Py Agent                      │
+│  ──────────────────────────────── │
 │     model:  Qwen3.6-35B-A3B.gguf  │
 │ directory:  ~                     │
 │     skill:  default               │
 │  database:  stateless             │
 ╰────────────────── Ctrl+C to exit ─╯
 ```
+
+</details>
 
 ---
 

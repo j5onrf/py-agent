@@ -294,7 +294,7 @@ def run_interactive_chat(args: list[str]) -> None:
                     continue
 
                 if cmd in ("/box", "/box-style", "/boxstyle"):
-                    val = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() and 1 <= int(parts[1]) <= 5 else (st.get("box_style", 2) % 5) + 1
+                    val = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() and 1 <= int(parts[1]) <= 8 else (st.get("box_style", 2) % 8) + 1
                     core.save_state("box_style", val)
                     ui._console.print(f"[green][sys] Switched box style to #{val}.[/green]\n")
                     continue
