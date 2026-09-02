@@ -170,6 +170,17 @@ AI_MAX_TOKENS="8192"
 
 ---
 
+### Optional Client Surfaces Setup
+
+| Surface | Installation Command | Requirements |
+| :--- | :--- | :--- |
+| **Desktop IDE ([PyCode](https://github.com/j5onrf/pycode))** | `install-pycode`<br><sub>(or `~/.config/py-agent/plugins/pycode/setup.sh`)</sub> | Node.js 20+, pnpm |
+| **Textual PyTUI** | `sudo pacman -S python-textual python-uvloop && yay -S python-sqlite-vec` | uvloop & sqlite-vec |
+| **Voice Bridge** | `~/.config/py-agent/plugins/voice/setup.sh` | OpenSSL, wtype (Wayland) |
+| **Neural TTS** | `yay -S koko-bin pw-play` | Kokoro & PipeWire |
+
+---
+
 <h2 align="center">Roadmap to v1.0.0</h2>
 
 - [x] **Core Engine Optimization:** Production pass on streaming, token counting, and sub-agent concurrency.
