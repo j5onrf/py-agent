@@ -172,12 +172,12 @@ AI_MAX_TOKENS="8192"
 
 ### 3. Optional Client Surfaces
 
-| Surface | Installation Command | Requirements |
+| Surface | Setup / Command | Requirements |
 | :--- | :--- | :--- |
 | **Desktop IDE ([PyCode](https://github.com/j5onrf/pycode))** | `install-pycode`<br><sub>(or `~/.config/py-agent/plugins/pycode/setup.sh`)</sub> | Node.js 20+, pnpm |
 | **Textual PyTUI** | `sudo pacman -S python-textual python-uvloop && yay -S python-sqlite-vec` | uvloop & sqlite-vec |
-| **Voice Bridge** | `~/.config/py-agent/plugins/voice/setup.sh` | OpenSSL, wtype (Wayland) |
-| **Neural TTS** | `yay -S koko-bin pw-play` | Kokoro & PipeWire |
+| **Voice-to-Text Bridge** | `/v` (or `/v auto` on `:9999`) | `sudo pacman -S wtype openssl` & `GEM_VOICE` in `.env` |
+| **Neural Kokoro TTS** | `/tts` | `yay -S koko-bin pw-play` |
 
 ---
 
