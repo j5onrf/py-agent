@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.10] - Pure Standard In-Memory Architecture"""
+"""Py Agent [j5onrf] [v0.9.9.11] - Pure Standard In-Memory Architecture"""
 
 import json
 import os
@@ -396,7 +396,7 @@ def run_interactive_chat(args: list[str]) -> None:
                         except OSError: pass
                     sessions.clear_turns(safe_name)
                     memories.tpm_clear(safe_name)
-                    ui._console.print("[yellow][sys] Workspace reset complete. Launching 'ai init' next time will prompt for a new profile.[/yellow]\n")
+                    ui._console.print("[yellow][sys] Workspace reset complete (chat cleared & database purged).[/yellow]\n")
                     continue
 
                 if cmd in ("/compact", "/com", "/cpt"):

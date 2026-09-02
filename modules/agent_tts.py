@@ -80,6 +80,10 @@ def toggle_tts(enable: bool | None = None) -> bool:
 def clean_text_for_speech(text: str) -> str:
     if not text:
         return ""
+    # Minimal feedback for user denials and cancellations
+    if "[denied]" in text or "Operation halted:" in text or "Action cancelled" in text:
+        return "Action cancelled."
+
     clean = RE_THINK_BLOCK.sub('', text)
     clean = RE_CODE_BLOCK.sub('', clean)
     clean = RE_INLINE_CODE.sub('', clean)

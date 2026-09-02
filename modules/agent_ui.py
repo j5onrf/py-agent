@@ -128,32 +128,41 @@ class InlineSpinner:
             self.message = message
 
     def start(self, message: str = "Thinking...") -> None:
-        if not self.active:
-            self.active = True
-            with self._lock:
-                self.message = message
-            self.start_time = time.time()
-            self.thread = threading.Thread(target=self._spin, daemon=True)
-            self.thread.start()
+        with self._lock:
+            self.message = message
+            if not self.active:
+                self.active = True
+                self.start_time = time.time()
+                try:
+                    sys.stderr.write("\033[?25l")
+                    sys.stderr.flush()
+                except OSError:
+                    pass
+                self.thread = threading.Thread(target=self._spin, daemon=True)
+                self.thread.start()
 
     def stop(self, done_msg: str | None = None, *args: Any, **kwargs: Any) -> None:
-        if self.active:
+        with self._lock:
+            if not self.active:
+                return
             self.active = False
             elapsed = time.time() - self.start_time if getattr(self, "start_time", None) else 0.0
-            if self.thread and self.thread.is_alive():
-                self.thread.join(timeout=0.2)
-                self.thread = None
-            try:
-                if done_msg:
-                    sys.stderr.write(
-                        f"\r\x1b[K\033[1;32m✔\033[0m \033[1;36m{done_msg}\033[0m \033[2m({elapsed:.1f}s)\033[0m\n"
-                    )
-                else:
-                    sys.stderr.write("\r\x1b[2K\r")
-                sys.stderr.write("\033[?25h")
-                sys.stderr.flush()
-            except OSError:
-                pass
+
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=0.2)
+            self.thread = None
+
+        try:
+            if done_msg:
+                sys.stderr.write(
+                    f"\r\x1b[2K\033[1;32m✔\033[0m \033[1;36m{done_msg}\033[0m \033[2m({elapsed:.1f}s)\033[0m\n"
+                )
+            else:
+                sys.stderr.write("\r\x1b[2K\r")
+            sys.stderr.write("\033[?25h")
+            sys.stderr.flush()
+        except OSError:
+            pass
 
 
 def _read_fd(fd: int) -> str:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [High-Performance Edition]"""
+"""Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [Universal High-Performance Engine]"""
 
 import base64
 import json
@@ -13,6 +13,7 @@ import urllib.parse
 import urllib.request as urlreq
 from typing import Any
 
+import agent_adapters as adapters
 import agent_cloud
 import agent_ipython as ipython
 import agent_memories as memories
@@ -43,164 +44,7 @@ RE_FINAL_ANSWER = re.compile(r"^\s*Final Answer:\s*", re.IGNORECASE)
 RE_MULTIPLE_NEWLINES = re.compile(r"\n{2,}")
 RE_JSON_OBJECT = re.compile(r"\{[\s\S]*\}")
 RE_TOOL_CALL_BLOCK = re.compile(r"<\|tool_call_start\|>.*?<\|tool_call_end\|>", re.DOTALL)
-RE_MD_JSON_WRAPPER = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.DOTALL)
-RE_XML_TOOL_TAGS = re.compile(r"<\|?[a-zA-Z_]+_call_?(?:start|end)?\|?>|</?tool_call>|</?function[^>]*>|</?parameter[^>]*>|<｜/?DSML｜(?:function_calls)?>", re.DOTALL)
 RE_ATTACHED_IMAGE = re.compile(r'\[(?:Attached\s+)?(?:image|file)[^\]]*?saved\s+at:\s*([^\]]+)\]', re.IGNORECASE)
-
-# High-Performance Top Stream Tool Interceptors (Hermes XML, Liquid/DeepSeek DSML, Standard JSON/XML)
-RE_HERMES_XML_TOOL = re.compile(r"<tool_call>\s*<function=(?P<name>[^>]+)>\s*(?P<params>[\s\S]*?)\s*</function>\s*</tool_call>", re.DOTALL)
-RE_HERMES_PARAM = re.compile(r"<parameter=(?P<key>[^>]+)>\s*(?P<val>[\s\S]*?)\s*</parameter>", re.DOTALL)
-RE_DSML_TOOL = re.compile(r"<｜DSML｜invoke\s+name=[\"'](?P<name>[^\"']+)[\"']\s+arguments=[\"'](?P<args>[\s\S]*?)[\"']\s*/>", re.DOTALL)
-RE_XML_TOOL = re.compile(r"<tool_call>\s*\{?[\s\S]*?\"name\":\s*\"(?P<name>[^\"]+)\"[\s\S]*?\"arguments\":\s*(?P<args>\{[\s\S]*?\})\s*\}?\s*</tool_call>", re.DOTALL)
-
-
-def _get_img_config() -> tuple[str, str]:
-    """Retrieves vision model and API key from environment or .env files."""
-    k = os.environ.get("IMG_VOICE", "") or os.environ.get("IMG_KEY", "") or os.environ.get("GEM_VOICE", "")
-    m = os.environ.get("IMG_MODEL", "") or os.environ.get("GEM_MODEL", "") or "gemini-3.5-flash-lite"
-    if not k:
-        for p in (os.path.join(CFG_DIR, ".env"), os.path.expanduser("~/.config/local-ai/.env"), ".env"):
-            if os.path.isfile(p):
-                try:
-                    with open(p, "r", encoding="utf-8") as f:
-                        for l in f:
-                            if (s := l.strip()) and not s.startswith("#"):
-                                if (s.startswith("IMG_VOICE=") or s.startswith("IMG_KEY=") or s.startswith("GEM_VOICE=")) and not k:
-                                    k = s.split("=", 1)[1].strip().strip("'\"")
-                                if (s.startswith("IMG_MODEL=") or s.startswith("GEM_MODEL=")) and not os.environ.get("IMG_MODEL"):
-                                    m = s.split("=", 1)[1].strip().strip("'\"")
-                except Exception:
-                    pass
-    return k.strip(), m.strip() or "gemini-3.5-flash-lite"
-
-
-def describe_image_gemini(target: Any) -> str:
-    """Pre-processes images via Gemini Flash Lite vision for text-only local models."""
-    key, model = _get_img_config()
-    if not key:
-        return "[Error: IMG_VOICE not configured in .env for vision]"
-    mime, b64 = "image/png", ""
-    try:
-        if isinstance(target, dict):
-            src = target.get("source", {}) if isinstance(target.get("source"), dict) else {}
-            b64 = src.get("data") or target.get("data") or target.get("blob") or ""
-            mime = src.get("media_type") or target.get("mimeType") or target.get("mime_type") or "image/png"
-            if not b64 and (u := (target.get("image_url", {}).get("url") if isinstance(target.get("image_url"), dict) else target.get("image_url")) or target.get("url") or target.get("path") or src.get("url")):
-                return describe_image_gemini(str(u))
-        elif isinstance(target, str):
-            c = target.strip().strip("'\"").strip()
-            if c.startswith("data:image/"):
-                h, b64 = c.split(",", 1)
-                mime = h.split(";")[0].replace("data:", "")
-            elif c.startswith(("http://", "https://")):
-                url = c.replace("github.com/", "raw.githubusercontent.com/").replace("/blob/", "/") if ("github.com/" in c and "/blob/" in c) else c
-                req = urlreq.Request(url, headers={"User-Agent": "Mozilla/5.0 Chrome/130.0.0.0 Safari/537.36", "Accept": "image/*,*/*;q=0.8"})
-                with urlreq.urlopen(req, timeout=15) as resp:
-                    b64, ct = base64.b64encode(resp.read()).decode("utf-8"), resp.headers.get_content_type()
-                    mime = ct if ct and ct.startswith("image/") else ("image/jpeg" if any(x in url.lower() for x in (".jpg", ".jpeg")) else ("image/webp" if ".webp" in url.lower() else "image/png"))
-            else:
-                p = urllib.parse.unquote(c[7:]) if c.startswith("file://") else c
-                ws = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
-                rf = next((f for f in (os.path.expanduser(p), os.path.join(ws, p), os.path.join(os.getcwd(), p), os.path.join(os.path.expanduser("~"), p)) if os.path.isfile(f)), None)
-                if rf:
-                    ext = os.path.splitext(rf)[1].lower()
-                    mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".svg": "image/svg+xml"}.get(ext, "image/png")
-                    with open(rf, "rb") as f:
-                        b64 = base64.b64encode(f.read()).decode("utf-8")
-                elif len(c) > 100 and not any(c.startswith(x) for x in ("/", "~", ".", "file:")):
-                    b64 = c
-                else:
-                    return f"[Error: Image file not found at '{target}']"
-    except Exception as e:
-        return f"[Error loading image: {e}]"
-
-    if not b64:
-        return "[Error: Empty image payload]"
-
-    sys_p = "Provide a comprehensive, accurate, and objective description of the image. Transcribe any visible text, code, terminal logs, error messages, line numbers, or data verbatim with exact formatting. Describe all visual subjects, objects, UI layouts, diagrams, charts, colors, and scenes in clear, precise detail."
-    payload = {"contents": [{"parts": [{"text": sys_p}, {"inline_data": {"mime_type": mime, "data": b64}}]}], "generationConfig": {"temperature": 0.1, "maxOutputTokens": 2048}}
-    try:
-        req = urlreq.Request(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST")
-        with urlreq.urlopen(req, timeout=20) as resp:
-            data = json.loads(resp.read().decode())
-        parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-        return "".join(p.get("text", "") for p in parts if "text" in p).strip() or "[No visual elements detected]"
-    except Exception as e:
-        return f"[Vision Exception: {e}]"
-
-
-def preprocess_multimodal_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Inspects messages for attached images and runs Gemini OCR/Vision pre-processing."""
-    processed, (_, model) = [], _get_img_config()
-    for msg in messages:
-        c = msg.get("content")
-        if isinstance(c, str):
-            if paths := RE_ATTACHED_IMAGE.findall(c):
-                va = [f"[Visual Analysis ({model})]:\n{describe_image_gemini(p.strip().strip('\'\"'))}" for p in paths]
-                txt = RE_ATTACHED_IMAGE.sub("", c).strip()
-                processed.append({**msg, "content": "\n\n".join(va + ([f"User Question: {txt}"] if txt else []))})
-            else:
-                processed.append(msg)
-        elif isinstance(c, list):
-            tp, va = [], []
-            for it in c:
-                if isinstance(it, str):
-                    if paths := RE_ATTACHED_IMAGE.findall(it):
-                        va.extend(f"[Visual Analysis ({model})]:\n{describe_image_gemini(p.strip().strip('\'\"'))}" for p in paths)
-                        if clean := RE_ATTACHED_IMAGE.sub("", it).strip():
-                            tp.append(clean)
-                    else:
-                        tp.append(it)
-                elif isinstance(it, dict):
-                    if it.get("type") == "text":
-                        raw = it.get("text", "")
-                        if paths := RE_ATTACHED_IMAGE.findall(raw):
-                            va.extend(f"[Visual Analysis ({model})]:\n{describe_image_gemini(p.strip().strip('\'\"'))}" for p in paths)
-                            if clean := RE_ATTACHED_IMAGE.sub("", raw).strip():
-                                tp.append(clean)
-                        elif raw:
-                            tp.append(raw)
-                    else:
-                        res = describe_image_gemini(it)
-                        if not res.startswith("[Error: Empty image"):
-                            va.append(f"[Visual Analysis ({model})]:\n{res}")
-            user_txt = "\n".join(t.strip() for t in tp if t.strip())
-            processed.append({**msg, "content": "\n\n".join(va + ([f"User Question: {user_txt}"] if (user_txt and va) else ([user_txt] if user_txt else [])))})
-        else:
-            processed.append(msg)
-    return processed
-
-
-def _heal_tool_args(raw: str) -> dict[str, Any]:
-    """High-performance self-healing JSON tool argument parser."""
-    if not raw or not raw.strip():
-        return {}
-    cleaned = raw.strip()
-    if m := RE_MD_JSON_WRAPPER.search(cleaned):
-        cleaned = m.group(1).strip()
-    cleaned = RE_XML_TOOL_TAGS.sub("", cleaned).strip()
-
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
-        pass
-
-    healed = re.sub(r"(?<!\\)'", '"', cleaned)
-    healed = re.sub(r"(\b[a-zA-Z_][a-zA-Z0-9_]*\b)\s*:", r'"\1":', healed)
-    healed = re.sub(r",\s*([\]}])", r"\1", healed)
-
-    ob, cb = healed.count("{"), healed.count("}")
-    ok, ck = healed.count("["), healed.count("]")
-    if ok > ck:
-        healed += "]" * (ok - ck)
-    if ob > cb:
-        healed += "}" * (ob - cb)
-
-    try:
-        return json.loads(healed)
-    except json.JSONDecodeError:
-        return {k: v.strip() for k, v in re.findall(r'"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s*:\s*["\']?([^,"\']+)["\']?', cleaned)}
-
 
 BINARY_EXTENSIONS = frozenset({
     ".db", ".sqlite", ".sqlite3", ".bin", ".pyc", ".so", ".dll", ".exe",
@@ -269,6 +113,19 @@ def workspace_safe_name(workspace_path: str, home_dir: str = "") -> str:
     return "home" if ws == home else (ws.replace("/", "-").strip("-.") or "home")
 
 
+def run_mod(module_name: str, *args: str) -> str:
+    for base in (os.path.join(CFG_DIR, "modules"), os.path.join(CFG_DIR, "tools"), CFG_DIR):
+        target = os.path.join(base, module_name)
+        if os.path.isfile(target):
+            try:
+                cmd = [sys.executable, target] + list(args) if target.endswith(".py") else [target] + list(args)
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+                return (res.stdout or res.stderr or "").strip()
+            except Exception as e:
+                return f"[error: {e}]"
+    return ""
+
+
 def background_tpm_update(user_msg: str, assistant_msg: str, workspace: str, workspace_path: str) -> None:
     clean = user_msg.lower().strip()
     if len(clean) < 8 or clean in _TPM_SKIP_QUERIES:
@@ -288,19 +145,6 @@ def background_tpm_update(user_msg: str, assistant_msg: str, workspace: str, wor
                 with open(os.path.join(md_dir, "tpm.md"), "w", encoding="utf-8") as f:
                     f.write(res + "\n")
     except Exception:
-        pass
-
-
-def _clear_lines(stream_err: bool, text: str, extra_top: int = 0) -> None:
-    if not text:
-        return
-    cols = shutil.get_terminal_size((80, 24)).columns or 80
-    up = max(0, extra_top + sum(max(1, (len(ANSI_ESCAPE.sub("", l.replace("\t", "    "))) + cols - 1) // cols) for l in text.split("\n")) - 1)
-    target = sys.stderr if stream_err else sys.stdout
-    try:
-        target.write(f"\r\033[{up}A\033[J" if up > 0 else "\r\033[J")
-        target.flush()
-    except OSError:
         pass
 
 
@@ -338,11 +182,11 @@ class RichStreamer:
                     pass
             return
 
+        if "<think>" in token:
+            self.phase = "THINKING"
+            token = token.replace("<think>", "")
+
         show_think = os.environ.get("AI_SHOW_THINKING", "1") == "1"
-        if "<think>" in token and self.phase != "THINKING":
-            self.phase, token = "THINKING", token.replace("<think>", "")
-            if self.spinner:
-                self.spinner.update("Thinking...")
 
         if "</think>" in token:
             parts = token.split("</think>", 1)
@@ -353,9 +197,14 @@ class RichStreamer:
                 _console_err.print(f"{sep}[dim]╰────────────────────────────────────────────────────────[/dim]")
                 sys.stderr.flush()
             self.phase = "ANSWER"
+            if self.spinner and not self.ans_started:
+                self.spinner.start("Drafting tool action...")
             if len(parts) > 1 and parts[1]:
                 self.update(parts[1])
             return
+
+        if self.phase == "INIT":
+            self.phase = "ANSWER"
 
         if self.phase == "THINKING":
             tok = RE_MULTIPLE_NEWLINES.sub("\n", RE_THINKING_TITLE.sub("", token.replace("\\n", "\n")))
@@ -416,32 +265,12 @@ class RichStreamer:
             _console_err.print(f"{sep}[dim]╰────────────────────────────────────────────────────────[/dim]")
             self.phase = "ANSWER"
 
-        if self.ans_started and self.acc_ans.strip():
-            render_md = os.environ.get("AI_RENDER_MARKDOWN", "1") == "1"
-            if sys.stdout.isatty() and render_md:
-                _clear_lines(False, self.acc_ans)
-                p_clean = self.prefix.strip()
-                p_style = "bold green" if "Agent" in p_clean else "bold cyan"
-                p_str = f"{p_clean} " if p_clean else ""
-                ans_body = self.acc_ans[len(p_str):] if p_str and self.acc_ans.startswith(p_str) else self.acc_ans
-                clean_md = RE_FINAL_ANSWER.sub("", ans_body).replace("\\n", "\n").strip()
-
-                if "\n" not in clean_md and not any(ch in clean_md for ch in ("#", "```", "|", "- ")):
-                    _console.print(Text.assemble((p_str, p_style), (clean_md, "white")))
-                else:
-                    if p_str:
-                        _console.print(Text(p_str, style=p_style))
-                    try:
-                        _console.print(Markdown(clean_md, code_theme="ansi_dark"))
-                    except Exception:
-                        sys.stdout.write(f"{ans_body}\r\n")
-                        sys.stdout.flush()
-            else:
-                try:
-                    sys.stdout.write("\r\n")
-                    sys.stdout.flush()
-                except OSError:
-                    pass
+        if self.ans_started:
+            try:
+                sys.stdout.write("\r\n")
+                sys.stdout.flush()
+            except OSError:
+                pass
 
 
 def _log_turn_usage(model: str, in_tok: int, out_tok: int, cost: float, show_stats: bool, ctx_used: int | None = None, user_msg: str = "", assistant_msg: str = "") -> None:
@@ -515,14 +344,24 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
     is_local = "localhost" in url or "127.0.0.1" in url or body.get("model") == "local-model"
     resolved_model, streamer, res = None, None, None
     max_ctx = int(os.environ.get("AI_MAX_TOKENS", 8192))
-    if is_local:
-        messages = preprocess_multimodal_messages(messages)
+
+    consecutive_tool_failures = 0
 
     for _round in range(10):
         if sum(get_accurate_token_count(m.get("content") or "") for m in messages) > int(max_ctx * 0.8):
             messages = prune_history(messages, max_tokens=int(max_ctx * 0.6))
 
-        body_tools = {**body, "messages": messages, "stream": True}
+        if consecutive_tool_failures >= 2:
+            decomp_steer = (
+                "[Harness Directive - Task Decomposition]: Your previous action failed repeatedly. "
+                "Stop retrying the whole file. Decompose your immediate next step: "
+                "1) Read the exact 15-20 lines using read_file(path, line_start, line_end). "
+                "2) Apply a targeted edit_file to only that section with unique context lines."
+            )
+            messages.append({"role": "system", "content": decomp_steer})
+            consecutive_tool_failures = 0
+
+        body_tools = {**body, "messages": messages, "stream": True, "stream_options": {"include_usage": True}}
         st = get_state()
         use_gnd = st.get("grounding_active", False)
 
@@ -546,10 +385,6 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
             body_tools["tools"] = [tools.WEB_TOOL]
 
         if spinner:
-            try:
-                spinner.update("Working...")
-            except Exception:
-                pass
             spinner.start("Working...")
         try:
             res = _session.post(url, json=body_tools, headers={"Content-Type": "application/json", **headers}, timeout=timeout, stream=True)
@@ -586,19 +421,11 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
                     content = delta.get("content", "") or ""
                     reasoning = delta.get("reasoning_content", "") or delta.get("thinking", "") or delta.get("reasoning", "") or ""
 
-                    if spinner:
-                        try:
-                            spinner.update("Thinking..." if reasoning else "Working...")
-                        except Exception:
-                            pass
-
                     chunk_to_stream, is_thinking, in_think_block = _process_stream_chunk(content, reasoning, in_think_block)
 
                     if chunk_to_stream:
                         if first_chunk:
                             first_chunk = False
-                            if os.environ.get("AI_SHOW_THINKING", "1") == "1":
-                                spinner.stop()
                             streamer = RichStreamer(prefix="Agent:" if is_agent else "AI:", spinner=spinner)
                             streamer.start()
                             if speed_test and show_stats:
@@ -615,7 +442,13 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
                         tc_entry = tool_calls_map.setdefault(idx, {"id": tc.get("id", ""), "type": "function", "function": {"name": tc.get("function", {}).get("name", ""), "arguments": ""}})
                         if tc.get("function", {}).get("name"):
                             tc_entry["function"]["name"] = tc["function"]["name"]
-                        tc_entry["function"]["arguments"] += tc.get("function", {}).get("arguments", "")
+                        arg_chunk = tc.get("function", {}).get("arguments", "")
+                        if arg_chunk:
+                            tc_entry["function"]["arguments"] += arg_chunk
+                            if speed_test and show_stats:
+                                speed_test.count_token(arg_chunk, is_thinking=False)
+                            if spinner and (not streamer or not streamer.ans_started):
+                                spinner.start("Drafting tool action...")
 
                     if finish_reason in ("stop", "length") and not tool_calls_map:
                         break
@@ -635,56 +468,9 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
 
             calls = [val for _, val in sorted(tool_calls_map.items())] if tool_calls_map else None
 
-            # Universal Fallback: Handles Hermes XML, DeepSeek DSML, Mistral, and Standard XML/JSON
+            # Sub-27B Fallback Extraction via Modular Adapters
             if not calls and ans_text and is_agent:
-                fallback_calls = []
-
-                # 1. Hermes 3.x XML Format (<function=name><parameter=k>v</parameter></function>)
-                for i, m in enumerate(RE_HERMES_XML_TOOL.finditer(ans_text)):
-                    fname = m.group("name").strip()
-                    raw_params = m.group("params")
-                    params = {pm.group("key").strip(): pm.group("val").strip() for pm in RE_HERMES_PARAM.finditer(raw_params)}
-                    fallback_calls.append({
-                        "id": f"call_hermes_{i}_{int(time.time())}",
-                        "type": "function",
-                        "function": {"name": fname, "arguments": json.dumps(params)}
-                    })
-
-                # 2. DeepSeek / LFM DSML Format (<｜DSML｜invoke name="name" arguments="..." />)
-                if not fallback_calls:
-                    for i, m in enumerate(RE_DSML_TOOL.finditer(ans_text)):
-                        raw_args = m.group("args").replace('\\"', '"').replace("\\\\", "\\")
-                        fallback_calls.append({
-                            "id": f"call_dsml_{i}_{int(time.time())}",
-                            "type": "function",
-                            "function": {"name": m.group("name"), "arguments": raw_args}
-                        })
-
-                # 3. Mistral Format ([TOOL_CALLS] [...])
-                if not fallback_calls:
-                    if mm := RE_MISTRAL_TOOL.search(ans_text):
-                        try:
-                            parsed_calls = json.loads(mm.group("calls"))
-                            for i, c in enumerate(parsed_calls):
-                                fallback_calls.append({
-                                    "id": f"call_mistral_{i}_{int(time.time())}",
-                                    "type": "function",
-                                    "function": {"name": c.get("name"), "arguments": json.dumps(c.get("arguments", {}))}
-                                })
-                        except Exception:
-                            pass
-
-                # 4. Standard XML/JSON (<tool_call>{"name": "...", "arguments": {...}}</tool_call>)
-                if not fallback_calls:
-                    for i, m in enumerate(RE_XML_TOOL.finditer(ans_text)):
-                        fallback_calls.append({
-                            "id": f"call_xml_{i}_{int(time.time())}",
-                            "type": "function",
-                            "function": {"name": m.group("name"), "arguments": m.group("args")}
-                        })
-
-                if fallback_calls:
-                    calls = fallback_calls
+                calls = adapters.extract_fallback_tool_calls(ans_text) or None
 
             has_web_call = use_gnd and any(c.get("function", {}).get("name") == "web_search" for c in (calls or []))
 
@@ -692,31 +478,59 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
                 tool_toks = sum(get_accurate_token_count(m.get("content") or "") for m in messages if m.get("role") in ("assistant", "tool"))
                 final_out = max(out_tok, tool_toks)
                 if spinner:
-                    spinner.stop("Done" if ans_text and ans_text.strip() else None)
+                    spinner.stop()
                 user_msg = next((m.get("content", "") or "" for m in reversed(messages) if m.get("role") == "user"), "")
                 _log_turn_usage(resolved_model or body.get("model") or "local-model", in_tok, final_out, 0.0, show_stats, in_tok + final_out, user_msg=user_msg, assistant_msg=ans_text)
                 return ans_text if ans_text else "(No response generated)"
 
-            messages.append({"role": "assistant", "content": ans_text or None, "tool_calls": calls})
-
+            # Re-serialize healed tool arguments
+            healed_calls = []
             for tc in calls:
                 fname = tc.get("function", {}).get("name", "")
                 raw_args = tc.get("function", {}).get("arguments") or ""
-                args = _heal_tool_args(raw_args)
+                healed_dict = adapters.heal_json_args(raw_args)
+                healed_calls.append({
+                    "id": tc.get("id") or f"call_{int(time.time())}",
+                    "type": "function",
+                    "function": {
+                        "name": fname,
+                        "arguments": json.dumps(healed_dict)
+                    }
+                })
+
+            messages.append({"role": "assistant", "content": ans_text or None, "tool_calls": healed_calls})
+
+            for tc in healed_calls:
+                if spinner:
+                    spinner.stop()
+                fname = tc.get("function", {}).get("name", "")
+                args = json.loads(tc.get("function", {}).get("arguments", "{}"))
                 brief = str(args.get("symbol") or args.get("path") or args.get("command") or "")[:100]
                 verb = TOOL_VERBS.get(fname, "working")
 
                 _console_err.print(f"[dim]∗ {verb} • [cyan]{fname}[/cyan] [italic]{brief}[/italic][/dim]")
                 if spinner:
-                    spinner.stop()
+                    spinner.start(f"{verb.capitalize()}...")
 
                 try:
                     result = _run_edit_tool(fname, args, workspace, spinner)
                 except Exception as e:
                     result = f"[tool error] {e}"
+                finally:
+                    if spinner:
+                        spinner.stop()
 
                 pruned_result = result if len(result) <= 1500 else result[:1200] + f"\n... [Reasonix Harness: Snipped {len(result) - 1200} chars for context stability]"
                 messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": fname, "content": pruned_result})
+
+                if "[denied]" in result:
+                    messages.append({"role": "system", "content": "Action was explicitly declined by the user. Do not retry or attempt alternative workarounds for this resource."})
+                    return "[denied] Action cancelled by user."
+
+                if result.startswith("[error") or result.startswith("[tool error"):
+                    consecutive_tool_failures += 1
+                else:
+                    consecutive_tool_failures = 0
 
         except KeyboardInterrupt:
             if streamer:
@@ -749,8 +563,10 @@ def stream_response(messages: list[dict[str, Any]], prefix: str = "AI: ", cfg_di
     try:
         configs = agent_cloud.get_active_configs(messages)
         enable_think = thinking_budget > 0
-        budget_val = thinking_budget if enable_think else 0
-        think_kwargs = {"thinking_budget_tokens": budget_val, "reasoning_budget": budget_val, "chat_template_kwargs": {"enable_thinking": enable_think}}
+        think_kwargs = (
+            {"thinking_budget_tokens": thinking_budget, "reasoning_budget": thinking_budget, "chat_template_kwargs": {"enable_thinking": True}}
+            if enable_think else {}
+        )
 
         if not configs:
             configs = [("http://localhost:8080/v1/chat/completions", {}, {"messages": messages, "stream": True, **think_kwargs}, 180)]
@@ -761,7 +577,7 @@ def stream_response(messages: list[dict[str, Any]], prefix: str = "AI: ", cfg_di
 
         ans = agentic_turn(messages, url, headers, body, timeout, spinner, show_stats, is_agent=is_agent)
         if spinner:
-            spinner.stop("Done")
+            spinner.stop()
         return ans
     except KeyboardInterrupt:
         if spinner:
@@ -793,39 +609,40 @@ def show_memory_status(messages: list[dict[str, Any]], max_context: int = 8192, 
 
 
 def prune_history(history: list[dict[str, Any]], max_tokens: int | None = None) -> list[dict[str, Any]]:
-    """3-Zone Context Compactor inspired by pi-agent: Condenses older tool outputs
-
-    while preserving paired tool_call IDs and active working memory.
-    """
     if len(history) <= 4:
         return history
 
     limit = max_tokens or int(os.environ.get("AI_MAX_TOKENS", 8192))
     sys_msg = history[0]
 
-    # Zone 3: Keep the latest 4 messages (active working horizon) completely untouched
     recent_tail = history[-4:]
     middle_msgs = history[1:-4]
 
+    completed_actions = []
     compacted_middle = []
+
     for msg in middle_msgs:
         role = msg.get("role")
-        content = msg.get("content") or ""
+        content = str(msg.get("content") or "")
 
-        # Compact older tool output payloads into dense 1-line execution summaries
         if role == "tool":
             fname = msg.get("name", "tool")
             line_count = len(content.splitlines())
-            
-            # Condense large file reads and diffs
-            if "### File:" in content or line_count > 10:
-                summary = f"[{fname}: {line_count} lines processed successfully]"
-            elif "Successfully edited" in content:
+
+            if "Successfully edited" in content:
+                if m := re.search(r"Successfully edited\s+(\S+)", content):
+                    completed_actions.append(f"Edited {m.group(1)}")
                 summary = f"[{fname}: applied targeted edit]"
+            elif "wrote" in content and "chars to" in content:
+                if m := re.search(r"wrote \d+ chars to\s+(\S+)", content):
+                    completed_actions.append(f"Created {m.group(1)}")
+                summary = f"[{fname}: created file]"
             elif "(exit 0" in content:
+                completed_actions.append("Passed shell verification")
                 summary = f"[{fname}: command passed (exit 0)]"
+            elif "### File:" in content or line_count > 10:
+                summary = f"[{fname}: {line_count} lines processed successfully]"
             elif "(exit" in content:
-                # Keep error trace summary intact
                 first_err = content.splitlines()[0] if content else "error"
                 summary = f"[{fname}: {first_err[:120]}]"
             else:
@@ -835,15 +652,19 @@ def prune_history(history: list[dict[str, Any]], max_tokens: int | None = None) 
         else:
             compacted_middle.append(msg)
 
-    # Calculate token load across compacted middle
-    assembled = [sys_msg]
-    curr_tokens = get_accurate_token_count(sys_msg.get("content", ""))
+    anchor_msg = None
+    if completed_actions:
+        deduped = list(dict.fromkeys(completed_actions))[-6:]
+        anchor_text = "[Compacted Working Horizon Anchor - Completed Steps]:\n" + "\n".join(f"✓ {act}" for act in deduped)
+        anchor_msg = {"role": "system", "content": anchor_text}
+
+    assembled = [sys_msg] + ([anchor_msg] if anchor_msg else [])
+    curr_tokens = sum(get_accurate_token_count(m.get("content", "")) for m in assembled)
     tail_tokens = sum(get_accurate_token_count(m.get("content") or "") for m in recent_tail)
 
     budget_for_middle = max(500, limit - tail_tokens - curr_tokens)
     selected_middle = []
 
-    # Pack middle from newest to oldest
     for m in reversed(compacted_middle):
         toks = get_accurate_token_count(m.get("content") or "")
         if curr_tokens + toks > budget_for_middle and selected_middle:
@@ -851,4 +672,4 @@ def prune_history(history: list[dict[str, Any]], max_tokens: int | None = None) 
         selected_middle.append(m)
         curr_tokens += toks
 
-    return [sys_msg] + list(reversed(selected_middle)) + recent_tail
+    return assembled + list(reversed(selected_middle)) + recent_tail

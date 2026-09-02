@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Native Tool Engine - Handles file editing, commands, & graph intelligence [High-Performance In-Memory Edition]"""
+"""Native Tool Engine - Handles file editing, commands, & graph intelligence [Interactive Security Gate Edition]"""
 
 import ast
 import difflib
@@ -7,27 +7,41 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import urllib.parse
 from collections.abc import Callable
 from typing import Any
 
+import agent_ui as ui
 from rich.console import Console
 from rich.syntax import Syntax
 
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
 _console_err = Console(stderr=True)
+
 BINARY_EXTENSIONS = frozenset({
     ".db", ".sqlite", ".sqlite3", ".bin", ".pyc", ".so", ".dll", ".exe",
     ".png", ".jpg", ".jpeg", ".gif", ".zip", ".tar", ".gz", ".7z",
     ".pdf", ".docx", ".xlsx", ".db-wal", ".db-shm"
 })
-RE_ABS_PATH = re.compile(r"/(?:[a-zA-Z0-9_\-\.]+/)*[a-zA-Z0-9_\-\.]*")
 
+FORBIDDEN_GLOBAL_COMMANDS = frozenset({
+    "sudo", "doas", "su", "pkexec",
+    "pip", "pip3", "pipx", "pacman", "yay", "paru", "apt", "apt-get", "dnf", "yum", "brew",
+    "npm", "pnpm", "yarn", "gem", "cargo", "rustup", "go",
+    "systemctl", "journalctl", "reboot", "shutdown", "poweroff",
+    "useradd", "usermod", "userdel", "passwd",
+})
+
+FORBIDDEN_SYS_DIRS = (
+    "/etc", "/usr", "/var", "/bin", "/sbin", "/opt", "/root", "/boot", "/sys", "/proc", "/dev"
+)
+
+RE_ABS_PATH = re.compile(r"/(?:[a-zA-Z0-9_\-\.]+/)*[a-zA-Z0-9_\-\.]*")
 _SESSION_READ_FILES: set[str] = set()
 
-# Complete 10-Tool Suite
 EDIT_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
@@ -118,7 +132,6 @@ EDIT_TOOLS: list[dict[str, Any]] = [
     ]
 ]
 
-# Lean 5-Tool Set for Compact Models (LFM, 8B, 7B, 2B)
 LEAN_TOOLS: list[dict[str, Any]] = [
     t for t in EDIT_TOOLS if t["function"]["name"] in ("read_file", "edit_file", "write_file", "list_dir", "run_command")
 ]
@@ -156,11 +169,9 @@ _graph_module = None
 
 
 def _get_graph_engine():
-    """Loads index-map module into memory once for sub-millisecond execution."""
     global _graph_module
     if _graph_module is not None:
         return _graph_module
-
     mod_path = os.path.join(CFG_DIR, "tools", "index-map", "index-map")
     if os.path.exists(mod_path):
         try:
@@ -180,12 +191,10 @@ def _safe_path(workspace: str, p: str) -> str:
         return os.path.realpath(workspace)
     clean_p = os.path.expanduser(urllib.parse.unquote(str(p).strip().strip('"\'\\')))
     ws_real = os.path.realpath(workspace)
-
     if clean_p.startswith("/") and not clean_p.startswith(ws_real):
         rel_candidate = clean_p.lstrip("/")
         if os.path.exists(os.path.join(ws_real, rel_candidate)) or "/" not in rel_candidate:
             clean_p = rel_candidate
-
     return os.path.realpath(clean_p if os.path.isabs(clean_p) else os.path.join(ws_real, clean_p))
 
 
@@ -196,10 +205,46 @@ def _is_outside_workspace(workspace: str, full_path: str) -> bool:
     return full_path != root and not full_path.startswith(root + os.sep)
 
 
-def run_graph_cmd(cmd_name: str, arg: str, workspace: str) -> str:
-    """High-performance in-memory graph dispatcher with subprocess fallback."""
-    engine = _get_graph_engine()
+def _check_command_security(cmd: str, workspace: str) -> str | None:
+    """Detects if a shell command targets system packages or paths outside workspace."""
+    if not cmd or not cmd.strip():
+        return "Empty command"
+    clean_cmd = cmd.strip()
+    root_ws = os.path.realpath(workspace)
 
+    sub_cmds = re.split(r"[;&|]+", clean_cmd)
+    for sub in sub_cmds:
+        sub_strip = sub.strip()
+        if not sub_strip:
+            continue
+        try:
+            tokens = shlex.split(sub_strip)
+        except ValueError:
+            tokens = sub_strip.split()
+        if not tokens:
+            continue
+
+        binary = os.path.basename(tokens[0]).lower()
+
+        if binary in FORBIDDEN_GLOBAL_COMMANDS:
+            return f"Global system/package binary: '{binary}'"
+
+        for t in tokens:
+            for sys_dir in FORBIDDEN_SYS_DIRS:
+                if t == sys_dir or t.startswith(f"{sys_dir}/"):
+                    return f"System directory reference: '{t}'"
+
+        for t in tokens:
+            if ".." in t or t.startswith("~/") or t.startswith("/"):
+                exp = os.path.realpath(os.path.expanduser(t))
+                if (os.path.exists(exp) or t.startswith("/home/")) and _is_outside_workspace(root_ws, exp):
+                    return f"Path outside workspace: '{t}'"
+
+    return None
+
+
+def run_graph_cmd(cmd_name: str, arg: str, workspace: str) -> str:
+    engine = _get_graph_engine()
     if engine:
         try:
             if cmd_name == "snippet" and hasattr(engine, "extract_snippet"):
@@ -226,7 +271,6 @@ def run_graph_cmd(cmd_name: str, arg: str, workspace: str) -> str:
 
 
 def search_web_gemini(query: str) -> str:
-    """Runs Google Search grounding via Gemini API with free-tier fallback and DDG safety net."""
     import urllib.request as urlreq
 
     key = os.environ.get("GND_KEY", "") or os.environ.get("GEM_VOICE", "") or os.environ.get("IMG_VOICE", "") or os.environ.get("GEMINI_API_KEY", "")
@@ -300,6 +344,131 @@ def search_web_gemini(query: str) -> str:
     return f"[web_search: No results found for '{query}']"
 
 
+def _generate_ast_skeleton(code: str, file_path: str) -> str:
+    lines = code.splitlines()
+    total_lines = len(lines)
+
+    if file_path.endswith(".py"):
+        try:
+            tree = ast.parse(code)
+            skeleton = []
+
+            imports = []
+            for node in tree.body:
+                if isinstance(node, ast.Import):
+                    names = ", ".join(a.name for a in node.names)
+                    imports.append(f"import {names}")
+                elif isinstance(node, ast.ImportFrom):
+                    mod = node.module or ""
+                    names = ", ".join(a.name for a in node.names)
+                    imports.append(f"from {mod} import {names}")
+
+            if imports:
+                skeleton.append("# --- Imports ---")
+                skeleton.extend(imports[:15])
+                if len(imports) > 15:
+                    skeleton.append(f"# ... ({len(imports) - 15} more imports)")
+                skeleton.append("")
+
+            skeleton.append("# --- Structure & Line Spans ---")
+            for node in tree.body:
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    prefix = "async def" if isinstance(node, ast.AsyncFunctionDef) else "def"
+                    doc = ast.get_docstring(node)
+                    doc_preview = f"  # {doc.splitlines()[0][:60]}" if doc else ""
+                    skeleton.append(f"{prefix} {node.name}(...):  # Lines {node.lineno}-{node.end_lineno}{doc_preview}")
+                elif isinstance(node, ast.ClassDef):
+                    bases = ", ".join(ast.unparse(b) for b in node.bases) if hasattr(ast, "unparse") and node.bases else ""
+                    base_str = f"({bases})" if bases else ""
+                    skeleton.append(f"class {node.name}{base_str}:  # Lines {node.lineno}-{node.end_lineno}")
+                    for sub in node.body:
+                        if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                            sub_prefix = "async def" if isinstance(sub, ast.AsyncFunctionDef) else "def"
+                            sub_doc = ast.get_docstring(sub)
+                            sub_doc_preview = f"  # {sub_doc.splitlines()[0][:50]}" if sub_doc else ""
+                            skeleton.append(f"    {sub_prefix} {sub.name}(...):  # Lines {sub.lineno}-{sub.end_lineno}{sub_doc_preview}")
+
+            body = "\n".join(skeleton)
+            return (
+                f"### File Skeleton: {file_path} ({total_lines} lines)\n"
+                f"{body}\n\n"
+                f"... [File is {total_lines} lines long. Use read_file('{file_path}', line_start=X, line_end=Y) to inspect specific blocks or read_symbol('name')]"
+            )
+        except Exception:
+            pass
+
+    preview = "\n".join(lines[:100])
+    return (
+        f"### File Preview: {file_path} (Showing lines 1-100 of {total_lines})\n"
+        f"{preview}\n\n"
+        f"... [File is {total_lines} lines long. Use read_file('{file_path}', line_start=X, line_end=Y) to inspect target lines]"
+    )
+
+
+def _whitespace_tolerant_replace(original: str, old_str: str, new_str: str) -> tuple[str | None, str | None]:
+    if old_str in original:
+        if original.count(old_str) > 1:
+            return None, "Target old_str matched multiple times in file. Include more surrounding context lines to make it unique."
+        return original.replace(old_str, new_str, 1), None
+
+    orig_text = original.replace("\r\n", "\n")
+    clean_old = old_str.replace("\r\n", "\n").strip("\n")
+    clean_new = new_str.replace("\r\n", "\n")
+
+    orig_lines = orig_text.splitlines(keepends=True)
+    old_lines = clean_old.splitlines()
+    if not old_lines:
+        return None, "Parameter 'old_str' cannot be empty."
+
+    norm_old = [re.sub(r"\s+", " ", l.strip()) for l in old_lines if l.strip()]
+    old_len = len(norm_old)
+    if old_len == 0:
+        return None, "Parameter 'old_str' contains no non-whitespace content."
+
+    matches = []
+    for i in range(len(orig_lines)):
+        window_lines = []
+        window_raw_indices = []
+        for j in range(i, len(orig_lines)):
+            line_str = orig_lines[j]
+            if line_str.strip():
+                window_lines.append(re.sub(r"\s+", " ", line_str.strip()))
+                window_raw_indices.append(j)
+                if len(window_lines) == old_len:
+                    break
+        if window_lines == norm_old:
+            start_idx = window_raw_indices[0]
+            end_idx = window_raw_indices[-1] + 1
+            matches.append((start_idx, end_idx))
+
+    if len(matches) == 1:
+        start_idx, end_idx = matches[0]
+        orig_first_line = orig_lines[start_idx]
+        orig_indent_len = len(orig_first_line) - len(orig_first_line.lstrip(" "))
+        old_first_line = old_lines[0]
+        old_indent_len = len(old_first_line) - len(old_first_line.lstrip(" "))
+        indent_delta = orig_indent_len - old_indent_len
+
+        new_lines_raw = clean_new.splitlines()
+        adjusted_new_lines = []
+        for nl in new_lines_raw:
+            if not nl.strip():
+                adjusted_new_lines.append("\n")
+            elif indent_delta > 0:
+                adjusted_new_lines.append(" " * indent_delta + nl + "\n")
+            elif indent_delta < 0 and nl.startswith(" " * abs(indent_delta)):
+                adjusted_new_lines.append(nl[abs(indent_delta):] + "\n")
+            else:
+                adjusted_new_lines.append(nl + "\n")
+
+        reconstructed = "".join(orig_lines[:start_idx]) + "".join(adjusted_new_lines) + "".join(orig_lines[end_idx:])
+        return reconstructed, None
+    elif len(matches) > 1:
+        return None, f"Whitespace-normalized old_str matched {len(matches)} locations. Include more surrounding lines to make it unique."
+
+    return None, "Target old_str not found in file (even with whitespace tolerance). Use read_file to inspect exact lines."
+
+
 def run_tool(
     name: str,
     args: dict[str, Any],
@@ -307,7 +476,7 @@ def run_tool(
     confirm_gate_fn: Callable[[str], bool] | None = None,
     print_output_fn: Callable[[str], None] | None = None,
 ) -> str:
-    # Parameter Normalization (pi-agent pattern): Auto-heal common parameter aliases across models
+    # Parameter Normalization
     if isinstance(args, dict):
         if "path" not in args:
             for alt in ("file", "filename", "filepath", "target", "file_path"):
@@ -326,16 +495,20 @@ def run_tool(
                     break
 
     gates_active = os.environ.get("AI_CONFIRM_GATES", "1") == "1"
-    denial = "[denied] User declined tool execution."
     raw_path = args.get("path", "")
     full = _safe_path(workspace, raw_path)
 
-    def _gate(reason: str) -> bool:
+    # In-Bounds routine confirmation (Plan mode only)
+    def _in_bounds_gate(reason: str) -> bool:
+        if confirm_gate_fn and gates_active:
+            return confirm_gate_fn(reason)
+        return True
+
+    # Out-of-Bounds Mandatory confirmation (NEVER bypassed by YOLO)
+    def _security_gate(reason: str) -> bool:
         if confirm_gate_fn:
             return confirm_gate_fn(reason)
-        if "OUT-OF-BOUNDS" in reason:
-            return False
-        return True
+        return ui.confirm_tool(reason)
 
     # 1. IPython Kernel Execution
     if name == "exec_python":
@@ -385,10 +558,12 @@ def run_tool(
             return f"[error] Refused to read binary file or directory '{raw_path}'."
         if not os.path.isfile(full):
             return f"[error] File not found: {raw_path}"
-        if _is_outside_workspace(workspace, full) and not _gate(f"OUT-OF-BOUNDS READ: {full}"):
-            return denial
-        if confirm_gate_fn and gates_active and not _gate(f"read file {raw_path}"):
-            return denial
+
+        if _is_outside_workspace(workspace, full):
+            if not _security_gate(f"OUT-OF-BOUNDS READ: {full}"):
+                return f"[denied] User declined read of '{raw_path}' outside workspace."
+        elif not _in_bounds_gate(f"read file {raw_path}"):
+            return f"[denied] User declined read of '{raw_path}'."
 
         _SESSION_READ_FILES.add(full)
 
@@ -408,12 +583,7 @@ def run_tool(
                 prefix = f"### File: {raw_path} (Lines {start_idx + 1}-{end_idx} of {total_lines})\n"
                 res_out = prefix + content
             elif total_lines > 250:
-                content = "".join(lines[:150])
-                res_out = (
-                    f"### File: {raw_path} (Lines 1-150 of {total_lines})\n"
-                    + content
-                    + f"\n\n... [Showing lines 1-150 of {total_lines}. Pass line_start and line_end to view more, or read_symbol(symbol) for specific functions]"
-                )
+                res_out = _generate_ast_skeleton("".join(lines), raw_path)
             else:
                 res_out = "".join(lines)[:15000]
 
@@ -428,8 +598,12 @@ def run_tool(
             return f"[error] File '{raw_path}' does not exist. Use write_file to create new files."
         if full not in _SESSION_READ_FILES and not bool(args.get("force", False)):
             return f"[error] You must inspect '{raw_path}' with read_file before calling edit_file to ensure your old_str matches exact lines and indentation."
-        if _is_outside_workspace(workspace, full) and not _gate(f"OUT-OF-BOUNDS EDIT: {full}"):
-            return denial
+
+        if _is_outside_workspace(workspace, full):
+            if not _security_gate(f"OUT-OF-BOUNDS EDIT: {full}"):
+                return f"[denied] User declined edit of '{raw_path}' outside workspace."
+        elif not _in_bounds_gate(f"surgically edit {raw_path}"):
+            return f"[denied] User declined edit of '{raw_path}'."
 
         old_str = args.get("old_str", "")
         new_str = args.get("new_str", "")
@@ -440,13 +614,9 @@ def run_tool(
             with open(full, "r", encoding="utf-8", errors="replace") as f:
                 original = f.read()
 
-            if old_str not in original:
-                return f"[error] Target old_str not found in '{raw_path}'. Make sure you read the file first to match exact lines and indentation."
-
-            if original.count(old_str) > 1:
-                return f"[error] Target old_str matched multiple times in '{raw_path}'. Include more surrounding context lines in old_str to make it unique."
-
-            new_content = original.replace(old_str, new_str, 1)
+            new_content, err_msg = _whitespace_tolerant_replace(original, old_str, new_str)
+            if err_msg or new_content is None:
+                return f"[error] {err_msg}"
 
             if full.endswith(".py"):
                 try:
@@ -474,9 +644,6 @@ def run_tool(
                         Syntax(diff, "diff", theme="ansi_dark", background_color="default"),
                         "\n",
                     )
-
-            if confirm_gate_fn and gates_active and not _gate(f"surgically edit {raw_path}"):
-                return denial
 
             with open(full, "w", encoding="utf-8") as f:
                 f.write(new_content)
@@ -529,10 +696,11 @@ def run_tool(
             except OSError:
                 pass
 
-        if _is_outside_workspace(workspace, full) and not _gate(f"OUT-OF-BOUNDS WRITE: {full}"):
-            return denial
-        if confirm_gate_fn and gates_active and not _gate(f"{'overwrite' if os.path.exists(full) else 'create'} {raw_path}"):
-            return denial
+        if _is_outside_workspace(workspace, full):
+            if not _security_gate(f"OUT-OF-BOUNDS WRITE: {full}"):
+                return f"[denied] User declined write to '{raw_path}' outside workspace."
+        elif not _in_bounds_gate(f"{'overwrite' if os.path.exists(full) else 'create'} {raw_path}"):
+            return f"[denied] User declined write to '{raw_path}'."
 
         try:
             os.makedirs(os.path.dirname(full) or workspace, exist_ok=True)
@@ -544,10 +712,12 @@ def run_tool(
             return f"[error] failed to write file: {e}"
 
     if name == "list_dir":
-        if _is_outside_workspace(workspace, full) and not _gate(f"OUT-OF-BOUNDS LIST DIR: {full}"):
-            return denial
-        if confirm_gate_fn and gates_active and not _gate(f"list directory {raw_path or '.'}"):
-            return denial
+        if _is_outside_workspace(workspace, full):
+            if not _security_gate(f"OUT-OF-BOUNDS LIST DIR: {full}"):
+                return f"[denied] User declined list_dir of '{raw_path}' outside workspace."
+        elif not _in_bounds_gate(f"list directory {raw_path or '.'}"):
+            return f"[denied] User declined list_dir of '{raw_path}'."
+
         try:
             entries = sorted(os.listdir(full))
             res_str = "\n".join((e + "/" if os.path.isdir(os.path.join(full, e)) else e) for e in entries) or "(empty)"
@@ -561,8 +731,8 @@ def run_tool(
         q = args.get("query", "").strip()
         if not q:
             return "[error] Parameter 'query' cannot be empty."
-        if confirm_gate_fn and gates_active and not _gate(f"search Google for: '{q}'"):
-            return denial
+        if not _in_bounds_gate(f"search Google for: '{q}'"):
+            return "[denied] User declined web search."
         out = search_web_gemini(q)
         if print_output_fn:
             print_output_fn(out)
@@ -570,18 +740,13 @@ def run_tool(
 
     if name == "run_command":
         cmd = args.get("command", "")
-        expanded = cmd.replace("~", os.path.expanduser("~"))
-        abs_paths = RE_ABS_PATH.findall(expanded)
-        sys_prefixes = ("/bin/", "/usr/bin/", "/usr/local/bin/", "/sbin/", "/usr/sbin/")
-        target_paths = [p for p in abs_paths if not any(p.startswith(sp) for sp in sys_prefixes)]
-        if (".." in cmd or any(_is_outside_workspace(workspace, p) for p in target_paths if os.path.exists(p) or os.path.isabs(p))) and not _gate(f"OUT-OF-BOUNDS EXECUTION: $ {cmd}"):
-            return denial
 
-        if confirm_gate_fn and gates_active:
-            if not sys.stdout.isatty():
-                return "[denied] no terminal available to approve command execution"
-            if not _gate(f"execute: $ {cmd}"):
-                return denial
+        # Check for out-of-bounds or global modifications
+        if sec_reason := _check_command_security(cmd, workspace):
+            if not _security_gate(f"OUT-OF-BOUNDS EXECUTION: $ {cmd} ({sec_reason})"):
+                return f"[denied] User declined command execution: {cmd}"
+        elif not _in_bounds_gate(f"execute: $ {cmd}"):
+            return f"[denied] User declined command execution: {cmd}"
 
         shell = os.environ.get("SHELL") or "/bin/sh"
         try:

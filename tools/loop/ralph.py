@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""
-Ralph Wiggum Autonomous Task Loop Engine [Production Grade]
-Handles multi-turn autonomous goal execution, completion detection, 
-stagnation recovery, context overflow compaction, and execution logging.
-"""
+"""Ralph Autonomous Task Loop Engine - SmallCoder-Enhanced Self-Directed Agent [Production Edition]"""
 
 import argparse
+import json
 import os
+import re
 import sys
 import time
 from typing import Any
@@ -16,302 +14,171 @@ sys.path.append(os.path.join(CFG_DIR, "modules"))
 
 try:
     import agent_core as core
-except ImportError:
-    sys.stderr.write(
-        "[error] Core module (agent_core.py) not found in ~/.config/py-agent/modules\n"
-    )
+    import agent_skills as skills
+    import agent_tools as tools
+    import agent_ui as ui
+except ImportError as e:
+    sys.stderr.write(f"\033[1;31m[Ralph] Module import error: {e}\033[0m\n")
     sys.exit(1)
 
-COMPLETION_KEYWORDS = frozenset(
-    {
-        "TASK COMPLETE",
-        "TASK COMPLETED",
-        "ALL TASKS COMPLETED",
-        "TASK FINISHED",
-        "ALL TASKS HAVE BEEN COMPLETED",
-        "[TASK COMPLETE]",
-    }
-)
+COMPLETION_PATTERNS = [
+    re.compile(r"\bTASK COMPLETE\b", re.IGNORECASE),
+    re.compile(r"\bGOAL COMPLETE\b", re.IGNORECASE),
+    re.compile(r"\bTASK FINISHED\b", re.IGNORECASE),
+    re.compile(r"### Task Report\s*\n.*?(?:passed|verified|completed)", re.IGNORECASE | re.DOTALL),
+]
 
 
-def is_task_complete(ans: str | None, history: list[dict[str, Any]]) -> bool:
-    """Checks both assistant answer and recent tool outputs for completion keywords."""
-    if ans:
-        ans_upper = ans.upper()
-        if any(k in ans_upper for k in COMPLETION_KEYWORDS):
-            return True
-
-    for msg in reversed(history[-6:]):
-        if msg.get("role") == "tool" and msg.get("content"):
-            content_upper = str(msg["content"]).upper()
-            if any(k in content_upper for k in COMPLETION_KEYWORDS):
-                return True
-
-    return False
+def _read_spec_file(workspace: str, file_name: str = "TASK.md") -> str:
+    target = os.path.join(workspace, file_name)
+    if os.path.isfile(target):
+        try:
+            with open(target, "r", encoding="utf-8") as f:
+                return f.read().strip()
+        except OSError:
+            pass
+    return ""
 
 
-def log_turn_to_file(
-    workspace: str,
-    task: str,
-    turn: int,
-    ans: str,
-    status: str = "IN_PROGRESS",
-) -> None:
-    """Appends an execution log entry to .agent/task_log.md for workspace auditing."""
+def _log_task_turn(workspace: str, turn_idx: int, user_prompt: str, response: str, status: str = "IN_PROGRESS") -> None:
+    agent_dir = os.path.join(workspace, ".agent")
+    os.makedirs(agent_dir, exist_ok=True)
+    log_file = os.path.join(agent_dir, "task_log.md")
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
+    entry = (
+        f"\n## [Turn {turn_idx}] - {timestamp} - Status: {status}\n\n"
+        f"### Directive / Prompt:\n{user_prompt}\n\n"
+        f"### Agent Response & Tool Execution:\n{response}\n\n"
+        f"---\n"
+    )
     try:
-        agent_dir = os.path.join(workspace, ".agent")
-        os.makedirs(agent_dir, exist_ok=True)
-        log_file = os.path.join(agent_dir, "task_log.md")
-
-        mode = "a" if os.path.exists(log_file) else "w"
-        with open(log_file, mode, encoding="utf-8") as f:
-            if mode == "w":
-                f.write(
-                    f"# Autonomous Task Execution Log\n**Task:** {task}\n**Started:** {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n---\n\n"
-                )
-            f.write(
-                f"### [Turn {turn} - {time.strftime('%H:%M:%S')}] Status: `{status}`\n"
-            )
-            if ans and ans.strip():
-                f.write(f"**Agent Response:**\n{ans.strip()}\n\n")
-            f.write("---\n\n")
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(entry)
     except OSError:
         pass
 
 
-def run_loop(
-    task: str,
-    max_turns: int = 10,
-    task_file: str | None = None,
-    enable_logging: bool = True,
-    plan_model: str | None = None,
+def is_task_complete(response_text: str) -> bool:
+    if not response_text:
+        return False
+    return any(p.search(response_text) for p in COMPLETION_PATTERNS)
+
+
+def run_ralph_loop(
+    goal: str,
+    workspace: str,
+    max_turns: int = 15,
+    spec_file: str | None = None,
+    no_log: bool = False,
 ) -> bool:
-    workspace = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
+    """Executes the autonomous loop with SmallCoder failure decomposition and completion verification."""
+    os.environ["AI_CONFIRM_GATES"] = "0"  # Autonomous YOLO execution in Ralph loops
 
-    if not task:
-        target_file = task_file or os.path.join(workspace, "TASK.md")
-        if os.path.exists(target_file):
-            try:
-                with open(target_file, "r", encoding="utf-8") as f:
-                    task = f.read().strip()
-                sys.stderr.write(
-                    f"\033[2m[loop] Loaded goal from {os.path.basename(target_file)}\033[0m\n"
-                )
-            except OSError as e:
-                sys.stderr.write(
-                    f"\033[1;31m[error] Failed to read spec file: {e}\033[0m\n"
-                )
-                return False
-
-    if not task:
-        sys.stderr.write(
-            "\033[1;31m[error] Usage: /task \"<description>\" or create TASK.md in workspace\033[0m\n"
-        )
+    spec_content = _read_spec_file(workspace, spec_file) if spec_file else _read_spec_file(workspace, "TASK.md")
+    effective_goal = goal.strip()
+    if not effective_goal and spec_content:
+        effective_goal = f"Execute all unfinished tasks in TASK.md:\n\n{spec_content}"
+    elif not effective_goal:
+        ui._console.print("[red][Ralph Error] No goal provided and TASK.md not found.[/red]")
         return False
 
-    disp_dir = workspace.replace(os.path.expanduser("~"), "~")
-    sys.stderr.write(
-        f"\n\033[1;36m[loop]\033[0m Starting autonomous execution in \033[1;33m{disp_dir}\033[0m (max {max_turns} turns)\n"
-    )
-    sys.stderr.write(
-        f"\033[2m:: Goal: {task[:120]}{'...' if len(task) > 120 else ''}\033[0m\n\n"
+    ui._console.print(f"\n[bold green]✦ [Ralph Engine][/bold green] Starting autonomous loop for workspace: [cyan]{workspace}[/cyan]")
+    ui._console.print(f"[dim]Goal: {effective_goal[:120]}... (Max turns: {max_turns})[/dim]\n")
+
+    sys_prompt = (
+        "You are an autonomous senior developer agent running inside a verified feedback loop.\n"
+        f"Active Workspace Root: {workspace}\n"
+        "Your mission is to autonomously complete the user goal using your available tools.\n\n"
+        "### Workflow Rules:\n"
+        "1. Inspect files with read_file or read_symbol before making edits.\n"
+        "2. Apply targeted edits with edit_file. Verify syntax and tests after editing.\n"
+        "3. Run automated test commands using run_command to prove correctness.\n"
+        "4. When 100% of the goal is complete and all tests pass, output 'TASK COMPLETE' with a summary."
     )
 
-    history: list[dict[str, Any]] = [
-        {
-            "role": "system",
-            "content": (
-                f"You are an autonomous developer agent at {workspace}.\n"
-                "CRITICAL DIRECTIVES:\n"
-                "1. Execute the goal step-by-step using available workspace tools.\n"
-                "2. Always use relative paths from the workspace root (e.g. 'string_utils.py', '.') rather than guessing paths.\n"
-                "3. Use edit_file for targeted modifications; avoid rewriting entire files.\n"
-                "4. Test and verify your changes as you progress.\n"
-                "5. When the goal is fully achieved and verified, output 'TASK COMPLETE' on a line by itself."
-            ),
-        },
-        {"role": "user", "content": f"### AUTONOMOUS GOAL:\n{task}"},
+    history = [
+        {"role": "system", "content": sys_prompt},
+        {"role": "user", "content": f"### Target Goal:\n{effective_goal}\n\nExecute all necessary steps to complete this goal."}
     ]
 
-    turn = 0
-    stagnation_count = 0
-    last_ans = ""
-    max_context = int(os.environ.get("AI_MAX_TOKENS", 8192))
+    consecutive_failures = 0
+    last_response = ""
 
-    try:
-        while turn < max_turns:
-            turn += 1
-            sys.stderr.write(f"\033[1;33m[loop turn {turn}/{max_turns}]\033[0m\n")
+    for turn in range(1, max_turns + 1):
+        ui._console.print(f"[bold bright_blue]─── Ralph Turn {turn}/{max_turns} ─────────────────────────────[/bold bright_blue]")
 
-            # Context compaction watchdog: compact if exceeding 80% limit
-            curr_tokens = sum(
-                core.get_accurate_token_count(m.get("content") or "")
-                for m in history
+        # Failure-State Auto-Decomposition
+        if consecutive_failures >= 2:
+            decomp_directive = (
+                "[Ralph Harness - Failure Decomposition]: Your previous action failed repeatedly. "
+                "Stop retrying the full file. Decompose your immediate next step:\n"
+                "1. Inspect exact 15-20 lines via read_file(path, line_start, line_end).\n"
+                "2. Apply a targeted edit_file to only that section.\n"
+                "3. Execute run_command to verify."
             )
-            if curr_tokens > int(max_context * 0.8):
-                sys.stderr.write(
-                    f"\033[2m[loop] Context at {curr_tokens}/{max_context} tokens. Auto-compacting history...\033[0m\n"
-                )
-                history = core.prune_history(
-                    history, max_tokens=int(max_context * 0.6)
-                )
+            history.append({"role": "system", "content": decomp_directive})
+            consecutive_failures = 0
 
-            # Turn 1 Plan-Model Handover: route turn 1 via plan_model if specified
-            orig_model_env = os.environ.get("CUSTOM_MODEL")
-            if turn == 1 and plan_model:
-                sys.stderr.write(
-                    f"\033[2m[loop] Routing Turn 1 plan generation through model: {plan_model}\033[0m\n"
-                )
-                os.environ["CUSTOM_MODEL"] = plan_model
+        # Run stream turn
+        ans = core.stream_response(history, prefix="Agent:", show_stats=True, thinking_budget=0, is_agent=True)
 
-            try:
-                # Stream turn execution with retry
-                ans = None
-                for _attempt in range(2):
-                    ans = core.stream_response(
-                        history, prefix="Agent:", show_stats=True, is_agent=True
-                    )
-                    if ans is not None:
-                        break
-                    time.sleep(0.5)
-            finally:
-                if turn == 1 and plan_model:
-                    if orig_model_env is not None:
-                        os.environ["CUSTOM_MODEL"] = orig_model_env
-                    else:
-                        os.environ.pop("CUSTOM_MODEL", None)
+        if not ans:
+            ui._console.print("[yellow][Ralph] Turn yielded empty response. Retrying with state reminder...[/yellow]")
+            consecutive_failures += 1
+            history.append({"role": "user", "content": "Continue executing the goal. Report current progress or next tool step."})
+            continue
 
-            if ans is None:
-                sys.stderr.write(
-                    "\033[1;31m[error] API request failed or operation interrupted.\033[0m\n"
-                )
-                if enable_logging:
-                    log_turn_to_file(
-                        workspace,
-                        task,
-                        turn,
-                        "API Error / Interrupted",
-                        status="FAILED",
-                    )
-                return False
+        last_response = ans
+        history.append({"role": "assistant", "content": ans})
 
-            if ans:
-                history.append({"role": "assistant", "content": ans})
+        # Check for failure traces in response
+        if any(err_tag in ans for err_tag in ("[error]", "[tool error]", "SyntaxError", "FAILED")):
+            consecutive_failures += 1
+        else:
+            consecutive_failures = 0
 
-            if enable_logging:
-                log_turn_to_file(
-                    workspace,
-                    task,
-                    turn,
-                    ans or "(Tool execution)",
-                    status="IN_PROGRESS",
-                )
+        # Turn audit log
+        if not no_log:
+            _log_task_turn(workspace, turn, history[-2].get("content", ""), ans)
 
-            # Completion detection
-            if is_task_complete(ans, history):
-                sys.stderr.write(
-                    f"\n\033[1;32m✔ [ok] Task completed successfully in {turn} turn(s)!\033[0m\n\n"
-                )
-                if enable_logging:
-                    log_turn_to_file(
-                        workspace,
-                        task,
-                        turn,
-                        ans or "Task finished.",
-                        status="COMPLETED",
-                    )
-                return True
+        # Check for completion markers
+        if is_task_complete(ans):
+            ui._console.print(f"\n[bold green]✔ [Ralph Engine] Task completed successfully in {turn} turns![/bold green]\n")
+            if not no_log:
+                _log_task_turn(workspace, turn, "Final Verification", ans, status="COMPLETED")
+            return True
 
-            # Stagnation & Loop Detection
-            if ans == last_ans and ans:
-                stagnation_count += 1
-                if stagnation_count >= 2:
-                    sys.stderr.write(
-                        "\033[1;33m[loop] Stagnation detected. Injecting course-correction prompt...\033[0m\n"
-                    )
-                    history.append(
-                        {
-                            "role": "user",
-                            "content": "Notice: Previous approach produced duplicate results. Use alternative tools (e.g. edit_file, read_symbol) or verify current state.",
-                        }
-                    )
-                    stagnation_count = 0
-                    continue
-            else:
-                stagnation_count = 0
-                last_ans = ans
+        # Prompt next step
+        history.append({"role": "user", "content": "Continue with the next step. If completely finished and verified, output 'TASK COMPLETE'."})
 
-            # Standard prompt continuation for next turn
-            history.append(
-                {
-                    "role": "user",
-                    "content": "Continue executing remaining steps toward the goal. Run verification if needed, and output 'TASK COMPLETE' on its own line when finished.",
-                }
-            )
-
-        sys.stderr.write(
-            f"\n\033[1;33m▲ [warning] Loop limit reached ({max_turns} turns) without explicit completion.\033[0m\n\n"
-        )
-        if enable_logging:
-            log_turn_to_file(
-                workspace, task, turn, "Max turns reached.", status="MAX_TURNS_REACHED"
-            )
-        return False
-
-    except KeyboardInterrupt:
-        sys.stderr.write(
-            "\n\033[1;33m[sys] Loop execution interrupted by user.\033[0m\n\n"
-        )
-        if enable_logging:
-            log_turn_to_file(
-                workspace, task, turn, "Interrupted by user.", status="INTERRUPTED"
-            )
-        return False
+    ui._console.print(f"\n[bold yellow]▲ [Ralph Engine] Reached max turn limit ({max_turns}) without explicit completion marker.[/bold yellow]\n")
+    return False
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Ralph Autonomous Loop Engine")
-    parser.add_argument(
-        "task",
-        nargs="?",
-        default="",
-        help="Goal description for the autonomous loop",
-    )
-    parser.add_argument(
-        "-n",
-        "--turns",
-        type=int,
-        default=10,
-        help="Maximum turns allowed (default: 10)",
-    )
-    parser.add_argument(
-        "-f",
-        "--file",
-        type=str,
-        default=None,
-        help="Path to spec file (default: TASK.md)",
-    )
-    parser.add_argument(
-        "--plan-model",
-        type=str,
-        default=None,
-        help="Optional model for initial planning phase",
-    )
-    parser.add_argument(
-        "--no-log",
-        action="store_true",
-        help="Disable audit logging to .agent/task_log.md",
-    )
+    parser = argparse.ArgumentParser(description="Ralph Autonomous Task Loop Engine")
+    parser.add_argument("goal", nargs="*", help="Goal string or task instruction")
+    parser.add_argument("-n", "--turns", type=int, default=15, help="Maximum loop turns (default: 15)")
+    parser.add_argument("-f", "--file", type=str, default=None, help="Optional task specification file (e.g. TASK.md)")
+    parser.add_argument("--no-log", action="store_true", help="Disable .agent/task_log.md logging")
 
     args = parser.parse_args()
-    success = run_loop(
-        args.task,
-        max_turns=args.turns,
-        task_file=args.file,
-        enable_logging=not args.no_log,
-        plan_model=args.plan_model,
-    )
-    sys.exit(0 if success else 1)
+    workspace = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
+    goal_str = " ".join(args.goal).strip()
+
+    try:
+        success = run_ralph_loop(
+            goal=goal_str,
+            workspace=workspace,
+            max_turns=args.turns,
+            spec_file=args.file,
+            no_log=args.no_log,
+        )
+        sys.exit(0 if success else 1)
+    except KeyboardInterrupt:
+        ui._console.print("\n[yellow][Ralph] Loop cancelled by user.[/yellow]")
+        sys.exit(130)
 
 
 if __name__ == "__main__":
