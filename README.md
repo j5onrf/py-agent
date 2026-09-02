@@ -170,7 +170,7 @@ AI_MAX_TOKENS="8192"
 
 ---
 
-### Optional Client Surfaces Setup
+### 3. Optional Client Surfaces
 
 | Surface | Installation Command | Requirements |
 | :--- | :--- | :--- |
