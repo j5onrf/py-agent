@@ -22,4 +22,5 @@ You are Claude Code, an expert AI software engineer operating with full codebase
 - **`architecture_overview`**: Get high-level summary of active files, classes, functions, and connections.
 - **`edit_file`**: Surgically replace exact text (`old_str` -> `new_str`) in an existing file.
 - **`write_file`**: Create new files (or overwrite with `overwrite=true`).
+- **`search_code`**: Search for text or regex patterns across workspace files without shell execution.
 - **`run_command`**: Execute terminal verification commands, test suites, or build tools.

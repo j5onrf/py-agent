@@ -46,11 +46,6 @@ RE_JSON_OBJECT = re.compile(r"\{[\s\S]*\}")
 RE_TOOL_CALL_BLOCK = re.compile(r"<\|tool_call_start\|>.*?<\|tool_call_end\|>", re.DOTALL)
 RE_ATTACHED_IMAGE = re.compile(r'\[(?:Attached\s+)?(?:image|file)[^\]]*?saved\s+at:\s*([^\]]+)\]', re.IGNORECASE)
 
-BINARY_EXTENSIONS = frozenset({
-    ".db", ".sqlite", ".sqlite3", ".bin", ".pyc", ".so", ".dll", ".exe",
-    ".png", ".jpg", ".jpeg", ".gif", ".zip", ".tar", ".gz", ".7z",
-    ".pdf", ".docx", ".xlsx", ".db-wal", ".db-shm"
-})
 _TPM_SKIP_QUERIES = frozenset({"hello", "hi", "hey", "exit", "quit", "q", "/clear", "/reset", "/stats", "/tok", "/m", "/r"})
 _TPM_BLACKLIST = frozenset({"files", "file", "file_list", "project", "code", "description", "features", "dependencies", "project_type", "directory", "folder", "workspace"})
 
@@ -75,6 +70,128 @@ except ImportError:
 
 _state_cache: dict[str, Any] = {}
 _state_mtime: float = 0.0
+
+
+def _get_img_config() -> tuple[str, str]:
+    """Retrieves vision model and API key from environment or .env files."""
+    k = os.environ.get("IMG_VOICE", "") or os.environ.get("IMG_KEY", "") or os.environ.get("GEM_VOICE", "")
+    m = os.environ.get("IMG_MODEL", "") or os.environ.get("GEM_MODEL", "") or "gemini-3.5-flash-lite"
+    if not k:
+        for p in (os.path.join(CFG_DIR, ".env"), os.path.expanduser("~/.config/local-ai/.env"), ".env"):
+            if os.path.isfile(p):
+                try:
+                    with open(p, "r", encoding="utf-8") as f:
+                        for l in f:
+                            if (s := l.strip()) and not s.startswith("#"):
+                                if (s.startswith("IMG_VOICE=") or s.startswith("IMG_KEY=") or s.startswith("GEM_VOICE=")) and not k:
+                                    k = s.split("=", 1)[1].strip().strip("'\"")
+                                if (s.startswith("IMG_MODEL=") or s.startswith("GEM_MODEL=")) and not os.environ.get("IMG_MODEL"):
+                                    m = s.split("=", 1)[1].strip().strip("'\"")
+                except Exception:
+                    pass
+    return k.strip(), m.strip() or "gemini-3.5-flash-lite"
+
+
+def describe_image_gemini(target: Any) -> str:
+    """Pre-processes images via Gemini Flash Lite vision for text-only local models."""
+    key, model = _get_img_config()
+    if not key:
+        return "[Error: IMG_VOICE not configured in .env for vision]"
+    mime, b64 = "image/png", ""
+    try:
+        if isinstance(target, dict):
+            src = target.get("source", {}) if isinstance(target.get("source"), dict) else {}
+            b64 = src.get("data") or target.get("data") or target.get("blob") or ""
+            mime = src.get("media_type") or target.get("mimeType") or target.get("mime_type") or "image/png"
+            if not b64 and (u := (target.get("image_url", {}).get("url") if isinstance(target.get("image_url"), dict) else target.get("image_url")) or target.get("url") or target.get("path") or src.get("url")):
+                return describe_image_gemini(str(u))
+        elif isinstance(target, str):
+            c = target.strip().strip("'\"").strip()
+            if c.startswith("data:image/"):
+                h, b64 = c.split(",", 1)
+                mime = h.split(";")[0].replace("data:", "")
+            elif c.startswith(("http://", "https://")):
+                url = c.replace("github.com/", "raw.githubusercontent.com/").replace("/blob/", "/") if ("github.com/" in c and "/blob/" in c) else c
+                req = urlreq.Request(url, headers={"User-Agent": "Mozilla/5.0 Chrome/130.0.0.0 Safari/537.36", "Accept": "image/*,*/*;q=0.8"})
+                with urlreq.urlopen(req, timeout=15) as resp:
+                    b64, ct = base64.b64encode(resp.read()).decode("utf-8"), resp.headers.get_content_type()
+                    mime = ct if ct and ct.startswith("image/") else ("image/jpeg" if any(x in url.lower() for x in (".jpg", ".jpeg")) else ("image/webp" if ".webp" in url.lower() else "image/png"))
+            else:
+                p = urllib.parse.unquote(c[7:]) if c.startswith("file://") else c
+                ws = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
+                rf = next((f for f in (os.path.expanduser(p), os.path.join(ws, p), os.path.join(os.getcwd(), p), os.path.join(os.path.expanduser("~"), p)) if os.path.isfile(f)), None)
+                if rf:
+                    ext = os.path.splitext(rf)[1].lower()
+                    mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".svg": "image/svg+xml"}.get(ext, "image/png")
+                    with open(rf, "rb") as f:
+                        b64 = base64.b64encode(f.read()).decode("utf-8")
+                elif len(c) > 100 and not any(c.startswith(x) for x in ("/", "~", ".", "file:")):
+                    b64 = c
+                else:
+                    return f"[Error: Image file not found at '{target}']"
+    except Exception as e:
+        return f"[Error loading image: {e}]"
+
+    if not b64:
+        return "[Error: Empty image payload]"
+
+    sys_p = "Provide a comprehensive, accurate, and objective description of the image. Transcribe any visible text, code, terminal logs, error messages, line numbers, or data verbatim with exact formatting. Describe all visual subjects, objects, UI layouts, diagrams, charts, colors, and scenes in clear, precise detail."
+    payload = {"contents": [{"parts": [{"text": sys_p}, {"inline_data": {"mime_type": mime, "data": b64}}]}], "generationConfig": {"temperature": 0.1, "maxOutputTokens": 2048}}
+    try:
+        req = urlreq.Request(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST")
+        with urlreq.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode())
+        parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+        return "".join(p.get("text", "") for p in parts if "text" in p).strip() or "[No visual elements detected]"
+    except Exception as e:
+        return f"[Vision Exception: {e}]"
+
+
+def preprocess_multimodal_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Inspects messages for attached images and runs Gemini OCR/Vision pre-processing."""
+    processed, (_, model) = [], _get_img_config()
+    for msg in messages:
+        c = msg.get("content")
+        if isinstance(c, str):
+            if paths := RE_ATTACHED_IMAGE.findall(c):
+                va = [f"[Visual Analysis ({model})]:\n{describe_image_gemini(p.strip().strip('\'\"'))}" for p in paths]
+                txt = RE_ATTACHED_IMAGE.sub("", c).strip()
+                processed.append({**msg, "content": "\n\n".join(va + ([f"User Question: {txt}"] if txt else []))})
+            else:
+                processed.append(msg)
+        elif isinstance(c, list):
+            tp, va = [], []
+            for it in c:
+                if isinstance(it, str):
+                    if paths := RE_ATTACHED_IMAGE.findall(it):
+                        va.extend(f"[Visual Analysis ({model})]:\n{describe_image_gemini(p.strip().strip('\'\"'))}" for p in paths)
+                        if clean := RE_ATTACHED_IMAGE.sub("", it).strip():
+                            tp.append(clean)
+                    else:
+                        tp.append(it)
+                elif isinstance(it, dict):
+                    if it.get("type") == "text":
+                        raw = it.get("text", "")
+                        if paths := RE_ATTACHED_IMAGE.findall(raw):
+                            va.extend(f"[Visual Analysis ({model})]:\n{describe_image_gemini(p.strip().strip('\'\"'))}" for p in paths)
+                            if clean := RE_ATTACHED_IMAGE.sub("", raw).strip():
+                                tp.append(clean)
+                        elif raw:
+                            tp.append(raw)
+                    else:
+                        res = describe_image_gemini(it)
+                        if not res.startswith("[Error: Empty image"):
+                            va.append(f"[Visual Analysis ({model})]:\n{res}")
+            user_txt = "\n".join(t.strip() for t in tp if t.strip())
+            processed.append({**msg, "content": "\n\n".join(va + ([f"User Question: {user_txt}"] if (user_txt and va) else ([user_txt] if user_txt else [])))})
+        else:
+            processed.append(msg)
+    return processed
+
+
+def _heal_tool_args(raw: str) -> dict[str, Any]:
+    """Heals malformed JSON tool arguments via modular adapter."""
+    return adapters.heal_json_args(raw)
 
 
 def get_state(key: str = "", default: Any = None) -> Any:
@@ -355,7 +472,7 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
             decomp_steer = (
                 "[Harness Directive - Task Decomposition]: Your previous action failed repeatedly. "
                 "Stop retrying the whole file. Decompose your immediate next step: "
-                "1) Read the exact 15-20 lines using read_file(path, line_start, line_end). "
+                "1) Read the exact 15-20 lines using read_file(path, line_start, line_end) or search_code(pattern). "
                 "2) Apply a targeted edit_file to only that section with unique context lines."
             )
             messages.append({"role": "system", "content": decomp_steer})
@@ -421,6 +538,11 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
                     content = delta.get("content", "") or ""
                     reasoning = delta.get("reasoning_content", "") or delta.get("thinking", "") or delta.get("reasoning", "") or ""
 
+                     # Active keep-alive: If model transitions into drafting XML/DSML tool calls
+                    if "<tool_call" in content or "<function=" in content or "<｜DSML｜" in content:
+                        if spinner:
+                            spinner.start("Drafting tool action...")
+
                     chunk_to_stream, is_thinking, in_think_block = _process_stream_chunk(content, reasoning, in_think_block)
 
                     if chunk_to_stream:
@@ -436,6 +558,11 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
                         acc_content.append(chunk_to_stream)
                         if speed_test and show_stats:
                             speed_test.count_token(chunk_to_stream, is_thinking=is_thinking)
+                    elif "<tool_call" in content or "<function=" in content:
+                        # Model is outputting tool parameters; keep spinner spinning
+                        acc_content.append(content)
+                        if spinner:
+                            spinner.start("Drafting tool action...")
 
                     for tc in delta.get("tool_calls", []):
                         idx = tc.get("index", 0)
@@ -505,7 +632,7 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
                     spinner.stop()
                 fname = tc.get("function", {}).get("name", "")
                 args = json.loads(tc.get("function", {}).get("arguments", "{}"))
-                brief = str(args.get("symbol") or args.get("path") or args.get("command") or "")[:100]
+                brief = str(args.get("symbol") or args.get("path") or args.get("command") or args.get("pattern") or "")[:100]
                 verb = TOOL_VERBS.get(fname, "working")
 
                 _console_err.print(f"[dim]∗ {verb} • [cyan]{fname}[/cyan] [italic]{brief}[/italic][/dim]")
@@ -609,6 +736,7 @@ def show_memory_status(messages: list[dict[str, Any]], max_context: int = 8192, 
 
 
 def prune_history(history: list[dict[str, Any]], max_tokens: int | None = None) -> list[dict[str, Any]]:
+    """3-Zone Context Compactor with SmolCoder Active Session Working Anchor"""
     if len(history) <= 4:
         return history
 
@@ -648,15 +776,24 @@ def prune_history(history: list[dict[str, Any]], max_tokens: int | None = None) 
             else:
                 summary = content if len(content) <= 150 else content[:120] + "... [snipped]"
 
-            compacted_middle.append({**msg, "content": summary})
+            # Flatten older tool outputs into clean assistant notes to prevent Jinja template mismatch
+            compacted_middle.append({"role": "assistant", "content": summary})
+        elif role == "assistant":
+            # For older middle messages, remove raw tool_calls to prevent orphaned Jinja tool_call_id errors
+            clean_msg = {k: v for k, v in msg.items() if k != "tool_calls"}
+            if clean_msg.get("content"):
+                compacted_middle.append(clean_msg)
         else:
             compacted_middle.append(msg)
 
-    anchor_msg = None
+    anchors = []
+    if mod_files := tools.get_modified_files():
+        anchors.append(f"[Active Session Modified Files: {', '.join(mod_files)}]")
     if completed_actions:
         deduped = list(dict.fromkeys(completed_actions))[-6:]
-        anchor_text = "[Compacted Working Horizon Anchor - Completed Steps]:\n" + "\n".join(f"✓ {act}" for act in deduped)
-        anchor_msg = {"role": "system", "content": anchor_text}
+        anchors.append("[Completed Milestones]:\n" + "\n".join(f"✓ {act}" for act in deduped))
+
+    anchor_msg = {"role": "system", "content": "\n\n".join(anchors)} if anchors else None
 
     assembled = [sys_msg] + ([anchor_msg] if anchor_msg else [])
     curr_tokens = sum(get_accurate_token_count(m.get("content", "")) for m in assembled)

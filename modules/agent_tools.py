@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Native Tool Engine - Handles file editing, commands, & graph intelligence [Interactive Security Gate Edition]"""
+"""Native Tool Engine - Handles file editing, search, commands, & graph intelligence"""
 
 import ast
 import difflib
@@ -24,7 +24,12 @@ _console_err = Console(stderr=True)
 BINARY_EXTENSIONS = frozenset({
     ".db", ".sqlite", ".sqlite3", ".bin", ".pyc", ".so", ".dll", ".exe",
     ".png", ".jpg", ".jpeg", ".gif", ".zip", ".tar", ".gz", ".7z",
-    ".pdf", ".docx", ".xlsx", ".db-wal", ".db-shm"
+    ".pdf", ".docx", ".xlsx", ".db-wal", ".db-shm", ".pyo", ".pyd"
+})
+
+EXCLUDED_SEARCH_DIRS = frozenset({
+    ".git", ".agent", "__pycache__", ".pytest_cache", "node_modules",
+    ".venv", "venv", "env", "dist", "build", ".mypy_cache", ".ruff_cache"
 })
 
 FORBIDDEN_GLOBAL_COMMANDS = frozenset({
@@ -40,8 +45,24 @@ FORBIDDEN_SYS_DIRS = (
 )
 
 RE_ABS_PATH = re.compile(r"/(?:[a-zA-Z0-9_\-\.]+/)*[a-zA-Z0-9_\-\.]*")
-_SESSION_READ_FILES: set[str] = set()
 
+# In-Memory Session State
+_SESSION_READ_FILES: set[str] = set()
+_SESSION_MODIFIED_FILES: set[str] = set()
+
+
+def get_modified_files() -> list[str]:
+    """Returns sorted list of relative paths modified in the active session."""
+    return sorted(_SESSION_MODIFIED_FILES)
+
+
+def clear_session_tracking() -> None:
+    """Resets session file tracking state."""
+    _SESSION_READ_FILES.clear()
+    _SESSION_MODIFIED_FILES.clear()
+
+
+# Complete 11-Tool Suite
 EDIT_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
@@ -88,6 +109,15 @@ EDIT_TOOLS: list[dict[str, Any]] = [
             [],
         ),
         (
+            "search_code",
+            "Search for text or regex pattern across workspace files. Returns matching files, line numbers, and previews without shell execution.",
+            {
+                "pattern": {"type": "string", "description": "Text string or regular expression to search for."},
+                "path": {"type": "string", "description": "Relative directory or file path to search within. Defaults to '.' (workspace root)."}
+            },
+            ["pattern"],
+        ),
+        (
             "read_file",
             "Read a text file from the project. Optionally specify line_start and line_end.",
             {
@@ -132,8 +162,9 @@ EDIT_TOOLS: list[dict[str, Any]] = [
     ]
 ]
 
+# Lean 6-Tool Set for Compact Models (2B, 7B, 8B, 14B)
 LEAN_TOOLS: list[dict[str, Any]] = [
-    t for t in EDIT_TOOLS if t["function"]["name"] in ("read_file", "edit_file", "write_file", "list_dir", "run_command")
+    t for t in EDIT_TOOLS if t["function"]["name"] in ("read_file", "search_code", "edit_file", "write_file", "list_dir", "run_command")
 ]
 
 TOOL_VERBS = {
@@ -142,6 +173,7 @@ TOOL_VERBS = {
     "blast_radius": "calculating impact",
     "find_symbol": "searching graph",
     "architecture_overview": "mapping architecture",
+    "search_code": "searching codebase",
     "read_file": "checking",
     "edit_file": "surgically editing",
     "write_file": "updating",
@@ -189,7 +221,7 @@ def _get_graph_engine():
 def _safe_path(workspace: str, p: str) -> str:
     if not p:
         return os.path.realpath(workspace)
-    clean_p = os.path.expanduser(urllib.parse.unquote(str(p).strip().strip('"\'\\')))
+    clean_p = os.path.expanduser(urllib.parse.unquote(str(p).strip().strip('\'"`\\\n\r\t ')))
     ws_real = os.path.realpath(workspace)
     if clean_p.startswith("/") and not clean_p.startswith(ws_real):
         rel_candidate = clean_p.lstrip("/")
@@ -243,107 +275,61 @@ def _check_command_security(cmd: str, workspace: str) -> str | None:
     return None
 
 
-def run_graph_cmd(cmd_name: str, arg: str, workspace: str) -> str:
-    engine = _get_graph_engine()
-    if engine:
+# ── SmolCoder Feature 1: Native In-Bounds Code Search ─────────────────────────
+def _search_codebase(pattern: str, search_root: str, workspace: str, max_results: int = 30) -> str:
+    """Fast, sandboxed regex and string search across workspace text files."""
+    if not pattern or not pattern.strip():
+        return "[error] Parameter 'pattern' cannot be empty."
+
+    target_path = _safe_path(workspace, search_root)
+    if _is_outside_workspace(workspace, target_path):
+        return f"[denied] Search path '{search_root}' is outside workspace."
+
+    try:
+        regex = re.compile(pattern, re.IGNORECASE)
+    except re.error:
+        regex = re.compile(re.escape(pattern), re.IGNORECASE)
+
+    matches = []
+    files_searched = 0
+
+    if os.path.isfile(target_path):
+        scan_files = [target_path]
+    else:
+        scan_files = []
+        for root, dirs, files in os.walk(target_path):
+            dirs[:] = [d for d in dirs if d not in EXCLUDED_SEARCH_DIRS and not d.startswith(".")]
+            for f in files:
+                if os.path.splitext(f)[1].lower() not in BINARY_EXTENSIONS and not f.startswith("."):
+                    scan_files.append(os.path.join(root, f))
+
+    for fpath in scan_files:
+        files_searched += 1
+        rel_path = os.path.relpath(fpath, workspace)
         try:
-            if cmd_name == "snippet" and hasattr(engine, "extract_snippet"):
-                return engine.extract_snippet(arg, workspace)
-            if cmd_name == "trace" and hasattr(engine, "trace_symbol"):
-                return engine.trace_symbol(arg, workspace)
-            if cmd_name == "blast-radius" and hasattr(engine, "get_blast_radius"):
-                return engine.get_blast_radius(arg, workspace)
-            if cmd_name == "search" and hasattr(engine, "search_symbols"):
-                return engine.search_symbols(arg, workspace)
-            if cmd_name == "architecture" and hasattr(engine, "show_architecture"):
-                return engine.show_architecture(workspace)
-        except Exception as e:
-            return f"[error] in-memory graph execution failed: {e}"
+            with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
+                for line_idx, line in enumerate(f, start=1):
+                    if regex.search(line):
+                        clean_line = line.rstrip("\r\n")
+                        preview = clean_line[:120] + ("..." if len(clean_line) > 120 else "")
+                        matches.append(f"{rel_path}:{line_idx}: {preview}")
+                        if len(matches) >= max_results:
+                            break
+        except OSError:
+            continue
+        if len(matches) >= max_results:
+            break
 
-    try:
-        mod_path = os.path.join(CFG_DIR, "tools", "index-map", "index-map")
-        cmd_args = [sys.executable, mod_path, cmd_name] + ([arg] if arg else [])
-        res = subprocess.run(cmd_args, cwd=workspace, capture_output=True, text=True, timeout=12)
-        out = (res.stdout or res.stderr or "").strip()
-        return out or f"[error] '{cmd_name}' returned no results for '{arg}'."
-    except (OSError, subprocess.SubprocessError, TimeoutError) as e:
-        return f"[error] failed to run graph command {cmd_name}: {e}"
+    if not matches:
+        return f"[search_code] No matches found for pattern '{pattern}' across {files_searched} files."
 
-
-def search_web_gemini(query: str) -> str:
-    import urllib.request as urlreq
-
-    key = os.environ.get("GND_KEY", "") or os.environ.get("GEM_VOICE", "") or os.environ.get("IMG_VOICE", "") or os.environ.get("GEMINI_API_KEY", "")
-    model = os.environ.get("GND_MODEL", "")
-
-    if not key or not model:
-        env_vars = {}
-        for p in (os.path.join(CFG_DIR, ".env"), os.path.expanduser("~/.config/local-ai/.env"), ".env"):
-            if os.path.isfile(p):
-                try:
-                    with open(p, "r", encoding="utf-8") as f:
-                        for l in f:
-                            if (s := l.strip()) and not s.startswith("#") and "=" in s:
-                                k, v = s.split("=", 1)
-                                env_vars[k.strip()] = v.strip().strip("'\"")
-                except Exception:
-                    pass
-
-        key = key or env_vars.get("GND_KEY") or env_vars.get("GEM_VOICE") or env_vars.get("IMG_VOICE") or env_vars.get("GEMINI_API_KEY", "")
-        model = model or env_vars.get("GND_MODEL") or "gemini-2.5-flash"
-
-    if key:
-        budget = 700
-        for p in (os.path.join(CFG_DIR, ".state.json"),):
-            if os.path.isfile(p):
-                try:
-                    with open(p, "r", encoding="utf-8") as sf:
-                        budget = int(json.load(sf).get("grounding_budget", 700))
-                except Exception:
-                    pass
-
-        models_to_try = [model]
-        for fallback in ("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.5-flash"):
-            if fallback not in models_to_try:
-                models_to_try.append(fallback)
-
-        sys_prompt = "You are a dense factual research engine. Extract exact facts, numbers, dates, and code solutions directly from search results under 200 words."
-        payload = {
-            "contents": [{"parts": [{"text": f"{sys_prompt}\n\nSearch Query: {query}"}]}],
-            "tools": [{"google_search": {}}],
-            "generationConfig": {"temperature": 0.1, "maxOutputTokens": max(350, budget)}
-        }
-        data_bytes = json.dumps(payload).encode("utf-8")
-
-        for m in models_to_try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={key}"
-            req = urlreq.Request(url, data=data_bytes, headers={"Content-Type": "application/json"}, method="POST")
-            try:
-                with urlreq.urlopen(req, timeout=12) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-                text = "".join(p.get("text", "") for p in parts if "text" in p).strip()
-                if text:
-                    return text
-            except Exception:
-                continue
-
-    try:
-        import html as htmllib
-        ddg_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote_plus(query)}"
-        req = urlreq.Request(ddg_url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"})
-        with urlreq.urlopen(req, timeout=8) as resp:
-            page_html = resp.read().decode("utf-8", errors="ignore")
-        snippets = re.findall(r'<a class="result__snippet[^>]*>(.*?)</a>', page_html, re.DOTALL)
-        clean = [htmllib.unescape(re.sub(r'<[^>]+>', '', s).strip()) for s in snippets[:3] if s.strip()]
-        if clean:
-            return "\n\n".join(clean)
-    except Exception:
-        pass
-
-    return f"[web_search: No results found for '{query}']"
+    res = f"### Code Search: '{pattern}' ({len(matches)} matches in {files_searched} files):\n" + "\n".join(matches)
+    if len(matches) >= max_results:
+        res += f"\n\n... [Showing first {max_results} matches. Narrow pattern or search specific subdirectories for more]"
+    return res
 
 
+# ── SmallCoder AST Outline Generator ──────────────────────────────────────────
 def _generate_ast_skeleton(code: str, file_path: str) -> str:
     lines = code.splitlines()
     total_lines = len(lines)
@@ -405,7 +391,15 @@ def _generate_ast_skeleton(code: str, file_path: str) -> str:
     )
 
 
-def _whitespace_tolerant_replace(original: str, old_str: str, new_str: str) -> tuple[str | None, str | None]:
+# ── SmolCoder Feature 3: 3-Stage Resilient Replacement Engine ─────────────────
+def _resilient_replace(original: str, old_str: str, new_str: str) -> tuple[str | None, str | None]:
+    """3-Stage resilient file replacement:
+
+    Stage 1: Strict Exact Match
+    Stage 2: Whitespace & Indentation Normalized Match
+    Stage 3: Fuzzy SequenceMatcher (similarity > 0.88) for minor line drift
+    """
+    # Stage 1: Exact match
     if old_str in original:
         if original.count(old_str) > 1:
             return None, "Target old_str matched multiple times in file. Include more surrounding context lines to make it unique."
@@ -425,6 +419,7 @@ def _whitespace_tolerant_replace(original: str, old_str: str, new_str: str) -> t
     if old_len == 0:
         return None, "Parameter 'old_str' contains no non-whitespace content."
 
+    # Stage 2: Whitespace normalized sliding window
     matches = []
     for i in range(len(orig_lines)):
         window_lines = []
@@ -466,9 +461,28 @@ def _whitespace_tolerant_replace(original: str, old_str: str, new_str: str) -> t
     elif len(matches) > 1:
         return None, f"Whitespace-normalized old_str matched {len(matches)} locations. Include more surrounding lines to make it unique."
 
-    return None, "Target old_str not found in file (even with whitespace tolerance). Use read_file to inspect exact lines."
+    # Stage 3: Fuzzy SequenceMatcher for minor character drift / 8B model noise
+    best_ratio = 0.0
+    best_window = None
+    old_block_str = "\n".join(norm_old)
+
+    for i in range(len(orig_lines) - old_len + 1):
+        cand_lines = [re.sub(r"\s+", " ", orig_lines[k].strip()) for k in range(i, i + old_len) if orig_lines[k].strip()]
+        cand_block_str = "\n".join(cand_lines)
+        ratio = difflib.SequenceMatcher(None, old_block_str, cand_block_str).ratio()
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_window = (i, i + old_len)
+
+    if best_ratio >= 0.88 and best_window is not None:
+        start_idx, end_idx = best_window
+        reconstructed = "".join(orig_lines[:start_idx]) + clean_new + ("\n" if not clean_new.endswith("\n") else "") + "".join(orig_lines[end_idx:])
+        return reconstructed, None
+
+    return None, "Target old_str not found in file (even with whitespace tolerance and fuzzy matching). Use read_file to inspect exact lines."
 
 
+# ── Core Tool Dispatcher ──────────────────────────────────────────────────────
 def run_tool(
     name: str,
     args: dict[str, Any],
@@ -476,8 +490,12 @@ def run_tool(
     confirm_gate_fn: Callable[[str], bool] | None = None,
     print_output_fn: Callable[[str], None] | None = None,
 ) -> str:
-    # Parameter Normalization
+    # Parameter Normalization & Quote Sanitization
     if isinstance(args, dict):
+        for k in ("path", "command", "pattern", "symbol"):
+            if k in args and isinstance(args[k], str):
+                args[k] = args[k].strip().strip('\'"`\\\n\r\t ').strip()
+
         if "path" not in args:
             for alt in ("file", "filename", "filepath", "target", "file_path"):
                 if alt in args:
@@ -493,18 +511,21 @@ def run_tool(
                 if alt in args:
                     args["content"] = args[alt]
                     break
+        if "pattern" not in args:
+            for alt in ("query", "regex", "search_term", "find"):
+                if alt in args:
+                    args["pattern"] = args[alt]
+                    break
 
     gates_active = os.environ.get("AI_CONFIRM_GATES", "1") == "1"
     raw_path = args.get("path", "")
     full = _safe_path(workspace, raw_path)
 
-    # In-Bounds routine confirmation (Plan mode only)
     def _in_bounds_gate(reason: str) -> bool:
         if confirm_gate_fn and gates_active:
             return confirm_gate_fn(reason)
         return True
 
-    # Out-of-Bounds Mandatory confirmation (NEVER bypassed by YOLO)
     def _security_gate(reason: str) -> bool:
         if confirm_gate_fn:
             return confirm_gate_fn(reason)
@@ -552,10 +573,21 @@ def run_tool(
             print_output_fn(out)
         return out
 
-    # 3. File System Tools
+    # 3. Codebase Search (SmolCoder Native Grep)
+    if name == "search_code":
+        pattern = args.get("pattern", "")
+        search_root = args.get("path", ".")
+        out = _search_codebase(pattern, search_root, workspace)
+        if print_output_fn:
+            print_output_fn(out)
+        return out
+
+    # 4. File System Tools
     if name == "read_file":
-        if os.path.splitext(full)[1].lower() in BINARY_EXTENSIONS or os.path.isdir(full):
-            return f"[error] Refused to read binary file or directory '{raw_path}'."
+        if os.path.isdir(full):
+            return f"[error] '{raw_path or '.'}' is a directory, not a file. Use list_dir('{raw_path or '.'}') to view files, or pass a file path (e.g. read_file('inventory.py'))."
+        if os.path.splitext(full)[1].lower() in BINARY_EXTENSIONS:
+            return f"[error] Refused to read binary file '{raw_path}'."
         if not os.path.isfile(full):
             return f"[error] File not found: {raw_path}"
 
@@ -614,7 +646,7 @@ def run_tool(
             with open(full, "r", encoding="utf-8", errors="replace") as f:
                 original = f.read()
 
-            new_content, err_msg = _whitespace_tolerant_replace(original, old_str, new_str)
+            new_content, err_msg = _resilient_replace(original, old_str, new_str)
             if err_msg or new_content is None:
                 return f"[error] {err_msg}"
 
@@ -647,6 +679,11 @@ def run_tool(
 
             with open(full, "w", encoding="utf-8") as f:
                 f.write(new_content)
+
+            # Track modified file in session working memory
+            rel_f = os.path.relpath(full, workspace)
+            _SESSION_MODIFIED_FILES.add(rel_f)
+
             return f"Successfully edited {raw_path} (replaced {len(old_str)} chars with {len(new_str)} chars)."
         except OSError as e:
             return f"[error] failed to edit file: {e}"
@@ -707,6 +744,8 @@ def run_tool(
             with open(full, "w", encoding="utf-8") as f:
                 f.write(content)
             _SESSION_READ_FILES.add(full)
+            rel_f = os.path.relpath(full, workspace)
+            _SESSION_MODIFIED_FILES.add(rel_f)
             return f"wrote {len(content)} chars to {raw_path}"
         except OSError as e:
             return f"[error] failed to write file: {e}"
@@ -741,7 +780,6 @@ def run_tool(
     if name == "run_command":
         cmd = args.get("command", "")
 
-        # Check for out-of-bounds or global modifications
         if sec_reason := _check_command_security(cmd, workspace):
             if not _security_gate(f"OUT-OF-BOUNDS EXECUTION: $ {cmd} ({sec_reason})"):
                 return f"[denied] User declined command execution: {cmd}"
