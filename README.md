@@ -177,7 +177,7 @@ AI_MAX_TOKENS="8192"
 | **Desktop IDE ([PyCode](https://github.com/j5onrf/pycode))** | `install-pycode`<br><sub>(or `~/.config/py-agent/plugins/pycode/setup.sh`)</sub> | Node.js 20+, pnpm |
 | **Textual PyTUI** | `sudo pacman -S python-textual python-uvloop && yay -S python-sqlite-vec` | uvloop & sqlite-vec |
 | **Voice-to-Text Bridge** | `/v` (or `/v auto` on `:9999`) | `sudo pacman -S wtype openssl` & `GEM_VOICE` in `.env` |
-| **Neural Kokoro TTS** | `/tts` | `yay -S koko-bin pw-play` |
+| **Neural Kokoro TTS** | `/tts`<br><sub>(or [Audio Plugin](plugins/audio))</sub> | `yay -S koko-bin pw-play wl-clipboard` |
 
 ---
 
