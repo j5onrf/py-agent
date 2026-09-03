@@ -90,6 +90,56 @@ Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`)
 
 ---
 
+<h2 align="center">Plugin Extensions</h2>
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" width="33%" valign="top">
+        <b>React Desktop IDE (<a href="https://github.com/j5onrf/pycode">PyCode</a>)</b><br>
+        <code>/pyc</code> · <code>/pyc web</code><br><br>
+        <a href="https://github.com/user-attachments/assets/08a1358b-fca1-4fb4-b43e-2b96aaed6e42" target="_blank">
+          <kbd>
+            <img src="https://github.com/user-attachments/assets/08a1358b-fca1-4fb4-b43e-2b96aaed6e42" alt="PyCode Desktop App" width="100%" />
+          </kbd>
+        </a>
+      </td>
+      <td align="center" width="33%" valign="top">
+        <b>Textual PyTUI</b><br>
+        <code>/tui</code><br><br>
+        <a href="https://github.com/user-attachments/assets/1cfcd26a-c7f9-482d-9624-24193ce7b5c2" target="_blank">
+          <kbd>
+            <img src="https://github.com/user-attachments/assets/1cfcd26a-c7f9-482d-9624-24193ce7b5c2" alt="Py Agent Textual TUI" width="100%" />
+          </kbd>
+        </a>
+      </td>
+      <td align="center" width="33%" valign="top">
+        <b>Web Assistant (<a href="https://github.com/CopilotKit/OpenBot">PyBot</a>)</b><br>
+        <code>/pybot</code> <i>(Coming Soon)</i><br><br>
+      </td>
+    </tr>
+    <tr>
+      <td align="center" width="33%" valign="top">
+        <b>llama.cpp WebAgent</b><br>
+        <code>/webui</code> · <code>/web</code><br><br>
+        <a href="https://github.com/user-attachments/assets/39760d51-75f0-4b01-b385-6c5d99282a42" target="_blank">
+          <kbd>
+            <img src="https://github.com/user-attachments/assets/39760d51-75f0-4b01-b385-6c5d99282a42" alt="llama.cpp WebAgent" width="100%" />
+          </kbd>
+        </a>
+      </td>
+      <td align="center" width="33%" valign="top">
+        <!-- Reserved Slot -->
+      </td>
+      <td align="center" width="33%" valign="top">
+        <!-- Reserved Slot -->
+      </td>
+    </tr>
+  </table>
+</div>
+
+---
+
 <h2 align="center">Setup & Installation</h2>
 
 ### 1. Install py-agent
