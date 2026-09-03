@@ -29,13 +29,13 @@ CPU_BALANCED_FREQ = os.environ.get("AI_CPU_BALANCED_FREQ", "5.2GHz")
 # Map model display names to their GGUF filename and launcher script inside SERV_DIR
 LOCAL_MODELS = [
     {
-        "name": "Qwen3.5-2B-Claude (Fast Chat / Single-Task)",
-        "file": "Qwen3.5-2B-Claude.gguf",
-        "script": "q2b.sh",
+        "name": "Qwen 3.5 2B (unsloth)",
+        "file": "Qwen3.5-2B.gguf",
+        "script": "q2bu.sh",
     },
     {
-        "name": "LFM2.5-8B-A1B (Balanced / Lite Coding Agent)",
-        "file": "LFM2.5-8B-A1B-UD-Q4_K_XL.gguf",
+        "name": "LFM2.5-8B-A1B-APEX-I-Compact",
+        "file": "LFM2.5-8B-A1B.gguf",
         "script": "lfm2.sh",
     },
     {

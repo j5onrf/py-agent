@@ -628,8 +628,6 @@ def run_tool(
     if name == "edit_file":
         if not os.path.isfile(full):
             return f"[error] File '{raw_path}' does not exist. Use write_file to create new files."
-        if full not in _SESSION_READ_FILES and not bool(args.get("force", False)):
-            return f"[error] You must inspect '{raw_path}' with read_file before calling edit_file to ensure your old_str matches exact lines and indentation."
 
         if _is_outside_workspace(workspace, full):
             if not _security_gate(f"OUT-OF-BOUNDS EDIT: {full}"):

@@ -2,8 +2,7 @@
 
 # Configuration
 PORT=8080
-HOST="127.0.0.1"
-MODEL_PATH="/home/user/models/LFM2.5-8B-A1B-UD-Q4_K_XL.gguf"
+MODEL_PATH="/home/user/models/LFM2.5-8B-A1B.gguf"
 LOG_DIR="/home/user/models/serv"
 LOG_FILE="$LOG_DIR/server.log"
 LLAMA_SERVER_BIN="/home/user/llama.cpp/build/bin/llama-server"
@@ -35,7 +34,7 @@ ulimit -l unlimited 2>/dev/null
 # 5. Launch wrapped in UWSM (Optimized Native AVX-512 / VNNI Engine)
 exec uwsm app -- taskset -c "$PHYSICAL_CORES" "$LLAMA_SERVER_BIN" \
   -m "$MODEL_PATH" \
-  --alias "LFM2.5-8B-A1B-UD" \
+  --alias "LFM2.5-8B-A1B" \
   --host "$HOST" \
   --port "$PORT" \
   -c 8192 \

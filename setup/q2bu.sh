@@ -5,7 +5,7 @@
 # ==========================================
 PORT=8080
 HOST="127.0.0.1"
-MODEL_PATH="/home/user/models/Qwen3.5-2B-Claude.gguf"
+MODEL_PATH="/home/user/models/Qwen3.5-2B.gguf"
 LOG_DIR="/home/user/models/serv"
 LOG_FILE="$LOG_DIR/server.log"
 LLAMA_SERVER_BIN="/home/user/llama.cpp/build/bin/llama-server"
@@ -37,7 +37,7 @@ ulimit -l unlimited 2>/dev/null
 # 5. Launch wrapped in UWSM (Optimized Native AVX-512 / VNNI Engine)
 exec uwsm app -- taskset -c "$PHYSICAL_CORES" "$LLAMA_SERVER_BIN" \
   -m "$MODEL_PATH" \
-  --alias "Qwen3.5-2B-Claude" \
+  --alias "Qwen3.5-2B" \
   --host "$HOST" \
   --port "$PORT" \
   -c 8192 \
@@ -61,3 +61,5 @@ exec uwsm app -- taskset -c "$PHYSICAL_CORES" "$LLAMA_SERVER_BIN" \
   --repeat-penalty 1.15 \
   --repeat-last-n 256 \
   --presence-penalty 0.15 >> "$LOG_FILE" 2>&1
+  
+  

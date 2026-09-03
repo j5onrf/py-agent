@@ -3,15 +3,11 @@
 High-speed local developer agent, episodic memory, SQLite checkpoints, NOOA-enhanced IPython kernel harness, and codebase index graph.
 
 ```console
-~ ❯ ai init ~/my-project
-[ai init] Select default Agent Profile for workspace my-project:
-
-Enable Autonomous YOLO mode? [y/N]: y
 ✓ Profile set to: Pi Py-Pro (Autonomous YOLO)
 
 ╭─  ∿ Py Agent  ───────────────────────────────────────────╮
 │     model:  Qwen3.6-35B-A3B.gguf                         │
-│ directory:  ~/.config/py-agent/projects/my-project       │
+│ directory:  ~/.config/py-agent/projects/session-test-2   │
 │     skill:  pi/py-pro                                    │
 │  database:  active (1 facts, 1 turns)                    │
 ╰───────────────────────────────────────── Ctrl+C to exit ─╯
@@ -68,6 +64,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
   ❯  1. Custom Base          (~150t)  <-- Lean (5 tools, Map: OFF)
      2. Custom Base-Map      (~300t)  <-- Index-Map (10 tools, Map: ON)
      3. Custom Base-Py       (~280t)  <-- In-Kernel (Map: OFF)
+     4. Custom LFM2          (~240t)  <-- Lite 8B Single-Task Dev
 
   ─── Agents ────────────────────────
      1. Pi Pro               (~180t)  <-- Fast 5-Tool JSON Agent
@@ -87,7 +84,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 
   :: ↵ select  ↑/↓ navigate  Tab: YOLO [OFF]  m: Map [OFF]  Esc: default
 ```
-| **Custom** | `custom/<name>` | Universal / Custom | `~150t–300t` | Auto-scans `skills/profiles/custom/` for user `.md` templates (`base.md`, `base-map.md`, `base-py.md`). |
+
 * **Customize:** Modify or create profile `.md` files in `~/.config/py-agent/skills/profiles/`.
 * **Reset Workspace:** Type `/reset` in chat to clear conversation history, purge `.agent/` and database records, and start fresh.
 
@@ -141,7 +138,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 * **AST Skeleton Read Guards:** Calling `read_file` on files > 250 lines returns top-level imports, class structures, and function line spans instead of a blind head-slice. Use `line_start` and `line_end` to read specific blocks.
 * **Whitespace-Tolerant `edit_file`:** Automatically handles 1–2 space indentation mismatches and trailing whitespace differences.
 * **Mandatory Fallback Security Gates:** Out-of-bounds file targets and package managers (`pip`, `pacman`, `sudo`) **always trigger an interactive `[Y/n]` prompt**, even in Autonomous YOLO mode. Denials halt tool execution immediately.
-* **Modular Adapter Layer (`agent_adapters.py`):** Self-healing parser resolving Hermes XML, DSML, Mistral, and raw function calls out-of-band without bloating the core engine.
+* **Modular Adapter Layer (`agent_adapters.py`):** Self-healing parser resolving Hermes XML, DSML, Mistral, naked JSON, and raw function calls out-of-band without bloating the core engine.
 * **3-Zone Context Compactor (`/compact`):** Condenses intermediate tool turns while preserving a completed milestone progress anchor.
 
 ---
@@ -169,7 +166,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 ## 7. Memory, Knowledge & Audio
 
 * **Checkpoints (`-save` / `-load`):** Snapshot and restore episodic memory and conversation states to SQLite across sessions.
-* **On-Demand Skills (`/s <skill>`):** Stack up to 3 specialized prompts (`/s pirate`, `/s reviewer`) on the fly with automatic category auto-swapping and `/s off` reset.
+* **On-Demand Skills (`/s <skill>`):** Stack up to 3 specialized prompts (`/s pirate`, `/s ponytail`) on the fly with automatic category auto-swapping and `/s off` reset.
 * **Codebase Graph Mapper (`index-map`):** Dual-mode AST call graph mapping across 7 languages with `sqlite-vec` semantic vector search.
 * **Temporal Personality Memory (TPM):** Async extraction compiles persistent human facts into `<context>` blocks, synced via `.agent/tpm.md`.
 * **Voice & Neural Audio (`/v` & `/tts`):** Zero-latency HTTPS tablet/phone voice bridge (`:9999`) + local PipeWire Kokoro TTS reader with silent thinking/code filtering.
@@ -186,4 +183,4 @@ Models under ~27B (`LFM2.5-8B`, `Qwen3.5-2B`) operate as **single-task execution
 * **1-Line Terminal Exit:** Require an explicit halt pattern (`✔ Task complete: <summary>`) upon test pass (`OK`) to prevent post-verification looping.
 * **Tokenizer Escaping Guard:** Avoid raw ellipsis literals (`+ "..."`) in prompt templates to prevent tokenizer quote-dropping syntax errors.
 * **Self-Healing Adapters (`agent_adapters.py`):** Automatically intercepts raw planning envelopes (`{"analysis": ...}`, `{"commands": ...}`), DSML, and naked JSON into executable tools.
-* **Constrained Reasoning:** Keep reasoning budgets between 350–500 tokens to prevent multi-turn thinking latency and context bloat.
+* **Constrained Reasoning:** Keep reasoning budgets between 350–500 tokens.
