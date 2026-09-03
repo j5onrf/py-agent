@@ -29,7 +29,7 @@ Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`)
 - **Single-Turn Query (`ai <query>`):** Instant response piped directly back to the active shell prompt.
 - **Multi-Turn Chat (`ai`):** Interactive terminal session with persistent memory context.
 - **Workspace Agent (`ai init <path>`):** Full codebase graph indexing, surgical AST file editing, and sub-agent concurrency.
-- **llama.cpp WebAgent (`/webui`):** Autonomous tool-enabled web gateway on official `llama-server` UI (`:3000`) with Gemini vision pre-processing and search grounding for non-multimodal models.
+- **llama.cpp WebAgent (`/webui`):** Autonomous tool-enabled web gateway on official `llama-server` UI (`:3000`) with Gemini search grounding and vision image-processing for non-multimodal models.
 ---
 
 <h2 align="center">Key Systems & Integrations</h2>
