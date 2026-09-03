@@ -65,8 +65,9 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 [ai init] Select default Agent Profile for workspace my-project:
 
   ─── Custom ────────────────────────
-  ❯  1. Custom Dev-Fast      (~120t)  <-- Lean (5 tools, Map: OFF)
-     2. Custom Q2B           (~150t)  <-- Instant Tool Calling (Map: OFF)
+  ❯  1. Custom Base          (~150t)  <-- Lean (5 tools, Map: OFF)
+     2. Custom Base-Map      (~300t)  <-- Index-Map (10 tools, Map: ON)
+     3. Custom Base-Py       (~280t)  <-- In-Kernel (Map: OFF)
 
   ─── Agents ────────────────────────
      1. Pi Pro               (~180t)  <-- Fast 5-Tool JSON Agent
@@ -86,10 +87,9 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 
   :: ↵ select  ↑/↓ navigate  Tab: YOLO [OFF]  m: Map [OFF]  Esc: default
 ```
-
-* **Interactive Toggles:** Press `Tab` to toggle Autonomous YOLO mode `[ON]/[OFF]`, or press `m` to toggle the AST Index-Map `[ON]/[OFF]`.
-* **Reset Workspace:** Type `/reset` in chat to clear conversation history, purge `.agent/` and database records, and start fresh.
+| **Custom** | `custom/<name>` | Universal / Custom | `~150t–300t` | Auto-scans `skills/profiles/custom/` for user `.md` templates (`base.md`, `base-map.md`, `base-py.md`). |
 * **Customize:** Modify or create profile `.md` files in `~/.config/py-agent/skills/profiles/`.
+* **Reset Workspace:** Type `/reset` in chat to clear conversation history, purge `.agent/` and database records, and start fresh.
 
 ---
 
@@ -174,3 +174,16 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 * **Temporal Personality Memory (TPM):** Async extraction compiles persistent human facts into `<context>` blocks, synced via `.agent/tpm.md`.
 * **Voice & Neural Audio (`/v` & `/tts`):** Zero-latency HTTPS tablet/phone voice bridge (`:9999`) + local PipeWire Kokoro TTS reader with silent thinking/code filtering.
 * **Google Search Grounding (`/gnd`):** Real-time web search retrieval via Gemini Grounding (`/gnd [budget]`) with automatic DuckDuckGo fallback across all surfaces.
+
+---
+
+## 8. Sub-27B Lite Model Directives
+
+Models under ~27B (`LFM2.5-8B`, `Qwen3.5-2B`) operate as **single-task execution engines** with constrained tool loops.
+
+* **Atomic Task Horizon:** Scope prompts to single-file, 1–2 turn tasks. Avoid chaining multi-file refactors in one prompt.
+* **`write_file` for Small Files:** Use `write_file(path, content, overwrite=true)` on files < 50 lines to prevent multi-line `old_str` diff matching errors.
+* **1-Line Terminal Exit:** Require an explicit halt pattern (`✔ Task complete: <summary>`) upon test pass (`OK`) to prevent post-verification looping.
+* **Tokenizer Escaping Guard:** Avoid raw ellipsis literals (`+ "..."`) in prompt templates to prevent tokenizer quote-dropping syntax errors.
+* **Self-Healing Adapters (`agent_adapters.py`):** Automatically intercepts raw planning envelopes (`{"analysis": ...}`, `{"commands": ...}`), DSML, and naked JSON into executable tools.
+* **Constrained Reasoning:** Keep reasoning budgets between 350–500 tokens to prevent multi-turn thinking latency and context bloat.

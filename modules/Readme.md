@@ -2,7 +2,6 @@
 
 Built to be lightweight, auditable by a single developer, and private by design.
 
-* **Automatic Masking:** API keys, tokens, and network IPs are sanitized before reaching model context (`ai-status`, `mysys.md`).
 * **Zero-Trust Gates:** Out-of-bounds file access and shell execution require explicit interactive confirmation.
 * **Isolated Secrets:** Credentials exist solely in `~/.config/py-agent/.env` and are never logged or exported.
 * **Zero Telemetry:** Pure local orchestration with zero tracking daemons or background data collection.
@@ -26,16 +25,16 @@ Built to be lightweight, auditable by a single developer, and private by design.
               ▼                                                ▼
 ┌───────────────────────────┐                    ┌───────────────────────────┐
 │ modules/agent_core.py     │                    │ modules/agent_tui.py      │
-│ (Streaming, State Engine) │◄───────────────────┤ (Textual TUI, uvloop)     │
+│ (Streaming, Turn Engine)  │◄───────────────────┤ (Textual TUI, uvloop)     │
 └─────────────┬─────────────┘                    └─────────────┬─────────────┘
               │                                                │
    ┌──────────┼──────────────┬──────────────┐                  │
    ▼          ▼              ▼              ▼                  ▼
-┌───────┐ ┌──────────┐ ┌───────────┐ ┌─────────────┐ ┌───────────────────────┐
-│ Cloud │ │ Sandbox  │ │ Skills    │ │ SQLite DBs  │ │ Sub-Agent IPC Hub     │
-│ Engine│ │ Kernel   │ │ & Context │ │ (Sessions/  │ │ (agent_tui_async.py   │
-│       │ │ (IPython)│ │           │ │  Memories)  │ │  /tmp/*.sock)         │
-└───────┘ └──────────┘ └───────────┘ └─────────────┘ └───────────────────────┘
+┌───────────┐ ┌──────────┐ ┌───────────┐ ┌─────────────┐ ┌───────────────────────┐
+│ Adapters  │ │ Sandbox  │ │ Skills    │ │ SQLite DBs  │ │ Sub-Agent IPC Hub     │
+│ (Sub-27B/ │ │ Kernel   │ │ & Context │ │ (Sessions/  │ │ (agent_tui_async.py   │
+│ DSML/XML) │ │ (IPython)│ │           │ │  Memories)  │ │  /tmp/*.sock)         │
+└───────────┘ └──────────┘ └───────────┘ └─────────────┘ └───────────────────────┘
 ```
 
 ---
@@ -49,10 +48,11 @@ Built to be lightweight, auditable by a single developer, and private by design.
 
 2. Execution & Streaming Engine
    ├── agent_core.py            - SSE parser, token calculation, fallback cascade, tool turn loop
+   ├── agent_adapters.py        - Universal Sub-27B tool adapters (Hermes XML, DSML, Mistral, AST calls) & JSON healer
    └── speed_test.py            - Real-time token generation velocity & TPS metrics
 
 3. Sandboxing, Tools & Safety
-   ├── agent_tools.py           - AST syntax pre-check, zero-trust path boundary gates
+   ├── agent_tools.py           - 11-tool suite, 3-stage resilient replace (_resilient_replace), AST guards
    ├── agent_ipython.py         - Stateful NOOA kernel, in-memory object previews, sub-agent delegate()
    └── agent_skills.py          - Skill loader, dynamic frontmatter parser, on-demand persona injector
 
