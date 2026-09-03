@@ -20,7 +20,7 @@
 
 <h2 align="center">Overview & Execution Modes</h2>
 
-Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`) controlling a C++ backend `llama-server`. Optimized for fine-tuned quantized local models (`Qwen3.5-2B+` / `LFM2.5-8B` for chat & fast single-task tool execution, `Qwen3.8-27B` / `Qwen3.6-35B` for full autonomous agents) and cloud providers—supporting native JSON tool calling, modular sub-27B adapters (`agent_adapters.py`), and a stateful NOOA IPython kernel REPL (`/py`).
+Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`) controlling a C++ backend `llama-server`. Optimized for fine-tuned quantized local models (`Qwen3.5-2B+` / `LFM2.5-8B+` for chat & fast single-task tool execution, `Qwen3.8-27B` / `Qwen3.6-35B` for full autonomous agents) and cloud providers—supporting native JSON tool calling, modular sub-27B adapters (`agent_adapters.py`), and a stateful NOOA IPython kernel REPL (`/py`).
 
 🟢 **Active:** Official `Hugging Face` Router endpoints ([`Qwen/Qwen3.8-27B`](https://huggingface.co/Qwen/Qwen3.8-27B), [`moonshotai/Kimi-K3`](https://huggingface.co/moonshotai/Kimi-K3), [`zai-org/GLM-5.3-Flash`](https://huggingface.co/zai-org/GLM-5.3-Flash), [`DeepSeek-V4-Flash-0731`](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731), [`Qwen/Qwen3.8-2.4T-A95B`](https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B)).
 > 💡 *Use `model select` to auto-configure free community HF Spaces.*
@@ -29,7 +29,7 @@ Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`)
 - **Single-Turn Query (`ai <query>`):** Instant response piped directly back to the active shell prompt.
 - **Multi-Turn Chat (`ai`):** Interactive terminal session with persistent memory context.
 - **Workspace Agent (`ai init <path>`):** Full codebase graph indexing, surgical AST file editing, and sub-agent concurrency.
-- **llama.cpp WebAgent (`/webui`):** Autonomous tool-enabled web gateway on official `llama-server` UI (`:3000`) with gemini search grounding for non-multimodal models.
+- **llama.cpp WebAgent (`/webui`):** Autonomous tool-enabled web gateway on official `llama-server` UI (`:3000`) with Gemini vision pre-processing and search grounding for non-multimodal models.
 ---
 
 <h2 align="center">Key Systems & Integrations</h2>

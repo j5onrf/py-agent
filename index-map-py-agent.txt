@@ -20,7 +20,7 @@
 #   ├── logo.svg                 - <svg xmlns="http://www.w3.org/2000/svg" viewBox="121 101 270 310">
 #   ├── server.pem               - -----BEGIN PRIVATE KEY-----
 #   ├── modules/Readme.md        - Privacy-First
-#   ├── modules/agent_adapters.py - Tool Format Adapters & Self-Healing Parser for Sub-27B Models [Universal Small-Model Suite]
+#   ├── modules/agent_adapters.py - Tool Format Adapters & Self-Healing Parser for Small-Models
 #   ├── modules/agent_cloud.py   - Dynamic Cloud Cascade Engine - Top-down .env provider API priority.
 #   ├── modules/agent_context.py - Context Search & Indexing Engine - Jaccard intent matching.
 #   ├── modules/agent_core.py    - Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [Universal High-Performance En
