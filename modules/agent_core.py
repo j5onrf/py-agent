@@ -484,15 +484,21 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
 
         if is_agent:
             active_skill = os.environ.get("AI_ACTIVE_SKILL", "").lower()
-            is_py_profile = st.get("ipython_mode", False) or "py-" in active_skill or "-py" in active_skill or active_skill.endswith("py")
-            use_map = "-map" in active_skill or "map-" in active_skill or st.get("use_map", False)
+            is_py_mode = st.get("ipython_mode", False)
+            use_map = st.get("use_map", False) or os.environ.get("AI_USE_MAP", "0") == "1"
 
-            if is_py_profile and ipython:
+            if is_py_mode and ipython:
                 active_tools = list(ipython.IPYTHON_TOOL)
+                if use_map:
+                    active_tools += [t for t in tools.EDIT_TOOLS if t["function"]["name"] != "exec_python"]
             elif use_map:
                 active_tools = list(tools.EDIT_TOOLS)
             else:
                 active_tools = list(getattr(tools, "LEAN_TOOLS", tools.EDIT_TOOLS))
+
+            # RECURSION GUARD: Child sub-agents cannot see or call delegate_task
+            if int(os.environ.get("AI_SUBAGENT_DEPTH", "0")) >= 1:
+                active_tools = [t for t in active_tools if t.get("function", {}).get("name") != "delegate_task"]
 
             if use_gnd and hasattr(tools, "WEB_TOOL"):
                 active_tools.append(tools.WEB_TOOL)
@@ -538,9 +544,12 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
                     content = delta.get("content", "") or ""
                     reasoning = delta.get("reasoning_content", "") or delta.get("thinking", "") or delta.get("reasoning", "") or ""
 
-                     # Active keep-alive: If model transitions into drafting XML/DSML tool calls
-                    if "<tool_call" in content or "<function=" in content or "<｜DSML｜" in content:
-                        if spinner:
+                    is_tool_incoming = bool(delta.get("tool_calls")) or any(k in content for k in ("<tool_call", "<function=", "<｜DSML｜", "<|tool_call"))
+                    if is_tool_incoming:
+                        if streamer and streamer.ans_started:
+                            streamer.stop()
+                            streamer = None
+                        if spinner and not spinner.active:
                             spinner.start("Drafting tool action...")
 
                     chunk_to_stream, is_thinking, in_think_block = _process_stream_chunk(content, reasoning, in_think_block)
@@ -559,9 +568,8 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
                         if speed_test and show_stats:
                             speed_test.count_token(chunk_to_stream, is_thinking=is_thinking)
                     elif "<tool_call" in content or "<function=" in content:
-                        # Model is outputting tool parameters; keep spinner spinning
                         acc_content.append(content)
-                        if spinner:
+                        if spinner and not spinner.active:
                             spinner.start("Drafting tool action...")
 
                     for tc in delta.get("tool_calls", []):
@@ -574,7 +582,7 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
                             tc_entry["function"]["arguments"] += arg_chunk
                             if speed_test and show_stats:
                                 speed_test.count_token(arg_chunk, is_thinking=False)
-                            if spinner and (not streamer or not streamer.ans_started):
+                            if spinner and not spinner.active:
                                 spinner.start("Drafting tool action...")
 
                     if finish_reason in ("stop", "length") and not tool_calls_map:
@@ -625,18 +633,20 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
                     }
                 })
 
-            messages.append({"role": "assistant", "content": ans_text or None, "tool_calls": healed_calls})
+            # 1. Strip reasoning from turn history so older turns don't pollute subsequent context
+            clean_ans_text = re.sub(r"<think>[\s\S]*?</think>", "", ans_text).strip()
+            messages.append({"role": "assistant", "content": clean_ans_text or "", "tool_calls": healed_calls})
 
             for tc in healed_calls:
                 if spinner:
                     spinner.stop()
                 fname = tc.get("function", {}).get("name", "")
                 args = json.loads(tc.get("function", {}).get("arguments", "{}"))
-                brief = str(args.get("symbol") or args.get("path") or args.get("command") or args.get("pattern") or "")[:100]
+                brief = str(args.get("code") or args.get("symbol") or args.get("path") or args.get("command") or args.get("pattern") or args.get("goal") or "")[:100].replace("\n", " ")
                 verb = TOOL_VERBS.get(fname, "working")
 
                 _console_err.print(f"[dim]∗ {verb} • [cyan]{fname}[/cyan] [italic]{brief}[/italic][/dim]")
-                if spinner:
+                if spinner and fname != "delegate_task":
                     spinner.start(f"{verb.capitalize()}...")
 
                 try:
@@ -647,7 +657,25 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
                     if spinner:
                         spinner.stop()
 
-                pruned_result = result if len(result) <= 1500 else result[:1200] + f"\n... [Reasonix Harness: Snipped {len(result) - 1200} chars for context stability]"
+                # 2. Large Tool Result Scratchpad Offload (TrueForge-inspired)
+                if len(result) > 1500:
+                    scratch_dir = os.path.join(workspace, ".agent", "scratchpad")
+                    os.makedirs(scratch_dir, exist_ok=True)
+                    scratch_file = os.path.join(scratch_dir, f"{fname}_{int(time.time())}.txt")
+                    try:
+                        with open(scratch_file, "w", encoding="utf-8") as sf:
+                            sf.write(result)
+                        rel_scratch = os.path.relpath(scratch_file, workspace)
+                        pruned_result = (
+                            result[:1200]
+                            + f"\n... [Output truncated: Full {len(result):,} chars saved to '{rel_scratch}'. "
+                            + f"Use read_file('{rel_scratch}', line_start, line_end) to inspect specific blocks.]"
+                        )
+                    except OSError:
+                        pruned_result = result[:1200] + "\n... [snipped]"
+                else:
+                    pruned_result = result
+
                 messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": fname, "content": pruned_result})
 
                 if "[denied]" in result:
@@ -686,13 +714,23 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
 
 
 def stream_response(messages: list[dict[str, Any]], prefix: str = "AI: ", cfg_dir: str = "", show_stats: bool = False, thinking_budget: int = 0, is_agent: bool = False) -> str | None:
-    spinner = ui.InlineSpinner()
+    is_sub = int(os.environ.get("AI_SUBAGENT_DEPTH", "0")) >= 1
+    spinner = None if is_sub else ui.InlineSpinner()
     try:
         configs = agent_cloud.get_active_configs(messages)
         enable_think = thinking_budget > 0
         think_kwargs = (
-            {"thinking_budget_tokens": thinking_budget, "reasoning_budget": thinking_budget, "chat_template_kwargs": {"enable_thinking": True}}
-            if enable_think else {}
+            {
+                "thinking_budget_tokens": thinking_budget,
+                "reasoning_budget": thinking_budget,
+                "chat_template_kwargs": {"enable_thinking": True},
+            }
+            if enable_think
+            else {
+                "thinking_budget_tokens": 0,
+                "reasoning_budget": 0,
+                "chat_template_kwargs": {"enable_thinking": False},
+            }
         )
 
         if not configs:
@@ -776,13 +814,12 @@ def prune_history(history: list[dict[str, Any]], max_tokens: int | None = None) 
             else:
                 summary = content if len(content) <= 150 else content[:120] + "... [snipped]"
 
-            # Flatten older tool outputs into clean assistant notes to prevent Jinja template mismatch
             compacted_middle.append({"role": "assistant", "content": summary})
         elif role == "assistant":
-            # For older middle messages, remove raw tool_calls to prevent orphaned Jinja tool_call_id errors
             clean_msg = {k: v for k, v in msg.items() if k != "tool_calls"}
-            if clean_msg.get("content"):
-                compacted_middle.append(clean_msg)
+            clean_c = re.sub(r"<think>[\s\S]*?</think>", "", str(clean_msg.get("content") or "")).strip()
+            if clean_c:
+                compacted_middle.append({**clean_msg, "content": clean_c})
         else:
             compacted_middle.append(msg)
 

@@ -31,7 +31,6 @@ RE_UNSAFE_SHELL_CHARS: re.Pattern = re.compile(r'[\[\]{}()=\'"",;|<>#]')
 BOX_DIAMOND = Box("◈─┬◈\n│ ││\n├─┼┤\n│ ││\n├─┼┤\n├─┼┤\n│ ││\n◈─┴◈\n")
 BOX_DASHED = Box("┌┄┬┐\n┆ ┆┆\n├┄┼┤\n┆ ┆┆\n├┄┼┤\n├┄┼┤\n┆ ┆┆\n└┄┴┘\n")
 
-# Single Source of Truth for Box Styles (1-8)
 STYLES = {
     1: ("\u223f Py Agent", ROUNDED, "green", "bold bright_green"),
     2: ("\u223f Py Agent", DOUBLE, "bright_blue", "bold bright_blue"),
@@ -42,7 +41,6 @@ STYLES = {
     7: ("\u223f Py Agent", BOX_DASHED, "bright_magenta", "bold bright_magenta"),
 }
 
-# Maps Rich color names to terminal ANSI colors so Omarchy themes apply everywhere
 RICH_TO_ANSI = {
     "green": "\033[1;32m",
     "bright_green": "\033[1;92m",
@@ -60,8 +58,6 @@ RICH_TO_ANSI = {
 
 
 class InlineSpinner:
-    """A thread-safe console spinner that dynamically matches the active Omarchy / Box theme."""
-
     def __init__(self, chars: tuple[str, ...] | list[str] | str = ("✦ [∿ · ·]", "✦ [· ∿ ·]", "✦ [· · ∿]", "✦ [· ∿ ·]")) -> None:
         self.chars, self.active, self.thread, self.message, self.start_time = (
             chars,
@@ -73,7 +69,6 @@ class InlineSpinner:
         self._lock = threading.Lock()
 
     def _get_theme_color(self) -> str:
-        """Dynamically pulls the border color from the active box style preset."""
         try:
             import agent_core as core
             box = core.get_state("box_style", 1)
@@ -83,19 +78,15 @@ class InlineSpinner:
             return "\033[1;32m"
 
     def _glimmer(self, text: str, t: float, color: str) -> str:
-        """Sweeps a luminous wave across text using the active theme color."""
         pos = (t * 2.2) % (len(text) + 8) - 4
         rendered = []
         for i, ch in enumerate(text):
             dist = abs(i - pos)
             if dist < 1.0:
-                # Bright white crest of the light wave
                 rendered.append(f"\033[1;37m{ch}\033[0m")
             elif dist < 2.5:
-                # Theme color trail
                 rendered.append(f"{color}\033[1m{ch}\033[0m")
             else:
-                # Dim background text
                 rendered.append(f"\033[2m{ch}\033[0m")
         return "".join(rendered)
 
@@ -184,7 +175,6 @@ def _read_fd(fd: int) -> str:
 
 
 def get_key() -> str:
-    """Reads a single key or raw keyboard escape sequence securely from /dev/tty or stdin."""
     if sys.stdin.isatty():
         try:
             return _read_fd(sys.stdin.fileno())
@@ -202,7 +192,6 @@ def get_key() -> str:
 
 
 def get_local_model_name() -> str:
-    """Queries the running llama-server to extract the loaded model's filename."""
     try:
         req = urlreq.Request("http://localhost:8080/v1/models", method="GET")
         with urlreq.urlopen(req, timeout=0.5) as r:
@@ -223,7 +212,6 @@ def draw_session_box(
     sub_id: int | None = None,
     box_style: int = 1,
 ) -> None:
-    """Renders the system initialization box with customizable style presets (1-8)."""
     display_dir = (
         workspace_path.replace(home_dir, "~", 1)
         if workspace_path.startswith(home_dir)
@@ -232,7 +220,6 @@ def draw_session_box(
 
     try:
         import agent_cloud
-
         configs = agent_cloud.get_active_configs([])
         model_name = (
             configs[0][2].get("model", "local-model") if configs else get_local_model_name()
@@ -250,7 +237,6 @@ def draw_session_box(
     mem_status = f"active ({tpm_count} facts, {db_turns} turns)" if memory_active else "stateless"
     table.add_row("database:", mem_status if is_agent else "stateless")
 
-    # Style #8: Dual-Chamber Inset Header
     if box_style == 8:
         title_str = f"  \u223f Py Agent [sub-agent #{sub_id}]" if sub_id else "  \u223f Py Agent"
         max_val_len = max(len(model_name), len(display_dir), len(clean_name or "chat"), len(mem_status), 16)
@@ -287,7 +273,6 @@ def draw_session_box(
 
 
 def confirm_tool(tool: str) -> bool:
-    """Intercepts potentially out-of-bounds commands for visual user verification."""
     target = getattr(sys, "__stderr__", None) or sys.stderr
     target.write(
         f"\r\x1b[K\033[1;33m▲ [sys] Authorize tool:\033[0m \033[36m{tool}\033[0m \033[1;33m? [Y/n]: \033[0m"
@@ -377,7 +362,6 @@ def run_interactive_selection(
 
 
 def show_help() -> None:
-    """Renders a Pi-styled clean CLI help menu for Local-AI Agent."""
     header = Text.assemble(
         ("  Shortcuts: ", "dim"),
         ("Esc", "bold yellow"),
@@ -400,18 +384,19 @@ def show_help() -> None:
         ("/v \\[auto], /voice", "Voice to text"),
         ("/tts", "Text to speech (Kokoro)"),
         ("/py \\[code]", "IPython kernel execution"),
+        ("/m, /map", "Toggle Codebase index-map (11 tools)"),
+        ("/mem, /memory", "Toggle database session memory & TPM facts"),
         ("/box \\[1-8]", "Box style preset"),
         ("/task \\[goal]", "Autonomous task loop"),
         ("/t \\[N|show|hide]", "Reasoning budget & display"),
         ("/g, /yolo", "Toggle confirmation gates (YOLO)"),
-        ("/m", "Toggle database memory"),
         ("/md", "Toggle Markdown stream"),
         ("/stats", "Generation speed stats"),
         ("/com, /compact", "3-Zone context compaction"),
         ("/tok", "Context token usage"),
         ("/sync", "Sync codebase index-map"),
         ("/clear, /c", "Soft clear active chat history"),
-        ("/reset, /purge", "Hard reset (.agent & database purge)"),
+        ("/reset, /r", "Hard reset (.agent & database purge)"),
         ("/s <query|off>", "Load or unload skill"),
         ("-save <tag>", "Save checkpoint"),
         ("-load", "Restore checkpoint"),
@@ -438,14 +423,16 @@ def show_help() -> None:
     )
 
 
-def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool]:
-    """Renders the workspace profile selector menu with dynamic custom profiles, YOLO, and Index-Map toggles."""
+def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool, bool]:
+    """Renders consolidated profile selector with automatic frontmatter pre-cache and 2-line layout."""
+    import agent_skills as skills
+
     custom_dir = os.path.join(CFG_DIR, "skills", "profiles", "custom")
     custom_opts = []
 
     if os.path.isdir(custom_dir):
         for fname in sorted(os.listdir(custom_dir)):
-            if fname.endswith(".md"):
+            if fname.endswith(".md") and not fname.endswith(("-py.md", "-map.md")):
                 base_name = os.path.splitext(fname)[0]
                 lbl = f"Custom {base_name.title()}" if base_name.lower() != "custom" else "Custom"
                 custom_opts.append((f"custom/{base_name}", lbl, "~200t", None))
@@ -454,29 +441,42 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool]:
         custom_opts[0] = (custom_opts[0][0], custom_opts[0][1], custom_opts[0][2], "Custom")
 
     standard_agents = [
-        ("pi/pro",         "Pi Pro",         "~180t", "Agents"),
-        ("claude/pro",     "Claude Pro",     "~190t", None),
-        ("hermes/pro",     "Hermes Pro",     "~180t", None),
-        ("pi/pro-map",     "Pi Pro-Map",     "~280t", None),
-        ("claude/pro-map", "Claude Pro-Map", "~290t", None),
-        ("hermes/pro-map", "Hermes Pro-Map", "~280t", None),
-
-        ("pi/py-pro",         "Pi Py-Pro",         "~200t", "Py"),
-        ("claude/py-pro",     "Claude Py-Pro",     "~210t", None),
-        ("hermes/py-pro",     "Hermes Py-Pro",     "~200t", None),
-        ("pi/py-pro-map",     "Pi Py-Pro-Map",     "~300t", None),
-        ("claude/py-pro-map", "Claude Py-Pro-Map", "~310t", None),
-        ("hermes/py-pro-map", "Hermes Py-Pro-Map", "~300t", None),
+        ("pi/pro",     "Pi Pro",     "~180t", "Agents"),
+        ("claude/pro", "Claude Pro", "~190t", None),
+        ("hermes/pro", "Hermes Pro", "~180t", None),
     ]
 
     options = custom_opts + standard_agents
+
+    # One-time RAM pre-cache (<1ms): Zero disk reads during navigation
+    profile_cache = {}
+    for k, _, _, _ in options:
+        sf = skills.find_skill_file(os.path.join(CFG_DIR, "skills"), k)
+        defaults = {"yolo": False, "map": False, "py": False, "mem": False}
+        if sf and os.path.isfile(sf):
+            try:
+                with open(sf, "r", encoding="utf-8") as f:
+                    meta, _ = skills.parse_frontmatter(f.read())
+                defaults["yolo"] = str(meta.get("yolo", "")).lower() in ("true", "1", "yes", "on")
+                defaults["map"] = str(meta.get("map", meta.get("use_map", ""))).lower() in ("true", "1", "yes", "on")
+                defaults["py"] = str(meta.get("ipython", meta.get("py", ""))).lower() in ("true", "1", "yes", "on")
+                defaults["mem"] = str(meta.get("memory", meta.get("mem", ""))).lower() in ("true", "1", "yes", "on")
+            except Exception:
+                pass
+        profile_cache[k] = defaults
 
     sys.stderr.write(
         f"\n\033[1;36m[ai init]\033[0m Select default Agent Profile for workspace \033[1;33m{workspace_name}\033[0m:\n\n\033[?25l"
     )
     sys.stderr.flush()
 
-    current_idx, is_yolo, use_map, num_opts = 0, False, False, len(options)
+    current_idx, num_opts = 0, len(options)
+    user_overrides = set()
+    init_meta = profile_cache.get(options[0][0], {})
+    is_yolo = init_meta.get("yolo", False)
+    use_map = init_meta.get("map", False)
+    is_py = init_meta.get("py", False)
+    is_mem = init_meta.get("mem", False)
     last_rendered_lines = 0
 
     try:
@@ -484,17 +484,26 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool]:
             if last_rendered_lines > 0:
                 sys.stderr.write(f"\033[{last_rendered_lines}A\r\033[J")
 
+            # Instant RAM lookup on arrow-key navigation
+            cur_key = options[current_idx][0]
+            cur_meta = profile_cache.get(cur_key, {})
+            if "yolo" not in user_overrides:
+                is_yolo = cur_meta.get("yolo", False)
+            if "map" not in user_overrides:
+                use_map = cur_meta.get("map", False)
+            if "py" not in user_overrides:
+                is_py = cur_meta.get("py", False)
+            if "mem" not in user_overrides:
+                is_mem = cur_meta.get("mem", False)
+
             lines_count = 0
             sub_idx = 1
             for idx, (k, lbl, d, cat) in enumerate(options):
-                if cat or k in ("pi/pro", "pi/pro-map", "pi/py-pro", "pi/py-pro-map"):
-                    sub_idx = 1
-
-                if idx > 0 and (cat or k in ("pi/pro-map", "pi/py-pro-map")):
-                    sys.stderr.write("\r\x1b[K\n")
-                    lines_count += 1
-
                 if cat:
+                    sub_idx = 1
+                    if idx > 0:
+                        sys.stderr.write("\r\x1b[K\n")
+                        lines_count += 1
                     dashes = "─" * max(5, 30 - len(cat))
                     sys.stderr.write(f"\r\x1b[K\033[1;36m  ─── {cat} {dashes}\033[0m\n")
                     lines_count += 1
@@ -510,12 +519,26 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool]:
                 lines_count += 1
                 sub_idx += 1
 
-            yolo_badge = "\033[1;33m[ON]\033[0m" if is_yolo else "\033[90m[OFF]\033[0m"
-            map_badge = "\033[1;32m[ON]\033[0m" if use_map else "\033[90m[OFF]\033[0m"
+            b_on = "\033[1;36m[ON]\033[0m"
+            b_off = "\033[37m[OFF]\033[0m"
+            yolo_badge = b_on if is_yolo else b_off
+            map_badge  = b_on if use_map  else b_off
+            mem_badge  = b_on if is_mem   else b_off
+            py_badge   = b_on if is_py    else b_off
+
+            # Solution B: Spacious 2-row layout
             sys.stderr.write(
-                f"\r\x1b[K\n\r\x1b[K\033[2m  :: ↵ select  ↑/↓ navigate  Tab: YOLO {yolo_badge}\033[2m  m: Map {map_badge}\033[2m  Esc: {options[0][0]}\033[0m"
+                f"\r\x1b[K\n\r\x1b[K  \033[2m::\033[0m "
+                f"\033[1;37m↵\033[0m \033[37mselect\033[0m    "
+                f"\033[1;37m↑/↓\033[0m \033[37mnavigate\033[0m    "
+                f"\033[1;37mEsc:\033[0m \033[37mdefault\033[0m\n"
+                f"\r\x1b[K     "
+                f"\033[37mTab: YOLO\033[0m {yolo_badge}    "
+                f"\033[37mm: Map\033[0m {map_badge}    "
+                f"\033[37md: Mem\033[0m {mem_badge}    "
+                f"\033[37mp: Py\033[0m {py_badge}"
             )
-            lines_count += 1
+            lines_count += 2
             sys.stderr.flush()
 
             last_rendered_lines = lines_count
@@ -523,15 +546,28 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool]:
             char = get_key()
             if char in ("\t", "y", "Y"):
                 is_yolo = not is_yolo
-            elif char in ("m", "M"):
+                user_overrides.add("yolo")
+            elif char == "m":
                 use_map = not use_map
+                user_overrides.add("map")
+            elif char in ("d", "D", "M"):
+                is_mem = not is_mem
+                user_overrides.add("mem")
+            elif char in ("p", "P"):
+                is_py = not is_py
+                user_overrides.add("py")
             elif char in ("\x03", "\x1b"):
                 key, label = options[0][0], options[0][1]
+                badge_col = "\033[1;36m"
+                b_yolo = f" {badge_col}[Yolo: ON]\033[0m" if is_yolo else ""
+                b_map  = f" {badge_col}[Map: ON]\033[0m" if use_map else ""
+                b_mem  = f" {badge_col}[Mem: ON]\033[0m" if is_mem else ""
+                b_py   = f" {badge_col}[Py: ON]\033[0m" if is_py else ""
                 sys.stderr.write(
-                    f"\x1b[{last_rendered_lines}A\r\x1b[J\033[1;32m✓ Profile set to: {label}{' (Autonomous YOLO)' if is_yolo else ''}{' [Map: ON]' if use_map else ''}\033[0m\n\n"
+                    f"\x1b[{last_rendered_lines}A\r\x1b[J\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}\n\n"
                 )
                 sys.stderr.flush()
-                return key, is_yolo, use_map
+                return key, is_yolo, use_map, is_py, is_mem
             elif char in ("\r", "\n", ""):
                 key, label = options[current_idx][0], options[current_idx][1]
                 sys.stderr.write(f"\x1b[{last_rendered_lines}A\r\x1b[J")
@@ -543,11 +579,16 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool]:
                     sys.stderr.flush()
                     if c == "y":
                         is_yolo = True
+                badge_col = "\033[1;36m"
+                b_yolo = f" {badge_col}[Yolo: ON]\033[0m" if is_yolo else ""
+                b_map  = f" {badge_col}[Map: ON]\033[0m" if use_map else ""
+                b_mem  = f" {badge_col}[Mem: ON]\033[0m" if is_mem else ""
+                b_py   = f" {badge_col}[Py: ON]\033[0m" if is_py else ""
                 sys.stderr.write(
-                    f"\033[1;32m✓ Profile set to: {label}{' (Autonomous YOLO)' if is_yolo else ''}{' [Map: ON]' if use_map else ''}\033[0m\n\n"
+                    f"\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}\n\n"
                 )
                 sys.stderr.flush()
-                return key, is_yolo, use_map
+                return key, is_yolo, use_map, is_py, is_mem
             elif char in ("\x1b[A", "\x1b[B"):
                 current_idx = (current_idx + (1 if char == "\x1b[B" else -1) + num_opts) % num_opts
     finally:

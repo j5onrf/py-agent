@@ -40,13 +40,14 @@ print(f"{CYAN}==================================================================
 
 all_passed = True
 
-# --- PASS 1: GRANULAR BYTECODE COMPILATION (21 FILES) ---
-print(f"{CYAN}[Pass 1/8] Bytecode Compilation (Granular 21 Files){RESET}")
+# --- PASS 1: GRANULAR BYTECODE COMPILATION (22 FILES) ---
+print(f"{CYAN}[Pass 1/8] Bytecode Compilation (Granular 22 Files){RESET}")
 files_to_compile = [
     "ai-agent.py",
     "modules/agent_core.py",
     "modules/agent_ipython.py",
     "modules/agent_tools.py",
+    "modules/agent_adapters.py",
     "modules/agent_tui.py",
     "modules/agent_tui_async.py",
     "modules/agent_usage.py",
@@ -61,6 +62,7 @@ files_to_compile = [
     "modules/ai-agent-sessions",
     "modules/ai-agent-memories",
     "modules/chat",
+    "tools/index-map/index-map",
     "tools/loop/ralph.py",
     "plugins/webui/server.py",
     "plugins/pycode/bridge.py",
@@ -87,6 +89,7 @@ modules_to_import = [
     "agent_core",
     "agent_ipython",
     "agent_tools",
+    "agent_adapters",
     "agent_usage",
     "agent_cloud",
     "agent_context",
@@ -168,6 +171,7 @@ try:
     # --- PASS 4: STATE ENGINE, VISION & JSON HEALER ---
     print(f"\n{CYAN}[Pass 4/8] State Machine, Vision Pipeline & JSON Healer{RESET}")
     import agent_core as core
+    import agent_adapters as adapters
 
     core.save_state("test_key_sanity", 99999)
     st_val = core.get_state("test_key_sanity")
@@ -177,7 +181,7 @@ try:
     p4_b = core.DEFAULTS.get("memory_active") is False
     print_result("Default Memory Opt-in Setting", p4_b, "memory_active=False")
 
-    # Vision Pipeline Config Probe (Optional key check - does not fail if missing)
+    # Vision Pipeline Config Probe
     try:
         v_key, v_model = core._get_img_config()
         key_detail = f"{v_model} (Key: {v_key[:4]}***)" if (v_key and len(v_key) > 5) else f"{v_model} (No key set - Optional)"
@@ -187,10 +191,10 @@ try:
         print_result("Multimodal Vision Config", False, str(e))
         p4_c = False
 
-    # Self-Healing JSON Argument Parser
-    healed = core._heal_tool_args("{symbol: 'my_func', path: 'test.py', 'unclosed': [1, 2")
-    p4_d = healed.get("symbol") == "my_func" and healed.get("path") == "test.py"
-    print_result("Self-Healing JSON Tool Parser", p4_d, f"Parsed: {healed}")
+    # Self-Healing JSON & Code Parameter Preservation
+    healed = adapters.heal_json_args("{code: 'print(42)', path: 'test.py', 'unclosed': [1, 2")
+    p4_d = healed.get("code") == "print(42)" and healed.get("path") == "test.py"
+    print_result("Self-Healing JSON & Code Parameter Preservation", p4_d, f"Parsed: {healed}")
 
     # Accurate Token Estimator
     toks = core.get_accurate_token_count("def test(): return True")
@@ -226,7 +230,7 @@ try:
     p5_c = "x = 42" in res_r
     print_result("read_file (Inspect File)", p5_c, f"Length: {len(res_r)} chars")
 
-    # 4. Surgical edit_file
+    # 4. Surgical edit_file with 3-stage resilient replace
     res_edit = tools.run_tool(
         "edit_file",
         {"path": "test_script.py", "old_str": "x = 42", "new_str": "x = 100"},
@@ -246,13 +250,13 @@ try:
         "Blocked overwrite without overwrite=true",
     )
 
-    # 6. List directory (Explicit & Empty-Path In-Bounds Resolution)
+    # 6. List directory
     res_l = tools.run_tool("list_dir", {"path": "."}, sandbox_dir)
     full_empty = tools._safe_path(sandbox_dir, "")
     is_bounded = not tools._is_outside_workspace(sandbox_dir, full_empty)
     res_l_empty = tools.run_tool("list_dir", {}, sandbox_dir)
     p5_f = "test_script.py" in res_l and is_bounded and "test_script.py" in res_l_empty
-    print_result("list_dir (In-Bounds Empty Path Resolution)", p5_f, f"Entries: {res_l.splitlines()}")
+    print_result("list_dir (In-Bounds Path Resolution)", p5_f, f"Entries: {res_l.splitlines()}")
 
     # 7. Subprocess execution
     old_gates = os.environ.get("AI_CONFIRM_GATES")
@@ -269,47 +273,74 @@ try:
 
     p5_g = res_cmd.strip() == "100"
     print_result("run_command (Subprocess Execution)", p5_g, f"Output: '{res_cmd.strip()}'")
-    all_passed = all_passed and (p5_a and p5_b and p5_c and p5_d and p5_e and p5_f and p5_g)
 
-    # --- PASS 6: IPYTHON SANDBOX KERNEL & IN-KERNEL SDK ---
-    print(f"\n{CYAN}[Pass 6/8] IPython Sandbox Kernel & In-Kernel SDK{RESET}")
+    # 8. Zero-Trust Security Gate Probe
+    res_sec = tools.run_tool(
+        "read_file",
+        {"path": "/etc/shadow"},
+        sandbox_dir,
+        confirm_gate_fn=lambda _: False,
+    )
+    p5_h = "[denied]" in res_sec
+    print_result("Zero-Trust Security Gate (Out-of-Bounds Block)", p5_h, "Declined read blocked")
+
+    # 9. Subagent Recursion Guard Probe
+    old_depth = os.environ.get("AI_SUBAGENT_DEPTH")
+    try:
+        os.environ["AI_SUBAGENT_DEPTH"] = "1"
+        res_rec = tools.run_tool("delegate_task", {"goal": "test"}, sandbox_dir)
+        p5_i = "cannot recursively delegate" in res_rec
+    finally:
+        if old_depth is not None:
+            os.environ["AI_SUBAGENT_DEPTH"] = old_depth
+        else:
+            os.environ.pop("AI_SUBAGENT_DEPTH", None)
+    print_result("Subagent Recursion Guard (Leaf Enforcer)", p5_i, "Recursive spawn blocked")
+
+    all_passed = all_passed and (p5_a and p5_b and p5_c and p5_d and p5_e and p5_f and p5_g and p5_h and p5_i)
+
+    # --- PASS 6: IPYTHON SANDBOX KERNEL & INDEX-MAP ENGINE ---
+    print(f"\n{CYAN}[Pass 6/8] IPython Sandbox Kernel & Index-Map Graph Engine{RESET}")
     import agent_ipython as ipython
 
-    ipython.run_cell("a = 150\nb = 250", sandbox_dir)
-    out2 = ipython.run_cell("a + b", sandbox_dir)
-    p6_a = "400" in out2
+    # Cross-cell persistence
+    ipython.run_cell("magic_test = 500", sandbox_dir)
+    out2 = ipython.run_cell("magic_test * 2", sandbox_dir)
+    p6_a = "1000" in out2
     print_result("IPython Cross-Cell State", p6_a, f"Result: {out2.strip()}")
 
+    # In-Kernel SDK
     out_sdk = ipython.run_cell(
         "write_file('sdk.txt', 'cat')\nedit_file('sdk.txt', 'cat', 'dog')\nprint(read_file('sdk.txt'))",
         sandbox_dir,
     )
     p6_b = "dog" in out_sdk
     print_result("In-Kernel SDK (edit_file / read_file)", p6_b, "Surgical edit in kernel")
-    all_passed = all_passed and p6_a and p6_b
 
-    # --- PASS 7: SKILL PROFILES & BLUEPRINTS ---
-    print(f"\n{CYAN}[Pass 7/8] Skill Profiles & Blueprint Verification{RESET}")
+    # Index-Map Compilation & Graph Probe
+    map_compile = subprocess.run(
+        [sys.executable, os.path.join(CFG_DIR, "tools", "index-map", "index-map"), "--agent", sandbox_dir],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    arch_out = tools.run_graph_cmd("architecture", "", sandbox_dir)
+    p6_c = "Active Files" in arch_out and map_compile.returncode == 0
+    print_result("Index-Map Graph Architecture Probe", p6_c, "Relational SQLite query passed")
+
+    all_passed = all_passed and p6_a and p6_b and p6_c
+
+    # --- PASS 7: CURATED SKILL PROFILES & BLUEPRINTS ---
+    print(f"\n{CYAN}[Pass 7/8] Curated Skill Profiles & Blueprint Verification{RESET}")
     profiles_dir = os.path.join(CFG_DIR, "skills", "profiles")
-    expected_profiles = [
-        "custom/base.md",
-        "custom/base-map.md",
-        "custom/base-py.md",
+    expected_base_profiles = [
         "claude/pro.md",
-        "claude/pro-map.md",
-        "claude/py-pro.md",
-        "claude/py-pro-map.md",
         "hermes/pro.md",
-        "hermes/pro-map.md",
-        "hermes/py-pro.md",
-        "hermes/py-pro-map.md",
         "pi/pro.md",
-        "pi/pro-map.md",
-        "pi/py-pro.md",
-        "pi/py-pro-map.md",
+        "custom/base.md",
     ]
     p7_a = True
-    for p in expected_profiles:
+    for p in expected_base_profiles:
         full = os.path.join(profiles_dir, p)
         if not os.path.isfile(full):
             p7_a = False
@@ -318,7 +349,7 @@ try:
             if "edit_file" not in f.read():
                 p7_a = False
                 break
-    print_result("Curated Skill Profiles Verified", p7_a, "15 Profiles (with edit_file)")
+    print_result("Consolidated Base Profiles Verified", p7_a, f"{len(expected_base_profiles)} Profiles (with edit_file)")
 
     import agent_context as context
 

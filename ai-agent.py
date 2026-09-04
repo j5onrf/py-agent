@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.13] - Main CLI Runtime, Workspace Agent & Command Dispatcher"""
+"""Py Agent [j5onrf] [v0.9.9.16] - Main CLI Runtime, Workspace Agent & Command Dispatcher"""
 
 import json
 import os
@@ -84,7 +84,14 @@ def ensure_clean_agent_dir(workspace_path: str) -> None:
     if not (ws_name := os.path.basename(workspace_path)):
         return
     agent_dir = os.path.join(workspace_path, ".agent")
-    targets = [f"index-map-{ws_name}.txt", f"index-map-memory-{ws_name}.db", f"index-map-memory-{ws_name}.db-wal", f"index-map-memory-{ws_name}.db-shm", "history.md", "tpm.md"]
+    targets = [
+        f"index-map-{ws_name}.txt",
+        f"index-map-memory-{ws_name}.db",
+        f"index-map-memory-{ws_name}.db-wal",
+        f"index-map-memory-{ws_name}.db-shm",
+        "history.md",
+        "tpm.md"
+    ]
     for fname in targets:
         src = os.path.join(workspace_path, fname)
         if os.path.exists(src):
@@ -147,24 +154,31 @@ def run_interactive_chat(args: list[str]) -> None:
     ensure_clean_agent_dir(workspace_path)
     cfg_file = os.path.join(workspace_path, ".agent", "config.json")
     selected_profile = "pi/pro" if is_agent else "chat"
-    is_yolo, use_map = False, False
+    is_yolo, use_map, is_py, memory_active = False, False, False, False
 
     if is_agent:
         if not os.path.exists(cfg_file):
-            selected_profile, is_yolo, use_map = ui.select_workspace_profile(os.path.basename(workspace_path))
+            selected_profile, is_yolo, use_map, is_py, memory_active = ui.select_workspace_profile(os.path.basename(workspace_path))
             try:
                 os.makedirs(os.path.dirname(cfg_file), exist_ok=True)
                 with open(cfg_file, "w", encoding="utf-8") as cf:
-                    json.dump({"profile": selected_profile, "yolo": is_yolo, "map": use_map, "created_at": time.strftime("%Y-%m-%d %H:%M")}, cf, indent=2)
+                    json.dump({"profile": selected_profile, "yolo": is_yolo, "map": use_map, "py": is_py, "memory": memory_active, "created_at": time.strftime("%Y-%m-%d %H:%M")}, cf, indent=2)
             except OSError:
                 pass
         else:
             try:
                 with open(cfg_file, "r", encoding="utf-8") as cf:
                     d = json.load(cf)
-                    selected_profile, is_yolo, use_map = d.get("profile", "pi/pro"), d.get("yolo", False), d.get("map", False)
+                    selected_profile = d.get("profile", "pi/pro")
+                    is_yolo = d.get("yolo", False)
+                    use_map = d.get("map", False)
+                    is_py = d.get("py", False)
+                    memory_active = d.get("memory", False)
             except (OSError, json.JSONDecodeError):
                 pass
+
+        if is_py:
+            core.save_state("ipython_mode", True)
 
     for arg in args:
         if arg.startswith("-") and arg not in ("--talk", "--talk-chat"):
@@ -178,11 +192,55 @@ def run_interactive_chat(args: list[str]) -> None:
         active_system_prompt = profile_content or BASE_PROMPT_AGENT
         os.environ["AI_ACTIVE_SKILL"] = clean_name
 
-        st = core.get_state()
-        if "use_map" in st:
-            use_map = bool(st["use_map"])
-        elif "-map" in clean_name.lower() or "map-" in clean_name.lower():
-            use_map = True
+        # Workspace config.json strictly takes precedence over profile frontmatter
+        if os.path.isfile(cfg_file):
+            try:
+                with open(cfg_file, "r", encoding="utf-8") as cf:
+                    d = json.load(cf)
+                    if "map" in d:
+                        use_map = bool(d["map"])
+                    if "yolo" in d:
+                        is_yolo = bool(d["yolo"])
+                    if "py" in d:
+                        is_py = bool(d["py"])
+                    if "memory" in d:
+                        memory_active = bool(d["memory"])
+            except Exception:
+                pass
+        else:
+            st = core.get_state()
+            if "use_map" in st:
+                use_map = bool(st["use_map"])
+
+        core.save_state("use_map", use_map)
+        core.save_state("yolo_mode", is_yolo)
+        core.save_state("ipython_mode", is_py)
+        core.save_state("memory_active", memory_active)
+        os.environ["AI_USE_MAP"] = "1" if use_map else "0"
+        os.environ["AI_IPYTHON_MODE"] = "1" if is_py else "0"
+        if is_yolo:
+            os.environ["AI_CONFIRM_GATES"] = "0"
+
+        # Inject Codespace Map at startup if Map is ON (auto-compile if missing)
+        if use_map:
+            agent_dir = os.path.join(workspace_path, ".agent")
+            ws_name = os.path.basename(workspace_path)
+            txt_p = os.path.join(agent_dir, f"index-map-{ws_name}.txt")
+            db_p = os.path.join(agent_dir, f"index-map-memory-{ws_name}.db")
+
+            if not os.path.isfile(txt_p) or not os.path.isfile(db_p):
+                subprocess.run([sys.executable, f"{CFG_DIR}/tools/index-map/index-map", "--agent", workspace_path], capture_output=True)
+                ui._console.print("[dim][sys] Map enabled: compiled index-map.[/dim]")
+
+            map_path = next((p for p in (txt_p, os.path.join(workspace_path, f"index-map-{ws_name}.txt")) if os.path.exists(p)), None)
+            if map_path:
+                try:
+                    with open(map_path, "r", encoding="utf-8") as mf:
+                        new_map = mf.read().strip()
+                        if "### CODESPACE MAP:" not in active_system_prompt:
+                            active_system_prompt += f"\n\n### CODESPACE MAP:\n{new_map}"
+                except OSError:
+                    pass
     else:
         clean_name = selected_profile if (selected_profile and selected_profile != "pi/pro") else "chat"
         skill_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
@@ -193,7 +251,7 @@ def run_interactive_chat(args: list[str]) -> None:
 
     pending_query = " ".join(args[1:]) if len(args) > 1 else None
     if pending_query and ("CODEBASE INDEX MAP" in pending_query or "index-map" in pending_query):
-        if use_map:
+        if use_map and "### CODESPACE MAP:" not in active_system_prompt:
             active_system_prompt += f"\n\n### CODESPACE MAP:\n{pending_query}"
         pending_query = None
 
@@ -203,7 +261,8 @@ def run_interactive_chat(args: list[str]) -> None:
 
     st = core.get_state()
     show_stats = st.get("show_stats", True)
-    memory_active = st.get("memory_active", False)
+    if not is_agent:
+        memory_active = st.get("memory_active", False)
     reasoning_active, reasoning_budget = st.get("reasoning_active", False), st.get("reasoning_budget", 500)
 
     os.environ["AI_RENDER_MARKDOWN"] = "1" if st.get("render_markdown", True) else "0"
@@ -250,6 +309,63 @@ def run_interactive_chat(args: list[str]) -> None:
 
                 parts = query.split()
                 cmd = parts[0].lower() if parts else ""
+
+                if cmd in ("/m", "/map", "/graph"):
+                    use_map = not use_map
+                    core.save_state("use_map", use_map)
+                    os.environ["AI_USE_MAP"] = "1" if use_map else "0"
+
+                    if os.path.exists(cfg_file):
+                        try:
+                            with open(cfg_file, "r+", encoding="utf-8") as cf:
+                                data = json.load(cf)
+                                data["map"] = use_map
+                                cf.seek(0)
+                                json.dump(data, cf, indent=2)
+                                cf.truncate()
+                        except Exception:
+                            pass
+
+                    if use_map:
+                        agent_dir = os.path.join(workspace_path, ".agent")
+                        txt_p = next((p for p in (os.path.join(agent_dir, f"index-map-{os.path.basename(workspace_path)}.txt"), os.path.join(workspace_path, f"index-map-{os.path.basename(workspace_path)}.txt")) if os.path.exists(p)), None)
+                        if txt_p:
+                            try:
+                                with open(txt_p, "r", encoding="utf-8") as mf:
+                                    new_map = mf.read().strip()
+                                has_map = False
+                                for msg in chat_history:
+                                    if "### CODESPACE MAP:" in msg["content"]:
+                                        msg["content"] = msg["content"].split("### CODESPACE MAP:")[0] + f"### CODESPACE MAP:\n{new_map}"
+                                        has_map = True
+                                if not has_map:
+                                    chat_history[0]["content"] += f"\n\n### CODESPACE MAP:\n{new_map}"
+                            except Exception:
+                                pass
+                    else:
+                        for msg in chat_history:
+                            if "### CODESPACE MAP:" in msg["content"]:
+                                msg["content"] = msg["content"].split("### CODESPACE MAP:")[0].strip()
+                    ui._console.print(f"[green][sys] index-map {'enabled (11 tools active)' if use_map else 'disabled (lean 6 tools)'}.[/green]\n")
+                    continue
+
+                if cmd in ("/mem", "/memory"):
+                    memory_active = not memory_active
+                    core.save_state("memory_active", memory_active)
+                    if os.path.exists(cfg_file):
+                        try:
+                            with open(cfg_file, "r+", encoding="utf-8") as cf:
+                                data = json.load(cf)
+                                data["memory"] = memory_active
+                                cf.seek(0)
+                                json.dump(data, cf, indent=2)
+                                cf.truncate()
+                        except Exception:
+                            pass
+                    if is_agent and memory_active:
+                        sync_md_to_sqlite(safe_name, workspace_path)
+                    ui._console.print(f"[green][sys] Memory & TPM database {'enabled' if memory_active else 'disabled'}.[/green]\n")
+                    continue
 
                 if cmd in ("/gnd", "/ground"):
                     if len(parts) > 1:
@@ -305,9 +421,21 @@ def run_interactive_chat(args: list[str]) -> None:
                     if len(parts) > 1:
                         if not ipython.is_ipython_enabled():
                             ipython.toggle_ipython_mode(True)
+                        os.environ["AI_IPYTHON_MODE"] = "1"
                         query = query.split(maxsplit=1)[1]
                     else:
                         active = ipython.toggle_ipython_mode()
+                        os.environ["AI_IPYTHON_MODE"] = "1" if active else "0"
+                        if os.path.exists(cfg_file):
+                            try:
+                                with open(cfg_file, "r+", encoding="utf-8") as cf:
+                                    data = json.load(cf)
+                                    data["py"] = active
+                                    cf.seek(0)
+                                    json.dump(data, cf, indent=2)
+                                    cf.truncate()
+                            except Exception:
+                                pass
                         ui._console.print(f"[cyan][sys] IPython harness {'enabled (exec_python single tool mode)' if active else 'disabled (classic JSON tools)'}.[/cyan]\n")
                         continue
 
@@ -345,14 +473,6 @@ def run_interactive_chat(args: list[str]) -> None:
                     ui._console.print(f"[green][sys] Switched box style to #{val}.[/green]\n")
                     continue
 
-                if cmd == "/m":
-                    memory_active = not memory_active
-                    core.save_state("memory_active", memory_active)
-                    if is_agent and memory_active:
-                        sync_md_to_sqlite(safe_name, workspace_path)
-                    ui._console.print(f"[green][sys] Memory & TPM facts {'enabled' if memory_active else 'disabled'}.[/green]\n")
-                    continue
-
                 if cmd in ("/md"):
                     new_md = not (os.environ.get("AI_RENDER_MARKDOWN", "1") == "1")
                     os.environ["AI_RENDER_MARKDOWN"] = "1" if new_md else "0"
@@ -367,6 +487,16 @@ def run_interactive_chat(args: list[str]) -> None:
                     new_yolo = not (os.environ.get("AI_CONFIRM_GATES", "1") == "0")
                     os.environ["AI_CONFIRM_GATES"] = "0" if new_yolo else "1"
                     core.save_state("yolo_mode", new_yolo)
+                    if os.path.exists(cfg_file):
+                        try:
+                            with open(cfg_file, "r+", encoding="utf-8") as cf:
+                                data = json.load(cf)
+                                data["yolo"] = new_yolo
+                                cf.seek(0)
+                                json.dump(data, cf, indent=2)
+                                cf.truncate()
+                        except Exception:
+                            pass
                     ui._console.print(f"[yellow][sys] Confirmation gates {'disabled (Autonomous / YOLO mode active)' if new_yolo else 'enabled (y/n confirmation required per action)'}.[/yellow]\n")
                     continue
 
@@ -400,7 +530,7 @@ def run_interactive_chat(args: list[str]) -> None:
                     continue
 
                 if cmd in ("/sync", "/re"):
-                    sys.stdout.write("\033[2m[sys] Syncing codespace map...\033[0m\r")
+                    sys.stdout.write("\033[2m[sys] Syncing index-map...\033[0m\r")
                     sys.stdout.flush()
                     subprocess.run([sys.executable, f"{CFG_DIR}/tools/index-map/index-map", "--agent", workspace_path])
                     agent_dir = os.path.join(workspace_path, ".agent")
@@ -424,7 +554,7 @@ def run_interactive_chat(args: list[str]) -> None:
                     ui._console.print("[green][sys] Active chat history cleared.[/green]\n")
                     continue
 
-                if q_lower in ("/reset", "/purge"):
+                if q_lower in ("/reset", "/r"):
                     chat_history = [{"role": "system", "content": active_system_prompt}]
                     if is_agent:
                         chat_history.append({"role": "assistant", "content": "Agent: Workspace loaded. Awaiting instructions."})
@@ -525,8 +655,9 @@ def run_interactive_chat(args: list[str]) -> None:
                 pass
 
             if ans := core.stream_response(chat_history, prefix="Agent:" if is_agent else "AI:", show_stats=show_stats, thinking_budget=reasoning_budget if reasoning_active else 0, is_agent=is_agent):
-                chat_history.append({"role": "assistant", "content": ans})
-                tts.speak_response(ans)
+                clean_ans = re.sub(r"<think>[\s\S]*?</think>", "", ans).strip()
+                chat_history.append({"role": "assistant", "content": clean_ans or ans})
+                tts.speak_response(clean_ans or ans)
                 if is_agent:
                     sessions.log_turn(safe_name, query, ans)
                     if match := re.search(r"Run:\s*((?:trace symbol|blast radius|read function|find symbol)\s+\S+|architecture overview)", ans):

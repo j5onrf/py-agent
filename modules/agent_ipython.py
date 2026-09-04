@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Local-AI Standalone IPython Kernel & RLM Harness Module [In-Memory Edition]"""
+"""Local-AI Standalone IPython Kernel & RLM Harness Module"""
 
 import ast
+import builtins
 import contextlib
 import io
 import os
@@ -18,20 +19,24 @@ try:
     import agent_core as core
     import agent_memories as memories
     import agent_tools as tools
+    import agent_ui as ui
 except ImportError:
     core = None
     memories = None
     tools = None
+    ui = None
 
 _shell_globals: dict[str, Any] = {}
 _shell_instance = None
 
 try:
     from IPython.core.interactiveshell import InteractiveShell
+    from IPython.utils.capture import capture_output
 
     _has_ipython = True
 except ImportError:
     _has_ipython = False
+    capture_output = None
 
 
 def is_ipython_enabled() -> bool:
@@ -45,9 +50,10 @@ def toggle_ipython_mode(enable: bool | None = None) -> bool:
     return new_st
 
 
-_orig_open = open
+_orig_open = builtins.open
 _orig_listdir = os.listdir
 _confirm_gate_fn = None
+_is_executing_cell = False
 
 
 def bounded_repr(val: Any, max_len: int = 1200) -> str:
@@ -203,16 +209,16 @@ def _init_kernel_sdk(
             path_str if os.path.isabs(path_str) else os.path.join(ws_real, path_str)
         )
         if _is_outside(full):
+            gate_msg = f"OUT-OF-BOUNDS KERNEL {op_name}: {full}"
             if _confirm_gate_fn:
-                return _confirm_gate_fn(f"OUT-OF-BOUNDS KERNEL {op_name}: {full}")
-            if core:
-                return core._confirm_gate(
-                    f"OUT-OF-BOUNDS KERNEL {op_name}: {full}", None
-                )
+                return _confirm_gate_fn(gate_msg)
+            if ui:
+                return ui.confirm_tool(gate_msg)
+            return False
         return True
 
     def safe_open(file, mode="r", *args, **kwargs):
-        if isinstance(file, (str, bytes, os.PathLike)):
+        if _is_executing_cell and isinstance(file, (str, bytes, os.PathLike)):
             if not _check_boundary(str(file), "READ" if "r" in mode else "WRITE"):
                 raise PermissionError(f"[denied] Out-of-bounds access blocked: {file}")
         return _orig_open(file, mode, *args, **kwargs)
@@ -305,7 +311,11 @@ def _init_kernel_sdk(
         "workspace": ws_real,
     }
     _shell_globals.update(sdk)
+    
+    # Kernel Zero-Trust Overrides
+    builtins.open = safe_open
     os.listdir = safe_listdir
+
     if _shell_instance:
         _shell_instance.user_ns.update(sdk)
 
@@ -313,13 +323,10 @@ def _init_kernel_sdk(
 def inspect_ast_safety(
     code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] | None = None
 ) -> str | None:
-    if not confirm_gate_fn or os.environ.get("AI_CONFIRM_GATES", "1") == "0":
-        return None
     clean = code.strip()
-    if clean.startswith(("%", "!", "?")):
-        if clean.startswith("!"):
-            if not confirm_gate_fn(f"PYTHON SHELL ESCAPE: {clean[:40]}"):
-                return "[denied] Execution halted by user gate."
+    if clean.startswith("!"):
+        if confirm_gate_fn and not confirm_gate_fn(f"PYTHON SHELL ESCAPE: {clean[:40]}"):
+            return "[denied] Execution halted by user gate."
         return None
 
     try:
@@ -327,19 +334,9 @@ def inspect_ast_safety(
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
                 fn_name = getattr(node.func, "id", "") or getattr(node.func, "attr", "")
-                if fn_name in (
-                    "run_command",
-                    "system",
-                    "Popen",
-                    "exec",
-                    "eval",
-                    "remove",
-                    "rmtree",
-                ):
-                    if not confirm_gate_fn(
-                        f"PYTHON KERNEL: {fn_name}() cell execution"
-                    ):
-                        return "[denied] Execution halted by user gate."
+                if fn_name in ("system", "Popen", "exec", "eval", "remove", "rmtree"):
+                    if confirm_gate_fn and not confirm_gate_fn(f"PYTHON DANGEROUS OP: {fn_name}() cell execution"):
+                        return "[denied] Dangerous operation rejected by user gate."
     except SyntaxError as e:
         return f"[error] Python syntax error in code cell: {e}"
     return None
@@ -348,18 +345,15 @@ def inspect_ast_safety(
 def run_cell(
     code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] | None = None
 ) -> str:
+    global _is_executing_cell
     _init_kernel_sdk(workspace, confirm_gate_fn)
     if denial := inspect_ast_safety(code, workspace, confirm_gate_fn):
         return denial
 
-    stdout_buf = io.StringIO()
-    eval_result = None
+    _is_executing_cell = True
     try:
-        with (
-            contextlib.redirect_stdout(stdout_buf),
-            contextlib.redirect_stderr(stdout_buf),
-        ):
-            if _shell_instance:
+        if _shell_instance and capture_output:
+            with capture_output() as captured:
                 res = _shell_instance.run_cell(code, store_history=True)
                 if res.error_in_exec:
                     traceback.print_exception(
@@ -367,25 +361,42 @@ def run_cell(
                         res.error_in_exec,
                         res.error_in_exec.__traceback__,
                     )
-                elif hasattr(res, "result") and res.result is not None:
-                    eval_result = res.result
-            else:
+            out = (captured.stdout or "").strip()
+            err = (captured.stderr or "").strip()
+            eval_result = getattr(res, "result", None)
+
+            if not out and eval_result is not None:
+                out = bounded_repr(eval_result)
+            elif out:
+                out = bounded_repr(out)
+            if err:
+                out = f"{out}\n{err}".strip() if out else err
+            return out or "(Cell executed successfully with no output)"
+        else:
+            stdout_buf = io.StringIO()
+            eval_result = None
+            with (
+                contextlib.redirect_stdout(stdout_buf),
+                contextlib.redirect_stderr(stdout_buf),
+            ):
                 try:
                     eval_result = eval(code, _shell_globals)
                 except SyntaxError:
+                    eval_result = None
                     exec(code, _shell_globals)
-
-        out = stdout_buf.getvalue().strip()
-        if not out and eval_result is not None:
-            out = bounded_repr(eval_result)
-        elif out:
-            out = bounded_repr(out)
-        return out or "(Cell executed successfully with no output)"
+            out = stdout_buf.getvalue().strip()
+            if not out and eval_result is not None:
+                out = bounded_repr(eval_result)
+            elif out:
+                out = bounded_repr(out)
+            return out or "(Cell executed successfully with no output)"
     except PermissionError as e:
         return f"[denied] {e}"
     except Exception as e:
         err_msg = str(e).strip().split("\n")[0]
         return f"[error] Cell execution failed: {err_msg}"
+    finally:
+        _is_executing_cell = False
 
 
 IPYTHON_TOOL = [

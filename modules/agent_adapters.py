@@ -85,10 +85,12 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
                 break
 
     if "content" not in cleaned:
-        for alt in ("text", "code", "body", "data", "source"):
+        for alt in ("text", "body", "data", "source"):
             if alt in cleaned:
                 cleaned["content"] = cleaned.pop(alt)
                 break
+        if "content" not in cleaned and "code" in cleaned:
+            cleaned["content"] = cleaned["code"]  # Alias without deleting "code"
 
     if "symbol" not in cleaned:
         for alt in ("func", "function", "method", "class_name", "target_symbol"):

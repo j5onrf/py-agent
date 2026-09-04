@@ -3,15 +3,16 @@
 High-speed local developer agent, episodic memory, SQLite checkpoints, NOOA-enhanced IPython kernel harness, and codebase index graph.
 
 ```console
-✓ Profile set to: Pi Py-Pro (Autonomous YOLO)
+✓ Profile set to: Hermes Pro [Yolo: ON] [Map: ON] [Mem: ON] [Py: ON]
 
+ Map enabled: compiled index-map.
 ╭─  ∿ Py Agent  ───────────────────────────────────────────╮
-│     model:  Qwen3.6-35B-A3B.gguf                         │
-│ directory:  ~/.config/py-agent/projects/session-test-2   │
-│     skill:  pi/py-pro                                    │
-│  database:  active (1 facts, 1 turns)                    │
+│     model:  Hermes3.6-35B-A3B.gguf                       │
+│ directory:  ~/.config/py-agent/projects/omarchyv4        │
+│     skill:  hermes/pro                                   │
+│  database:  active (0 facts, 0 turns)                    │
 ╰───────────────────────────────────────── Ctrl+C to exit ─╯
- Startup context: 743 tokens
+ Startup context: 896 tokens
 
 Agent: Workspace loaded. Awaiting instructions.
 ❯ 
@@ -43,50 +44,46 @@ All auto-created agent metadata files are strictly isolated inside `project/.age
 | `~/.config/py-agent/projects/database/*.db` | Global SQLite turn history and fact memory database. |
 | `~/.config/py-agent/.active_sessions/` | Sub-agent PID lockfiles for process tracking. |
 | `~/.config/py-agent/.spend_ledger.json` | Global cloud API token usage and daily spend ledger. |
-| `~/<workspace>/.agent/config.json` | Default workspace agent profile and YOLO settings. |
+| `~/<workspace>/.agent/config.json` | Project-scoped profile, YOLO, Map, Py, and Memory settings. |
 | `~/<workspace>/.agent/session.jsonl` | Structured JSONL turn audit log (timestamp, model, tokens, messages). |
 | `~/<workspace>/.agent/tpm.md` | Human-editable Markdown fact memory store. |
 | `~/<workspace>/.agent/history.md` | Chronological session history log. |
 | `~/<workspace>/.agent/task_log.md` | Audit log for autonomous `/task` loop executions. |
-| `~/<workspace>/.agent/index-map-<project>.txt` | Shorthand codebase index map (Agent mode). |
+| `~/<workspace>/.agent/scratchpad/` | Large tool outputs (>1,500 chars) offloaded to preserve active context. |
+| `~/<workspace>/.agent/index-map-<project>.txt` | Shorthand codebase index map (preloaded into prompt when Map is ON). |
 | `~/<workspace>/.agent/index-map-memory-<project>.db` | Relational knowledge graph & `sqlite-vec` embeddings. |
 
 ---
 
 ## 2. Profile Selector (`ai init`)
 
-Running `ai init <path>` initializes a workspace and opens the interactive profile selector:
+Running `ai init <path>` initializes a workspace and opens the interactive profile selector with instant RAM frontmatter pre-caching and single-letter hotkeys.
 
 ```console
 [ai init] Select default Agent Profile for workspace my-project:
 
   ─── Custom ────────────────────────
-  ❯  1. Custom Base          (~150t)  <-- Lean (5 tools, Map: OFF)
-     2. Custom Base-Map      (~300t)  <-- Index-Map (10 tools, Map: ON)
-     3. Custom Base-Py       (~280t)  <-- In-Kernel (Map: OFF)
-     4. Custom LFM2          (~240t)  <-- Lite 8B Single-Task Dev
+     1. Custom Base          (~200t)
+     2. Custom Lfm2          (~200t)
+     3. Custom Q2B           (~200t)
 
   ─── Agents ────────────────────────
-     1. Pi Pro               (~180t)  <-- Fast 5-Tool JSON Agent
+     1. Pi Pro               (~180t)
      2. Claude Pro           (~190t)
-     3. Hermes Pro           (~180t)
-     1. Pi Pro-Map           (~280t)  <-- 10-Tool Index-Map Agent (Map: ON)
-     2. Claude Pro-Map       (~290t)
-     3. Hermes Pro-Map       (~280t)
+  ❯  3. Hermes Pro           (~180t)
 
-  ─── Py ────────────────────────────
-     1. Pi Py-Pro            (~200t)  <-- Lean Python Kernel REPL
-     2. Claude Py-Pro        (~210t)
-     3. Hermes Py-Pro        (~200t)
-     1. Pi Py-Pro-Map        (~300t)  <-- Python Kernel + Index-Map SDK (Map: ON)
-     2. Claude Py-Pro-Map    (~310t)
-     3. Hermes Py-Pro-Map    (~300t)
-
-  :: ↵ select  ↑/↓ navigate  Tab: YOLO [OFF]  m: Map [OFF]  Esc: default
+  :: ↵ select    ↑/↓ navigate    Esc: default
+     Tab: YOLO [ON]    m: Map [ON]    d: Mem [ON]    p: Py [ON]
 ```
 
-* **Customize:** Modify or create profile `.md` files in `~/.config/py-agent/skills/profiles/`.
-* **Reset Workspace:** Type `/reset` in chat to clear conversation history, purge `.agent/` and database records, and start fresh.
+* **Instant Frontmatter Auto-Sync (0.00ms Latency):** As you navigate `↑` / `↓` across profiles, the 4 toggles on Line 2 **automatically flip to reflect each author's recommended defaults** (e.g. hovering over `Hermes Pro` turns all 4 ON; moving to `Base` turns them OFF).
+* **Single-Letter Overrides:**
+  * **`Tab`** ➔ Toggle Autonomous YOLO mode (`[ON]` disables confirmation gates).
+  * **`m`** ➔ Toggle Codebase Index-Map (11 tools + AST graph intelligence).
+  * **`d` (or `Shift+M`)** ➔ Toggle Database Session Memory & TPM Facts.
+  * **`p`** ➔ Toggle In-Memory IPython Kernel Harness (`exec_python`).
+* **Hierarchy of Precedence:** Manual button presses take precedence over frontmatter defaults and are saved permanently to `<workspace>/.agent/config.json`.
+* **Auto-Compiling Index-Map:** When Map is `[ON]`, `ai init` automatically builds missing or stale index maps on startup and injects them directly into turn 0.
 
 ---
 
@@ -97,37 +94,38 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 │   Shortcuts: Esc (Bypass)  •  Ctrl+C (Cancel)  •  q / exit (Quit)   │
 │                                                                     │
 │   Surfaces & Audio                                                  │
-│   /pyc, /pyc web         - Launch PyCode IDE (Desktop / WebUI)      │
-│   /webui, /web           - Launch WebAgent UI (llama.cpp)           │
-│   /tui                   - Launch interactive terminal UI (PyTUI)   │
-│   /v [auto], /voice      - Toggle voice-to-text bridge              │
-│   /tts                   - Toggle neural text-to-speech             │
+│   /pyc, /pyc web         - PyCode IDE (Desktop / WebUI)             │
+│   /webui, /web           - WebUI gateway (llama.cpp)                │
+│   /tui                   - Terminal UI (PyTUI)                      │
+│   /v [auto], /voice      - Voice to text                            │
+│   /tts                   - Text to speech (Kokoro)                  │
 │                                                                     │
 │   Agent & Execution                                                 │
-│   /py [code]             - Toggle or execute via IPython kernel     │
-│   /task [goal]           - Start autonomous task loop               │
-│   /t [N|show|hide]       - Configure reasoning budget & display     │
+│   /py [code]             - In-memory IPython kernel execution       │
+│   /task [goal]           - Autonomous task loop                     │
+│   /t [N|show|hide]       - Reasoning budget & display               │
 │   /g, /yolo              - Toggle tool confirmation gates (YOLO)    │
 │   /gnd [budget|on|off]   - Search grounding (Gemini / DDG)          │
 │   /s <query|off>         - Load or unload on-demand skill           │
 │   /f, /tk, /b, /a        - Follow-up, Think, Brainstorm, All modes  │
 │                                                                     │
 │   Memory & Workspace                                                │
-│   /m                     - Toggle SQLite memory & facts (TPM)       │
-│   /com, /compact         - 3-Zone compaction & token reclaim        │
-│   /tok                   - Show context token breakdown             │
-│   /sync                  - Synchronize codebase index-map           │
-│   file <path>            - Load file contents into context          │
+│   /m, /map               - Toggle Codebase index-map (11 tools)     │
+│   /mem, /memory          - Toggle database session memory & TPM     │
+│   /com, /compact         - 3-Zone context compaction                │
+│   /tok                   - Context token usage status               │
+│   /sync                  - Sync codebase index-map AST graph        │
+│   file <path>            - Load file into context                   │
 │                                                                     │
 │   Session Management                                                │
-│   /box [1-8]             - Switch banner box style preset           │
-│   /stats                 - Toggle generation speed & TPS stats      │
+│   /box [1-8]             - Box style preset                         │
+│   /stats                 - Generation speed stats                   │
 │   /md                    - Toggle Markdown stream rendering         │
-│   /clear, /c             - Clear active chat history                │
-│   /reset, /purge         - Reset workspace (.agent & database)      │
-│   -save <tag>            - Save session checkpoint                  │
-│   -load                  - Restore session checkpoint               │
-│   exit, quit, q          - Exit session                             │
+│   /clear, /c             - Soft clear active chat history           │
+│   /reset, /r             - Hard reset (.agent & database purge)     │
+│   -save <tag>            - Save checkpoint                          │
+│   -load                  - Restore checkpoint                       │
+│   exit, quit, q          - Exit conversation                        │
 ╰─────────────────────────────────────────────────────────────────────╯
 ```
 
@@ -135,11 +133,18 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 
 ## 4. Tooling & Safety Architecture
 
-* **AST Skeleton Read Guards:** Calling `read_file` on files > 250 lines returns top-level imports, class structures, and function line spans instead of a blind head-slice. Use `line_start` and `line_end` to read specific blocks.
-* **Whitespace-Tolerant `edit_file`:** Automatically handles 1–2 space indentation mismatches and trailing whitespace differences.
-* **Mandatory Fallback Security Gates:** Out-of-bounds file targets and package managers (`pip`, `pacman`, `sudo`) **always trigger an interactive `[Y/n]` prompt**, even in Autonomous YOLO mode. Denials halt tool execution immediately.
-* **Modular Adapter Layer (`agent_adapters.py`):** Self-healing parser resolving Hermes XML, DSML, Mistral, naked JSON, and raw function calls out-of-band without bloating the core engine.
-* **3-Zone Context Compactor (`/compact`):** Condenses intermediate tool turns while preserving a completed milestone progress anchor.
+* **The Two Distinct Databases:**
+  * **Database 1 (Codebase Graph):** `.agent/index-map-memory-<ws>.db` — Stores AST relationships (functions, classes, callers/callees). Toggled via **`/m`**.
+  * **Database 2 (Session Memory):** `~/.config/py-agent/projects/database/<ws>.db` — Stores conversation history, checkpoints, and long-term user facts (TPM). Toggled via **`/mem`**.
+* **Zero-Trust Mandatory Fallback:** Out-of-bounds file access (e.g. `/etc/os-release`, `~/.ssh/`) and system package commands (`sudo`, `pacman`, `pip`) **always trigger an interactive `[Y/n]` prompt**, even in Autonomous YOLO mode.
+* **Kernel Zero-Trust Overrides (`agent_ipython.py`):** In Python REPL mode, `builtins.open` is intercepted during cell execution to enforce workspace boundaries while allowing background system threads (TTS, logging) to operate without false alarms.
+* **3-Stage Resilient File Editing (`edit_file`):**
+  1. *Exact match* replacement.
+  2. *Whitespace-normalized* indentation matching (handles 2- vs 4-space discrepancies).
+  3. *SequenceMatcher fuzzy fallback* (replaces target blocks with $>88\%$ similarity without corrupting file syntax).
+* **AST Skeleton Read Guards:** Calling `read_file` on files > 250 lines returns top-level imports, class structures, and function line spans instead of a raw dump. Use `line_start` and `line_end` to read specific blocks.
+* **Large Output Scratchpad Offload:** Tool results $> 1,500$ characters are automatically flushed to `.agent/scratchpad/<tool>_<timestamp>.txt`, injecting a concise 1,200-character preview with a pointer to prevent context overflow.
+* **Child Sub-Agent Isolation (`delegate_task`):** Isolates research queries to a leaf worker that returns only a 1-line summary report. Guarded by `AI_SUBAGENT_DEPTH` to prevent recursive sub-agent storms.
 
 ---
 
@@ -147,40 +152,43 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 
 * **PyCode React Desktop IDE (`/pyc`):** Connects via ACP stdio JSON-RPC 2.0 with live thought/token streaming, ambient aurora glow, and workspace sync.
 * **llama.cpp WebAgent (`/webui`):** Autonomous tool reverse proxy for `llama-server` (:8080) with auxiliary Gemini Flash Lite vision pre-processing.
-* **Textual PyTUI (`/tui`):** Full-screen terminal interface with `uvloop` background workers, sub-agent IPC sockets, and real-time reasoning waves.
-* **NOOA IPython Kernel (`/py`):** Stateful Python REPL keeping DataFrames, variables, and imports in RAM with pass-by-reference previews (`preview()`) and `delegate()` sub-agents.
+* **Textual PyTUI (`/tui`):** Full-screen terminal interface with `uvloop` background services, real-time thought glimmer waves, adaptive light/dark theme typography, and compact 9-line Quick Tips.
+* **NOOA IPython Kernel (`/py`):** Live Python REPL keeping variables, imports, and DataFrames in memory across conversational turns, with real-time status line code previews.
 
 ---
 
-## 6. Execution, Loops & Sub-Agents
+## 6. Official Skill Frontmatter Schema
 
-* **In-Kernel SDK Objects (`/py`):** Provides model-callable `graph` (snippets, call trees, blast radius), `memory` (search, facts), `preview(obj)`, and sandbox `delegate("goal")` directly in Python RAM.
-* **Autonomous Task Loops (Ralph Engine):** `/task "goal"` (or `TASK.md`) runs self-directed iterations with failure decomposition and completion detection.
-* **Sub-Agents & Concurrency:** In-kernel `delegate()` sandbox sub-agents + multi-terminal `ai init` instances with self-healing PID locks and SQLite `WAL` mode.
-* **Skill Frontmatter (`---`):** YAML headers configure `reasoning_budget`, `yolo`, `map`, and `ipython` overrides automatically on profile load.
-* **Reasonix Cognitive Engine (`/t`):** `/t <N>` configures reasoning token budgets while `/t show|hide` toggles real-time thinking panel visibility.
-* **Context Budget Override:** Override limits per session: `AI_MAX_TOKENS=16000 ai init ~/my-project`.
+Skill profiles (`skills/profiles/**/*.md`) configure agent persona and defaults using YAML frontmatter (`---`).
+
+```yaml
+---
+description: "Hermes autonomous software engineer"
+yolo: true
+map: true
+memory: true
+ipython: true
+reasoning_budget: 350
+---
+```
+
+| Frontmatter Key | Type | Description |
+| :--- | :---: | :--- |
+| `description` | String | Profile summary displayed in the `ai init` selector menu. |
+| `yolo` | Boolean | Sets default Autonomous YOLO mode (`true` turns off confirmation gates). |
+| `map` | Boolean | Enables Codebase Index-Map (11 tools + AST graph context). |
+| `memory` (or `mem`) | Boolean | Enables persistent session turn logging and TPM user fact extraction. |
+| `ipython` (or `py`) | Boolean | Enables live persistent in-memory Python kernel harness (`exec_python`). |
+| `reasoning_budget` | Integer | Deep reasoning token budget (e.g. `350`, `500`, or `0` to disable). |
 
 ---
 
-## 7. Memory, Knowledge & Audio
-
-* **Checkpoints (`-save` / `-load`):** Snapshot and restore episodic memory and conversation states to SQLite across sessions.
-* **On-Demand Skills (`/s <skill>`):** Stack up to 3 specialized prompts (`/s pirate`, `/s ponytail`) on the fly with automatic category auto-swapping and `/s off` reset.
-* **Codebase Graph Mapper (`index-map`):** Dual-mode AST call graph mapping across 7 languages with `sqlite-vec` semantic vector search.
-* **Temporal Personality Memory (TPM):** Async extraction compiles persistent human facts into `<context>` blocks, synced via `.agent/tpm.md`.
-* **Voice & Neural Audio (`/v` & `/tts`):** Zero-latency HTTPS tablet/phone voice bridge (`:9999`) + local PipeWire Kokoro TTS reader with silent thinking/code filtering.
-* **Google Search Grounding (`/gnd`):** Real-time web search retrieval via Gemini Grounding (`/gnd [budget]`) with automatic DuckDuckGo fallback across all surfaces.
-
----
-
-## 8. Sub-27B Lite Model Directives
+## 7. Sub-27B Lite Model Directives
 
 Models under ~27B (`LFM2.5-8B`, `Qwen3.5-2B`) operate as **single-task execution engines** with constrained tool loops.
 
-* **Atomic Task Horizon:** Scope prompts to single-file, 1–2 turn tasks. Avoid chaining multi-file refactors in one prompt.
+* **Single-Task Horizon:** Scope prompts to single-file, 1–2 turn tasks. Avoid chaining multi-file refactors in one prompt.
 * **`write_file` for Small Files:** Use `write_file(path, content, overwrite=true)` on files < 50 lines to prevent multi-line `old_str` diff matching errors.
 * **1-Line Terminal Exit:** Require an explicit halt pattern (`✔ Task complete: <summary>`) upon test pass (`OK`) to prevent post-verification looping.
-* **Tokenizer Escaping Guard:** Avoid raw ellipsis literals (`+ "..."`) in prompt templates to prevent tokenizer quote-dropping syntax errors.
-* **Self-Healing Adapters (`agent_adapters.py`):** Automatically intercepts raw planning envelopes (`{"analysis": ...}`, `{"commands": ...}`), DSML, and naked JSON into executable tools.
-* **Constrained Reasoning:** Keep reasoning budgets between 350–500 tokens.
+* **Self-Healing Adapters (`agent_adapters.py`):** Automatically heals Hermes XML, DSML, Mistral, and naked JSON into executable tools without deleting parameter names like `"code"`.
+* **Historical `<think>` Stripping:** Previous turns are stripped of reasoning before appending to context, preventing small models from compounding or repeating previous thoughts.

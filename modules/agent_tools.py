@@ -10,6 +10,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 import urllib.parse
 from collections.abc import Callable
 from typing import Any
@@ -62,7 +63,7 @@ def clear_session_tracking() -> None:
     _SESSION_MODIFIED_FILES.clear()
 
 
-# Complete 11-Tool Suite
+# Complete 12-Tool Suite
 EDIT_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
@@ -78,6 +79,12 @@ EDIT_TOOLS: list[dict[str, Any]] = [
         },
     }
     for n, d, p, r in [
+        (
+            "delegate_task",
+            "Delegate an isolated sub-task or research query to a temporary sandbox sub-agent. Returns only a concise summary report to keep context clean.",
+            {"goal": {"type": "string", "description": "Specific isolated sub-task or code research objective."}},
+            ["goal"],
+        ),
         (
             "read_symbol",
             "Extract source code snippet for a function/class symbol from index graph without reading full file.",
@@ -162,12 +169,13 @@ EDIT_TOOLS: list[dict[str, Any]] = [
     ]
 ]
 
-# Lean 6-Tool Set for Compact Models (2B, 7B, 8B, 14B)
+# Lean 7-Tool Set for Compact Models (2B, 7B, 8B, 14B)
 LEAN_TOOLS: list[dict[str, Any]] = [
-    t for t in EDIT_TOOLS if t["function"]["name"] in ("read_file", "search_code", "edit_file", "write_file", "list_dir", "run_command")
+    t for t in EDIT_TOOLS if t["function"]["name"] in ("read_file", "search_code", "edit_file", "write_file", "list_dir", "run_command", "delegate_task")
 ]
 
 TOOL_VERBS = {
+    "delegate_task": "delegating sub-task",
     "read_symbol": "tracing symbol snippet",
     "trace_symbol": "tracing call graph",
     "blast_radius": "calculating impact",
@@ -275,7 +283,6 @@ def _check_command_security(cmd: str, workspace: str) -> str | None:
     return None
 
 
-# ── SmolCoder Feature 1: Native In-Bounds Code Search ─────────────────────────
 def _search_codebase(pattern: str, search_root: str, workspace: str, max_results: int = 30) -> str:
     """Fast, sandboxed regex and string search across workspace text files."""
     if not pattern or not pattern.strip():
@@ -329,7 +336,6 @@ def _search_codebase(pattern: str, search_root: str, workspace: str, max_results
     return res
 
 
-# ── SmallCoder AST Outline Generator ──────────────────────────────────────────
 def _generate_ast_skeleton(code: str, file_path: str) -> str:
     lines = code.splitlines()
     total_lines = len(lines)
@@ -391,15 +397,8 @@ def _generate_ast_skeleton(code: str, file_path: str) -> str:
     )
 
 
-# ── SmolCoder Feature 3: 3-Stage Resilient Replacement Engine ─────────────────
 def _resilient_replace(original: str, old_str: str, new_str: str) -> tuple[str | None, str | None]:
-    """3-Stage resilient file replacement:
-
-    Stage 1: Strict Exact Match
-    Stage 2: Whitespace & Indentation Normalized Match
-    Stage 3: Fuzzy SequenceMatcher (similarity > 0.88) for minor line drift
-    """
-    # Stage 1: Exact match
+    """3-Stage resilient file replacement: Exact match -> Whitespace normalized -> SequenceMatcher fuzzy fallback."""
     if old_str in original:
         if original.count(old_str) > 1:
             return None, "Target old_str matched multiple times in file. Include more surrounding context lines to make it unique."
@@ -419,7 +418,6 @@ def _resilient_replace(original: str, old_str: str, new_str: str) -> tuple[str |
     if old_len == 0:
         return None, "Parameter 'old_str' contains no non-whitespace content."
 
-    # Stage 2: Whitespace normalized sliding window
     matches = []
     for i in range(len(orig_lines)):
         window_lines = []
@@ -461,7 +459,6 @@ def _resilient_replace(original: str, old_str: str, new_str: str) -> tuple[str |
     elif len(matches) > 1:
         return None, f"Whitespace-normalized old_str matched {len(matches)} locations. Include more surrounding lines to make it unique."
 
-    # Stage 3: Fuzzy SequenceMatcher for minor character drift / 8B model noise
     best_ratio = 0.0
     best_window = None
     old_block_str = "\n".join(norm_old)
@@ -482,6 +479,23 @@ def _resilient_replace(original: str, old_str: str, new_str: str) -> tuple[str |
     return None, "Target old_str not found in file (even with whitespace tolerance and fuzzy matching). Use read_file to inspect exact lines."
 
 
+def run_graph_cmd(cmd: str, arg: str, workspace: str) -> str:
+    """Executes graph query commands against index-map SQLite graph."""
+    script = os.path.join(CFG_DIR, "tools", "index-map", "index-map")
+    if not os.path.exists(script):
+        return "[error] index-map script not found."
+    cmd_args = [sys.executable, script, cmd]
+    if arg:
+        cmd_args.append(arg)
+    cmd_args.append(workspace)
+    try:
+        res = subprocess.run(cmd_args, cwd=workspace, capture_output=True, text=True, timeout=15)
+        out = (res.stdout or res.stderr or "").strip()
+        return out or "(No graph data available)"
+    except Exception as e:
+        return f"[error] Graph command '{cmd}' failed: {e}"
+
+
 # ── Core Tool Dispatcher ──────────────────────────────────────────────────────
 def run_tool(
     name: str,
@@ -490,9 +504,8 @@ def run_tool(
     confirm_gate_fn: Callable[[str], bool] | None = None,
     print_output_fn: Callable[[str], None] | None = None,
 ) -> str:
-    # Parameter Normalization & Quote Sanitization
     if isinstance(args, dict):
-        for k in ("path", "command", "pattern", "symbol"):
+        for k in ("path", "command", "pattern", "symbol", "goal"):
             if k in args and isinstance(args[k], str):
                 args[k] = args[k].strip().strip('\'"`\\\n\r\t ').strip()
 
@@ -531,18 +544,55 @@ def run_tool(
             return confirm_gate_fn(reason)
         return ui.confirm_tool(reason)
 
-    # 1. IPython Kernel Execution
+    # 1. Isolated Sandbox Sub-Agent Delegation with Recursion Guard
+    if name == "delegate_task":
+        goal = args.get("goal", "").strip()
+        if not goal:
+            return "[error] Parameter 'goal' cannot be empty."
+        if not _in_bounds_gate(f"delegate sub-task: '{goal[:80]}'"):
+            return "[denied] User declined sub-agent delegation."
+
+        current_depth = int(os.environ.get("AI_SUBAGENT_DEPTH", "0"))
+        if current_depth >= 1:
+            return "[error] Sub-agents cannot recursively delegate tasks. Execute the tools directly."
+
+        try:
+            os.environ["AI_SUBAGENT_DEPTH"] = str(current_depth + 1)
+            import agent_core as core
+            sub_history = [
+                {
+                    "role": "system",
+                    "content": (
+                        f"You are an isolated sub-agent worker in workspace '{workspace}'.\n"
+                        f"Goal: {goal}\n"
+                        "Execute direct tools (read_file, search_code, list_dir, run_command) to complete the goal. "
+                        "When finished, output ONLY a concise final summary report."
+                    ),
+                },
+                {"role": "user", "content": f"Execute sub-task: {goal}"},
+            ]
+            ans = core.stream_response(sub_history, prefix="SubAgent:", show_stats=False, thinking_budget=0, is_agent=True)
+            return (ans or "Sub-agent completed task with no output.").strip()
+        except KeyboardInterrupt:
+            raise
+        except Exception as e:
+            return f"[error] Sub-agent delegation failed: {e}"
+        finally:
+            os.environ["AI_SUBAGENT_DEPTH"] = str(current_depth)
+
+    # 2. IPython Kernel Execution
     if name == "exec_python":
         try:
             import agent_ipython as ipython
-            out = ipython.run_cell(args.get("code", ""), workspace, confirm_gate_fn)
+            code_str = args.get("code") or args.get("content") or args.get("cell") or args.get("script") or ""
+            out = ipython.run_cell(code_str, workspace, confirm_gate_fn)
             if print_output_fn:
                 print_output_fn(out)
             return out
         except Exception as e:
             return f"[error] Python kernel execution failed: {e}"
 
-    # 2. Graph Intelligence Tools
+    # 3. Graph Intelligence Tools
     if name == "read_symbol":
         out = run_graph_cmd("snippet", args.get("symbol", "").strip(), workspace)
         if print_output_fn:
@@ -573,7 +623,7 @@ def run_tool(
             print_output_fn(out)
         return out
 
-    # 3. Codebase Search (SmolCoder Native Grep)
+    # 4. Codebase Search
     if name == "search_code":
         pattern = args.get("pattern", "")
         search_root = args.get("path", ".")
@@ -582,10 +632,10 @@ def run_tool(
             print_output_fn(out)
         return out
 
-    # 4. File System Tools
+    # 5. File System Tools
     if name == "read_file":
         if os.path.isdir(full):
-            return f"[error] '{raw_path or '.'}' is a directory, not a file. Use list_dir('{raw_path or '.'}') to view files, or pass a file path (e.g. read_file('inventory.py'))."
+            return f"[error] '{raw_path or '.'}' is a directory, not a file. Use list_dir('{raw_path or '.'}') to view files, or pass a file path."
         if os.path.splitext(full)[1].lower() in BINARY_EXTENSIONS:
             return f"[error] Refused to read binary file '{raw_path}'."
         if not os.path.isfile(full):
@@ -678,7 +728,6 @@ def run_tool(
             with open(full, "w", encoding="utf-8") as f:
                 f.write(new_content)
 
-            # Track modified file in session working memory
             rel_f = os.path.relpath(full, workspace)
             _SESSION_MODIFIED_FILES.add(rel_f)
 
@@ -770,10 +819,25 @@ def run_tool(
             return "[error] Parameter 'query' cannot be empty."
         if not _in_bounds_gate(f"search Google for: '{q}'"):
             return "[denied] User declined web search."
-        out = search_web_gemini(q)
-        if print_output_fn:
-            print_output_fn(out)
-        return out
+        try:
+            import agent_core
+            configs = agent_core.agent_cloud.get_active_configs([])
+            gem_key = next((c[1].get("x-goog-api-key") or "" for c in configs if "generativelanguage" in c[0]), "")
+            if not gem_key:
+                gem_key = os.environ.get("GEM_API_KEY", "")
+            if not gem_key:
+                return "[error] Google search requires GEM_API_KEY."
+            payload = {"contents": [{"parts": [{"text": f"Search the web and provide concise facts for: {q}"}]}], "tools": [{"googleSearch": {}}]}
+            req = urllib.request.Request(f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gem_key}", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode())
+            res = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+            out = res.strip() or "(No search results found)"
+            if print_output_fn:
+                print_output_fn(out)
+            return out
+        except Exception as e:
+            return f"[error] Web search failed: {e}"
 
     if name == "run_command":
         cmd = args.get("command", "")

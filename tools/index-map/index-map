@@ -639,12 +639,12 @@ Flags:
   --force, -f           Forces full re-compilation, bypassing modification cache
         """)
     elif cmd == "init": run_indexing(os.path.abspath(os.path.expanduser(args[1])) if len(args) > 1 else os.getcwd(), force=force_compile, is_agent=is_agent, no_db=no_db)
-    elif cmd == "architecture": print(show_architecture())
-    elif cmd == "search": print(search_symbols(args[1], EMBEDDING_SERVER)) if len(args) >= 2 else print("[error] Must provide a search pattern.")
-    elif cmd == "trace": print(trace_symbol(args[1])) if len(args) >= 2 else print("[error] Must specify a class or function symbol.")
-    elif cmd == "blast-radius": print(get_blast_radius(args[1])) if len(args) >= 2 else print("[error] Must specify target symbol to evaluate.")
-    elif cmd == "snippet": print(extract_snippet(args[1])) if len(args) >= 2 else print("[error] Must specify symbol name.")
-    elif cmd == "query": print(run_custom_query(args[1])) if len(args) >= 2 else print("[error] Must specify SQLite query string wrapped in quotes.")
+    elif cmd == "architecture": print(show_architecture(workspace=args[1] if len(args) > 1 else None))
+    elif cmd == "search": print(search_symbols(args[1], EMBEDDING_SERVER, workspace=args[2] if len(args) > 2 else None)) if len(args) >= 2 else print("[error] Must provide a search pattern.")
+    elif cmd == "trace": print(trace_symbol(args[1], workspace=args[2] if len(args) > 2 else None)) if len(args) >= 2 else print("[error] Must specify a class or function symbol.")
+    elif cmd == "blast-radius": print(get_blast_radius(args[1], workspace=args[2] if len(args) > 2 else None)) if len(args) >= 2 else print("[error] Must specify target symbol to evaluate.")
+    elif cmd == "snippet": print(extract_snippet(args[1], workspace=args[2] if len(args) > 2 else None)) if len(args) >= 2 else print("[error] Must specify symbol name.")
+    elif cmd == "query": print(run_custom_query(args[1], workspace=args[2] if len(args) > 2 else None)) if len(args) >= 2 else print("[error] Must specify SQLite query string wrapped in quotes.")
     else:
         path_test = os.path.abspath(os.path.expanduser(args[0]))
         if os.path.isdir(path_test): run_indexing(path_test, force=force_compile, is_agent=is_agent, no_db=no_db)

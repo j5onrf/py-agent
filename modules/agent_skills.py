@@ -115,7 +115,8 @@ def load_skill_content(skills_str: str, skills_dir: str, cfg_dir: str) -> str:
                         for k, v in meta.items():
                             k_l = str(k).lower().strip()
                             if k_l == "yolo":
-                                agent_core.save_state("yolo_mode", str(v).lower() in ("true", "1", "yes", "on"))
+                                if "AI_CONFIRM_GATES" not in os.environ:
+                                    agent_core.save_state("yolo_mode", str(v).lower() in ("true", "1", "yes", "on"))
                             elif k_l in ("reasoning", "reasoning_active"):
                                 agent_core.save_state("reasoning_active", str(v).lower() in ("true", "1", "yes", "on"))
                             elif k_l in ("reasoning_budget", "thinking_budget", "budget"):
@@ -126,9 +127,11 @@ def load_skill_content(skills_str: str, skills_dir: str, cfg_dir: str) -> str:
                                 except (ValueError, TypeError):
                                     pass
                             elif k_l in ("map", "use_map", "index_map"):
-                                agent_core.save_state("use_map", str(v).lower() in ("true", "1", "yes", "on"))
+                                if "AI_USE_MAP" not in os.environ:
+                                    agent_core.save_state("use_map", str(v).lower() in ("true", "1", "yes", "on"))
                             elif k_l in ("ipython", "py", "exec_python", "kernel"):
-                                agent_core.save_state("ipython_mode", str(v).lower() in ("true", "1", "yes", "on"))
+                                if "AI_IPYTHON_MODE" not in os.environ:
+                                    agent_core.save_state("ipython_mode", str(v).lower() in ("true", "1", "yes", "on"))
                     except Exception: pass
                     
                 contents.append(body or raw)

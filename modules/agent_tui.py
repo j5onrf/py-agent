@@ -74,15 +74,16 @@ def copy_to_clipboard(text: str) -> bool:
     return True
 
 
-def _glimmer_tui_text(title: str, theme: str = "code1") -> Text:
-    """Renders a sweeping luminous gradient wave across the Thinking header."""
+def _glimmer_tui_text(title: str, theme: str = "code1", is_dark: bool = True) -> Text:
     pos = (time.time() * 3.5) % (len(title) + 8) - 4
     res = Text()
     for i, ch in enumerate(title):
         dist = abs(i - pos)
         if dist < 3.0:
             intensity = max(0.0, 1.0 - (dist / 3.0))
-            if theme == "code2":
+            if not is_dark:
+                r, g, b = int(2 + (100 - 2) * intensity), int(101 + (150 - 101) * intensity), int(220 + (255 - 220) * intensity)
+            elif theme == "code2":
                 r, g, b = 255, int(158 + (255 - 158) * intensity), int(100 + (255 - 100) * intensity)
             elif theme in ("mono", "grok"):
                 v = int(160 + (255 - 160) * intensity); r = g = b = v
@@ -90,15 +91,19 @@ def _glimmer_tui_text(title: str, theme: str = "code1") -> Text:
                 r, g, b = int(137 + (255 - 137) * intensity), int(180 + (255 - 180) * intensity), int(250 + (255 - 250) * intensity)
             res.append(ch, style=f"bold #{r:02x}{g:02x}{b:02x}")
         else:
-            base_col = "#ff9e64" if theme == "code2" else ("#a0a0a0" if theme in ("mono", "grok") else "#89b4fa")
+            base_col = "#0265dc" if not is_dark else ("#ff9e64" if theme == "code2" else ("#a0a0a0" if theme in ("mono", "grok") else "#89b4fa"))
             res.append(ch, style=f"bold dim {base_col}")
     res.append("\n")
     return res
 
 
-def _format_tui_reasonix_text(text: str, theme: str = "code1") -> Text:
-    badge_style = {"code1": "bold #89b4fa", "code2": "bold #ff9e64", "dark": "bold cyan", "mono": "bold white"}.get(theme, "bold cyan")
-    body_style = "#a6adc8" if theme in ("code1", "code2") else ("#b0b0b0" if theme == "dark" else "white")
+def _format_tui_reasonix_text(text: str, theme: str = "code1", is_dark: bool = True) -> Text:
+    if not is_dark:
+        badge_style = "bold #0265dc"
+        body_style = "#303446"  # Crisp high-contrast charcoal for light backgrounds
+    else:
+        badge_style = {"code1": "bold #89b4fa", "code2": "bold #ff9e64", "dark": "bold cyan", "mono": "bold white"}.get(theme, "bold cyan")
+        body_style = "#a6adc8" if theme in ("code1", "code2") else ("#b0b0b0" if theme == "dark" else "white")
     res, last_empty = Text(), False
     for line in text.splitlines():
         if not (clean := line.strip()):
@@ -184,15 +189,15 @@ class Message(Static):
                     if show_th and th.strip():
                         th_toks = len(th.split())
                         items.append(Text(f"✦ Thought ({th_toks} tokens)\n", style="bold " + b_col))
-                        items.append(_format_tui_reasonix_text(th.strip(), app_t))
+                        items.append(_format_tui_reasonix_text(th.strip(), app_t, is_d))
                         items.append(Text("\n\n"))
                     if rest.strip():
                         clean_r = MULTI_NEWLINE_RE.sub('\n\n', CLEAN_CODE_BLOCKS_RE.sub('```\n', rest.strip()))
                         items.append(Markdown(clean_r, code_theme=code_fmt))
                 else:
-                    items.append(_glimmer_tui_text("✦ Thinking...", app_t))
+                    items.append(_glimmer_tui_text("✦ Thinking...", app_t, is_d))
                     if show_th and aft.strip():
-                        items.append(_format_tui_reasonix_text(aft.strip(), app_t))
+                        items.append(_format_tui_reasonix_text(aft.strip(), app_t, is_d))
 
                 valid = [x for x in items if x is not None]
                 body = Group(*valid) if valid else Text("...", style="italic dim")
@@ -228,7 +233,10 @@ class LocalAITUI(App):
 
     @property
     def is_dark_theme(self) -> bool:
-        return not any(k in str(getattr(self, "theme", "code1")).lower() for k in ["light", "latte", "day", "solarized-light", "dawn", "paper"])
+        if hasattr(self, "current_theme") and hasattr(self.current_theme, "dark"):
+            return bool(self.current_theme.dark)
+        t = str(getattr(self, "theme", "code1")).lower()
+        return not any(k in t for k in ["light", "latte", "day", "solarized-light", "dawn", "paper", "white"])
 
     CSS = """
     Screen { background: $background; }
@@ -442,7 +450,7 @@ class LocalAITUI(App):
                 with Vertical(id="card-tips"):
                     with Horizontal(id="card-tips-header"):
                         yield Static("Quick Tips", id="lbl-tips-title"); yield CloseCardButton("×", id="btn-close-tips")
-                    yield Static("Tab: Switch Mode\nCtrl+B: Sidebar\nCtrl+F: Borders\nCtrl+G: Compact\nCtrl+T: Themes\nCtrl+I: Vision Image\nCtrl+Q: Exit TUI\n/gnd: Grounding\n/tok: Context\n/py: Harness\n/v: Voice\n/tts: Speak\n/task: Goal\n/help: Help", id="lbl-tips-body")
+                    yield Static("Tab: Mode\nCtrl+B: Sidebar\nCtrl+T: Themes\nCtrl+F: Borders\nCtrl+G: Compact\nCtrl+Q: Exit\n/m: Map\n/mem: Mem\n/h: Help", id="lbl-tips-body")
         with Horizontal(id="footer-bar"): yield Footer(id="footer-keys")
 
     def action_close_tips_card(self) -> None:
@@ -555,9 +563,33 @@ class LocalAITUI(App):
 
         if root in ("/help", "/h"):
             t = Table(show_header=False, box=None, padding=(0, 1), expand=False)
-            t.add_column("Command", style="bold #89b4fa" if "code" in self.theme else "bold cyan"); t.add_column("Description", style="default")
-            for c, d in [("/help, /h", "Help"), ("/gnd", "Google Grounding"), ("/v", "Voice to text"), ("/tts", "Text to speech"), ("/py", "NOOA IPython"), ("Tab", "Plan/Build"), ("/task", "Task Loop"), ("/copy", "Copy transcript"), ("/m", "Memory toggle"), ("/clear, /c", "Clear chat"), ("/reset", "Hard reset"), ("/tok", "Tokens"), ("/sync", "Sync AST index"), ("/s <q>", "Load Skill"), ("/t <toks>", "Reasoning"), ("Ctrl+I", "Attach Image"), ("file <p>", "Load File"), ("q", "Exit")]: t.add_row(c, d)
-            await self.chat_area.mount(Static(Group(Text(""), Panel(t, title="Commands", title_align="left", border_style=self.border_accent, box=ROUNDED, expand=False))))
+            t.add_column("Command", style="bold #89b4fa" if "code" in self.theme else "bold cyan", no_wrap=True)
+            t.add_column("Description", style="default")
+            cmds = [
+                ("/help, /h", "Help"),
+                ("/m, /map", "Index Map"),
+                ("/mem", "Memory DB"),
+                ("/py", "NOOA IPython"),
+                ("/gnd", "Google Grounding"),
+                ("Tab", "Plan/Build"),
+                ("/t", "Reasoning"),
+                ("/task", "Task Loop"),
+                ("/s <q>", "Load Skill"),
+                ("/tok", "Tokens"),
+                ("/sync", "Sync Map"),
+                ("/compact", "Compact"),
+                ("/copy", "Copy chat"),
+                ("/theme", "Themes"),
+                ("/v", "Voice to text"),
+                ("/tts", "Text to speech"),
+                ("Ctrl+I", "Attach Image"),
+                ("file <p>", "Load File"),
+                ("/clear, /c", "Clear chat"),
+                ("/reset", "Hard reset"),
+                ("q", "Exit"),
+            ]
+            for c, d in cmds: t.add_row(c, d)
+            await self.chat_area.mount(Static(Group(Text(""), Panel(t, title=" Commands & Shortcuts ", title_align="left", border_style=self.border_accent, box=ROUNDED, expand=False))))
             self.chat_area.scroll_end(animate=False)
         elif root == "/theme":
             if args and args.strip().lower() in self.THEMES: self.theme = args.strip().lower(); self.notify(f"Theme: [bold]{self.theme}[/bold].", css_class="theme-notice")
@@ -603,10 +635,17 @@ class LocalAITUI(App):
         elif root in ("/task", "/loop", "/goal"): await self.handle_task_command(args)
         elif root in ("exit", "quit", "q"): self.exit()
         elif root in ("/copy", "/copy-all", "/copyall"): self.action_copy_entire_chat()
-        elif root == "/m":
-            self.memory_active = not self.memory_active; core.save_state("memory_active", self.memory_active)
+        elif root in ("/m", "/map", "/graph"):
+            self.use_map = not getattr(self, "use_map", False)
+            core.save_state("use_map", self.use_map)
+            os.environ["AI_USE_MAP"] = "1" if self.use_map else "0"
+            if hasattr(self, "lbl_map"): self.lbl_map.update(f"[dim]Map[/dim]        {'Active' if self.use_map else 'Disabled'}")
+            self.notify(f"index-map {'enabled' if self.use_map else 'disabled'}.")
+        elif root in ("/mem", "/memory"):
+            self.memory_active = not self.memory_active
+            core.save_state("memory_active", self.memory_active)
             if hasattr(self, "lbl_database"): self.lbl_database.update(f"[dim]DB State[/dim]  {self.get_db_status_string()}")
-            self.notify(f"Memory {'enabled' if self.memory_active else 'disabled'}.")
+            self.notify(f"Memory database {'enabled' if self.memory_active else 'disabled'}.")
         elif root in ("/plan", "/build", "/g", "/yolo"):
             if not self.is_agent:
                 self.notify("Autonomous / YOLO mode is disabled in Chat mode.", sys_prefix=False)
@@ -756,6 +795,11 @@ class LocalAITUI(App):
                             delta = choices[0].get("delta", {})
                             tc_chunk = delta.get("content") or ""
                             th_chunk = delta.get("reasoning_content") or delta.get("thinking") or delta.get("reasoning") or ""
+
+                            # Suppress duplicate content echo when server sends reasoning_content
+                            if th_chunk:
+                                tc_chunk = ""
+
                             if tc_chunk and "Final Answer:" in tc_chunk: tc_chunk = FINAL_ANSWER_RE.sub('', tc_chunk).lstrip()
 
                             for tc in delta.get("tool_calls", []):
@@ -764,14 +808,10 @@ class LocalAITUI(App):
                                 if tc.get("function", {}).get("name"): ent["function"]["name"] = tc["function"]["name"]
                                 ent["function"]["arguments"] += tc.get("function", {}).get("arguments", "")
 
-                            if tc_chunk or th_chunk:
+                            chunk_to_stream, is_thinking, in_th = core._process_stream_chunk(tc_chunk, th_chunk, in_th)
+                            if chunk_to_stream:
                                 if first_tok_time is None: first_tok_time = time.perf_counter()
-                            if th_chunk:
-                                if not in_th: accumulated += "<think>"; in_th = True
-                                accumulated += th_chunk
-                            elif tc_chunk:
-                                if in_th: accumulated += "</think>"; in_th = False
-                                accumulated += tc_chunk
+                                accumulated += chunk_to_stream
 
                             now = time.perf_counter()
                             if (tc_chunk or th_chunk) and (now - last_ui >= 0.05):
@@ -780,7 +820,9 @@ class LocalAITUI(App):
                                 self.call_from_thread(self.chat_area.scroll_end, animate=False)
                         except Exception: pass
 
-                if in_th: accumulated += "</think>"
+                if in_th:
+                    accumulated += "</think>"
+                    in_th = False
                 self.call_from_thread(assistant_msg.update_content, accumulated)
                 self.call_from_thread(self.chat_area.scroll_end, animate=False)
 
@@ -788,7 +830,9 @@ class LocalAITUI(App):
                 has_web_call = use_gnd and any(c.get("function", {}).get("name") == "web_search" for c in (calls or []))
 
                 if not calls or (not self.is_agent and not has_web_call):
-                    self.history.append({"role": "assistant", "content": accumulated}); break
+                    # Invariant 5: Strip <think> from history to prevent compounding loops, but keep on screen
+                    clean_for_history = re.sub(r"<think>[\s\S]*?</think>", "", accumulated).strip()
+                    self.history.append({"role": "assistant", "content": clean_for_history or accumulated}); break
 
                 self.history.append({"role": "assistant", "content": accumulated or None, "tool_calls": calls})
                 aborted = False

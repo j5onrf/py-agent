@@ -291,7 +291,7 @@ def search_past_context(workspace: str, query: str) -> str:
                 return f'\n### Relevant Past Discussion (Retrieved from Session Memory):\n* **On {date_str} you asked**: "{user_msg}"\n  **Agent responded**: "{assistant_msg.strip()}"'
             elif key in ("d", "D"):
                 sys.stderr.write(
-                    "\033[2;31m[sys] Memory recall disabled. (Type /m to re-enable)\033[0m\n"
+                    "\033[2;31m[sys] Memory recall disabled. (Type /mem to re-enable)\033[0m\n"
                 )
                 return "__DISABLE_MEMORY__"
             elif key in ("\x1b[A", "\x1b[B"):

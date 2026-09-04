@@ -2,7 +2,7 @@
   <img alt="py-agent" src="logo.svg" height="130" />
 </div>
 
-<h1 align="center">Py Agent <img src="https://shieldcn.dev/badge/version-v0.9.9.13.svg?variant=secondary" alt="Version"><a href="https://github.com/j5onrf/py-agent"></a></h1>
+<h1 align="center">Py Agent <img src="https://shieldcn.dev/badge/version-v0.9.9.16.svg?variant=secondary" alt="Version"><a href="https://github.com/j5onrf/py-agent"></a></h1>
 
 <p align="center">
   <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/github/last-commit/j5onrf/py-agent.svg?color=emerald&variant=secondary" alt="Last Commit"></a>
@@ -20,7 +20,7 @@
 
 <h2 align="center">Overview & Execution Modes</h2>
 
-Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`) controlling a C++ backend `llama-server`. Optimized for fine-tuned quantized local models (`Qwen3.5-2B+` / `LFM2.5-8B+` for chat & fast single-task tool execution, `Qwen3.8-27B` / `Qwen3.6-35B` for full autonomous agents) and cloud providers—supporting native JSON tool calling, modular sub-27B adapters (`agent_adapters.py`), and a stateful NOOA IPython kernel REPL (`/py`).
+Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`) controlling a C++ backend `llama-server`. Optimized for fine-tuned quantized local models (`Qwen3.5-2B+` / `LFM2.5-8B+` for chat & fast single-task tool execution, `Qwen3.8-27B` / `Qwen3.6-35B` for full autonomous agents) and cloud providers—supporting native JSON tool calling, and IPython kernel (`/py`).
 
 🟢 **Active:** Official `Hugging Face` Router endpoints ([`Qwen/Qwen3.8-27B`](https://huggingface.co/Qwen/Qwen3.8-27B), [`moonshotai/Kimi-K3`](https://huggingface.co/moonshotai/Kimi-K3), [`zai-org/GLM-5.3-Flash`](https://huggingface.co/zai-org/GLM-5.3-Flash), [`DeepSeek-V4-Flash-0731`](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731), [`Qwen/Qwen3.8-2.4T-A95B`](https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B)).
 > 💡 *Use `model select` to auto-configure free community HF Spaces.*
@@ -29,7 +29,7 @@ Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`)
 - **Single-Turn Query (`ai <query>`):** Instant response piped directly back to the active shell prompt.
 - **Multi-Turn Chat (`ai`):** Interactive terminal session with persistent memory context.
 - **Workspace Agent (`ai init <path>`):** Full codebase graph indexing, surgical AST file editing, and sub-agent concurrency.
-- **llama.cpp WebAgent (`/webui`):** Autonomous tool-enabled web gateway on official `llama-server` UI (`:3000`) with Gemini search grounding and vision image-processing for non-multimodal models.
+- **llama.cpp WebAgent (`/webui`):** Autonomous tool-enabled web gateway on official `llama-server` UI (`:3000`) with Gemini search grounding and vision image-processing for text-only local models.
 ---
 
 <h2 align="center">Key Systems & Integrations</h2>
@@ -50,6 +50,7 @@ Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`)
 | **Model Select TUI** | Real-time **[Cloud Connection](modules/Readme.md)** TUI, key toggles, and endpoint selector. | `model select` |
 | **Interactive Textual PyTUI** | Full-screen **[Textual](modules/Readme.md)** TUI workspace with JSON-RPC 2.0 socket IPC powered by a C-speed `uvloop` event loop. | `/tui` |
 | **llama.cpp WebAgent Gateway** | Full autonomous agent tool execution (`list_dir`, `write_file`, AST graph) + Gemini multimodal vision for text-only local models. | `/webui` |
+| **Adapters** | **Sub-27B Healer** | Self-healing tool format adapters (`agent_adapters.py`) resolving Hermes XML, DSML, Mistral, and raw planning JSON out-of-band for 2B–8B models. |
 
 ---
 
@@ -90,52 +91,53 @@ Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`)
 
 ---
 
-<h2 align="center">Plugin Extensions</h2>
+<h2 align="center">Client Surfaces & Environments</h2>
+
+<p align="center">
+  Py-Agent is surface-agnostic. Switch seamlessly between the terminal, web gateway, and desktop IDE:
+</p>
 
 <div align="center">
   <table>
     <tr>
       <td align="center" width="33%" valign="top">
-        <b>React Desktop IDE (<a href="https://github.com/j5onrf/pycode">PyCode</a>)</b><br>
+        <h3><a href="https://github.com/j5onrf/pycode">PyCode Desktop IDE</a></h3>
         <code>/pyc</code> · <code>/pyc web</code><br><br>
         <a href="https://github.com/user-attachments/assets/08a1358b-fca1-4fb4-b43e-2b96aaed6e42" target="_blank">
           <kbd>
             <img src="https://github.com/user-attachments/assets/08a1358b-fca1-4fb4-b43e-2b96aaed6e42" alt="PyCode Desktop App" width="100%" />
           </kbd>
-        </a>
+        </a><br><br>
+        <sub>Local-first React IDE with ACP stdio JSON-RPC 2.0, live thought streaming & ambient aurora glow.</sub>
       </td>
       <td align="center" width="33%" valign="top">
-        <b>Textual PyTUI</b><br>
+        <h3>Textual PyTUI</h3>
         <code>/tui</code><br><br>
         <a href="https://github.com/user-attachments/assets/1cfcd26a-c7f9-482d-9624-24193ce7b5c2" target="_blank">
           <kbd>
             <img src="https://github.com/user-attachments/assets/1cfcd26a-c7f9-482d-9624-24193ce7b5c2" alt="Py Agent Textual TUI" width="100%" />
           </kbd>
-        </a>
+        </a><br><br>
+        <sub>Full-screen terminal interface with <code>uvloop</code> async event loop, socket IPC & live reasoning steps.</sub>
       </td>
       <td align="center" width="33%" valign="top">
-        <b>Web Assistant (<a href="https://github.com/CopilotKit/OpenBot">PyBot</a>)</b><br>
-        <code>/pybot</code> <i>(Coming Soon)</i><br><br>
-      </td>
-    </tr>
-    <tr>
-      <td align="center" width="33%" valign="top">
-        <b>llama.cpp WebAgent</b><br>
+        <h3>llama.cpp WebAgent</h3>
         <code>/webui</code> · <code>/web</code><br><br>
         <a href="https://github.com/user-attachments/assets/39760d51-75f0-4b01-b385-6c5d99282a42" target="_blank">
           <kbd>
             <img src="https://github.com/user-attachments/assets/39760d51-75f0-4b01-b385-6c5d99282a42" alt="llama.cpp WebAgent" width="100%" />
           </kbd>
-        </a>
-      </td>
-      <td align="center" width="33%" valign="top">
-        <!-- Reserved Slot -->
-      </td>
-      <td align="center" width="33%" valign="top">
-        <!-- Reserved Slot -->
+        </a><br><br>
+        <sub>Autonomous tool reverse proxy for official <code>llama-server</code> (:3000) with Gemini Flash vision.</sub>
       </td>
     </tr>
   </table>
+
+  <p align="center">
+    <code>/v</code> <b>Voice-to-Text (:9999)</b> &nbsp;•&nbsp; 
+    <code>/tts</code> <b>Neural Kokoro Audio</b> &nbsp;•&nbsp; 
+    <code>/pybot</code> <b>Web Assistant (Roadmap)</b>
+  </p>
 </div>
 
 ---

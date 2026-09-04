@@ -184,7 +184,7 @@ def cleanup_sub_agent(workspace: str, target_pid: int | None = None) -> None:
 def init_db(workspace: str) -> None:
     """Wrapper that ensures DB and tables exist."""
     db_path = os.path.join(SESSIONS_DIR, f"{workspace}.db")
-    with closing(connect_db(db_path)) as conn:
+    with closing(connect_db(db_path)):
         pass
 
 
