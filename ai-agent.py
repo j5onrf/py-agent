@@ -205,6 +205,9 @@ def run_interactive_chat(args: list[str]) -> None:
                         is_py = bool(d["py"])
                     if "memory" in d:
                         memory_active = bool(d["memory"])
+                    if "reasoning" in d:
+                        reasoning_active = bool(d["reasoning"])
+                        core.save_state("reasoning_active", reasoning_active)
             except Exception:
                 pass
         else:
@@ -521,6 +524,17 @@ def run_interactive_chat(args: list[str]) -> None:
                         reasoning_active = not reasoning_active
                         core.save_state("reasoning_active", reasoning_active)
                         ui._console.print(f"[yellow][sys] Deep reasoning {'enabled' if reasoning_active else 'disabled'} (budget: {reasoning_budget} tokens).[/yellow]\n")
+
+                    if os.path.exists(cfg_file):
+                        try:
+                            with open(cfg_file, "r+", encoding="utf-8") as cf:
+                                data = json.load(cf)
+                                data["reasoning"] = reasoning_active
+                                cf.seek(0)
+                                json.dump(data, cf, indent=2)
+                                cf.truncate()
+                        except Exception:
+                            pass
                     continue
 
                 if cmd == "/stats":

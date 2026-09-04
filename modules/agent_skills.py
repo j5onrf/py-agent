@@ -117,13 +117,10 @@ def load_skill_content(skills_str: str, skills_dir: str, cfg_dir: str) -> str:
                             if k_l == "yolo":
                                 if "AI_CONFIRM_GATES" not in os.environ:
                                     agent_core.save_state("yolo_mode", str(v).lower() in ("true", "1", "yes", "on"))
-                            elif k_l in ("reasoning", "reasoning_active"):
-                                agent_core.save_state("reasoning_active", str(v).lower() in ("true", "1", "yes", "on"))
                             elif k_l in ("reasoning_budget", "thinking_budget", "budget"):
                                 try:
                                     b_val = max(0, int(v))
                                     agent_core.save_state("reasoning_budget", b_val)
-                                    agent_core.save_state("reasoning_active", b_val > 0)
                                 except (ValueError, TypeError):
                                     pass
                             elif k_l in ("map", "use_map", "index_map"):
