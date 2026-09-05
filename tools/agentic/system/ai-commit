@@ -3,51 +3,65 @@
 
 set -euo pipefail
 
-if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
-    trap 'echo -e "\n\n👋 Commit aborted."; return 130 2>/dev/null || exit 130' INT
-else
-    trap 'echo -e "\n\n👋 Commit aborted."; exit 130' INT
-fi
+trap 'echo -e "\n\n👋 Commit aborted." >&2; exit 130' INT
 
+# 1. Verify Git Repository
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo "❌ Error: Not inside a git repository." >&2
     exit 1
 fi
 
+# 2. Check Staged Files
 stats=$(git diff --cached --name-status | head -n 8 || true)
 if [[ -z "$stats" ]]; then
     echo "⚠️  No staged changes found. Run 'git add' on your files first." >&2
     exit 0
 fi
 
-_AI_SCRIPT_PATH="$HOME/.config/py-agent/ai-agent.py"
-_AI_PYTHON_BIN=$(command -v python3 2>/dev/null || type -p python3 2>/dev/null || echo "python3")
+# 3. Model Server Pre-Flight Check (0.05s timeout)
+CFG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/py-agent"
+server_online=0
 
-changes=$(git diff --cached -U0 -- \
-    ':(exclude)*lock*' ':(exclude)*.svg' ':(exclude)*.png' ':(exclude)*.jpg' ':(exclude)*.gif' \
-    | awk '
-    /^\+[^+]/ || /^-[^-]/ {
-        val = substr($0, 2)
-        sub(/^[ \t]+/, "", val)
-        if (val != "" && val !~ /^(#|\/\/|\/\*|\*)/) {
-            print $0
-            count++
-            if (count >= 15) { exit }
-        }
-    }' || true)
+if curl -s -m 0.3 "http://127.0.0.1:8080/v1/models" >/dev/null 2>&1; then
+    server_online=1
+elif grep -E -q '^(GEMINI_API_KEY|OPENROUTER_API_KEY|CUSTOM_API_KEY)=.+[a-zA-Z0-9]' "$CFG_DIR/.env" 2>/dev/null; then
+    # Active cloud key fallback available
+    server_online=1
+fi
 
-PROMPT="Write a short git commit message (4 to 8 words) for these staged changes.
+primary_file=$(echo "$stats" | awk 'NR==1 {print $2}')
+base_file=$(basename "$primary_file" 2>/dev/null || echo "files")
+fallback_msg="Update $base_file and related components"
+
+if [[ "$server_online" -eq 0 ]]; then
+    echo -e "\n\033[1;33m⚠️  [AI Warning]: Model server is not running on http://127.0.0.1:8080\033[0m" >&2
+    echo -e "   \033[2mStart your local model via 'model select' or your server launcher.\033[0m" >&2
+    echo -e "   \033[2mUsing intelligent file-based fallback.\033[0m" >&2
+    message="$fallback_msg"
+else
+    # 4. Extract Meaningful Diff Chunks
+    _AI_SCRIPT_PATH="${CFG_DIR}/ai-agent.py"
+    _AI_PYTHON_BIN=$(command -v python3 2>/dev/null || echo "python3")
+
+    changes=$(git diff --cached -U0 -- \
+        ':(exclude)*lock*' ':(exclude)*.svg' ':(exclude)*.png' ':(exclude)*.jpg' ':(exclude)*.gif' \
+        | awk '
+        /^\+[^+]/ || /^-[^-]/ {
+            val = substr($0, 2)
+            sub(/^[ \t]+/, "", val)
+            if (val != "" && val !~ /^(#|\/\/|\/\*|\*)/) {
+                print $0
+                count++
+                if (count >= 15) { exit }
+            }
+        }' || true)
+
+    PROMPT="Write a short git commit message (4 to 8 words) for these staged changes.
 
 Rules:
 - Length: 4 to 8 words. Complete thought, do not trail off.
 - Format: Imperative mood starting with Add, Fix, Update, Refactor, or Remove.
 - Output ONLY the commit line. No quotes, no explanations, no trailing period.
-
-Good examples:
-- Add user authentication middleware
-- Fix broken pipe on stream disconnect
-- Update launch script for background server
-- Refactor database query to improve performance
 
 Staged files:
 $stats
@@ -55,57 +69,67 @@ $stats
 Diff:
 $changes"
 
-tmp_out=$(mktemp)
-"$_AI_PYTHON_BIN" "$_AI_SCRIPT_PATH" --talk "$PROMPT" > "$tmp_out" 2>/dev/null &
-pid=$!
+    # 5. Stream AI Model Output Safely
+    tmp_out=$(mktemp)
+    tmp_err=$(mktemp)
+    "$_AI_PYTHON_BIN" "$_AI_SCRIPT_PATH" --talk "$PROMPT" > "$tmp_out" 2>"$tmp_err" &
+    pid=$!
 
-spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-i=0
-while kill -0 "$pid" 2>/dev/null; do
-    i=$(( (i + 1) % 10 ))
-    printf "\r\033[1;32m%s\033[0m \033[36mGenerating commit message...\033[0m " "${spin:$i:1}" >&2
-    sleep 0.08
-done
-wait "$pid" 2>/dev/null || true
-printf "\r\033[2K" >&2
+    spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    i=0
+    while kill -0 "$pid" 2>/dev/null; do
+        i=$(( (i + 1) % 10 ))
+        printf "\r\033[1;32m%s\033[0m \033[36mGenerating commit message...\033[0m " "${spin:$i:1}" >&2
+        sleep 0.08
+    done
+    wait "$pid" 2>/dev/null || true
+    printf "\r\033[2K" >&2
 
-raw_message=$(cat "$tmp_out" 2>/dev/null || echo "")
-rm -f "$tmp_out"
+    raw_message=$(cat "$tmp_out" 2>/dev/null || echo "")
+    rm -f "$tmp_out" "$tmp_err"
 
-# 1. Strip <think>...</think> reasoning blocks across multiple lines
-message=$(echo "$raw_message" | perl -0777 -pe 's/<think>.*?<\/think>//gs' 2>/dev/null || echo "$raw_message")
+    # 6. Sanitize Output: Strip ANSI escape sequences & prefixes
+    message=$(echo "$raw_message" | sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g')
+    message=$(echo "$message" | sed -E 's/^(AI|Agent):\s*//')
 
-# 2. Extract the first non-empty line and strip prefixes/markdown
-message=$(echo "$message" | sed -E \
-    -e 's/^[Cc]ommit [Mm]essage:?\s*//' \
-    -e 's/^[-*]\s*//' \
-    -e 's/^[`"'\''\s]+//' \
-    -e 's/[`"'\''\s\.]+$//' \
-    -e 's/^[[:space:]]+//; s/[[:space:]]+$//' \
-    | grep -v '^$' | head -n 1)
+    # 7. Strip <think>...</think> reasoning blocks
+    message=$(echo "$message" | perl -0777 -pe 's/<think>.*?<\/think>//gs' 2>/dev/null || echo "$message")
+    message=$(echo "$message" | perl -0777 -pe 's/<think>.*//gs' 2>/dev/null || echo "$message")
 
-# 3. If model still produced a long sentence (>8 words), safely truncate and strip dangling prepositions
-if [[ -n "$message" ]]; then
-    word_count=$(echo "$message" | wc -w)
-    if [[ $word_count -gt 8 ]]; then
-        # Take first 8 words
-        message=$(echo "$message" | awk '{for(i=1;i<=8;i++) printf "%s%s", $i, (i<8?" ":"\n")}')
-        # Strip trailing prepositions/conjunctions to prevent hanging sentences ("in", "to", "for", "and", etc.)
-        message=$(echo "$message" | sed -E 's/\s+(in|to|for|with|and|or|the|a|an|of|by|from|on|at|as)$//I')
+    # 8. Extract First Meaningful Line (Safe awk instead of crash-prone grep -v)
+    message=$(echo "$message" | sed -E \
+        -e 's/^[Cc]ommit [Mm]essage:?\s*//' \
+        -e 's/^[-*]\s*//' \
+        -e 's/^[`"'\''\s]+//' \
+        -e 's/[`"'\''\s\.]+$//' \
+        -e 's/^[[:space:]]+//; s/[[:space:]]+$//' \
+        | awk 'NF {print; exit}' || echo "")
+
+    # 9. Length Formatting & Truncation (4 to 8 words)
+    if [[ -n "$message" ]]; then
+        word_count=$(echo "$message" | wc -w)
+        if [[ $word_count -gt 8 ]]; then
+            message=$(echo "$message" | awk '{for(i=1;i<=8;i++) printf "%s%s", $i, (i<8?" ":"\n")}')
+            message=$(echo "$message" | sed -E 's/\s+(in|to|for|with|and|or|the|a|an|of|by|from|on|at|as)$//I')
+        fi
+        first_char=$(echo "${message:0:1}" | tr '[:lower:]' '[:upper:]')
+        message="${first_char}${message:1}"
+    else
+        message="$fallback_msg"
     fi
 fi
 
-# Fallback & Capitalization
-if [[ -z "$message" ]]; then
-    message="Update staged files"
+# 10. Interactive Editor Hand-Off (Bound directly to /dev/tty)
+echo -e "\n\033[1;36mAI-Commit\033[0m (Edit inline with arrows/backspace, then press Enter):"
+
+user_message=""
+if [ -t 0 ]; then
+    read -e -i "$message" -p "Commit message: " user_message
+elif [ -c /dev/tty ]; then
+    read -e -i "$message" -p "Commit message: " user_message < /dev/tty
 else
-    first_char=$(echo "${message:0:1}" | tr '[:lower:]' '[:upper:]')
-    message="${first_char}${message:1}"
+    user_message="$message"
 fi
-
-echo -e "\nAI-Commit (Edit inline with arrows/backspace, then press Enter):"
-
-read -e -i "$message" -p "Commit message: " user_message
 
 if [[ -z "$user_message" ]]; then
     echo "❌ Error: Commit message cannot be empty. Aborting." >&2
