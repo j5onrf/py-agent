@@ -205,11 +205,15 @@ XAI_MODEL="grok-5.6"
 
 # ── Google Search Grounding (/gnd) ───────────────────────────────────────────
 # GND_KEY="AIzaSyYourGeminiApiKeyHere"
-# GND_MODEL="gemini-2.5-flash"
+# GND_MODEL="gemini-2.0-flash"
 
 # ── Voice Bridge Transcription (Optional) ────────────────────────────────────
 # GEM_VOICE="AIzaSyYourGeminiApiKeyHere"
 # GEM_MODEL="gemini-3.5-flash-lite"
+
+# ── Multimodal for text only models (Optional) ───────────────────────────────
+# IMG_VOICE="AIzaSyYourGeminiApiKeyHere"
+# IMG_MODEL="gemini-3.5-flash-lite"
 
 # ── Context Window Budget ────────────────────────────────────────────────────
 AI_MAX_TOKENS="8192"
