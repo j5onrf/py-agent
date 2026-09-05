@@ -20,7 +20,7 @@
 
 <h2 align="center">Overview & Execution Modes</h2>
 
-Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`) controlling a C++ backend `llama-server`. Optimized for fine-tuned quantized local models (`Qwen3.5-2B+` / `LFM2.5-8B+` for chat & fast single-task tool execution, `Qwen3.8-27B` / `Qwen3.6-35B` for full autonomous agents) and cloud providers—supporting native JSON tool calling, and IPython kernel (`/py`).
+Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`) controlling a C++ backend `llama-server`. Optimized for fine-tuned quantized local models (`Qwen3.5-2B+` / `LFM2.5-8B+` for chat & fast single-task tool execution, `Qwen3.6-35B` / `Qwen3.8-27B` for full autonomous agents) and cloud providers—supporting native JSON tool calling, and IPython kernel (`/py`).
 
 🟢 **Active:** Official `Hugging Face` Router endpoints ([`Qwen/Qwen3.8-27B`](https://huggingface.co/Qwen/Qwen3.8-27B), [`moonshotai/Kimi-K3`](https://huggingface.co/moonshotai/Kimi-K3), [`zai-org/GLM-5.3-Flash`](https://huggingface.co/zai-org/GLM-5.3-Flash), [`DeepSeek-V4-Flash-0731`](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731), [`Qwen/Qwen3.8-2.4T-A95B`](https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B)).
 > 💡 *Use `model select` to auto-configure free community HF Spaces.*
@@ -36,19 +36,18 @@ Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`)
 
 | Feature System | Foundation & Architectural Roots | Interface Command / Link |
 | :--- | :--- | :--- |
-| **PyCode Desktop IDE** | Customized [T3 Code](https://github.com/pingdotgg/t3code) fork connected via Agent Client Protocol (ACP) over stdio JSON-RPC 2.0 with live token & thought streaming. | `/pyc` (or `/pyc web`) |
-| **Temporal Personality Memory (TPM)** | Reconciles personal identity & workspace habits using [Weaviate Engram](https://github.com/weaviate/engram-python-sdk) concepts + [Noema](https://github.com/Fail-Safe/Noema) Markdown files. | `.agent/tpm.md` |
-| **Codebase Graph & Relational Index** | Structural codebase maps ([Graphify](https://github.com/Graphify-Labs/graphify)) + relational queries ([codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)) + [sqlite-vec](https://github.com/asg017/sqlite-vec) vector RAG. | `index-map <dir>` |
-| **Ralph Autonomous Task Loop** | Self-directed iteration loop ([Ralph Wiggum](https://github.com/ghuntley/how-to-ralph-wiggum)) executing tasks against project specs (`TASK.md`) with failure decomposition. | `/task [goal]` |
+| **Memory (TPM)** | Reconciles personal identity & workspace habits using [Weaviate Engram](https://github.com/weaviate/engram-python-sdk) concepts + [Noema](https://github.com/Fail-Safe/Noema) Markdown files. | `.agent/tpm.md` |
+| **Codebase Graph & Index-Map** | Structural codebase maps ([Graphify](https://github.com/Graphify-Labs/graphify)) + relational queries ([codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)) + [sqlite-vec](https://github.com/asg017/sqlite-vec) vector RAG. | `index-map <dir>` |
+| **Autonomous Task Loop** | Self-directed iteration loop ([Ralph Wiggum](https://github.com/ghuntley/how-to-ralph-wiggum)) executing tasks against project specs (`TASK.md`) with failure decomposition. | `/task [goal]` |
 | **NOOA IPython Kernel Harness** | NVIDIA Object-Oriented Agent ([NOOA](https://github.com/NVIDIA-NeMo/labs-OO-Agents) + [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent)) stateful Python kernel with bounded previews (`preview()`), model-callable `memory`/`graph` APIs, and in-kernel `delegate()` sub-agents. | `/py` |
-| **SmallCoder Surgical Edits** | Whitespace-tolerant replacements (`edit_file`) + AST skeleton guards (>250 lines) + overwrite protection (`write_file`) inspired by [SmallCoder](https://github.com/Doorman11991/smallcode). | `edit_file <path>` |
+| **Surgical Edits** | Whitespace-tolerant replacements (`edit_file`) + AST skeleton guards (>250 lines) + overwrite protection (`write_file`) inspired by [SmallCoder](https://github.com/Doorman11991/smallcode). | `edit_file <path>` |
 | **3-Zone Context Compactor** | Token preservation compactor inspired by [Pi Coding Agent](https://pi.dev)—condenses older tool outputs while preserving completed task progress anchors. | `/compact` (or `/com`) |
-| **Modular Sub-27B Adapters** | Dedicated self-healing parser (`agent_adapters.py`) resolving Hermes XML, DSML, Mistral, and raw Python tool syntax out-of-band. | `modules/agent_adapters.py` |
 | **DeepSeek Session Audit & IPC** | Structured JSONL session event logs + JSON-RPC 2.0 socket IPC + YAML skill frontmatter overlays inspired by [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). | `.agent/session.jsonl` |
-| **Reasonix Cognitive Engine** | Real-time reasoning trace step extraction ([Reasonix](https://github.com/esengine/deepseek-reasonix)) + cognitive phase formatting inside thinking stream. | `/t [N\|show\|hide]` |
+| **Reasonix Cognitive** | Real-time reasoning trace step extraction ([Reasonix](https://github.com/esengine/deepseek-reasonix)) + cognitive phase formatting inside thinking stream. | `/t [N\|show\|hide]` |
 | **System Admin & Diagnostics** | Live health monitoring, AUR/security audits, system optimization, status routing, and git commit hooks. | [`tools/agentic/system/`](tools/agentic/system) |
 | **Model Select TUI** | Real-time **[Cloud Connection](modules/Readme.md)** TUI, key toggles, and endpoint selector. | `model select` |
 | **Interactive Textual PyTUI** | Full-screen **[Textual](modules/Readme.md)** TUI workspace with JSON-RPC 2.0 socket IPC powered by a C-speed `uvloop` event loop. | `/tui` |
+| **PyCode Desktop IDE** | Customized [T3 Code](https://github.com/pingdotgg/t3code) fork connected via Agent Client Protocol (ACP) over stdio JSON-RPC 2.0 with live token & thought streaming. | `/pyc` (or `/pyc web`) |
 | **llama.cpp WebAgent Gateway** | Full autonomous agent tool execution (`list_dir`, `write_file`, AST graph) + Gemini multimodal vision for text-only local models. | `/webui` |
 | **Adapters** | **Sub-27B Healer** | Self-healing tool format adapters (`agent_adapters.py`) resolving Hermes XML, DSML, Mistral, and raw planning JSON out-of-band for 2B–8B models. |
 

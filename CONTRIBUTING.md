@@ -1,6 +1,6 @@
-# Contributing to Local-AI Agent
+# Contributing to Py-Agent
 
-Thank you for your interest in contributing to **Local-AI Agent**! We welcome contributions of all kinds: bug fixes, new features, new agent skills/profiles, documentation improvements, and local model benchmark reports.
+Thank you for your interest in contributing to **Py-Agent**! We welcome contributions of all kinds: bug fixes, new features, new agent skills/profiles, documentation improvements, and local model benchmark reports.
 
 ---
 
@@ -71,4 +71,4 @@ Share prompt optimizations or `setup/*.sh` launch scripts for newly released qua
 ---
 
 ## 📄 License
-By contributing to **Local-AI Agent**, you agree that your contributions will be licensed under the project's [MODIFIED MIT LICENSE](LICENSE).
+By contributing to **Py-Agent**, you agree that your contributions will be licensed under the project's [MODIFIED MIT LICENSE](LICENSE).
