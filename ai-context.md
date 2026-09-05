@@ -23,7 +23,7 @@
 # --- AI Status Model Route ---
 [TOOL] ~/.config/py-agent/tools/agentic/system/ai-status ---> aistatus, aistat, ais
 # --- Plugins Cheatsheet ---
-[TOOL] ~/.config/py-agent/tools/blueprint ---> plugins, cheatsheet, bp, cs, blueprint
+[TOOL] ~/.config/py-agent/tools/cheatsheet ---> cheatsheet, cs
 ```
 
 ## 1. Plugins
