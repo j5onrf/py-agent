@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [Universal High-Performance Engine]"""
+"""Core Module - Streaming SSE, dynamic tool execution, & Rich rendering"""
 
 import base64
 import json
@@ -75,7 +75,7 @@ _state_mtime: float = 0.0
 def _get_img_config() -> tuple[str, str]:
     """Retrieves vision model and API key from environment or .env files."""
     k = os.environ.get("IMG_VOICE", "") or os.environ.get("IMG_KEY", "") or os.environ.get("GEM_VOICE", "")
-    m = os.environ.get("IMG_MODEL", "") or os.environ.get("GEM_MODEL", "") or "gemini-3.5-flash-lite"
+    m = os.environ.get("IMG_MODEL", "") or os.environ.get("GEM_MODEL", "") or "gemini-3.8-flash"
     if not k:
         for p in (os.path.join(CFG_DIR, ".env"), os.path.expanduser("~/.config/local-ai/.env"), ".env"):
             if os.path.isfile(p):
@@ -89,7 +89,7 @@ def _get_img_config() -> tuple[str, str]:
                                     m = s.split("=", 1)[1].strip().strip("'\"")
                 except Exception:
                     pass
-    return k.strip(), m.strip() or "gemini-3.5-flash-lite"
+    return k.strip(), m.strip() or "gemini-3.8-flash"
 
 
 def describe_image_gemini(target: Any) -> str:
@@ -456,7 +456,19 @@ def _run_edit_tool(name: str, args: dict[str, Any], workspace: str, spinner: Any
     return tools.run_tool(name, args, workspace, confirm_gate_fn=lambda r: _confirm_gate(r, spinner), print_output_fn=lambda t: _print_tool_output(spinner, t))
 
 
-def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, str], body: dict[str, Any], timeout: int, spinner: Any, show_stats: bool = False, is_agent: bool = False) -> str | None:
+def agentic_turn(
+    messages: list[dict[str, Any]],
+    url: str,
+    headers: dict[str, str],
+    body: dict[str, Any],
+    timeout: int,
+    spinner: Any,
+    show_stats: bool | None = None,
+    is_agent: bool = False,
+) -> str | None:
+    if show_stats is None:
+        show_stats = bool(get_state("show_stats", True))
+
     workspace = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
     is_local = "localhost" in url or "127.0.0.1" in url or body.get("model") == "local-model"
     resolved_model, streamer, res = None, None, None
@@ -533,7 +545,12 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
                 try:
                     data = json.loads(data_str)
                     captured_usage = data.get("usage") or captured_usage
-                    resolved_model = data.get("model") or resolved_model
+                    
+                    # Capture and preserve underlying resolved model (e.g. from openrouter/free gateway)
+                    if m_candidate := (data.get("model") or (data.get("choices", [{}])[0].get("model") if data.get("choices") else None)):
+                        if not resolved_model or resolved_model == "openrouter/free" or m_candidate != "openrouter/free":
+                            resolved_model = m_candidate
+
                     choices = data.get("choices", [{}])
                     if not choices:
                         continue
@@ -598,8 +615,10 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
             ans_text = "".join(acc_content)
             in_tok, out_tok = _calc_turn_tokens(ans_text, messages, captured_usage, is_local)
 
+            final_model = resolved_model or body.get("model") or "local-model"
+
             if speed_test and show_stats and not first_chunk:
-                speed_test.end(actual_out_tokens=out_tok, is_local=is_local, resolved_model=resolved_model, active_model=body.get("model"))
+                speed_test.end(actual_out_tokens=out_tok, is_local=is_local, resolved_model=final_model, active_model=body.get("model"))
 
             calls = [val for _, val in sorted(tool_calls_map.items())] if tool_calls_map else None
 
@@ -615,7 +634,7 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
                 if spinner:
                     spinner.stop()
                 user_msg = next((m.get("content", "") or "" for m in reversed(messages) if m.get("role") == "user"), "")
-                _log_turn_usage(resolved_model or body.get("model") or "local-model", in_tok, final_out, 0.0, show_stats, in_tok + final_out, user_msg=user_msg, assistant_msg=ans_text)
+                _log_turn_usage(final_model, in_tok, final_out, 0.0, show_stats and not speed_test, in_tok + final_out, user_msg=user_msg, assistant_msg=ans_text)
                 return ans_text if ans_text else "(No response generated)"
 
             # Re-serialize healed tool arguments
@@ -713,7 +732,17 @@ def agentic_turn(messages: list[dict[str, Any]], url: str, headers: dict[str, st
     return None
 
 
-def stream_response(messages: list[dict[str, Any]], prefix: str = "AI: ", cfg_dir: str = "", show_stats: bool = False, thinking_budget: int = 0, is_agent: bool = False) -> str | None:
+def stream_response(
+    messages: list[dict[str, Any]],
+    prefix: str = "AI: ",
+    cfg_dir: str = "",
+    show_stats: bool | None = None,
+    thinking_budget: int = 0,
+    is_agent: bool = False,
+) -> str | None:
+    if show_stats is None:
+        show_stats = bool(get_state("show_stats", True))
+
     is_sub = int(os.environ.get("AI_SUBAGENT_DEPTH", "0")) >= 1
     spinner = None if is_sub else ui.InlineSpinner()
     try:

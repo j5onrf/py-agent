@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fully Dynamic TUI Model Selector driven by OpenRouter & HuggingFace Router Rankings"""
+"""Streamlined TUI Model Selector driven by Local/HF, Google Gemini & OpenRouter"""
 
 import asyncio
 import atexit
@@ -11,12 +11,15 @@ import shutil
 import subprocess
 import sys
 import termios
+import time
 import tty
 import urllib.request as urlreq
 
 ENV_PATH = os.path.expanduser("~/.config/py-agent/.env")
+ENV_EXAMPLE = os.path.expanduser("~/.config/py-agent/.env.example")
 CACHE_PATH = os.path.expanduser("~/.config/py-agent/.openrouter_cache_v2.json")
 CUSTOM_SPACES_FILE = os.path.expanduser("~/.config/py-agent/custom_spaces.json")
+LAST_KEY_FILE = os.path.expanduser("~/.config/py-agent/.last_cloud_key.txt")
 HF_ROUTER_URL = "https://router.huggingface.co/v1/chat/completions"
 
 ORIGINAL_TERMIOS = termios.tcgetattr(sys.stdin.fileno()) if sys.stdin.isatty() else None
@@ -45,22 +48,31 @@ AMBER, GREEN, RED, RESET, BOLD, DIM = (
 )
 
 DEFAULTS = {
-    "gemini": ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.5-pro"],
-    "openai": ["gpt-5.5", "gpt-5", "gpt-4.5", "o3", "o3-mini", "gpt-4o", "gpt-4o-mini"],
-    "claude": ["claude-3-7-sonnet", "claude-opus-5", "claude-fable-5", "claude-sonnet-5", "claude-opus-4-8"],
-    "grok": ["grok-4.5", "grok-4", "grok-3", "grok-2"],
-    "free": ["openrouter/free", "nvidia/nemotron-3-ultra:free", "google/gemma-4-26b-a4b:free", "meta-llama/llama-3.3-70b-instruct:free", "deepseek/deepseek-chat:free"],
-    "paid": ["deepseek/deepseek-v4-flash", "anthropic/claude-3.7-sonnet", "google/gemini-3.7-flash", "openai/gpt-5.5", "openai/gpt-4o-mini"],
+    "gemini": ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.5-pro"],
+    "free": [
+        "openrouter/free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "deepseek/deepseek-chat:free",
+        "google/gemini-2.0-flash-exp:free",
+        "qwen/qwen-2.5-coder-32b-instruct:free",
+    ],
+    "paid": [
+        "anthropic/claude-3.7-sonnet",
+        "openai/gpt-4o",
+        "openai/o3-mini",
+        "deepseek/deepseek-r1",
+        "google/gemini-3.8-flash",
+        "qwen/qwen-2.5-72b-instruct",
+    ],
     "spaces": {
         "Local llama-server / vLLM (Port 8080)": {"url": "http://127.0.0.1:8080/v1/chat/completions", "model": "local-model"},
         "Local Ollama (Port 11434)": {"url": "http://127.0.0.1:11434/v1/chat/completions", "model": "llama3.3"},
     },
 }
 
-PROVIDER_KEYS = ["CUSTOM_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY", "CLAUDE_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY"]
+PROVIDER_KEYS = ["CUSTOM_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY"]
 
 
-# ── Storage & Env Helpers ─────────────────────────────────────────────────────
 def load_json(path, default):
     if os.path.exists(path):
         try:
@@ -83,23 +95,38 @@ def save_json(path, data):
 
 
 def ensure_env_exists():
+    """Auto-applies template for new users if .env does not exist."""
     if not os.path.exists(ENV_PATH):
         os.makedirs(os.path.dirname(ENV_PATH), exist_ok=True)
+        if os.path.isfile(ENV_EXAMPLE):
+            try:
+                shutil.copy2(ENV_EXAMPLE, ENV_PATH)
+                return
+            except OSError:
+                pass
+
         template = (
-            "# Top-Down Priority (First Active Key is Used)\n\n"
+            "# ==============================================================================\n"
+            "# Py-Agent Environment Configuration Template\n"
+            "# Top-Down Priority: The first active (uncommented) provider key is used.\n"
+            "# ==============================================================================\n\n"
+            "# ── 1. Custom Endpoints / Hugging Face Router ─────────────────────────────────\n"
             '# CUSTOM_API_KEY="not-needed"\n'
             'CUSTOM_URL="https://router.huggingface.co/v1/chat/completions"\n'
             'CUSTOM_MODEL="Qwen/Qwen3.8-27B"\n\n'
-            '# GEMINI_API_KEY="AIzaSyYourGeminiKey"\n'
-            'GEMINI_MODEL="gemini-3.7-flash"\n\n'
-            '# OPENROUTER_API_KEY="sk-or-v1-YourKey"\n'
+            "# ── 2. Google Gemini (Free daily tier via Google AI Studio) ───────────────────\n"
+            '# GEMINI_API_KEY="AIzaSyYourGeminiApiKeyHere"\n'
+            'GEMINI_MODEL="gemini-3.8-flash"\n\n'
+            "# ── 3. OpenRouter (Free community models & Universal paid gateway) ────────────\n"
+            '# OPENROUTER_API_KEY="sk-or-v1-YourOpenRouterKeyHere"\n'
             'OPENROUTER_MODEL="openrouter/free"\n\n'
-            '# OPENAI_API_KEY="your-key"\n'
-            'OPENAI_MODEL="gpt-5.5"\n\n'
-            '# CLAUDE_API_KEY="your-key"\n'
-            'CLAUDE_MODEL="claude-fable-5"\n\n'
-            '# XAI_API_KEY="your-key"\n'
-            'XAI_MODEL="grok-4.6"\n\n'
+            "# ── Google Search Grounding (/gnd) ───────────────────────────────────────────\n"
+            '# GND_KEY="AIzaSyYourGeminiApiKeyHere"\n'
+            '# GND_MODEL="gemini-2.5-flash"\n\n'
+            "# ── Voice Bridge Transcription & Vision (Optional) ───────────────────────────\n"
+            '# GEM_VOICE="AIzaSyYourGeminiApiKeyHere"\n'
+            '# GEM_MODEL="gemini-3.5-flash-lite"\n\n'
+            "# ── Context Window Budget ────────────────────────────────────────────────────\n"
             'AI_MAX_TOKENS="8192"\n'
         )
         try:
@@ -151,8 +178,8 @@ def update_env_multiple(updates: dict[str, str]):
         for k, v in updates.items():
             updated = False
             for i, l in enumerate(lines):
-                if re.match(rf"^#?\s*{k}\s*=\s*.*$", l):
-                    lines[i] = f'{"#" if l.strip().startswith("#") else ""}{k}="{v}"\n'
+                if re.match(rf"^#?\s*{k}\s*=", l.strip()):
+                    lines[i] = f'{k}="{v}"\n'
                     updated = True
                     break
             if not updated:
@@ -164,47 +191,77 @@ def update_env_multiple(updates: dict[str, str]):
 
 
 def isolate_active_key(active_key_name: str):
+    """Activates ONLY the chosen key and comments out others. If active_key_name is empty, comments out all."""
     if not os.path.exists(ENV_PATH):
         return
     try:
         with open(ENV_PATH, "r", encoding="utf-8") as f:
             lines = f.readlines()
+
+        if active_key_name:
+            try:
+                with open(LAST_KEY_FILE, "w", encoding="utf-8") as lkf:
+                    lkf.write(active_key_name)
+            except OSError:
+                pass
+
         for i, l in enumerate(lines):
             for k in PROVIDER_KEYS:
-                if f"{k}=" in l or f"{k} =" in l:
+                if re.match(rf"^#?\s*{k}\s*=", l.strip()):
                     should_comment = (k != active_key_name)
-                    raw = l.strip().lstrip("#").strip()
+                    raw = re.sub(rf"^#?\s*({k}\s*=.*)$", r"\1", l.strip())
                     lines[i] = f"{'#' if should_comment else ''}{raw}\n"
+
         with open(ENV_PATH, "w", encoding="utf-8") as f:
             f.writelines(lines)
     except OSError:
         pass
 
 
+def toggle_single_provider(key_name: str, model_var: str, default_model: str) -> bool:
+    """Toggles ONE provider on/off. When turning ON, turns off other providers (mutual toggle)."""
+    active_keys = get_active_key_set()
+    if key_name in active_keys:
+        isolate_active_key("")
+        return False
+    else:
+        isolate_active_key(key_name)
+        env = load_env_vars()
+        cur_model = env.get(model_var) or default_model
+        update_env_multiple({model_var: cur_model})
+        return True
+
+
 def toggle_env_api_keys():
+    """Smart Master Switch: Disables cloud if any key is on; restores ONLY the last active key if off."""
     if not os.path.exists(ENV_PATH):
         return False
-    try:
-        with open(ENV_PATH, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-        is_commented = any(l.strip().startswith("#") for l in lines if any(k in l for k in PROVIDER_KEYS))
-        lines = [f"{'#' if not is_commented else ''}{l.strip().lstrip('#').strip()}\n" if any(k in l for k in PROVIDER_KEYS) else l for l in lines]
-        with open(ENV_PATH, "w", encoding="utf-8") as f:
-            f.writelines(lines)
-        return is_commented
-    except OSError:
+    active_keys = get_active_key_set()
+    if any(k in active_keys for k in PROVIDER_KEYS):
+        # Turn OFF cloud completely
+        isolate_active_key("")
         return False
+    else:
+        # Restore ONLY the last used key, NEVER all of them!
+        last_key = "OPENROUTER_API_KEY"
+        if os.path.isfile(LAST_KEY_FILE):
+            try:
+                with open(LAST_KEY_FILE, "r", encoding="utf-8") as lkf:
+                    read_k = lkf.read().strip()
+                    if read_k in PROVIDER_KEYS:
+                        last_key = read_k
+            except OSError:
+                pass
+        isolate_active_key(last_key)
+        return True
 
 
-# ── URL Extraction & Networking ───────────────────────────────────────────────
 def parse_endpoint_url(raw_url: str) -> tuple[str, str, str]:
     url = raw_url.strip()
     if "huggingface.co/spaces/" in url:
         parts = url.split("huggingface.co/spaces/", 1)[1].strip("/").split("/")
         if len(parts) >= 2:
             author, space = parts[0], parts[1]
-            if "qwen3.8-flash-next" in space.lower() or "qwen3-8-flash-next" in space.lower():
-                return ("victor/Qwen3.8-Flash-Next (Free Space)", "https://pnywsahxhac1qjbo.us-east-2.aws.endpoints.huggingface.cloud/v1/chat/completions", "Qwen/Qwen3.8-Flash-Next")
             subdomain = f"{author}-{space}".lower().replace("_", "-").replace(".", "-")
             clean_m = space.replace("-free-endpoint", "").replace("-endpoint", "")
             return (f"{author}/{clean_m} (Space)", f"https://{subdomain}.hf.space/v1/chat/completions", clean_m)
@@ -219,9 +276,29 @@ def parse_endpoint_url(raw_url: str) -> tuple[str, str, str]:
     return (f"Custom ({url.split('://')[-1].split('/')[0]})", t_url, "default")
 
 
-async def async_fetch_remote(api_key_or: str, api_key_hf: str, spaces: dict):
+async def async_fetch_remote(env_vars: dict, spaces: dict):
     def _fetch():
+        api_key_or = env_vars.get("OPENROUTER_API_KEY", "")
+        api_key_hf = env_vars.get("CUSTOM_API_KEY", "")
+        api_key_gem = env_vars.get("GEMINI_API_KEY", "")
+
         free_c, paid_c, hf_res = [], [], list(spaces.keys())
+        gem_models = []
+
+        if api_key_gem and "your" not in api_key_gem.lower():
+            try:
+                req_gem = urlreq.Request(f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key_gem}")
+                with urlreq.urlopen(req_gem, timeout=6) as res:
+                    if res.status == 200:
+                        data = json.loads(res.read().decode("utf-8"))
+                        for m in data.get("models", []):
+                            mid = m.get("name", "").replace("models/", "")
+                            if "generateContent" in m.get("supportedGenerationMethods", []) and not any(x in mid for x in ("embedding", "aqa", "imagen", "tts")):
+                                gem_models.append(mid)
+                        gem_models.sort(key=lambda x: [int(c) if c.isdigit() else c for c in re.split(r'(\d+)', x)], reverse=True)
+            except Exception:
+                pass
+
         try:
             req = urlreq.Request("https://openrouter.ai/api/v1/models?sort=top-weekly", headers={"Authorization": f"Bearer {api_key_or}"} if api_key_or else {})
             with urlreq.urlopen(req, timeout=8) as res:
@@ -233,6 +310,12 @@ async def async_fetch_remote(api_key_or: str, api_key_hf: str, spaces: dict):
                             (free_c if is_f else paid_c).append(m_id)
         except Exception:
             pass
+
+        # Pin openrouter/free permanently at the very top of the free list
+        if "openrouter/free" in free_c:
+            free_c.remove("openrouter/free")
+        free_c.insert(0, "openrouter/free")
+
         try:
             req_hf = urlreq.Request("https://router.huggingface.co/v1/models", headers={"Authorization": f"Bearer {api_key_hf}"} if (api_key_hf and "your" not in api_key_hf.lower()) else {})
             with urlreq.urlopen(req_hf, timeout=8) as res:
@@ -244,12 +327,17 @@ async def async_fetch_remote(api_key_or: str, api_key_hf: str, spaces: dict):
                                 break
         except Exception:
             pass
-        return free_c or DEFAULTS["free"], paid_c or DEFAULTS["paid"], hf_res
+
+        return {
+            "gemini": gem_models or DEFAULTS["gemini"],
+            "free": free_c or DEFAULTS["free"],
+            "paid": paid_c or DEFAULTS["paid"],
+            "custom": hf_res,
+        }
 
     return await asyncio.to_thread(_fetch)
 
 
-# ── Interactive TUI Engine ────────────────────────────────────────────────────
 async def async_get_key():
     fd = sys.stdin.fileno()
 
@@ -262,7 +350,7 @@ async def async_get_key():
             ch = b.decode("utf-8", errors="ignore")
             if ch == "\x1b" and select.select([fd], [], [], 0.05)[0]:
                 return {"[A": "up", "OA": "up", "[B": "down", "OB": "down", "[C": "right", "OC": "right", "[D": "left", "OD": "left"}.get(os.read(fd, 2).decode("utf-8", errors="ignore"), "esc")
-            return {"\x1b": "esc", "\r": "enter", "\n": "enter", "\x7f": "backspace", "\x08": "backspace"}.get(ch, ch.lower() if ch.lower() == "q" else ch)
+            return {"\x1b": "esc", "\r": "enter", "\n": "enter", " ": "space", "\x7f": "backspace", "\x08": "backspace"}.get(ch, ch.lower() if ch.lower() == "q" else ch)
         except Exception:
             return None
         finally:
@@ -291,7 +379,13 @@ async def run_interactive_menu(title: str, items: list[str], current: str, activ
         return extras + (filt if (state["all"] or state["query"]) else filt[:20])
 
     opts = filter_items()
-    sel = opts.index(current) if (active and current in opts) else 0
+
+    if active and current in opts:
+        sel = opts.index(current)
+    elif len(opts) > len(extras):
+        sel = len(extras)
+    else:
+        sel = 0
 
     while True:
         sys.stdout.write(f"\x1b[H\x1b[2J\n   {BOLD}  SELECT {title.upper()}:{RESET}\n   {DIM}{'─'*60}{RESET}\n\n")
@@ -336,14 +430,31 @@ async def run_interactive_menu(title: str, items: list[str], current: str, activ
             sel, opts = 0, filter_items()
 
 
-# ── Main Entry ────────────────────────────────────────────────────────────────
 async def async_main():
     sys.stdout.write("\033[?25l")
     sys.stdout.flush()
 
+    ensure_env_exists()
     env = load_env_vars()
     spaces = load_json(CUSTOM_SPACES_FILE, DEFAULTS["spaces"])
     cache = load_json(CACHE_PATH, DEFAULTS)
+
+    cache_mtime = os.path.getmtime(CACHE_PATH) if os.path.exists(CACHE_PATH) else 0
+    if time.time() - cache_mtime > 259200:
+        try:
+            remote_data = await async_fetch_remote(env, spaces)
+            cache.update(remote_data)
+            save_json(CACHE_PATH, cache)
+        except Exception:
+            pass
+
+    # Ensure openrouter/free is pinned to the top of the cache immediately
+    free_list = cache.get("free", DEFAULTS["free"])
+    if "openrouter/free" in free_list:
+        free_list.remove("openrouter/free")
+    free_list.insert(0, "openrouter/free")
+    cache["free"] = free_list
+
     custom_list = list(spaces.keys()) + [x for x in cache.get("custom", []) if x not in spaces]
 
     menu_idx, message = 0, ""
@@ -351,7 +462,6 @@ async def async_main():
         active_keys = get_active_key_set()
         env = load_env_vars()
 
-        # Current active display detection
         custom_curr = env.get("CUSTOM_MODEL", "default")
         for k, v in spaces.items():
             if custom_curr == v.get("model") or env.get("CUSTOM_URL") == v.get("url"):
@@ -363,21 +473,18 @@ async def async_main():
 
         sys.stdout.write(f"\x1b[H\x1b[2J\n   {BOLD}  LOCAL-AI CONFIGURATION{RESET}\n   {DIM}{'─'*60}{RESET}\n\n")
         options = [
-            f"🔌  Cloud Connection      {status_all}",
-            f"🤗  Custom / HuggingFace   {fmt(custom_curr, 'CUSTOM_API_KEY')}\n       {DIM}Select from Spaces, official HF Router & local ports{RESET}",
-            f"♊  Google Gemini          {fmt(env.get('GEMINI_MODEL', 'gemini-3.7-flash'), 'GEMINI_API_KEY')}\n       {DIM}Lightweight, high-speed Google endpoints{RESET}",
-            f"🍎  OpenAI Subscription    {fmt(env.get('OPENAI_MODEL', 'gpt-5.5'), 'OPENAI_API_KEY')}\n       {DIM}Direct OpenAI engines{RESET}",
-            f"☕  Anthropic Claude       {fmt(env.get('CLAUDE_MODEL', 'claude-fable-5'), 'CLAUDE_API_KEY')}\n       {DIM}Industry-leading Claude models{RESET}",
-            f"🚀  x.AI Grok              {fmt(env.get('XAI_MODEL', 'grok-4.5'), 'XAI_API_KEY')}\n       {DIM}Ultra-high-speed Grok engines{RESET}",
-            f"🌐  OpenRouter Free       {fmt(env.get('OPENROUTER_MODEL', 'openrouter/free'), 'OPENROUTER_API_KEY')}\n       {DIM}Top popular free models{RESET}",
-            f"🌐  OpenRouter Paid       {fmt(env.get('OPENROUTER_MODEL', 'openrouter/free'), 'OPENROUTER_API_KEY')}\n       {DIM}High-end paid catalog{RESET}",
-            f"↺  Refresh API Lists      {DIM}Sync OpenRouter & HF models live{RESET}",
+            f"🔌  Cloud Connection        {status_all}",
+            f"🤗  Custom / Local / HF      {fmt(custom_curr, 'CUSTOM_API_KEY')}\n       {DIM}Local llama-server, Ollama, HF Spaces & official HF Router{RESET}",
+            f"♊  Google Gemini            {fmt(env.get('GEMINI_MODEL', 'gemini-3.8-flash'), 'GEMINI_API_KEY')}\n       {DIM}Free daily tier via Google AI Studio{RESET}",
+            f"🌐  OpenRouter Free         {fmt(env.get('OPENROUTER_MODEL', 'openrouter/free'), 'OPENROUTER_API_KEY')}\n       {DIM}Top rotating community models (100% free){RESET}",
+            f"🌐  OpenRouter Paid         {fmt(env.get('OPENROUTER_MODEL', 'openrouter/free'), 'OPENROUTER_API_KEY')}\n       {DIM}High-end paid catalog (Claude, GPT, DeepSeek, Llama){RESET}",
+            f"↺  Refresh API Lists        {DIM}Sync live endpoints (Gemini, OpenRouter, HF){RESET}",
             "✕  Save & Close",
         ]
 
         for i, opt in enumerate(options):
-            sys.stdout.write(f"{f'   {AMBER}❯{RESET}  {BOLD}' if i == menu_idx else '      '}{opt}{RESET}\n{'\n' if 1 <= i <= 7 else ''}")
-        sys.stdout.write(f"\n   {DIM}{'─'*60}{RESET}\n   {message or f'{DIM}▲/▼: Navigate | Enter: Select | Q: Quit{RESET}'}\n")
+            sys.stdout.write(f"{f'   {AMBER}❯{RESET}  {BOLD}' if i == menu_idx else '      '}{opt}{RESET}\n{'\n' if 1 <= i <= 4 else ''}")
+        sys.stdout.write(f"\n   {DIM}{'─'*60}{RESET}\n   {message or f'{DIM}▲/▼: Navigate | Space: Toggle | Enter: Select | Q: Quit{RESET}'}\n")
         sys.stdout.flush()
         message = ""
 
@@ -388,19 +495,28 @@ async def async_main():
             menu_idx = (menu_idx + 1) % len(options)
         elif key in ("q", "esc"):
             break
+        elif key == "space" and 1 <= menu_idx <= 4:
+            # Spacebar toggles ONLY the selected provider
+            k_map = {
+                1: ("CUSTOM_API_KEY", "CUSTOM_MODEL", "Qwen/Qwen3.8-27B"),
+                2: ("GEMINI_API_KEY", "GEMINI_MODEL", "gemini-3.8-flash"),
+                3: ("OPENROUTER_API_KEY", "OPENROUTER_MODEL", "openrouter/free"),
+                4: ("OPENROUTER_API_KEY", "OPENROUTER_MODEL", "anthropic/claude-3.7-sonnet"),
+            }
+            k_name, m_var, d_model = k_map[menu_idx]
+            now_on = toggle_single_provider(k_name, m_var, d_model)
+            label = "OpenRouter" if "OPENROUTER" in k_name else ("Gemini" if "GEMINI" in k_name else "Custom/HF")
+            message = f"✓ {label}: {GREEN+'ENABLED'+RESET if now_on else RED+'DISABLED'+RESET}"
         elif key == "enter":
             if menu_idx == 0:
                 is_on = toggle_env_api_keys()
                 message = f"✓ Switched Connection: {GREEN+'ENABLED'+RESET if is_on else RED+'DISABLED'+RESET}"
-            elif 1 <= menu_idx <= 7:
+            elif 1 <= menu_idx <= 4:
                 cfg = {
                     1: ("Custom / HuggingFace", custom_list, custom_curr, "CUSTOM_API_KEY", ["🚫 Turn Off Custom / HF", "➕ [Add Endpoint / Space URL]", "🗑  [Delete Custom Space]"]),
                     2: ("Gemini", cache.get("gemini", DEFAULTS["gemini"]), env.get("GEMINI_MODEL", ""), "GEMINI_API_KEY", ["🚫 Turn Off Gemini"]),
-                    3: ("OpenAI", cache.get("openai", DEFAULTS["openai"]), env.get("OPENAI_MODEL", ""), "OPENAI_API_KEY", ["🚫 Turn Off OpenAI"]),
-                    4: ("Claude", cache.get("claude", DEFAULTS["claude"]), env.get("CLAUDE_MODEL", ""), "CLAUDE_API_KEY", ["🚫 Turn Off Claude"]),
-                    5: ("Grok", cache.get("grok", DEFAULTS["grok"]), env.get("XAI_MODEL", ""), "XAI_API_KEY", ["🚫 Turn Off Grok"]),
-                    6: ("OpenRouter Free", cache.get("free", DEFAULTS["free"]), env.get("OPENROUTER_MODEL", ""), "OPENROUTER_API_KEY", ["🚫 Turn Off OpenRouter"]),
-                    7: ("OpenRouter Paid", cache.get("paid", DEFAULTS["paid"]), env.get("OPENROUTER_MODEL", ""), "OPENROUTER_API_KEY", ["🚫 Turn Off OpenRouter"]),
+                    3: ("OpenRouter Free", cache.get("free", DEFAULTS["free"]), env.get("OPENROUTER_MODEL", ""), "OPENROUTER_API_KEY", ["🚫 Turn Off OpenRouter"]),
+                    4: ("OpenRouter Paid", cache.get("paid", DEFAULTS["paid"]), env.get("OPENROUTER_MODEL", ""), "OPENROUTER_API_KEY", ["🚫 Turn Off OpenRouter"]),
                 }[menu_idx]
 
                 title, model_items, cur_val, key_name, extra_opts = cfg
@@ -430,22 +546,23 @@ async def async_main():
                             custom_list.remove(del_res)
                         message = f"✓ Removed space: '{del_res}'"
                 else:
+                    # Mutual Toggle: Activates ONLY the chosen provider, turns off others
                     isolate_active_key(key_name)
                     if menu_idx == 1:
                         sp = spaces.get(res, {"url": HF_ROUTER_URL, "model": res})
                         update_env_multiple({"CUSTOM_URL": sp["url"], "CUSTOM_MODEL": sp["model"], "CUSTOM_API_KEY": "not-needed"})
                     else:
-                        target_var = {2: "GEMINI_MODEL", 3: "OPENAI_MODEL", 4: "CLAUDE_MODEL", 5: "XAI_MODEL", 6: "OPENROUTER_MODEL", 7: "OPENROUTER_MODEL"}[menu_idx]
+                        target_var = "GEMINI_MODEL" if menu_idx == 2 else "OPENROUTER_MODEL"
                         update_env_multiple({target_var: res})
                     message = f"✓ Primary model set: {res}"
-            elif menu_idx == 8:
+            elif menu_idx == 5:
                 message = f"{AMBER}↺ Querying live models...{RESET}"
-                free_l, paid_l, hf_l = await async_fetch_remote(env.get("OPENROUTER_API_KEY", ""), env.get("CUSTOM_API_KEY", ""), spaces)
-                cache["free"], cache["paid"], cache["custom"] = free_l, paid_l, hf_l
+                remote_data = await async_fetch_remote(env, spaces)
+                cache.update(remote_data)
                 save_json(CACHE_PATH, cache)
-                custom_list = list(spaces.keys()) + [x for x in hf_l if x not in spaces]
-                message = "✓ Synchronized OpenRouter and HF models live."
-            elif menu_idx == 9:
+                custom_list = list(spaces.keys()) + [x for x in cache.get("custom", []) if x not in spaces]
+                message = "✓ Synchronized endpoints live."
+            elif menu_idx == 6:
                 break
 
     cleanup_terminal()

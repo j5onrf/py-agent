@@ -2,7 +2,7 @@
   <img alt="py-agent" src="logo.svg" height="130" />
 </div>
 
-<h1 align="center">Py Agent <img src="https://shieldcn.dev/badge/version-v0.9.9.16.svg?variant=secondary" alt="Version"><a href="https://github.com/j5onrf/py-agent"></a></h1>
+<h1 align="center">Py Agent <img src="https://shieldcn.dev/badge/version-v0.9.9.17.svg?variant=secondary" alt="Version"><a href="https://github.com/j5onrf/py-agent"></a></h1>
 
 <p align="center">
   <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/github/last-commit/j5onrf/py-agent.svg?color=emerald&variant=secondary" alt="Last Commit"></a>
@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <code>gpt</code> &nbsp; <code>claude</code> &nbsp; <code>grok</code> &nbsp; <code>gemini</code> &nbsp; <code>openrouter</code> &nbsp; <code>hf</code> &nbsp; <code>gguf</code>
+  <code>gguf</code> &nbsp; <code>llama-server</code> &nbsp; <code>gemini</code> &nbsp; <code>huggingface</code> &nbsp; <code>openrouter</code>
 </p>
 
 ---
@@ -179,29 +179,17 @@ nano ~/.config/py-agent/.env
 # ==============================================================================
 
 # ── 1. Custom Endpoints / Hugging Face Router ─────────────────────────────────
-# CUSTOM_API_KEY="hf_YourHuggingFaceTokenHere"
-CUSTOM_URL="https://router.huggingface.co/hf-inference/v1/chat/completions"
+# CUSTOM_API_KEY="not-needed"
+CUSTOM_URL="https://router.huggingface.co/v1/chat/completions"
 CUSTOM_MODEL="Qwen/Qwen3.8-27B"
 
-# ── 2. Google Gemini ─────────────────────────────────────────────────────────
+# ── 2. Google Gemini (Free daily tier via Google AI Studio) ───────────────────
 # GEMINI_API_KEY="AIzaSyYourGeminiApiKeyHere"
-GEMINI_MODEL="gemini-3.7-flash"
+GEMINI_MODEL="gemini-3.8-flash"
 
-# ── 3. OpenRouter (Free & Paid Catalog) ───────────────────────────────────────
+# ── 3. OpenRouter (Free community models & Universal paid gateway) ────────────
 # OPENROUTER_API_KEY="sk-or-v1-YourOpenRouterKeyHere"
 OPENROUTER_MODEL="openrouter/free"
-
-# ── 4. Anthropic Claude ──────────────────────────────────────────────────────
-# CLAUDE_API_KEY="sk-ant-YourClaudeKeyHere"
-CLAUDE_MODEL="claude-Fable"
-
-# ── 5. OpenAI ────────────────────────────────────────────────────────────────
-# OPENAI_API_KEY="sk-YourOpenAIKeyHere"
-OPENAI_MODEL="gpt-luna"
-
-# ── 6. x.AI Grok ─────────────────────────────────────────────────────────────
-# XAI_API_KEY="xai-YourGrokKeyHere"
-XAI_MODEL="grok-5.6"
 
 # ── Google Search Grounding (/gnd) ───────────────────────────────────────────
 # GND_KEY="AIzaSyYourGeminiApiKeyHere"

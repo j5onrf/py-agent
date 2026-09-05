@@ -17,10 +17,12 @@ fi
 
 # Helper to dynamically map Gemini rate limits based on current GEMINI_MODEL
 get_gemini_limits() {
-    local model="${1:-gemini-3.5-flash-lite}"
+    local model="${1:-gemini-3.8-flash}"
     local m_low; m_low=$(echo "$model" | tr '[:upper:]' '[:lower:]')
     
-    if [[ "$m_low" == *"3.7-flash"* ]]; then
+    if [[ "$m_low" == *"3.8-flash"* ]]; then
+        echo "15 RPM / 1,500 RPD"
+    elif [[ "$m_low" == *"3.7-flash"* ]]; then
         echo "15 RPM / 1,500 RPD"
     elif [[ "$m_low" == *"3.6-flash"* ]]; then
         echo "15 RPM / 1,500 RPD"
@@ -85,7 +87,7 @@ if [[ -f "$ENV_PATH" ]]; then
                 # Read single active exported variable directly
                 m_val="${!m_var:-}"
                 if [[ -z "$m_val" ]]; then
-                    if [[ "$provider" == "gemini" ]]; then m_val="${GEMINI_MODEL:-gemini-3.5-flash-lite}"
+                    if [[ "$provider" == "gemini" ]]; then m_val="${GEMINI_MODEL:-gemini-3.8-flash}"
                     elif [[ "$provider" == "openai" ]]; then m_val="${OPENAI_MODEL:-gpt-5.5}"
                     elif [[ "$provider" == "claude" ]]; then m_val="${CLAUDE_MODEL:-claude-fable-5}"
                     elif [[ "$provider" == "xai" ]]; then m_val="${XAI_MODEL:-grok-4.5}"
@@ -218,7 +220,7 @@ echo "| Provider | Active Model | Status | 24h Activity |"
 echo "| :--- | :--- | :--- | :--- |"
 echo "| **Active Route (${resolved_provider})** | \`${resolved_model}\` | **Online** | Selected |"
 echo "| **Hugging Face / Router** | \`${CUSTOM_MODEL:-Qwen/Qwen3.8-27B}\` | $(st_label "${CUSTOM_API_KEY:-}" "$custom_status") | Router |"
-echo "| **Google Gemini** | \`${GEMINI_MODEL:-gemini-3.5-flash-lite}\` | $(st_label "${GEMINI_API_KEY:-}" "$gemini_status") | RPM: ${gemini_rpm} / RPD: ${gemini_rpd} |"
+echo "| **Google Gemini** | \`${GEMINI_MODEL:-gemini-3.8-flash}\` | $(st_label "${GEMINI_API_KEY:-}" "$gemini_status") | RPM: ${gemini_rpm} / RPD: ${gemini_rpd} |"
 echo "| **OpenAI** | \`${OPENAI_MODEL:-gpt-5.5}\` | $(st_label "${OPENAI_API_KEY:-}" "$openai_status") | RPM: ${openai_rpm} / RPD: ${openai_rpd} |"
 echo "| **Anthropic Claude** | \`${CLAUDE_MODEL:-claude-fable-5}\` | $(st_label "${CLAUDE_API_KEY:-}" "$claude_status") | RPM: ${claude_rpm} / RPD: ${claude_rpd} |"
 echo "| **x.AI Grok** | \`${XAI_MODEL:-grok-4.5}\` | $(st_label "${XAI_API_KEY:-}" "$xai_status") | RPM: ${grok_rpm} / RPD: ${grok_rpd} |"

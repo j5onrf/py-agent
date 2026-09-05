@@ -1,19 +1,20 @@
-# CODEBASE INDEX MAP | Generated: 2026-09-04 19:21 | Workspace: py-agent | Path: ~/.config/py-agent
+# CODEBASE INDEX MAP | Generated: 2026-09-05 12:14 | Workspace: py-agent | Path: ~/.config/py-agent
 # Active symbols and structural connections mapped in the local index.
 # -----------------------------------------------------------------------------------------
 # Codebase Modules & Active Architecture:
 #   ├── .env                     - ~/.config/local-ai/.env
 #   ├── .env.example             - ==============================================================================
 #   ├── .gitignore               - Secrets & Credentials
+#   ├── .last_cloud_key.txt      - OPENROUTER_API_KEY
 #   ├── .openrouter_cache_v2.json - {
 #   ├── .request_log             - 1788137364|gemini
 #   ├── .spend_ledger.json       - {
 #   ├── .state.json              - {
-#   ├── CONTRIBUTING.md          - Contributing to Local-AI Agent
+#   ├── CONTRIBUTING.md          - Contributing to Py-Agent
 #   ├── LICENSE                  - MODIFIED MIT LICENSE (NON-COMMERCIAL / NO BUSINESS USE)
 #   ├── README.md                - <div align="center">
 #   ├── SECURITY.md              - Security Policy
-#   ├── ai-agent.py              - Py Agent [j5onrf] [v0.9.9.16] - Main CLI Runtime, Workspace Agent & Command Dispatcher
+#   ├── ai-agent.py              - Py Agent [j5onrf] [v0.9.9.17] - Main CLI Runtime, Workspace Agent & Command Dispatcher
 #   ├── ai-context.md            - Py-Agent Plugins
 #   ├── ai-hook.sh               - Production Py-Agent Shell Hook v0.9.9
 #   ├── custom_spaces.json       - {
@@ -21,7 +22,7 @@
 #   ├── server.pem               - -----BEGIN PRIVATE KEY-----
 #   ├── modules/Readme.md        - Privacy-First
 #   ├── modules/agent_adapters.py - Tool Format Adapters & Self-Healing Parser for Small-Models
-#   ├── modules/agent_cloud.py   - Dynamic Cloud Cascade Engine - Top-down .env provider API priority.
+#   ├── modules/agent_cloud.py   - Dynamic Cloud Cascade Engine - Top-down .env provider API priority with automatic fallback.
 #   ├── modules/agent_context.py - Context Search & Indexing Engine - Jaccard intent matching.
 #   ├── modules/agent_core.py    - Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [Universal High-Performance En
 #   ├── modules/agent_ipython.py - Local-AI Standalone IPython Kernel & RLM Harness Module
@@ -39,12 +40,13 @@
 #   ├── modules/ai-agent-sessions - SQLite-backed session, checkpoint, and turn logger with sub-agent registry [Self-Healing In-Memory M
 #   ├── modules/chat             - Unified Agentic Brainstorm, Thinking & Follow-up Recommendation Engine.
 #   ├── modules/index-map-modules.txt - CODEBASE INDEX MAP | Generated: 2026-09-02 18:15 | Workspace: modules | Path: ~/.config/py-agent/mod
-#   ├── modules/model-select.py  - Fully Dynamic TUI Model Selector driven by OpenRouter & HuggingFace Router Rankings
+#   ├── modules/model-select.py  - Streamlined TUI Model Selector driven by Local/HF, Google Gemini & OpenRouter
 #   └── modules/speed_test.py    - Precise token generation & TPS speed test statistics tracker
 # -----------------------------------------------------------------------------------------
 [example:.env.example] sum:==============================================================================
 [file:.gitignore] sum:Secrets & Credentials
-[markdown:CONTRIBUTING.md] title:Contributing to Local-AI Agent
+[txt:.last_cloud_key.txt] sum:OPENROUTER_API_KEY
+[markdown:CONTRIBUTING.md] title:Contributing to Py-Agent
 [file:LICENSE] sum:MODIFIED MIT LICENSE (NON-COMMERCIAL / NO BUSINESS USE)
 [markdown:README.md] title:1. Install system dependencies & clone | links:Readme.md,ai-context.md
 [markdown:SECURITY.md] title:Security Policy
@@ -71,7 +73,7 @@
 [python:modules/ai-agent-memories] imp:agent_context,contextlib,json,os,re,select,sqlite3,sys,termios,time,tty | fn:tokenize,get_key,connect_db,tpm_get,tpm_reconcile,tpm_clear,get_tpm_count,search_past_context
 [python:modules/ai-agent-sessions] imp:agent_context,contextlib,glob,json,os,re,select,sqlite3,sys,termios,time,tty,typing | fn:tokenize,get_key,connect_db,get_sub_agent_id,cleanup_sub_agent,init_db,save_checkpoint,rollback_checkpoint,log_turn,get_turns_count,clear_turns
 [python:modules/chat] imp:agent_ui,json,os,re,sys,urllib
-[python:modules/model-select.py] imp:asyncio,atexit,json,os,re,select,shutil,subprocess,sys,termios,tty,urllib | fn:cleanup_terminal,load_json,save_json,ensure_env_exists,load_env_vars,get_active_key_set,update_env_multiple,isolate_active_key,toggle_env_api_keys,parse_endpoint_url,async_fetch_remote,_fetch,async_get_key,_read,prompt_user_input,run_interactive_menu,filter_items,async_main
+[python:modules/model-select.py] imp:asyncio,atexit,json,os,re,select,shutil,subprocess,sys,termios,time,tty,urllib | fn:cleanup_terminal,load_json,save_json,ensure_env_exists,load_env_vars,get_active_key_set,update_env_multiple,isolate_active_key,toggle_single_provider,toggle_env_api_keys,parse_endpoint_url,async_fetch_remote,_fetch,async_get_key,_read,prompt_user_input,run_interactive_menu,filter_items,async_main
 [python:modules/speed_test.py] imp:sys,time | fn:start,count_token,end
 [markdown:plugins/Readme.md] title:Custom Plugins & Tools: `plugins/`
 [markdown:plugins/audio/Readme.md] title:Kokoro Neural Text-to-Speech & Selection Speaker Plugin
@@ -161,7 +163,7 @@
 [markdown:tools/agentic/web/Readme.md] title:Firecrawl Scraper API Configurations
 [python:tools/agentic/web/firecrawl] imp:os,re,requests,sys
 [python:tools/agentic/web/web-reader] imp:glob,os,re,shutil,subprocess,sys,tempfile,urllib | fn:scrape_webpage,extract_youtube_subtitles,main
-[python:tools/blueprint] imp:os,re,sys
+[python:tools/cheatsheet] imp:os,re,sys
 [file:tools/email/.email] sum:--- Global fallback connection details ---
 [markdown:tools/email/Readme.md] title:Email TUI Monitor: `email-agent`
 [python:tools/email/email-agent] imp:agent_ui,concurrent,email,imaplib,os,re,sys | fn:load_email_config,clean_header,highlight_tags,fetch_single_account,fetch_emails,run_interactive_tui,main
