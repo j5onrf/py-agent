@@ -76,7 +76,8 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
      Tab: YOLO [ON]    m: Map [ON]    d: Mem [ON]    p: Py [ON]
 ```
 
-* **Instant Frontmatter Auto-Sync (0.00ms Latency):** As you navigate `↑` / `↓` across profiles, the 4 toggles on Line 2 **automatically flip to reflect each author's recommended defaults** (e.g. hovering over `Hermes Pro` turns all 4 ON; moving to `Base` turns them OFF).
+* **Customize Profiles:** Modify or create profile `.md` files in `~/.config/py-agent/skills/profiles/`.
+* **Instant Frontmatter Auto-Sync** As you navigate `↑` / `↓` across profiles, the 4 toggles on Line 2 **automatically flip to reflect each author's recommended defaults**
 * **Single-Letter Overrides:**
   * **`Tab`** ➔ Toggle Autonomous YOLO mode (`[ON]` disables confirmation gates).
   * **`m`** ➔ Toggle Codebase Index-Map (11 tools + AST graph intelligence).
