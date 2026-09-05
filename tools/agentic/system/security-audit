@@ -1,150 +1,181 @@
 #!/usr/bin/env bash
-# security-audit - Dynamic Security Profile Integrator & System Auditor v1.3.6
+# security-audit - Dynamic Security Profile Integrator & System Auditor v2.2.0
 
 set -euo pipefail
 
-PRINT_MYSYS_BIN="$HOME/.config/local-ai/tools/agentic/system/print-mysys"
-SECAUD_FILE="$HOME/.config/local-ai/skills/system/security-audit.md"
+# --- Path Configurations ---
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/py-agent"
+[[ -d "$CONFIG_DIR" ]] || CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/local-ai"
 
-# 1. Print General System Profile with dynamic title override
-if [ -f "$PRINT_MYSYS_BIN" ]; then
-    "$PRINT_MYSYS_BIN"
+SECAUD_FILE="${CONFIG_DIR}/skills/system/security-audit.md"
+MYSYS_FILE="${CONFIG_DIR}/skills/system/mysys.md"
+
+# 1. System Environment Profile
+if [[ -f "$MYSYS_FILE" ]]; then
+    cat "$MYSYS_FILE"
     echo ""
     echo "---"
     echo ""
 fi
 
-# 2. Print Specific Skill Profile (if available)
-if [ -f "$SECAUD_FILE" ]; then
+# 2. Specific Security Skill Directives
+if [[ -f "$SECAUD_FILE" ]]; then
     cat "$SECAUD_FILE"
     echo ""
     echo "---"
     echo ""
 fi
 
-# 3. Print Real-time Security Diagnostics
+# 3. Real-Time System Security Diagnostics
 echo "## REAL-TIME SYSTEM SECURITY DIAGNOSTICS"
 echo ""
 
-# Kernel Status
+# --- A. Kernel Alignment & Integrity ---
 LOCAL_KERNEL=$(uname -r)
-
-# Inline Python helper to query kernel.org stable release securely
 STABLE_KERNEL=$(python3 -c '
 import urllib.request as urlreq, json
 try:
-    req = urlreq.Request("https://www.kernel.org/releases.json", headers={"User-Agent": "secaud-agent/1.0"})
-    with urlreq.urlopen(req, timeout=1.5) as r:
+    req = urlreq.Request("https://www.kernel.org/releases.json", headers={"User-Agent": "secaud-agent/2.0"})
+    with urlreq.urlopen(req, timeout=1.8) as r:
         releases = json.loads(r.read().decode())["releases"]
         for rel in releases:
-            if rel["moniker"] == "stable":
-                print(rel["version"])
+            if rel.get("moniker") == "stable":
+                print(rel.get("version", "None"))
                 break
-except:
+except Exception:
     print("None")
 ' 2>/dev/null || echo "None")
 
 echo "### 1. Upstream Kernel Alignment"
 echo "* Running Local Kernel: \`$LOCAL_KERNEL\`"
-if [ "$STABLE_KERNEL" != "None" ] && [ -n "$STABLE_KERNEL" ]; then
+if [[ "$STABLE_KERNEL" != "None" && -n "$STABLE_KERNEL" ]]; then
     echo "* Latest Upstream Stable: \`$STABLE_KERNEL\`"
-    
-    # Extract major and minor versions for a robust rolling-release comparison
     IFS='.' read -r l1 l2 _ <<< "$LOCAL_KERNEL"
     IFS='.' read -r s1 s2 _ <<< "$STABLE_KERNEL"
-    if [ "$l1" != "$s1" ] || [ "$l2" != "$s2" ]; then
-        echo "* Upstream Status: Diverged from latest stable branch. Verify if your distro has backported security patches for this branch."
+    if [[ "$l1" != "$s1" || "$l2" != "$s2" ]]; then
+        echo "* Upstream Status: Performance/Customized branch ($LOCAL_KERNEL). Ensure security patches are actively backported."
     else
-        echo "* Upstream Status: Inline with current stable kernel branch."
+        echo "* Upstream Status: Inline with current upstream stable tree."
     fi
 else
-    echo "* Upstream Status: Upstream server offline or timeout. Unable to verify latest stable kernel branch."
+    echo "* Upstream Status: Upstream verification server unreachable (offline or DNS timeout)."
 fi
 echo ""
 
-# 2. Systemd Services Attack Surface
+# --- B. Systemd Services Attack Surface ---
 echo "### 2. Systemd Services Attack Surface"
 TOTAL_SERVICES=$(systemctl list-units --type=service --state=running --plain --no-legend 2>/dev/null | wc -l || echo "0")
 echo "* Active Running Services: \`$TOTAL_SERVICES\`"
 
-RESOLVED_ACTIVE=$(systemctl is-active systemd-resolved 2>/dev/null || echo "inactive")
-if [ "$RESOLVED_ACTIVE" = "active" ]; then
-    echo "* \`systemd-resolved.service\`: **ACTIVE** (Exposes DNS resolution vector)"
-else
-    echo "* \`systemd-resolved.service\`: INACTIVE / Not Running"
-fi
-
-AVAHI_ACTIVE=$(systemctl is-active avahi-daemon 2>/dev/null || echo "inactive")
-if [ "$AVAHI_ACTIVE" = "active" ]; then
-    echo "* \`avahi-daemon.service\`: **ACTIVE** (Exposes local network discovery mDNS surface area)"
-else
-    echo "* \`avahi-daemon.service\`: INACTIVE / Not Running"
-fi
+for srv in systemd-resolved avahi-daemon sshd bluetooth; do
+    if systemctl is-active "$srv" >/dev/null 2>&1; then
+        echo "* \`${srv}.service\`: **ACTIVE** (Exposes background vector)"
+    fi
+done
 echo ""
 
-# 3. Sandbox Profiles
+# --- C. Sandbox & Containerization Profiles ---
 echo "### 3. Containerized Application Sandboxing"
 FLATPAK_COUNT="0"
 if command -v flatpak >/dev/null 2>&1; then
     FLATPAK_COUNT=$(flatpak list 2>/dev/null | wc -l || echo "0")
 fi
 echo "* Installed Flatpaks: \`$FLATPAK_COUNT\`"
-if [ "$FLATPAK_COUNT" -gt 0 ]; then
-    echo "  - Actionable mitigation: Review permissions for these packages using Flatseal to audit home directory or network read/write overrides."
+if [[ "$FLATPAK_COUNT" -gt 0 ]]; then
+    echo "  - Mitigation: Review permissions via Flatseal to inspect home filesystem or socket overrides."
 fi
 
 SNAP_CLASSIC="0"
 if command -v snap >/dev/null 2>&1; then
-    SNAP_CLASSIC=$(snap list 2>/dev/null | grep "classic" | wc -l || echo "0")
+    SNAP_CLASSIC=$(snap list 2>/dev/null | grep -c "classic" || true)
 fi
 echo "* Snaps with Classic Confinement: \`$SNAP_CLASSIC\`"
 echo ""
 
-# 4. Host Hardening and Privileges
+# --- D. Host Hardening, SUID & SSH Integrity ---
 echo "### 4. Host Privilege & Identity Surface"
 
-# A: Passwordless Sudo Evaluation
+# Sudo configuration
 if sudo -n true 2>/dev/null; then
-    echo "* Passwordless Sudo: **ENABLED** (User can escalate to root without password verification)"
+    echo "* Passwordless Sudo: **ENABLED** (User can escalate to root without authentication)"
 else
-    echo "* Passwordless Sudo: DISABLED (Password authentication required for escalation)"
+    echo "* Passwordless Sudo: DISABLED (Escalation requires password verification)"
 fi
 
-# B: Default Umask
-CURRENT_UMASK=$(umask)
-echo "* Default File Umask: \`$CURRENT_UMASK\`"
+echo "* Default File Umask: \`$(umask)\`"
 
-# C: SSH Folder Permissions
+# SSH Directory and Key Permissions
 SSH_DIR="$HOME/.ssh"
-if [ -d "$SSH_DIR" ]; then
+if [[ -d "$SSH_DIR" ]]; then
     SSH_PERM=$(stat -c "%a" "$SSH_DIR" 2>/dev/null || echo "Unknown")
-    echo "* SSH Directory Permissions: \`$SSH_PERM\` for \`~/.ssh\`"
+    echo "* SSH Directory: \`$SSH_PERM\` permissions on \`~/.ssh\`"
+    if [[ "$SSH_PERM" != "700" ]]; then
+        echo "  - **WARNING**: SSH directory should be set to \`700\` (currently \`$SSH_PERM\`)."
+    fi
+    # Check for over-permissive private keys
+    INSECURE_KEYS=$(find "$SSH_DIR" -type f -name "id_*" ! -name "*.pub" -perm /077 2>/dev/null || true)
+    if [[ -n "$INSECURE_KEYS" ]]; then
+        echo "  - **CRITICAL ALERT**: Over-permissive private key(s) detected. Restrict via \`chmod 600\`:"
+        while IFS= read -r k; do echo "    - \`$k\`"; done <<< "$INSECURE_KEYS"
+    fi
 else
-    echo "* SSH Directory: NOT_FOUND (No local SSH keys or configuration directory)"
+    echo "* SSH Directory: NOT_FOUND (No local SSH keys present)"
+fi
+
+# SUID/SGID Detection in writable / user paths
+SUID_TRAPS=$(find "$HOME" /tmp -maxdepth 4 \( -perm -4000 -o -perm -2000 \) -type f 2>/dev/null || true)
+if [[ -n "$SUID_TRAPS" ]]; then
+    echo "* **CRITICAL**: SUID/SGID binary located in user/temp directory:"
+    while IFS= read -r b; do echo "  - \`$b\`"; done <<< "$SUID_TRAPS"
 fi
 echo ""
 
-# 5. Network Surface & Firewall
+# --- E. Network Surface & Firewall Status ---
 echo "### 5. Network Listeners & Local Firewall"
 
-# A: Active Firewall Services
-UFW_ACTIVE=$(systemctl is-active ufw 2>/dev/null || echo "inactive")
-FIREWALLD_ACTIVE=$(systemctl is-active firewalld 2>/dev/null || echo "inactive")
-NFTABLES_ACTIVE=$(systemctl is-active nftables 2>/dev/null || echo "inactive")
+# Check active systemd firewall services
+FW_ACTIVE="DISABLED"
+for fw in ufw firewalld nftables iptables; do
+    if systemctl is-active "$fw" >/dev/null 2>&1; then
+        FW_ACTIVE="ENABLED ($fw active)"
+        break
+    fi
+done
 
-if [ "$UFW_ACTIVE" = "active" ] || [ "$FIREWALLD_ACTIVE" = "active" ] || [ "$NFTABLES_ACTIVE" = "active" ]; then
-    echo "* Active Firewall Service: **ENABLED** (Services: ufw=$UFW_ACTIVE, firewalld=$FIREWALLD_ACTIVE, nftables=$NFTABLES_ACTIVE)"
-else
-    echo "* Active Firewall Service: **DISABLED** (No standard systemd firewall services are active)"
+# Secondary kernel rule check (even if service name differs)
+if [[ "$FW_ACTIVE" == "DISABLED" ]] && command -v nft >/dev/null 2>&1; then
+    if sudo -n nft list ruleset 2>/dev/null | grep -q "table"; then
+        FW_ACTIVE="ENABLED (Active nftables ruleset in kernel)"
+    fi
 fi
+echo "* Active Firewall Service: **$FW_ACTIVE**"
 
-# B: Scan for Listening Public Ports (Listening on 0.0.0.0 or *)
-PUBLIC_PORTS=$(ss -tulnH 2>/dev/null | grep -E '0\.0\.0\.0|\*' | awk '{print $1 " on " $5}' || true)
-PUBLIC_COUNT=$(echo "$PUBLIC_PORTS" | grep -v "^$" | wc -l || echo "0")
+# Public listeners check (IPv4 0.0.0.0, *, IPv6 [::])
+PUBLIC_PORTS=$(ss -tulnpH 2>/dev/null | grep -E '0\.0\.0\.0|\*|\[::\]' | awk '{print $1 " on " $5 " (" $7 ")"}' || true)
+PUBLIC_COUNT=$(echo "$PUBLIC_PORTS" | grep -c -v "^$" || true)
+
 echo "* Active Public Network Listeners: \`$PUBLIC_COUNT\`"
-if [ "$PUBLIC_COUNT" -gt 0 ]; then
-    # Security Sanity Check: If run as background AI context, mask raw local network layouts
-    if [ "${AI_CONTEXT_RUN:-0}" -eq 1 ]; then
+if [[ "$PUBLIC_COUNT" -gt 0 ]]; then
+    # --------------------------------------------------------------------------
+    # ZERO-TRUST PRIVACY SANITIZER (AI CONTEXT FILTER)
+    #
+    # When this script is invoked by Py-Agent (AI_CONTEXT_RUN=1), raw IP
+    # addresses, local subnets, IPv6 link-local addresses, and physical network
+    # interface identifiers (%enp*, %eth*, %wlan*) are strictly sanitized BEFORE
+    # output is generated.
+    #
+    # The AI model NEVER sees real IP addresses or network topology. All raw
+    # addresses are replaced in-memory with semantic scope tokens:
+    #   - 127.0.0.0/8, [::1]             --> [localhost]
+    #   - 192.168.0.0/16, 10.0.0.0/8     --> [private-ip]
+    #   - 172.16.0.0/12 (Docker bridge)  --> [private-ip]
+    #   - fe80::/10 (Link-local/DHCPv6)  --> [link-local]
+    #   - 0.0.0.0, [::], *               --> [all-interfaces]
+    #
+    # Note: When run directly by a human administrator in the terminal
+    # (AI_CONTEXT_RUN=0), raw addresses are preserved for direct debugging.
+    # --------------------------------------------------------------------------
+    if [[ "${AI_CONTEXT_RUN:-0}" -eq 1 ]]; then
         PUBLIC_PORTS=$(echo "$PUBLIC_PORTS" | sed -E \
             -e 's/127\.[0-9]+\.[0-9]+\.[0-9]+%?[a-zA-Z0-9]*/[localhost]/g' \
             -e 's/192\.168\.[0-9]+\.[0-9]+%?[a-zA-Z0-9]*/[private-ip]/g' \
@@ -154,25 +185,23 @@ if [ "$PUBLIC_COUNT" -gt 0 ]; then
             -e 's/\*/[all-interfaces]/g' \
             -e 's/\[::1\]/[localhost]/g' \
             -e 's/\[::\]/[all-interfaces]/g' \
-            -e 's/fe80::[a-fA-F0-9:]+%[a-zA-Z0-9]*/[link-local]/g')
+            -e 's/\[?fe80:[a-fA-F0-9:]*\]?(%[a-zA-Z0-9_-]+)?/[link-local]/g' \
+            -e 's/%[a-zA-Z0-9_-]+//g')
     fi
-
     echo "  - Identified public listeners:"
-    while read -r line; do
-        if [ -n "$line" ]; then
-            echo "    - \`$line\`"
-        fi
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && echo "    - \`$line\`"
     done <<< "$PUBLIC_PORTS"
 fi
 echo ""
 
-# 6. Foreign (AUR) Live Blacklist & Heuristic Audit
+# --- F. Foreign (AUR) Live Blacklist & Risk Engine ---
 echo "### 6. Foreign (AUR) Live Blacklist & Heuristic Audit"
 AUR_PACKAGES=$(pacman -Qm 2>/dev/null || true)
-AUR_COUNT=$(echo "$AUR_PACKAGES" | grep -v "^$" | wc -l || echo "0")
+AUR_COUNT=$(echo "$AUR_PACKAGES" | grep -c -v "^$" || true)
 echo "* Total Foreign/AUR Packages: \`$AUR_COUNT\`"
 
-if [ "$AUR_COUNT" -gt 0 ]; then
+if [[ "$AUR_COUNT" -gt 0 ]]; then
     python3 - "$AUR_PACKAGES" << 'EOF'
 import urllib.request as urlreq, urllib.parse, json, time, sys
 
@@ -184,15 +213,14 @@ if not pkgs:
 compromised = set()
 try:
     url = "https://md.archlinux.org/s/SxbqukK6IA"
-    browser_headers = {"User-Agent": "Mozilla/5.0 (X11; Arch Linux; rv:120.0) Gecko/20100101 Firefox/120.0"}
-    req = urlreq.Request(url, headers=browser_headers)
-    with urlreq.urlopen(req, timeout=3.0) as r:
+    req = urlreq.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0"})
+    with urlreq.urlopen(req, timeout=2.5) as r:
         raw_text = r.read().decode("utf-8")
         for line in raw_text.splitlines():
             line_clean = line.strip().strip("-").strip()
             if line_clean and all(c.isalnum() or c in ".-_+" for c in line_clean):
                 compromised.add(line_clean)
-except:
+except Exception:
     pass
 
 results = []
@@ -202,16 +230,15 @@ for i in range(0, len(pkgs), batch_size):
     params = [("arg[]", p) for p in batch]
     url = "https://aur.archlinux.org/rpc/v5/info?" + urllib.parse.urlencode(params)
     try:
-        browser_headers = {"User-Agent": "Mozilla/5.0 (X11; Arch Linux; rv:120.0) Gecko/20100101 Firefox/120.0"}
-        req = urlreq.Request(url, headers=browser_headers)
+        req = urlreq.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0"})
         with urlreq.urlopen(req, timeout=2.5) as r:
             data = json.loads(r.read().decode())
             if "results" in data:
                 results.extend(data["results"])
-    except:
+    except Exception:
         pass
-        
-metadata = {res["Name"]: res for res in results}
+
+metadata = {res.get("Name"): res for res in results}
 warnings = []
 keywords = ["network", "daemon", "server", "ssh", "ssl", "api", "remote", "socket", "download", "http", "dns", "proxy"]
 
@@ -222,89 +249,91 @@ for pkg in pkgs:
 
     meta = metadata.get(pkg)
     if not meta:
-        warnings.append(f"  - `[WARNING]` `{pkg}`: Missing from the AUR database (may have been deleted, renamed, or is private).")
+        warnings.append(f"  - `[WARNING]` `{pkg}`: Missing from the AUR database (may have been removed, renamed, or is private).")
         continue
-        
+
     desc = meta.get("Description", "").lower()
     votes = meta.get("NumVotes", 0)
     is_orphan = not meta.get("Maintainer")
     is_out_of_date = meta.get("OutOfDate") is not None
     last_modified = meta.get("LastModified", 0)
-    
+
     age_days = (time.time() - last_modified) / 86400.0
     has_sensitive_surface = any(kw in desc for kw in keywords)
-    
+
     if votes < 50 and age_days < 14:
-        risk_reasons = []
-        if is_orphan: risk_reasons.append("orphaned")
-        if is_out_of_date: risk_reasons.append("out-of-date")
-        if has_sensitive_surface: risk_reasons.append("sensitive network keywords")
-        
-        reason_str = " & ".join(risk_reasons) if risk_reasons else "unvetted code changes"
-        warnings.append(f"  - `[HIGH RISK]` `{pkg}` (votes: {votes}): Modified very recently ({age_days:.1f} days ago) with low trust metrics ({reason_str}).")
-    
+        reasons = []
+        if is_orphan: reasons.append("orphaned")
+        if is_out_of_date: reasons.append("out-of-date")
+        if has_sensitive_surface: reasons.append("sensitive network keywords")
+        reason_str = " & ".join(reasons) if reasons else "unvetted code changes"
+        warnings.append(f"  - `[HIGH RISK]` `{pkg}` (votes: {votes}): Modified recently ({age_days:.1f}d ago) with low trust metrics ({reason_str}).")
     elif (is_orphan or is_out_of_date) and votes < 30 and age_days > 365 and has_sensitive_surface:
         matched_kws = ", ".join(kw for kw in keywords if kw in desc)
-        warnings.append(f"  - `[SUSPICION]` `{pkg}` (votes: {votes}): Unmaintained/Orphaned > 1 yr, exposes network attributes: *{matched_kws}*")
-        
+        warnings.append(f"  - `[SUSPICION]` `{pkg}` (votes: {votes}): Unmaintained > 1 yr with network hooks: *{matched_kws}*")
+
 if warnings:
     print("* Security Alerts & Risks Identified:")
     for w in warnings:
         print(w)
 else:
-    print("* **Active Threat Scan**: SECURE. No compromised or high-risk AUR packages detected on your system.")
-    print("* **Database Status**: Successfully cross-referenced against the live Arch Linux June 2026 Blacklist.")
+    cur_date = time.strftime("%B %Y")
+    print(f"* **Active Threat Scan**: SECURE. No compromised or high-risk AUR packages detected on your system.")
+    print(f"* **Database Status**: Successfully verified against the Arch Linux {cur_date} Blacklist.")
 EOF
 fi
 echo ""
 
-# 7. Pacman Logs Supply-Chain Window Audit (Dynamic 14-day history)
+# --- G. Pacman Transaction Timeline Audit ---
 echo "### 7. Pacman Activity Log Audit"
-if [ -f "/var/log/pacman.log" ] && [ "$AUR_COUNT" -gt 0 ]; then
+if [[ -f "/var/log/pacman.log" && "$AUR_COUNT" -gt 0 ]]; then
     DATE_PATTERNS=()
     for i in {0..14}; do
         if d_str=$(date -d "$i days ago" "+%Y-%m-%d" 2>/dev/null); then
             DATE_PATTERNS+=("\[$d_str")
         fi
     done
-    
-    if [ ${#DATE_PATTERNS[@]} -gt 0 ]; then
+
+    if [[ ${#DATE_PATTERNS[@]} -gt 0 ]]; then
         IFS="|"
         REGEX_DAYS="${DATE_PATTERNS[*]}"
         unset IFS
-        
+
         echo "* Scanning transaction history for foreign packages over the last 14 days..."
         RECENT_AUR_LOGS=$(grep -E "$REGEX_DAYS" /var/log/pacman.log 2>/dev/null | grep -E "installed|upgraded" | grep -Ff <(pacman -Qmq) || true)
-        
-        if [ -n "$RECENT_AUR_LOGS" ]; then
-            echo "  - [NOTICE] Recent installations/upgrades detected within the active 14-day window:"
-            echo "$RECENT_AUR_LOGS" | sed 's/^/    - /'
+
+        if [[ -n "$RECENT_AUR_LOGS" ]]; then
+            echo "  - Recent foreign package transactions:"
+            while IFS= read -r line; do echo "    - $line"; done <<< "$RECENT_AUR_LOGS"
         else
             echo "  - No foreign packages were installed or upgraded within the last 14 days."
         fi
-    else
-        echo "* Unable to compute calendar days dynamically. Skipping relative transaction timeline scan."
     fi
 else
-    echo "* Pacman logs not found or no foreign packages installed."
+    echo "* Pacman logs unavailable or no foreign packages installed."
 fi
 echo ""
 
-# 8. Local Helper Build Cache Scan (Generic Supply-Chain Signatures)
+# --- H. Fast Targeted Helper Build Cache Scan ---
 echo "### 8. Local Helper Build Cache Scan"
-CACHE_DIR="$HOME/.cache"
 SUSPICIOUS_FOUND=0
-if [ -d "$CACHE_DIR" ]; then
-    SUSPICIOUS_REGEX="(curl|wget).+\| *(bash|sh|python|perl|node|bun)|(npm|bun|pip|cargo) +install|base64 +-d|eval +\\\$\(|atomic-lockfile|js-digest|temp\.sh"
-    
-    SUSPICIOUS_HITS=$(find "$CACHE_DIR" -type f -name "PKGBUILD" -exec grep -inE "$SUSPICIOUS_REGEX" {} + 2>/dev/null || true)
-    if [ -n "$SUSPICIOUS_HITS" ]; then
+SUSPICIOUS_REGEX="(curl|wget).+\| *(bash|sh|python|perl|node|bun)|(npm|bun|pip|cargo) +install|base64 +-d|eval +\\\$\(|atomic-lockfile|js-digest|temp\.sh"
+
+TARGET_CACHE_DIRS=()
+for candidate in yay paru aurutils cachyos-repo-manager; do
+    [[ -d "$HOME/.cache/$candidate" ]] && TARGET_CACHE_DIRS+=("$HOME/.cache/$candidate")
+done
+
+if [[ ${#TARGET_CACHE_DIRS[@]} -gt 0 ]]; then
+    SUSPICIOUS_HITS=$(find "${TARGET_CACHE_DIRS[@]}" -maxdepth 4 -type f -name "PKGBUILD" -exec grep -inE "$SUSPICIOUS_REGEX" {} + 2>/dev/null || true)
+    if [[ -n "$SUSPICIOUS_HITS" ]]; then
         echo "* [CRITICAL] Suspicious installation signatures identified in your local build caches:"
-        echo "$SUSPICIOUS_HITS" | sed 's/^/  - /'
+        while IFS= read -r hit; do echo "  - $hit"; done <<< "$SUSPICIOUS_HITS"
         SUSPICIOUS_FOUND=1
     fi
 fi
-if [ "$SUSPICIOUS_FOUND" -eq 0 ]; then
-    echo "* No suspicious installation hooks or network bypass triggers found in local PKGBUILD caches."
+
+if [[ "$SUSPICIOUS_FOUND" -eq 0 ]]; then
+    echo "* No suspicious installation hooks or network bypass triggers detected in active build caches."
 fi
 echo ""

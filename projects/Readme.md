@@ -77,7 +77,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 ```
 
 * **Customize Profiles:** Modify or create profile `.md` files in `~/.config/py-agent/skills/profiles/`.
-* **Instant Frontmatter Auto-Sync** As you navigate `↑` / `↓` across profiles, the 4 toggles on Line 2 **automatically flip to reflect each author's recommended defaults**
+* **Instant Frontmatter Auto-Sync** As you navigate `↑` / `↓` across profiles, the 4 toggles on Line 2 **automatically flip to reflect each author's recommended defaults.**
 * **Single-Letter Overrides:**
   * **`Tab`** ➔ Toggle Autonomous YOLO mode (`[ON]` disables confirmation gates).
   * **`m`** ➔ Toggle Codebase Index-Map (11 tools + AST graph intelligence).

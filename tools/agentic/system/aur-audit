@@ -1,111 +1,140 @@
 #!/usr/bin/env bash
-# aur-audit - Interactive Zero-Trust AUR Package Auditor v1.1.6
+# aur-audit - Interactive Zero-Trust AUR Package Auditor v2.1.0
 
 set -euo pipefail
 
-# Hardcoded for maximum execution speed (0.1ms builtin check)
-AUDIT_SKILL_FILE="$HOME/.config/local-ai/skills/system/aur-audit.md"
-ALIAS_AI_SCRIPT="$HOME/.config/local-ai/ai-agent.py"
+# --- Configuration Paths ---
+CFG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/py-agent"
+[[ -d "$CFG_DIR" ]] || CFG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/local-ai"
 
-# 1. Print Dedicated AUR Audit Skill Profile (if available)
-if [ -f "$AUDIT_SKILL_FILE" ]; then
+AUDIT_SKILL_FILE="${CFG_DIR}/skills/system/aur-audit.md"
+ALIAS_AI_SCRIPT="${CFG_DIR}/ai-agent.py"
+
+# 1. Display Dedicated AUR Audit Skill Profile (if available)
+if [[ -f "$AUDIT_SKILL_FILE" ]]; then
     cat "$AUDIT_SKILL_FILE"
     echo ""
     echo "---"
     echo ""
 fi
 
-# 2. Prompt the user interactively for the package name with Readline editing enabled
-read -e -p "❯ Enter AUR package name to audit: " PKG_NAME
+# 2. Package Name Resolution (CLI argument or interactive prompt)
+PKG_NAME="${1:-}"
+if [[ -z "$PKG_NAME" ]]; then
+    read -e -p "❯ Enter AUR package name to audit: " PKG_NAME
+fi
 
-# Clean trailing whitespace
-PKG_NAME=$(echo "$PKG_NAME" | xargs 2>/dev/null || echo "$PKG_NAME")
+# Trim whitespace
+PKG_NAME="$(echo -e "${PKG_NAME}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
 
-if [ -z "$PKG_NAME" ]; then
-    echo "❌ Error: No package name was provided."
+if [[ -z "$PKG_NAME" ]]; then
+    echo "❌ Error: No package name was provided." >&2
     exit 1
 fi
 
-# 3. Fetch package specifications with an active, rotating terminal spinner
-echo -ne "⠋ Fetching AUR repository data for: \033[1;33m$PKG_NAME\033[0m...\r"
-TEMP_DIR=$(mktemp -d)
-trap 'rm -rf "$TEMP_DIR"' EXIT
+# Sanitize package name (standard Arch alphanumeric + valid separators)
+if [[ ! "$PKG_NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9_@.+-]*$ ]]; then
+    echo "❌ Error: Invalid package name format: '$PKG_NAME'" >&2
+    exit 1
+fi
 
-# Run git clone in the background so we can spin
-git clone --depth 1 "https://aur.archlinux.org/$PKG_NAME.git" "$TEMP_DIR" >/dev/null 2>&1 &
+# 3. Secure Git Clone with Animated Spinner
+TEMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TEMP_DIR"' EXIT INT TERM
+
+printf "⠋ Fetching AUR repository for: \033[1;33m%s\033[0m...\r" "$PKG_NAME" >&2
+
+# Run git clone in the background
+git clone --depth 1 "https://aur.archlinux.org/${PKG_NAME}.git" "$TEMP_DIR" >/dev/null 2>&1 &
 CLONE_PID=$!
 
-# Dynamic spinner loop
 spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
 i=0
 while kill -0 "$CLONE_PID" 2>/dev/null; do
-    i=$(( (i+1) % 10 ))
-    echo -ne "\r${spin:$i:1} Fetching AUR repository data for: \033[1;33m$PKG_NAME\033[0m..."
-    sleep 0.1
+    i=$(( (i + 1) % 10 ))
+    printf "\r%s Fetching AUR repository for: \033[1;33m%s\033[0m..." "${spin:$i:1}" "$PKG_NAME" >&2
+    sleep 0.08
 done
 
-# Gather exit code of background clone
-wait "$CLONE_PID"
-CLONE_STATUS=$?
-
-if [ "$CLONE_STATUS" -ne 0 ]; then
-    echo -e "\x1b[2K\r❌ [CRITICAL ERROR] Failed to retrieve package data for \"$PKG_NAME\"."
-    echo "   Ensure your network is active or verify that the package exists on the AUR."
+wait "$CLONE_PID" || {
+    printf "\r\033[2K❌ [CRITICAL ERROR] Failed to retrieve package data for '%s'.\n" "$PKG_NAME" >&2
+    echo "   Verify your network connection and ensure the package exists on https://aur.archlinux.org" >&2
     exit 1
-fi
+}
 
-# Compile metadata locally
+# Clear spinner line immediately
+printf "\r\033[2K" >&2
+
+# 4. Extract Package Metadata & Ancillary Script Assets
 METADATA=""
-if [ -f "$TEMP_DIR/.SRCINFO" ]; then
+if [[ -f "$TEMP_DIR/.SRCINFO" ]]; then
     while IFS='=' read -r key val; do
-        # Cleanly strip leading/trailing spaces and tabs from .SRCINFO keys and values
-        key=$(echo "$key" | tr -d ' \t' 2>/dev/null || echo "$key")
-        val=$(echo "$val" | sed -e 's/^[ \t]*//' -e 's/[ \t]*$//' 2>/dev/null || echo "$val")
-        
-        if [ -n "$key" ] && [ -n "$val" ]; then
+        key="$(echo "$key" | tr -d '[:space:]')"
+        val="$(echo "$val" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        if [[ -n "$key" && -n "$val" ]]; then
             case "$key" in
-                pkgdesc) METADATA="$METADATA* **Description**: $val"$'\n' ;;
-                pkgver) METADATA="$METADATA* **Version**: $val"$'\n' ;;
-                url) METADATA="$METADATA* **Upstream URL**: \`$val\`"$'\n' ;;
-                license) METADATA="$METADATA* **License**: $val"$'\n' ;;
-                depends) METADATA="$METADATA* **Dependency**: \`$val\`"$'\n' ;;
+                pkgdesc)       METADATA="${METADATA}* **Description**: ${val}"$'\n' ;;
+                pkgver)        METADATA="${METADATA}* **Version**: ${val}"$'\n' ;;
+                url)           METADATA="${METADATA}* **Upstream URL**: \`${val}\`"$'\n' ;;
+                license)       METADATA="${METADATA}* **License**: ${val}"$'\n' ;;
+                depends)       METADATA="${METADATA}* **Runtime Dep**: \`${val}\`"$'\n' ;;
+                makedepends)   METADATA="${METADATA}* **Build Dep**: \`${val}\`"$'\n' ;;
+                source)        METADATA="${METADATA}* **Declared Source**: \`${val}\`"$'\n' ;;
             esac
         fi
     done < "$TEMP_DIR/.SRCINFO"
 fi
 
-PKGBUILD_CONTENT=""
-if [ -f "$TEMP_DIR/PKGBUILD" ]; then
-    PKGBUILD_CONTENT=$(cat "$TEMP_DIR/PKGBUILD")
-else
-    echo -e "\x1b[2K\r❌ Error: PKGBUILD file was missing from the cloned repository."
+# Main PKGBUILD Script
+if [[ ! -f "$TEMP_DIR/PKGBUILD" ]]; then
+    echo "❌ Error: PKGBUILD was not found in the cloned repository." >&2
     exit 1
 fi
+PKGBUILD_CONTENT="$(cat "$TEMP_DIR/PKGBUILD")"
 
-# Clear spinner line
-sys_stderr_write() {
-    python3 -c "import sys; sys.stderr.write(\"$1\"); sys.stderr.flush()"
-}
-sys_stderr_write "\r\x1b[2K\r"
+# Discover all supplementary scripts (.install, .service, .sh)
+ANCILLARY_SCRIPTS=""
+while IFS= read -r -d '' asset; do
+    base="$(basename "$asset")"
+    if [[ "$base" != "PKGBUILD" && "$base" != ".SRCINFO" && ! -d "$asset" ]]; then
+        # Exclude large binary blobs
+        if file "$asset" | grep -qv "text"; then
+            ANCILLARY_SCRIPTS="${ANCILLARY_SCRIPTS}"$'\n\n'"#### [Binary File Asset]: \`${base}\`"$'\n'"*(Omitted binary blob)*"
+        else
+            content="$(cat "$asset")"
+            ANCILLARY_SCRIPTS="${ANCILLARY_SCRIPTS}"$'\n\n'"#### [Embedded Script]: \`${base}\`"$'\n\`\`\`bash\n'"${content}"$'\n\`\`\`'
+        fi
+    fi
+done < <(find "$TEMP_DIR" -maxdepth 1 -not -name '.git' -print0)
 
-# 4. Formulate the zero-trust system prompt
-PROMPT="Please perform a highly rigorous, zero-trust security audit on this AUR package based on your system guidelines.
+# 5. Formulate Zero-Trust Audit Prompt
+PROMPT="Please perform a comprehensive zero-trust security audit on this AUR package build recipe.
+
+### Zero-Trust Evaluation Checklist:
+1. **Network Integrity**: Check if build() or package() initiates arbitrary external network downloads bypassing source array.
+2. **Obfuscation & Sudo**: Flag any hidden base64 decoding, eval, curl | bash, chown/chmod root escalations, or telemetry hooks.
+3. **Upstream Authenticity**: Verify whether the declared source download URL matches the authentic developer repository.
+4. **Install Hook Safety**: Inspect pre/post-install routines for persistent daemon installation or crontab modifications.
 
 ### 1. Package Metadata Overview
 $METADATA
-* **Source Integrity**: Bypassed Anubis Anti-Bot Proxy successfully via Git Secure-Clone.
 
-### 2. PKGBUILD Build Script Source
+### 2. Primary PKGBUILD Recipe
 \`\`\`bash
 $PKGBUILD_CONTENT
 \`\`\`"
 
-# 5. Handoff to AI Agent or output raw data depending on active context
-if [ "${AI_CONTEXT_RUN:-0}" -eq 1 ]; then
-    # If running as background context, output the raw compiled prompt and exit
+if [[ -n "$ANCILLARY_SCRIPTS" ]]; then
+    PROMPT="${PROMPT}
+
+### 3. Ancillary Package Scripts & Install Hooks
+${ANCILLARY_SCRIPTS}"
+fi
+
+# 6. Dispatch to AI Agent or Context Stream
+if [[ "${AI_CONTEXT_RUN:-0}" -eq 1 ]]; then
     echo "$PROMPT"
 else
-    # If running directly in the terminal, notify the user of the active prefill math
-    echo -e "\033[2m[sys] Ingesting PKGBUILD and auditing with Qwen-35B (prefill processing)..." \033[0m
+    echo -e "\033[2m[sys] Auditing '${PKG_NAME}' with zero-trust AI profile...\033[0m" >&2
     python3 "$ALIAS_AI_SCRIPT" --talk "$PROMPT" --aur-audit
 fi

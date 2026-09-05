@@ -35,11 +35,22 @@ EXCLUDED_SEARCH_DIRS = frozenset({
 
 FORBIDDEN_GLOBAL_COMMANDS = frozenset({
     "sudo", "doas", "su", "pkexec",
-    "pip", "pip3", "pipx", "pacman", "yay", "paru", "apt", "apt-get", "dnf", "yum", "brew",
+    "pip", "pip3", "pipx", "yay", "paru", "apt", "apt-get", "dnf", "yum", "brew",
     "npm", "pnpm", "yarn", "gem", "cargo", "rustup", "go",
-    "systemctl", "journalctl", "reboot", "shutdown", "poweroff",
+    "reboot", "shutdown", "poweroff",
     "useradd", "usermod", "userdel", "passwd",
 })
+
+# Safe read-only inspection subcommands that do not mutate host state
+READONLY_INSPECTION_SUBCOMMANDS = {
+    "systemctl": frozenset({
+        "status", "is-active", "is-enabled", "is-failed",
+        "list-units", "list-unit-files", "list-timers", "list-sockets", "show", "cat"
+    }),
+    "pacman": frozenset({
+        "-q", "-qi", "-ql", "-qs", "-qk", "-qo", "-qm", "-qu", "--query"
+    }),
+}
 
 FORBIDDEN_SYS_DIRS = (
     "/etc", "/usr", "/var", "/bin", "/sbin", "/opt", "/root", "/boot", "/sys", "/proc", "/dev"
@@ -266,7 +277,29 @@ def _check_command_security(cmd: str, workspace: str) -> str | None:
 
         binary = os.path.basename(tokens[0]).lower()
 
-        if binary in FORBIDDEN_GLOBAL_COMMANDS:
+        # Handle systemctl read-only vs mutating commands
+        if binary == "systemctl":
+            sub_actions = [t.lower() for t in tokens[1:] if not t.startswith("-")]
+            if sub_actions and sub_actions[0] in READONLY_INSPECTION_SUBCOMMANDS["systemctl"]:
+                pass  # Read-only inspection allowed
+            else:
+                return f"Privileged or mutating systemctl action: '{' '.join(tokens[:2])}'"
+
+        # Handle pacman read-only queries vs package install/removal
+        elif binary == "pacman":
+            action_flags = [t.lower() for t in tokens[1:] if t.startswith("-")]
+            if action_flags and any(any(f.startswith(rf) for rf in READONLY_INSPECTION_SUBCOMMANDS["pacman"]) for f in action_flags):
+                pass  # Read-only package query allowed
+            else:
+                return f"Package manager modification: '{' '.join(tokens[:2])}'"
+
+        # Handle journalctl (read-only unless vacuuming/rotating)
+        elif binary == "journalctl":
+            if any(t.startswith(("--vacuum", "--rotate")) for t in tokens):
+                return f"Journal maintenance command: '{' '.join(tokens)}'"
+            pass  # Standard journal log inspection allowed
+
+        elif binary in FORBIDDEN_GLOBAL_COMMANDS:
             return f"Global system/package binary: '{binary}'"
 
         for t in tokens:

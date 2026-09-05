@@ -1,84 +1,175 @@
 #!/usr/bin/env bash
-# AI Log Triage & Diagnostics v2.0.0 (Zero-Config / One-And-Done)
+# AI Log Triage & Diagnostics v2.5.0 (Zero-Config / High-Precision)
 
 set -euo pipefail
 
-MYSYS_FILE="$HOME/.config/local-ai/skills/system/mysys.md"
-CURSOR_FILE="$HOME/.cache/local-ai/log-checker.cursor"
-mkdir -p "$(dirname "$CURSOR_FILE")"
+# --- Configuration & State Paths ---
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/py-agent"
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/py-agent"
+CURSOR_FILE="${CACHE_DIR}/log-checker.cursor"
+
+MYSYS_FILE="${CONFIG_DIR}/skills/system/mysys.md"
+[[ -f "$MYSYS_FILE" ]] || MYSYS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/local-ai/skills/system/mysys.md"
+
+mkdir -p "$CACHE_DIR"
+
+# --- CLI Options ---
+MODE="incremental"
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --all|-a)
+            MODE="all"
+            shift
+            ;;
+        --kernel|-k)
+            MODE="kernel"
+            shift
+            ;;
+        --reset|-r)
+            rm -f "$CURSOR_FILE"
+            echo ":: Cursor reset. Next run will inspect the last 30 minutes."
+            exit 0
+            ;;
+        --help|-h)
+            echo "Usage: log-checker [--all|-a] [--kernel|-k] [--reset|-r]"
+            echo "  --all     Inspect entire current boot (bypasses cursor)"
+            echo "  --kernel  Show high-priority kernel and driver messages only"
+            echo "  --reset   Reset cursor bookmark"
+            exit 0
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
 
 echo "# ACTIVE SYSTEM DIAGNOSTICS & LOG TRIAGE"
 echo ""
-echo "> **Instructions for AI:**"
-echo "> 1. Analyze the system events provided below *first* before reading the environment profile."
-echo "> 2. CRITICAL ATTENTION: Prioritize kernel, driver (e.g., DRM, GPU crashes, xe device coredumps), and hardware logs over repetitive user-space desktop warnings (such as GTK warnings or xdg-desktop-portal inhibition notices)."
-echo "> 3. Note the temporal context: If the header says 'NO NEW EVENTS RECORDED', it means the user's last action/fix successfully stopped the errors. Confirm this cleanly to the user!"
-echo "> 4. Explain what broke or hung in 2 sentences max, and provide a single clean recovery action or command if applicable."
-echo "> 5. Format your output using clean, semantic Markdown (headings, bolding, inline code, and code blocks) optimized for terminal rendering via mdcat."
+echo "> **Directives for AI:**"
+echo "> 1. Analyze high-severity events first: failed units, kernel/DRM/GPU panics, and coredumps."
+echo "> 2. Filter out desktop background noise (e.g. GTK CSS warnings, xdg-desktop-portal idle inhibitions, or tracker-miner notices)."
+echo "> 3. If 'NO NEW EVENTS RECORDED' is reported, confirm cleanly that the system is quiet and previous errors are mitigated."
+echo "> 4. Identify the root cause in 2 sentences max, followed by an exact, verified recovery action or terminal command."
+echo "> 5. Use semantic, compact Markdown styled for terminal output."
 echo ""
 echo "---"
 echo ""
 
 # ==========================================
-# SECTION 1: DYNAMIC SYSTEM EVENTS (High-Attention Area)
+# SECTION 1: SYSTEMD FAILED UNITS
 # ==========================================
+if command -v systemctl >/dev/null 2>&1; then
+    sys_failed=$(systemctl --failed --no-legend --no-pager 2>/dev/null || true)
+    usr_failed=$(systemctl --user --failed --no-legend --no-pager 2>/dev/null || true)
 
-if command -v journalctl >/dev/null 2>&1; then
-    if [ ! -f "$CURSOR_FILE" ]; then
-        # First-time run: Get the last 30 minutes of events for immediate context
-        new_logs=$(journalctl --since "30 minutes ago" -n 50 2>/dev/null || journalctl -b 0 -n 20 2>/dev/null || true)
-        # Silently seed the cursor bookmark for subsequent runs
-        journalctl -b 0 -n 1 --cursor-file="$CURSOR_FILE" >/dev/null 2>&1 || true
-    else
-        # Subsequent runs: Fetch only new events since the last run
-        new_logs=$(journalctl --cursor-file="$CURSOR_FILE" -n 50 2>/dev/null || true)
-    fi
-
-    # Display logic
-    if [ -n "$new_logs" ]; then
-        echo "## SYSTEM EVENTS"
-        echo "\`\`\`text"
-        echo "$new_logs"
-        echo "\`\`\`"
-    else
-        echo "## NO NEW EVENTS RECORDED (System is Quiet)"
-        echo "The system has recorded no new events or errors since your last check."
-        echo "This indicates that any previous issues may have been successfully mitigated."
-        echo ""
-        echo "### HISTORICAL CONTEXT (Last 5 System Events)"
-        echo "\`\`\`text"
-        journalctl -b 0 -n 5 --no-pager 2>/dev/null || true
-        echo "\`\`\`"
-    fi
-else
-    echo "## DIAGNOSTIC ERROR"
-    echo "*Error: journalctl utility not found.*"
-fi
-echo ""
-echo "---"
-echo ""
-
-# ==========================================
-# SECTION 2: ENVIRONMENT PROFILE & RULES (Static Reference Area)
-# ==========================================
-
-# Inject target system profile context
-if [ -f "$MYSYS_FILE" ]; then
-    echo "## TARGET SYSTEM ENVIRONMENT PROFILE"
-    cat "$MYSYS_FILE"
-    echo ""
-    echo "---"
-    echo ""
-fi
-
-# Permissions Audit: Check if the user can read the system journal
-if command -v journalctl >/dev/null 2>&1; then
-    if ! journalctl -b 0 -n 1 >/dev/null 2>&1; then
-        echo "## SYSTEM DIAGNOSTICS WARNING"
-        echo "⚠️ **Warning for AI:** The tool is running without sufficient privileges to read the system-level systemd journal."
-        echo "The output below is restricted to user-space events. If the logs appear mostly empty or lack system errors, guide the user to run the tool via sudo or to add their user account to the 'systemd-journal' system group."
+    if [[ -n "$sys_failed" || -n "$usr_failed" ]]; then
+        echo "## FAILED SYSTEMD SERVICES"
+        echo '```text'
+        [[ -n "$sys_failed" ]] && echo "[System Units]:" && echo "$sys_failed"
+        [[ -n "$usr_failed" ]] && echo "[User Units]:" && echo "$usr_failed"
+        echo '```'
         echo ""
         echo "---"
         echo ""
     fi
+fi
+
+# ==========================================
+# SECTION 2: RECENT COREDUMPS (SIGSEGV / SIGABRT)
+# ==========================================
+if command -v coredumpctl >/dev/null 2>&1; then
+    recent_dumps=$(coredumpctl list --no-legend --no-pager -n 3 2>/dev/null || true)
+    if [[ -n "$recent_dumps" ]]; then
+        echo "## RECENT PROCESS CRASHES & COREDUMPS"
+        echo '```text'
+        echo "$recent_dumps"
+        echo '```'
+        echo ""
+        echo "---"
+        echo ""
+    fi
+fi
+
+# ==========================================
+# SECTION 3: KERNEL & DRIVER ERRORS (Hardware / DRM / GPU / OOM)
+# ==========================================
+if command -v journalctl >/dev/null 2>&1; then
+    kerrors=$(journalctl -k -b 0 -p err..emerg --no-pager -n 25 2>/dev/null || true)
+    if [[ -n "$kerrors" ]]; then
+        echo "## KERNEL & DRIVER ALERTS (Ring 0 / GPU / Memory)"
+        echo '```text'
+        echo "$kerrors"
+        echo '```'
+        echo ""
+        echo "---"
+        echo ""
+    fi
+fi
+
+# ==========================================
+# SECTION 4: DYNAMIC SYSTEM EVENTS (Incremental / Windowed)
+# ==========================================
+if command -v journalctl >/dev/null 2>&1; then
+    new_logs=""
+
+    if [[ "$MODE" == "kernel" ]]; then
+        echo "## KERNEL EVENTS (Current Boot - Last 50)"
+        echo '```text'
+        journalctl -k -b 0 -n 50 --no-pager 2>/dev/null || true
+        echo '```'
+    elif [[ "$MODE" == "all" ]]; then
+        echo "## FULL BOOT EVENTS (Errors & Warnings - Last 60)"
+        echo '```text'
+        journalctl -b 0 -p warning..emerg -n 60 --no-pager 2>/dev/null || true
+        echo '```'
+    else
+        # Incremental cursor-tracked mode
+        if [[ ! -f "$CURSOR_FILE" ]]; then
+            new_logs=$(journalctl -b 0 --since "30 minutes ago" --cursor-file="$CURSOR_FILE" -n 50 2>/dev/null || true)
+        else
+            new_logs=$(journalctl -b 0 --cursor-file="$CURSOR_FILE" -n 50 2>/dev/null || true)
+        fi
+
+        if [[ -n "$new_logs" ]]; then
+            echo "## NEW SYSTEM EVENTS"
+            echo '```text'
+            echo "$new_logs"
+            echo '```'
+        else
+            echo "## NO NEW EVENTS RECORDED (System is Quiet)"
+            echo "No new system errors or warnings recorded since the last check."
+            echo ""
+            echo "### LAST RECORDED CONTEXT (Tail 5)"
+            echo '```text'
+            journalctl -b 0 -n 5 --no-pager 2>/dev/null || true
+            echo '```'
+        fi
+    fi
+else
+    echo "## DIAGNOSTIC ERROR"
+    echo "*Error: journalctl utility not found on this system.*"
+fi
+
+echo ""
+echo "---"
+echo ""
+
+# ==========================================
+# SECTION 5: PRIVILEGE AUDIT & SYSTEM PROFILE
+# ==========================================
+if command -v journalctl >/dev/null 2>&1; then
+    if ! journalctl -b 0 -n 1 >/dev/null 2>&1; then
+        echo "## PRIVILEGE RESTRICTION NOTICE"
+        echo "⚠️ **Notice:** User cannot read system-level journal logs (restricted to user-space)."
+        echo "To view full hardware & daemon journals, add user to group: \`sudo usermod -aG systemd-journal $USER\`"
+        echo ""
+        echo "---"
+        echo ""
+    fi
+fi
+
+if [[ -f "$MYSYS_FILE" ]]; then
+    echo "## SYSTEM ARCHITECTURE PROFILE"
+    cat "$MYSYS_FILE"
+    echo ""
 fi

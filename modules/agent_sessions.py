@@ -129,27 +129,38 @@ def connect_db(db_path: str) -> sqlite3.Connection:
 
 
 def get_sub_agent_id(workspace: str, target_pid: int | None = None) -> int:
+    """Calculates active sub-agent index (0 = primary agent, 1+ = sub-agent) and manages lockfiles."""
     session_dir = os.path.join(CFG_DIR, ".active_sessions")
     os.makedirs(session_dir, exist_ok=True)
     current_pid = target_pid or os.getpid()
 
-    active_pids = []
+    active_pids: list[int] = []
     for fpath in glob.glob(os.path.join(session_dir, f"{workspace}-*.session")):
+        pid: int | None = None
         try:
-            pid = int(
-                os.path.basename(fpath)
-                .replace(f"{workspace}-", "")
-                .replace(".session", "")
-            )
-            os.kill(pid, 0)
-            active_pids.append(pid)
+            fname = os.path.basename(fpath).replace(".session", "")
+            # Safely extract trailing PID: handles {workspace}-{pid} and {workspace}-{sub_id}-{pid}
+            if m := re.search(r"(\d+)$", fname):
+                pid = int(m.group(1))
+                os.kill(pid, 0)
+                if pid not in active_pids:
+                    active_pids.append(pid)
+            else:
+                # Remove unparseable or corrupted session file
+                try:
+                    os.remove(fpath)
+                except OSError:
+                    pass
         except ProcessLookupError:
+            # Process is dead; remove stale lockfile
             try:
                 os.remove(fpath)
             except OSError:
                 pass
         except (ValueError, OSError):
-            active_pids.append(pid)
+            # PermissionError or alive process under different UID
+            if pid is not None and pid not in active_pids:
+                active_pids.append(pid)
 
     if current_pid not in active_pids:
         active_pids.append(current_pid)
@@ -157,28 +168,36 @@ def get_sub_agent_id(workspace: str, target_pid: int | None = None) -> int:
     agent_index = active_pids.index(current_pid)
 
     try:
-        with open(
-            os.path.join(session_dir, f"{workspace}-{current_pid}.session"),
-            "w",
-            encoding="utf-8",
-        ) as f:
+        session_file = os.path.join(session_dir, f"{workspace}-{current_pid}.session")
+        with open(session_file, "w", encoding="utf-8") as f:
             f.write(str(agent_index))
     except OSError:
         pass
+
     return agent_index
 
 
 def cleanup_sub_agent(workspace: str, target_pid: int | None = None) -> None:
-    try:
-        p = os.path.join(
-            CFG_DIR,
-            ".active_sessions",
-            f"{workspace}-{(target_pid or os.getpid())}.session",
-        )
-        if os.path.exists(p):
-            os.remove(p)
-    except OSError:
-        pass
+    """Removes all session lockfiles associated with the target PID."""
+    session_dir = os.path.join(CFG_DIR, ".active_sessions")
+    if not os.path.isdir(session_dir):
+        return
+    current_pid = target_pid or os.getpid()
+
+    # Clean wildcard match for legacy {workspace}-{sub_id}-{pid}.session
+    for fpath in glob.glob(os.path.join(session_dir, f"{workspace}-*{current_pid}.session")):
+        try:
+            os.remove(fpath)
+        except OSError:
+            pass
+
+    # Clean direct match for {workspace}-{pid}.session
+    direct = os.path.join(session_dir, f"{workspace}-{current_pid}.session")
+    if os.path.exists(direct):
+        try:
+            os.remove(direct)
+        except OSError:
+            pass
 
 
 def init_db(workspace: str) -> None:
@@ -189,6 +208,8 @@ def init_db(workspace: str) -> None:
 
 
 def save_checkpoint(workspace: str, tag: str, history_obj: Any = None) -> None:
+    """Persists chat history snapshot into workspace checkpoints table."""
+    clean_tag = tag.strip() if tag else f"checkpoint-{int(time.time())}"
     if history_obj is not None:
         hist_data = (
             json.dumps(history_obj) if not isinstance(history_obj, str) else history_obj
@@ -203,15 +224,16 @@ def save_checkpoint(workspace: str, tag: str, history_obj: Any = None) -> None:
     with closing(connect_db(os.path.join(SESSIONS_DIR, f"{workspace}.db"))) as conn:
         conn.cursor().execute(
             "INSERT INTO checkpoints (workspace, tag, history, timestamp) VALUES (?, ?, ?, ?)",
-            (workspace, tag, hist_data, int(time.time())),
+            (workspace, clean_tag, hist_data, int(time.time())),
         )
         conn.commit()
     sys.stderr.write(
-        f"\033[1;32m[session-mgr] Checkpoint '{tag}' saved to SQLite.\033[0m\n"
+        f"\033[1;32m[session-mgr] Checkpoint '{clean_tag}' saved to SQLite.\033[0m\n"
     )
 
 
 def rollback_checkpoint(workspace: str) -> list[dict[str, Any]] | None:
+    """Interactive checkpoint selector with arrow-key navigation and clone support."""
     db_path, rows, global_rows = os.path.join(SESSIONS_DIR, f"{workspace}.db"), [], []
     if os.path.exists(db_path):
         with closing(connect_db(db_path)) as conn:
@@ -248,53 +270,79 @@ def rollback_checkpoint(workspace: str) -> list[dict[str, Any]] | None:
         return None
 
     display_rows = global_rows if is_global else rows
-    sys.stderr.write(
-        f"\n\033[1;36m--- {'Global Checkpoints (Clonable)' if is_global else 'Active Checkpoints (SQLite)'} ---\033[0m\n"
-    )
+    num_opts = len(display_rows)
+    selected_idx = 0
 
-    for idx, item in enumerate(display_rows):
-        tag, history, ts = item[0], item[1], item[2]
-        src_info = f" \033[1;30m(from '{item[3]}')\033[0m" if is_global else ""
-        try:
-            turns_len = len(json.loads(history))
-        except json.JSONDecodeError:
-            turns_len = 0
-        sys.stderr.write(
-            f"[{idx}] \033[1;32m{tag}\033[0m ({turns_len} turns){src_info} - {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(ts))}\n"
-        )
-
-    sys.stderr.write(
-        f"\n\033[2mSelect index to {'clone and load' if is_global else 'load'}, or press Esc to cancel: \033[0m\033[?25l"
-    )
+    sys.stderr.write("\033[?25l")
     sys.stderr.flush()
 
     try:
         while True:
+            # Header
+            sys.stderr.write(
+                f"\r\x1b[J\n\033[1;36m--- {'Global Checkpoints (Clonable)' if is_global else 'Active Checkpoints (SQLite)'} ---\033[0m\n"
+            )
+            for idx, item in enumerate(display_rows):
+                tag, history, ts = item[0], item[1], item[2]
+                src_info = f" \033[1;30m(from '{item[3]}')\033[0m" if is_global else ""
+                try:
+                    turns_len = len(json.loads(history))
+                except json.JSONDecodeError:
+                    turns_len = 0
+
+                ts_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
+                if idx == selected_idx:
+                    sys.stderr.write(
+                        f"\033[1;32m  ❯ [{idx:02d}] {tag:<22}\033[0m \033[1;36m({turns_len} turns)\033[0m{src_info} \033[2m- {ts_str}\033[0m\n"
+                    )
+                else:
+                    sys.stderr.write(
+                        f"\033[37m    [{idx:02d}] {tag:<22}\033[0m \033[2m({turns_len} turns){src_info} - {ts_str}\033[0m\n"
+                    )
+
+            sys.stderr.write(
+                f"\n\033[2mSelect index [↑/↓ arrows, 0-{min(9, num_opts - 1)}, ↵ load, Esc cancel]: \033[0m"
+            )
+            sys.stderr.flush()
+
             key = get_key()
-            if key in ("\x03", "\x1b", "q", "Q", ""):
-                sys.stderr.write("\r\x1b[KCancelled.\n")
+
+            if key in ("\x03", "\x1b", "q", "Q"):
+                sys.stderr.write("\n\033[1;33mCancelled.\033[0m\n")
                 return None
 
-            if key.isdigit() and int(key) < len(display_rows):
-                selected = display_rows[int(key)]
-                if is_global:
-                    tag, history, ts, src_ws = selected
-                    with closing(connect_db(db_path)) as conn3:
-                        conn3.cursor().execute(
-                            "INSERT OR REPLACE INTO checkpoints (workspace, tag, history, timestamp) VALUES (?, ?, ?, ?)",
-                            (workspace, tag, history, int(time.time())),
-                        )
-                        conn3.commit()
-                sys.stderr.write(
-                    f"\r\x1b[K\033[1;32m[session-mgr] Checkpoint '{selected[0]}' loaded!\033[0m\n"
-                )
-                return json.loads(selected[1])
+            if key == "\x1b[A":  # Up Arrow
+                selected_idx = (selected_idx - 1 + num_opts) % num_opts
+            elif key == "\x1b[B":  # Down Arrow
+                selected_idx = (selected_idx + 1) % num_opts
+            elif key.isdigit() and int(key) < num_opts:
+                selected_idx = int(key)
+                selected = display_rows[selected_idx]
+                break
+            elif key in ("\r", "\n", ""):
+                selected = display_rows[selected_idx]
+                break
     finally:
         sys.stderr.write("\033[?25h")
         sys.stderr.flush()
 
+    if is_global:
+        tag, history, ts, src_ws = selected
+        with closing(connect_db(db_path)) as conn3:
+            conn3.cursor().execute(
+                "INSERT OR REPLACE INTO checkpoints (workspace, tag, history, timestamp) VALUES (?, ?, ?, ?)",
+                (workspace, tag, history, int(time.time())),
+            )
+            conn3.commit()
+
+    sys.stderr.write(
+        f"\n\033[1;32m[session-mgr] Checkpoint '{selected[0]}' loaded!\033[0m\n\n"
+    )
+    return json.loads(selected[1])
+
 
 def log_turn(workspace: str, user_msg: str, assistant_msg: str) -> None:
+    """Logs an agent interaction turn and tokenized intent into SQLite."""
     clean_user = (
         user_msg.split("User Question:", 1)[-1].strip()
         if "User Question:" in user_msg
@@ -310,6 +358,7 @@ def log_turn(workspace: str, user_msg: str, assistant_msg: str) -> None:
 
 
 def get_turns_count(workspace: str) -> int:
+    """Retrieves total turns logged for this workspace."""
     db_path = os.path.join(SESSIONS_DIR, f"{workspace}.db")
     if os.path.exists(db_path):
         try:
@@ -327,6 +376,7 @@ def get_turns_count(workspace: str) -> int:
 
 
 def clear_turns(workspace: str) -> None:
+    """Purges all turns recorded for this workspace."""
     db_path = os.path.join(SESSIONS_DIR, f"{workspace}.db")
     if os.path.exists(db_path):
         try:
@@ -347,7 +397,9 @@ if __name__ == "__main__":
         sys.exit(1)
     workspace_name = args[1]
 
-    if cmd == "save":
+    if cmd == "init":
+        init_db(workspace_name)
+    elif cmd == "save":
         save_checkpoint(workspace_name, args[2] if len(args) > 2 else "")
     elif cmd == "load":
         if hist := rollback_checkpoint(workspace_name):

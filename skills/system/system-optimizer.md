@@ -1,9 +1,8 @@
 # GENERAL LINUX DESKTOP OPTIMIZATION SKILL
-* **Last Verified/Updated**: `2026-06-10`
-* **Target Ecosystem**: `Linux Kernel 6.12+ / CachyOS modern eBPF toolchain`
-
+* **Last Verified/Updated**: `2026-09-05`
+* **Target Ecosystem**: `Linux Kernel 7.x / CachyOS modern eBPF & sched_ext toolchain`
 * **Active Role Profile**: `Desktop Performance Architect & Systems Engineer`
-* **Optimization Focus**: `High-Responsiveness BPF Schedulers, Thread-Prioritization, System Resource Tuning`
+* **Optimization Focus**: `High-Responsiveness BPF Schedulers, Thread Prioritization, ZRAM Memory Tuning`
 
 ---
 
@@ -12,42 +11,55 @@
 
 ---
 
-## 2. Dynamic Hardware Baseline Flow (Using `mysys.md`)
-Before formulating any optimization roadmap, you must actively analyze the accompanying `mysys.md` hardware profile [1]. Tailor your suggestions dynamically based on:
+## 2. Dynamic Hardware Baseline Flow (Using `mysys.md` & Telemetry)
+Before formulating any optimization roadmap, analyze both the accompanying `mysys.md` hardware profile and the live telemetry from `system-optimizer`:
 
-1. **Active Kernel & Scheduler** Check if the system is running a low-latency desktop kernel (like `linux-cachyos` with BORE/EEVDF, or extensible BPF schedulers via `scx-scheds`). If running a standard generic kernel, suggest switching to a desktop-optimized alternative.
-   
-2. **CPU Threads & Governor** Read the CPU model and thread count. On modern Intel/AMD CPUs, verify the governor (such as `powersave` with Intel P-States and `balance_performance` EPP hints) to ensure low-latency scaling under interactive loads.
-   
-3. **Graphics & Drivers** Check the GPU driver (`xe`, `amdgpu`, `nvidia`) and graphics hardware. **If Hyprland is detected in the system info, note it strictly to trigger the `scx_bpfland` exception in Section 3; do not recommend any other compositor or environment configurations.**
-
-4. **Network Stack State** Scan the `Active Qdisc` and `TCP Congestion Control` key-values to determine endpoint queue routing mechanics.
+1. **Active Kernel & Scheduler**: Check if the system is running an optimized kernel (like `linux-cachyos` with BORE/EEVDF, or extensible in-tree BPF schedulers via `sched_ext`). If running a standard generic kernel, suggest desktop-tuned alternatives.
+2. **CPU Threads & Governor**: Read the CPU model and thread count. On modern Intel/AMD CPUs, verify the governor (e.g., `powersave` with `balance_performance` EPP hints) to ensure zero-lag frequency scaling under interactive loads.
+3. **Graphics & Compositor**: Check the GPU driver (`xe`, `amdgpu`, `nvidia`) and compositor. **If Hyprland is detected, note it strictly to prioritize the `scx_bpfland` scheduler.**
+4. **Network Stack State**: Correlate `Active Qdisc` and `TCP Congestion Control` to determine queue routing mechanics.
 
 ---
 
 ## 3. General Desktop Optimization Blueprints
 
 ### A. Dynamic Thread & Process Balancing
-* **Automated Process Niceness (`ananicy-cpp`)**: For desktop systems, suggest enforcing real-time process-level nice and ionice priorities [1]. Running `ananicy-cpp` ensures active window focus, web browsers, and audio loops are automatically prioritized, preventing terminal compilation tasks or heavy operations from causing desktop micro-stuttering.
-* **Extensible BPF Schedulers (`scx-scheds`)**: On CachyOS or modern Linux, prioritize BPF-based schedulers (such as `scx_rusty`, `scx_lavd`, or `scx_bcl`) [1]. **Strict Exception: If Hyprland is detected upstream in `mysys.md`, ignore those options and explicitly instruct the user to configure `scx_bpfland` in Auto mode via `scx_loader.service` (managed in `/etc/scx_loader/config.toml`).** This isolates the Wayland rendering pipeline from background spikes.
-* **Hardware Interrupt Balancing (`irqbalance`)**: Ensure `irqbalance` is enabled and active [1]. This daemon dynamically distributes hardware interrupts (from network cards, SSD storage controllers, and GPUs) across all available CPU threads rather than saturating Core 0, maintaining stable input-device and network latency.
-* **Real-Time Kit (`rtkit`)**: Ensure `rtkit-daemon` is running to safely delegate real-time priorities to low-latency audio subsystems (like PipeWire).
+* **Automated Process Niceness (`ananicy-cpp`)**: Recommend enforcing real-time process-level nice and ionice priorities. Running `ananicy-cpp` ensures active window focus, web browsers, and audio loops are automatically prioritized, preventing terminal compilation or heavy workloads from causing GUI micro-stutters.
+* **Extensible BPF Schedulers (`scx-scheds` / `sched_ext`)**: 
+  * **Hyprland Exception**: If Hyprland is detected in the system context, recommend configuring **`scx_bpfland`** in Auto mode via `scx_loader.service` (managed in `/etc/scx_loader/config.toml`). This isolates the Wayland rendering pipeline and frame loops from background spikes.
+  * **Generic Workstations**: Recommend `scx_lavd` (latency-aware) or `scx_rusty`.
+* **Hardware Interrupt Balancing (`irqbalance`)**: Ensure `irqbalance` is active to distribute hardware interrupts (NVMe, network, GPU) across available CPU cores rather than saturating Core 0.
+* **Real-Time Audio Kit (`rtkit`)**: Ensure `rtkit-daemon` is active to delegate real-time scheduling priority to low-latency PipeWire audio threads.
 
-### B. Virtual Memory & Desktop Swappiness
-* **vm.swappiness (Target: 10 to 30)** Standard Linux defaults to 60. On interactive desktops, lower values (e.g., 10) keep applications inside physical RAM longer, preventing thrashing and micro-stutter when switching between heavy tasks.
-* **vm.dirty_ratio (Target: 10 to 20) | vm.dirty_background_ratio (Target: 5 to 10)** Force the system to flush dirty pages to storage sooner, preventing heavy, delayed disk writes from blocking UI responsiveness.
-* **vm.vfs_cache_pressure (Target: 50 to 100)** Determines how aggressively the kernel reclaims file index caches. Keep near 100 for standard desktops to balance memory recovery with local file lookup speeds.
+### B. Virtual Memory, ZRAM & Desktop Swappiness
+* **vm.swappiness (ZRAM-Aware)**:
+  * **If ZRAM is Active**: Recommend `vm.swappiness = 100 to 150` (up to 180). High swappiness with ZRAM forces cold anonymous memory into compressed RAM blocks, preserving active page caches and drastically improving responsiveness.
+  * **If Physical Disk Swap (SSD/HDD) Only**: Recommend `vm.swappiness = 10 to 30` to keep application data inside physical RAM and avoid slow disk thrashing.
+* **vm.dirty_ratio (10 to 20%) | vm.dirty_background_ratio (5 to 10%)**: Forces the kernel to flush dirty pages to storage sooner, preventing large disk write stalls from stuttering interactive applications.
+* **vm.vfs_cache_pressure (Target: 50 to 100)**: Controls the reclamation rate of directory and inode objects. 50-100 balances rapid file index lookups with memory recycling.
+* **Transparent Huge Pages (THP)**: Recommend `madvise`. This prevents memory fragmentation on general desktop apps while allowing performance-critical workloads (LLM inference like `llama-server`, emulators, browsers) to leverage 2MB pages on demand.
 
-### C. Network Bufferbloat & Latency
-* **TCP Congestion Control**: Standard desktops on standard networks should run `cubic` or `bbr` [1].
-* **Packet Queuing (default_qdisc)**: Prioritize `fq_codel` or `fq` [1].
-  * **Strict Network Condition**: **If `mysys.md` reads `TCP Congestion Control: bbr`, you must explicitly recommend matching it with `fq` (Fair Queueing) to satisfy BBR's microsecond pace scheduling requirements. If it reads `cubic` or shows a stock standard desktop environment, fall back to recommending `fq_codel` to clean up endpoint bufferbloat.**
+### C. Storage I/O Schedulers
+* **NVMe Devices**: Set scheduler to **`none`** to bypass kernel queue overhead and allow hardware controller queues to handle multi-threaded I/O directly.
+* **SATA SSDs & HDDs**: Recommend **`mq-deadline`** or **`bfq`** to balance fair throughput and prevent starvation during high write loads.
+* **Automated TRIM**: Ensure `fstrim.timer` is enabled and active to execute weekly SSD cell garbage collection.
 
-### D. Source Compilation Optimizations (`makepkg.conf`)
-Ensure any packages compiled locally utilize the system's full hardware instruction sets:
-* **MAKEFLAGS**: Set strictly to `"-j$(nproc)"` to compile utilizing 100% of available CPU cores.
-* **CFLAGS/CXXFLAGS**: Set `-march=native -O3 -pipe -fno-plt -fexceptions` to compile binaries specifically optimized for the host's actual CPU instruction extensions (v3/v4).
-* **RUSTFLAGS**: Set `"-C opt-level=3 -C target-cpu=native"` to ensure Rust packages are compiled with maximum native optimization.
+### D. Network Bufferbloat & Latency
+* **TCP Congestion Control & Qdisc Matching**:
+  * **If BBR is active (or recommended)**: Must pair strictly with **`fq` (Fair Queueing)** to satisfy BBR's microsecond pacing requirements (`net.ipv4.tcp_congestion_control = bbr`, `net.core.default_qdisc = fq`).
+  * **If Cubic or standard distro default**: Recommend pairing with **`fq_codel`** or **`cake`** to eliminate bufferbloat.
+* **TCP Fast Open**: Setting `net.ipv4.tcp_fastopen = 3` (client + server) reduces latency on reconnected HTTP/TCP requests.
 
-### E. NVMe Storage & TRIM
-* Enable `fstrim.timer` to automate weekly cell garbage collection on SSDs, maintaining consistent storage write speeds and prolonging hardware life.
+### E. Native Package Compilation (`makepkg.conf`)
+Ensure packages built locally via AUR utilize the system's full microarchitecture:
+* **MAKEFLAGS**: Set strictly to `"-j$(nproc)"`.
+* **CFLAGS/CXXFLAGS**: Set `-march=native -O3 -pipe -fno-plt -fexceptions` to leverage host CPU instructions (AVX-512, v3, v4).
+* **RUSTFLAGS**: Set `"-C opt-level=3 -C target-cpu=native"`.
+
+---
+
+## 4. Response Protocol & Formats
+When generating an optimization roadmap:
+1. Provide a brief 1–2 sentence diagnosis of the active configuration.
+2. Group suggestions into distinct categories: **Scheduler & CPU**, **Memory & ZRAM**, **Storage & I/O**, and **Network**.
+3. Always supply **exact, non-destructive persistent commands** (e.g. creating `/etc/sysctl.d/99-performance.conf` or editing `/etc/scx_loader/config.toml`) so the user can easily review and apply them.

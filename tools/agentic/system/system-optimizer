@@ -1,21 +1,155 @@
 #!/usr/bin/env bash
-# sysop - Dynamic Optimization & Hardware Profile Integrator v1.0.1
+# sysop - Dynamic Optimization & Hardware Profile Integrator v2.0.0
+# Path: ~/.config/py-agent/tools/agentic/system/system-optimizer
 
 set -euo pipefail
 
-MYSYS_FILE="$HOME/.config/local-ai/skills/system/mysys.md"
-SYSOP_FILE="$HOME/.config/local-ai/skills/system/system-optimizer.md"
+# --- Configuration Paths ---
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/py-agent"
+[[ -d "$CONFIG_DIR" ]] || CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/local-ai"
+
+MYSYS_FILE="${CONFIG_DIR}/skills/system/mysys.md"
+SYSOP_FILE="${CONFIG_DIR}/skills/system/system-optimizer.md"
 
 echo "# SYSTEM AUTOMATION & OPTIMIZATION PROFILE"
 echo ""
 
-if [ -f "$MYSYS_FILE" ]; then
+# 1. Inject Environment Profile (if available)
+if [[ -f "$MYSYS_FILE" ]]; then
     cat "$MYSYS_FILE"
     echo ""
     echo "---"
     echo ""
 fi
 
-if [ -f "$SYSOP_FILE" ]; then
+# 2. Inject Specific Optimizer Directives (if available)
+if [[ -f "$SYSOP_FILE" ]]; then
     cat "$SYSOP_FILE"
+    echo ""
+    echo "---"
+    echo ""
 fi
+
+# ==============================================================================
+# SECTION 3: LIVE SYSTEM TUNING DIAGNOSTICS (Universal Linux Sysfs & Proc)
+# ==============================================================================
+echo "## REAL-TIME KERNEL & HARDWARE TUNING TELEMETRY"
+echo ""
+
+# --- A. CPU Governor, Scaling Driver & EPP ---
+echo "### 1. CPU Scaling & Power Profiles"
+CPU_DRIVER=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_driver 2>/dev/null || echo "generic/unknown")
+CPU_GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo "unknown")
+CPU_EPP=$(cat /sys/devices/system/cpu/cpu0/cpufreq/energy_performance_preference 2>/dev/null || echo "N/A")
+
+echo "* CPU Scaling Driver: \`$CPU_DRIVER\`"
+echo "* Active Governor: \`$CPU_GOV\`"
+echo "* Energy Performance Preference (EPP): \`$CPU_EPP\`"
+echo ""
+
+# --- B. Virtual Memory & Memory Pressure (PSI) ---
+echo "### 2. Memory Subsystem & Virtual Memory Tuning"
+SWAPPINESS=$(cat /proc/sys/vm/swappiness 2>/dev/null || echo "unknown")
+VFS_CACHE=$(cat /proc/sys/vm/vfs_cache_pressure 2>/dev/null || echo "unknown")
+DIRTY_RATIO=$(cat /proc/sys/vm/dirty_ratio 2>/dev/null || echo "unknown")
+DIRTY_BG_RATIO=$(cat /proc/sys/vm/dirty_background_ratio 2>/dev/null || echo "unknown")
+
+THP_STATE="unknown"
+if [[ -f "/sys/kernel/mm/transparent_hugepage/enabled" ]]; then
+    THP_STATE=$(grep -o "\[.*\]" /sys/kernel/mm/transparent_hugepage/enabled | tr -d '[]' || echo "unknown")
+fi
+
+echo "* \`vm.swappiness\`: \`$SWAPPINESS\`"
+echo "* \`vm.vfs_cache_pressure\`: \`$VFS_CACHE\`"
+echo "* Dirty Ratio (Sync/Background): \`${DIRTY_RATIO}% / ${DIRTY_BG_RATIO}%\`"
+echo "* Transparent Huge Pages (THP): \`$THP_STATE\`"
+
+if [[ -f "/proc/pressure/memory" ]]; then
+    PSI_MEM=$(head -n 1 /proc/pressure/memory 2>/dev/null || true)
+    echo "* Memory Pressure (PSI some): \`$PSI_MEM\`"
+fi
+echo ""
+
+# --- C. Block Device & I/O Schedulers ---
+echo "### 3. Storage I/O Schedulers"
+FOUND_DISKS=0
+for queue in /sys/block/*/queue/scheduler; do
+    if [[ -f "$queue" ]]; then
+        dev_name=$(basename "$(dirname "$(dirname "$queue")")")
+        # Ignore loop, zram, and ram devices
+        if [[ ! "$dev_name" =~ ^(loop|zram|ram) ]]; then
+            active_sched=$(grep -o "\[.*\]" "$queue" 2>/dev/null | tr -d '[]' || cat "$queue")
+            echo "* Drive \`/dev/$dev_name\`: \`$active_sched\`"
+            FOUND_DISKS=1
+        fi
+    fi
+done
+[[ "$FOUND_DISKS" -eq 0 ]] && echo "* No standard physical block devices identified."
+echo ""
+
+# --- D. Network Stack Congestion & Queueing ---
+echo "### 4. Network Queueing & Congestion Control"
+TCP_CC=$(cat /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null || echo "unknown")
+DEFAULT_QDISC=$(cat /proc/sys/net/core/default_qdisc 2>/dev/null || echo "unknown")
+TCP_FASTOPEN=$(cat /proc/sys/net/ipv4/tcp_fastopen 2>/dev/null || echo "unknown")
+
+echo "* TCP Congestion Control: \`$TCP_CC\`"
+echo "* Network Qdisc: \`$DEFAULT_QDISC\`"
+echo "* TCP Fast Open Flag: \`$TCP_FASTOPEN\`"
+echo ""
+
+# --- E. Active Latency & Performance Daemons ---
+echo "### 5. Latency & Scheduling Daemons"
+for daemon in ananicy-cpp system76-scheduler irqbalance gamemoded bpftune uksmd; do
+    if systemctl is-active "$daemon" >/dev/null 2>&1; then
+        echo "* \`${daemon}.service\`: **ACTIVE**"
+    fi
+done
+
+# Check for sched-ext (scx) framework in modern kernels (6.12+ / CachyOS)
+if [[ -d "/sys/kernel/sched_ext" ]] || command -v scx_loader >/dev/null 2>&1; then
+    if [[ -f "/sys/kernel/sched_ext/state" ]]; then
+        SCX_STATE=$(cat /sys/kernel/sched_ext/state 2>/dev/null || echo "inactive")
+        echo "* \`sched_ext (scx)\`: Framework present (State: \`$SCX_STATE\`)"
+    else
+        echo "* \`sched_ext (scx)\`: Framework installed / supported"
+    fi
+fi
+echo ""
+
+# ==============================================================================
+# SECTION 4: HEURISTIC OPTIMIZATION OPPORTUNITIES
+# ==============================================================================
+echo "### 6. Heuristic Tuning Recommendations"
+OPPORTUNITIES=()
+
+# 1. TCP BBR Check
+if [[ "$TCP_CC" != "bbr" ]]; then
+    OPPORTUNITIES+=("* Network: TCP congestion control is set to \`$TCP_CC\`. Upgrading to \`bbr\` with \`fq\` improves throughput and reduces bufferbloat.")
+fi
+
+# 2. ZRAM Swappiness Check
+if grep -q "zram" /proc/swaps 2>/dev/null; then
+    if [[ "$SWAPPINESS" -lt 100 ]]; then
+        OPPORTUNITIES+=("* Memory: ZRAM swap is active, but \`vm.swappiness\` is set to \`$SWAPPINESS\`. ZRAM performs optimally with swappiness between \`100\` and \`180\` to maximize RAM compression.")
+    fi
+fi
+
+# 3. Transparent Huge Pages Check
+if [[ "$THP_STATE" == "never" ]]; then
+    OPPORTUNITIES+=("* Memory: Transparent Huge Pages (THP) is \`never\`. Setting to \`madvise\` allows high-performance binaries to opt-in to 2MB pages.")
+fi
+
+# 4. CPU Governor Check on Workstations
+if [[ "$CPU_GOV" == "powersave" && "$CPU_EPP" == "power" ]]; then
+    OPPORTUNITIES+=("* CPU: Both scaling governor and EPP are configured for maximum power saving, which may increase desktop frame latency.")
+fi
+
+if [[ ${#OPPORTUNITIES[@]} -gt 0 ]]; then
+    for opp in "${OPPORTUNITIES[@]}"; do
+        echo "$opp"
+    done
+else
+    echo "* System is well-tuned! Core scheduler, memory, and network stack settings align with high-performance desktop profiles."
+fi
+echo ""

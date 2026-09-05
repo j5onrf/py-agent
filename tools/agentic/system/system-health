@@ -1,111 +1,130 @@
 #!/usr/bin/env bash
-# system-health - Context-Aware Real-time Hardware Inspector v1.4.2 [j5onrf]
-# Path: ~/.config/local-ai/tools/agentic/system/system-health
+# system-health - Context-Aware Real-time Hardware Inspector
 
 set -euo pipefail
 
-# Pointed to the root skills folder
-MYSYS_FILE="$HOME/.config/local-ai/skills/system/mysys.md"
+# --- Configuration Paths ---
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/py-agent"
+[[ -d "$CONFIG_DIR" ]] || CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/local-ai"
+MYSYS_FILE="${CONFIG_DIR}/skills/system/mysys.md"
 
-# 1. Fetch Real-time CPU Temperature (Robust hardware monitor search)
+# 1. Real-time CPU Temperature & Frequency
 CPU_TEMP="N/A"
 HWMON_PATH=$(grep -l -E "coretemp|k10temp|zenpower" /sys/class/hwmon/hwmon*/name 2>/dev/null | head -n 1 || true)
-if [ -n "$HWMON_PATH" ]; then
+if [[ -n "$HWMON_PATH" ]]; then
     HWMON_DIR=$(dirname "$HWMON_PATH")
-    # Search for Package/Tdie input sensor
+    # Prioritize Package temp if available, otherwise first input
     for temp_file in "$HWMON_DIR"/temp*_input; do
-        if [ -f "$temp_file" ]; then
-            RAW_TEMP=$(cat "$temp_file")
-            CPU_TEMP="$((RAW_TEMP / 1000))"
-            break
+        if [[ -f "$temp_file" ]]; then
+            RAW_TEMP=$(cat "$temp_file" 2>/dev/null || echo "0")
+            if [[ "$RAW_TEMP" -gt 0 ]]; then
+                CPU_TEMP="$((RAW_TEMP / 1000))"
+                break
+            fi
         fi
     done
 fi
-# Fallback to standard thermal zone if hardware sensors are missed
-if [ "$CPU_TEMP" = "N/A" ] && [ -f "/sys/class/thermal/thermal_zone0/temp" ]; then
-    RAW_TEMP=$(cat "/sys/class/thermal/thermal_zone0/temp")
-    CPU_TEMP="$((RAW_TEMP / 1000))"
+
+if [[ "$CPU_TEMP" == "N/A" && -f "/sys/class/thermal/thermal_zone0/temp" ]]; then
+    RAW_TEMP=$(cat "/sys/class/thermal/thermal_zone0/temp" 2>/dev/null || echo "0")
+    [[ "$RAW_TEMP" -gt 0 ]] && CPU_TEMP="$((RAW_TEMP / 1000))"
 fi
 
-# 2. Fetch Real-time Load Averages (Low-overhead proc read)
+CPU_FREQ="N/A"
+if [[ -f "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq" ]]; then
+    RAW_FREQ=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq 2>/dev/null || echo "0")
+    [[ "$RAW_FREQ" -gt 0 ]] && CPU_FREQ="$((RAW_FREQ / 1000)) MHz"
+fi
+
+# 2. Real-time Load Averages
 LOAD_AVG="N/A"
-if [ -f "/proc/loadavg" ]; then
+if [[ -f "/proc/loadavg" ]]; then
     LOAD_AVG=$(awk '{print $1" (1m), "$2" (5m), "$3" (15m)"}' /proc/loadavg)
 fi
 
-# 3. Fetch Real-time Memory Usage (RAM) (Single-pass awk optimization)
+# 3. Real-time RAM & ZRAM/Swap Utilization (Single-pass proc read)
 FREE_RAM="N/A"
 USED_RAM_PCT="N/A"
-if [ -f "/proc/meminfo" ]; then
-    eval "$(awk '/^MemTotal:/ {print "MEM_TOTAL=" $2} /^MemAvailable:/ {print "MEM_AVAIL=" $2}' /proc/meminfo)"
-    MEM_USED=$((MEM_TOTAL - MEM_AVAIL))
-    FREE_RAM="$((MEM_AVAIL / 1024)) MB"
-    USED_RAM_PCT="$(( (MEM_USED * 100) / MEM_TOTAL ))%"
+SWAP_USAGE="N/A"
+if [[ -f "/proc/meminfo" ]]; then
+    eval "$(awk '
+        /^MemTotal:/ {print "MEM_TOTAL=" $2}
+        /^MemAvailable:/ {print "MEM_AVAIL=" $2}
+        /^SwapTotal:/ {print "SWAP_TOTAL=" $2}
+        /^SwapFree:/ {print "SWAP_FREE=" $2}
+    ' /proc/meminfo)"
+
+    if [[ -n "${MEM_TOTAL:-}" && -n "${MEM_AVAIL:-}" && "$MEM_TOTAL" -gt 0 ]]; then
+        MEM_USED=$((MEM_TOTAL - MEM_AVAIL))
+        FREE_RAM="$((MEM_AVAIL / 1024)) MB"
+        USED_RAM_PCT="$(( (MEM_USED * 100) / MEM_TOTAL ))%"
+    fi
+
+    if [[ -n "${SWAP_TOTAL:-}" && -n "${SWAP_FREE:-}" && "$SWAP_TOTAL" -gt 0 ]]; then
+        SWAP_USED=$((SWAP_TOTAL - SWAP_FREE))
+        SWAP_PCT="$(( (SWAP_USED * 100) / SWAP_TOTAL ))%"
+        SWAP_USAGE="$((SWAP_USED / 1024)) MB / $((SWAP_TOTAL / 1024)) MB ($SWAP_PCT)"
+    else
+        SWAP_USAGE="None (Swap/ZRAM inactive)"
+    fi
 fi
 
-# 4. Fetch Real-time Disk Storage Capacity (Root) (Direct stream read)
+# 4. Root Storage Capacity
 DISK_FREE="N/A"
 DISK_PCT="N/A"
 if command -v df >/dev/null 2>&1; then
     read -r _ _ _ DISK_FREE DISK_PCT _ < <(df -h / | tail -n 1)
 fi
 
-# 5. Get Top CPU and Memory Consumers (Excluding self-spiking processes and headers)
+# 5. Top Resource Consumers
 TOP_CPU_PROC="N/A"
-if command -v ps >/dev/null 2>&1; then
-    # Exclude system tools, scripts, and column headers to prevent false readings
-    TOP_CPU_PROC=$(ps -eo pcpu,comm --sort=-pcpu | grep -E -v "ps|grep|awk|system-health|%CPU|COMMAND|comm" | head -n 1 | awk '{print $2" ("$1"%)"}' || echo "N/A")
-fi
 TOP_MEM_PROC="N/A"
 if command -v ps >/dev/null 2>&1; then
-    # Exclude column headers to accurately grab the actual top memory consumer
-    TOP_MEM_PROC=$(ps -eo pmem,comm --sort=-pmem | grep -E -v "ps|grep|awk|system-health|%MEM|COMMAND|comm" | head -n 1 | awk '{print $2" ("$1"%)"}' || echo "N/A")
+    TOP_CPU_PROC=$(ps -eo pcpu,comm --sort=-pcpu 2>/dev/null | awk '$2 !~ /^(ps|grep|awk|system-health|comm|%CPU|COMMAND)$/ {print $2" ("$1"%)"; exit}')
+TOP_MEM_PROC=$(ps -eo pmem,comm --sort=-pmem 2>/dev/null | awk '$2 !~ /^(ps|grep|awk|system-health|comm|%MEM|COMMAND)$/ {print $2" ("$1"%)"; exit}')
+TOP_CPU_PROC="${TOP_CPU_PROC:-N/A}"
+TOP_MEM_PROC="${TOP_MEM_PROC:-N/A}"
 fi
 
-# 6. Check for Failed Systemd Services
+# 6. Systemd Failed Services Audit
 FAILED_UNITS=0
 if command -v systemctl >/dev/null 2>&1; then
-    FAILED_UNITS=$(systemctl list-units --failed --quiet | wc -l)
+    FAILED_UNITS=$(systemctl list-units --failed --no-legend --plain 2>/dev/null | grep -c -v "^$" || true)
 fi
 
-# 7. Check Profile Alignment with mysys.md (Robust single-process sed)
+# 7. Hardware Profile Alignment Check
 PROFILE_ALIGNMENT="NOMINAL"
 PROFILE_DETAILS="Running configurations align with the static system architecture profile."
-if [ -f "$MYSYS_FILE" ]; then
-    # Extracts the exact kernel version inside the backticks up to the first space
-    STATIC_KERNEL=$(sed -n '/Linux Kernel/s/.*`\([^` ]*\).*/\1/p' "$MYSYS_FILE" || true)
+if [[ -f "$MYSYS_FILE" ]]; then
+    STATIC_KERNEL=$(sed -n '/Linux Kernel/s/.*`\([^` ]*\).*/\1/p' "$MYSYS_FILE" 2>/dev/null || true)
     ACTIVE_KERNEL=$(uname -r)
-    
-    if [ -n "$STATIC_KERNEL" ] && [[ "$ACTIVE_KERNEL" != *"$STATIC_KERNEL"* ]]; then
+    if [[ -n "$STATIC_KERNEL" && "$ACTIVE_KERNEL" != *"$STATIC_KERNEL"* ]]; then
         PROFILE_ALIGNMENT="MISALIGNED"
-        PROFILE_DETAILS="Kernel mismatch! Active is '$ACTIVE_KERNEL', but static profile expects '$STATIC_KERNEL'. Run 'generate profile' to update."
+        PROFILE_DETAILS="Kernel updated! Active is '$ACTIVE_KERNEL', but static profile specifies '$STATIC_KERNEL'. Run 'generate profile' to update."
     fi
 fi
 
-# 8. Determine Overall Posture Status
+# 8. Posture Assessment
 POSTURE="SECURE"
 WARNINGS=""
-if [ "$FAILED_UNITS" -gt 0 ]; then
+if [[ "$FAILED_UNITS" -gt 0 ]]; then
     POSTURE="WARNING"
-    WARNINGS="* Failed Services: $FAILED_UNITS systemd units failed to load correctly.\n"
+    WARNINGS="${WARNINGS}* Failed Services: $FAILED_UNITS systemd unit(s) failed.\n"
 fi
-if [ "$PROFILE_ALIGNMENT" = "MISALIGNED" ]; then
+if [[ "$PROFILE_ALIGNMENT" == "MISALIGNED" ]]; then
     POSTURE="WARNING"
     WARNINGS="${WARNINGS}* Profile Alignment: $PROFILE_DETAILS\n"
-    WARNINGS="${WARNINGS}  \033[1;36m👉 TIP:\033[0m Type \033[1;32m'generate profile'\033[0m in your chat to update your static profile.\n"
 fi
 
-# 9. Context-Aware Output Generation
-if [ "${AI_CONTEXT_RUN:-0}" = "1" ]; then
-    # Machine-friendly raw format: optimizes parser throughput and ensures high-focus LLM synthesis
-    # Completely removed the redundant and memory-heavy system context dump to save context space
+# 9. Context-Aware Emission
+if [[ "${AI_CONTEXT_RUN:-0}" == "1" ]]; then
     cat <<EOF
 SYSTEM HEALTH STATUS: $POSTURE
 Live Load Averages: $LOAD_AVG
-Processor Temperature: ${CPU_TEMP}°C
+Processor Temperature: ${CPU_TEMP}°C ($CPU_FREQ)
 Top CPU Consumer: $TOP_CPU_PROC
-Available Memory: $FREE_RAM
-Memory Utilization: $USED_RAM_PCT
+Available Memory: $FREE_RAM (Used: $USED_RAM_PCT)
+Swap/ZRAM Utilization: $SWAP_USAGE
 Top Memory Consumer: $TOP_MEM_PROC
 Root Disk Capacity: $DISK_PCT ($DISK_FREE Free)
 Failed Systemd Units: $FAILED_UNITS
@@ -113,21 +132,20 @@ System Alignment State: $PROFILE_ALIGNMENT
 Alignment Details: $PROFILE_DETAILS
 EOF
 else
-    # Human-friendly Markdown format: optimized for TUI display and Leaf viewing
     cat <<EOF
 🏥 SYSTEM HEALTH POSTURE: $POSTURE
 * **Active Resource Warnings**: ${WARNINGS:-None (All metrics within healthy boundaries)}
 * **Top System Consumers**: CPU: $TOP_CPU_PROC | RAM: $TOP_MEM_PROC
-* **Healthy Metrics**: Total RAM ($USED_RAM_PCT used), disk storage ($DISK_PCT used), system temperature (${CPU_TEMP}°C), and systemd services.
+* **Healthy Metrics**: Total RAM ($USED_RAM_PCT used), Swap/ZRAM ($SWAP_USAGE), disk ($DISK_PCT used), temperature (${CPU_TEMP}°C), systemd services ($FAILED_UNITS failed).
 
 ---
 
 ### DETAILED DIAGNOSTIC ANALYSIS
 
-1. **CPU & Kernel Environment**: The system load is currently operating at **$LOAD_AVG**. The processor temperature is running at **${CPU_TEMP}°C**. The active CPU process leader is **$TOP_CPU_PROC**.
-2. **Memory (RAM) Status**: The system has **$FREE_RAM** of memory available. RAM capacity is operating at **$USED_RAM_PCT** utilization. The primary memory process leader is **$TOP_MEM_PROC**.
-3. **Disk Space (Root)**: The root partition is operating at **$DISK_PCT** capacity with **$DISK_FREE** of space available.
-4. **Systemd Services Integrity**: All systemd services are running normally with **$FAILED_UNITS** failed units reported.
-5. **System Spec Alignment**: Hardware alignment state is currently **$PROFILE_ALIGNMENT**. $PROFILE_DETAILS
+1. **CPU & Kernel**: System load: **$LOAD_AVG** at **$CPU_FREQ**. Temperature: **${CPU_TEMP}°C**. Top process: **$TOP_CPU_PROC**.
+2. **Memory & Swap**: Available RAM: **$FREE_RAM** (**$USED_RAM_PCT** utilization). Swap/ZRAM: **$SWAP_USAGE**. Top memory process: **$TOP_MEM_PROC**.
+3. **Storage (Root)**: Partition utilization: **$DISK_PCT** (**$DISK_FREE** remaining).
+4. **Systemd Services**: Active failed services: **$FAILED_UNITS**.
+5. **Hardware Spec Alignment**: Status: **$PROFILE_ALIGNMENT**. $PROFILE_DETAILS
 EOF
 fi

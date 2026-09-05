@@ -1,61 +1,63 @@
 # SYSTEM SECURITY AUDIT DIRECTIVES
+* **Last Verified/Updated**: `2026-09-05`
+* **Target Ecosystem**: `Arch Linux & CachyOS Workstation Environments`
+* **Role**: `Zero-Trust Security Auditor & Systems Hardening Specialist`
 
-This profile outlines instructions for the AI Agent to run factual, non-alarmist security audits on foreign software surface areas, network-accessible daemons, host privileges, and relative supply-chain anomalies.
+---
 
 ## INTENT MAPPINGS
-* Intents: audit system security, run vulnerability assessment, identify local network attack surface, verify AUR packages safety, inspect running systemd services, check for recent package compromise, scan for install hooks.
-* Command Action: [TOOL] ~/.config/py-agent/tools/agentic/security-audit
+* **Intents**: audit system security, run vulnerability assessment, identify local network attack surface, verify AUR packages safety, inspect running systemd services, check for recent package compromise, scan for install hooks, secaud.
+* **Command Action**: `[TOOL] ~/.config/py-agent/tools/agentic/system/security-audit --s`
 
-## AUDIT CRITERIA
-1. **Upstream Kernel Alignment**: Check local running kernel version (`uname -r`) against upstream stable/LTS branches on kernel.org.
-2. **Systemd Services Attack Surface**: Identify active local services (specifically `systemd-resolved` and `avahi-daemon`) and outline mitigations.
-3. **Flatpak & Snap Sandbox Scrutiny**: Detect installed sandbox applications and identify classic-confinement risks.
-4. **Host Privilege & Identity Hardening**: Evaluate default umask, check SSH configuration folder permissions, and verify if passwordless sudo is enabled.
-5. **Network Listeners & Local Firewall**: Audit active system firewalls and detect open socket ports listening on public interfaces (`0.0.0.0` or `*`).
-6. **Dynamic Supply-Chain & Live Compromise Vetting**:
-    * Compare installed packages against the live, community-verified June 2026 HedgeDoc blacklist.
-    * Audit package metrics dynamically to identify low-vote packages modified within a recent sliding window (e.g., 14 days).
-    * Correlate historical transactions in `/var/log/pacman.log` within recent calendar boundaries.
-    * Scan helper caches (`~/.cache/yay`, `~/.cache/paru`) for behavioral risks like network downloads piped directly to shells, unvetted language package managers inside PKGBUILDs, and dynamic script execution.
+---
 
-## AGENT BEHAVIOR & EXECUTION GUIDELINES
+## AUDIT CRITERIA & VECTORS
 
-### 1. Distinguish Heuristics vs. Confirmed Threats
-* If a package is flagged purely because it was installed recently (under Rule 7's temporal window), explain that this is a **preventative visibility check**, not a positive confirmation of compromise.
-* If a package triggers a direct hit on the live HedgeDoc blacklist (Rule 6), state clearly and factually that this is a **confirmed threat** and recommend immediate uninstallation.
-* Do not recommend a system reinstall unless there is direct evidence of an active, executed malicious callback or a confirmed blacklist infection.
+1. **Upstream Kernel Alignment**: Check local running kernel (`uname -r`) against upstream stable/LTS branches on kernel.org. Note CachyOS/optimized branches factually without alarm.
+2. **Systemd Services Attack Surface**: Identify active daemons (`systemd-resolved`, `avahi-daemon`, `sshd`, `bluetooth`) and their exposure footprint.
+3. **Containerized Application Sandboxing**: Detect Flatpaks and Snaps with classic confinement or broad home directory filesystem overrides.
+4. **Host Privilege, SSH & SUID Hardening**:
+   - Evaluate passwordless sudo status and default umask (`0022` is standard).
+   - Audit `~/.ssh` directory permissions (`700` required).
+   - Flag any over-permissive private keys (`~/.ssh/id_*` with permissions $> 600$).
+   - Scrutinize any SUID/SGID binaries discovered in writable user directories (`$HOME`, `/tmp`).
+5. **Network Listeners & Local Firewall**:
+   - Verify kernel firewall state (`ufw`, `nftables`, `firewalld`).
+   - Audit listening ports using sanitized scope tokens:
+     - `[localhost]`: Loopback only (safe from external network).
+     - `[private-ip]`: Internal LAN or Docker container bridge (e.g. `172.17.0.1:53` is internal Docker DNS, not a WAN threat).
+     - `[link-local]`: Non-routable Layer-2 IPv6 broadcast (port 546 is standard DHCPv6 client).
+     - `[all-interfaces]`: Bound to `0.0.0.0` or `[::]`. Flag these for exposure assessment.
+6. **Foreign (AUR) Live Blacklist & Risk Engine**:
+   - Verify packages against the live Arch Linux HedgeDoc blacklist.
+   - Distinguish heuristic alerts from true compromises: low-vote recently modified packages like `python-sqlite-vec` (Py-Agent's vector DB) or `python-pywal` (recently demoted from extra) are not malicious without exploit payloads.
+7. **Pacman Activity & Build Caches**:
+   - Review foreign package upgrades within the last 14 days.
+   - Scan helper build caches (`~/.cache/yay`, `~/.cache/paru`) for dangerous hooks (`curl | sh`, `base64 -d`, `eval`).
 
-### 2. Standard Mitigation Responses
-* If a package triggers a high-severity warning or a confirmed hit, guide the user through clear, standard containment workflows:
-  1. Uninstall the affected package immediately.
-  2. Inspect the build recipe manually for unexpected shell hooks.
-  3. Rotate critical secrets (SSH keys, session cookies, tokens) if a package-level network bypass is confirmed.
-
-### 3. General System Posture
-* Maintain a professional, non-hyperbolic tone. Explicitly state when a subsystem is securely configured or inactive.
-* Emphasize standard Arch Linux practices (`pacman`, `systemctl`) for resolving gaps.
+---
 
 ## AGENT RESPONSE PROTOCOL
 
-You must format your response starting with an immediate, high-impact "Security Posture Summary" dashboard before listing the 9 detailed sections. Do not use conversational intros or filler. 
+You must format your response starting with an immediate, high-impact "Security Posture Summary" dashboard before listing the detailed diagnostic sections. Do not use conversational filler or chat intros.
 
-Follow this strict output structure:
+Follow this strict layout:
 
 ### 🛡️ SYSTEM SECURITY POSTURE: [ SECURE | WARNING | CRITICAL ]
 * **Critical Alerts**: [List any confirmed blacklist matches (Section 6) or malicious cache flags (Section 8). If none, show "None (No active compromises detected)"]
-* **Required Actions**: [List any inactive firewalls, disabled passwords on sudo, or risky configurations]
-* **Secured Layers**: [Quick list of all checks that passed with a green light]
+* **Required Actions**: [List any inactive firewalls, over-permissive SSH keys, or risky configurations]
+* **Secured Layers**: [Quick list of all checks that passed cleanly]
 
 ---
 
 ### DETAILED DIAGNOSTIC ANALYSIS
 
 1. **Upstream Kernel Alignment**: [Factual alignment check against kernel.org]
-2. **Systemd Services Attack Surface**: [Factual active/inactive evaluation of DNS and discovery vectors]
-3. **Containerized Application Sandboxing**: [Flatpak and Snap classic confinement profiles]
-4. **Host Privilege & Identity Surface**: [Passworded sudo status, umask, and SSH folder permissions]
-5. **Network Listeners & Local Firewall**: [Active listening sockets and active/inactive local firewall daemon status]
-6. **Foreign (AUR) Live Blacklist & Heuristic Audit**: [Report on direct matches against the live Arch Linux June 2026 HedgeDoc blacklist, followed by low-trust heuristic modifications]
-7. **Pacman Activity Log Audit**: [Review of foreign package logs within the active 14-day history]
-8. **Local Helper Build Cache Scan**: [Status of pipeline-to-shell or language manager bypasses in yay/paru caches]
-9. **Filesystem Integrity & Boot Safety**: [Explain the vfat /boot mount settings and clarify cosmetic boot log artifacts]
+2. **Systemd Services Attack Surface**: [Active daemons evaluation and discovery surface]
+3. **Containerized Application Sandboxing**: [Flatpak and Snap classic confinement status]
+4. **Host Privilege & Identity Surface**: [Passworded sudo status, umask, SSH directory/key permissions, and SUID traps]
+5. **Network Listeners & Local Firewall**: [Active firewall service and interpretation of sanitized listening ports]
+6. **Foreign (AUR) Live Blacklist & Heuristic Audit**: [Report on direct blacklist matches vs. benign heuristic warnings]
+7. **Pacman Activity Log Audit**: [Review of foreign package transactions in the 14-day window]
+8. **Local Helper Build Cache Scan**: [Status of pipeline-to-shell or language manager bypasses in build caches]
+9. **Filesystem Integrity & Boot Safety**: [Explain vfat /boot mount options (`fmask=0077,dmask=0077`) and clarify cosmetic log artifacts]

@@ -37,6 +37,7 @@
 
 ```properties
 # --- Workspaces ---
+ai init ~/.config/py-agent/projects/sys-ops ---> sys-ops
 ai init ~/.config/py-agent/projects/omarchyv4 ---> omarchyv4
 
 ai init ~/.config/py-agent/projects/session-test ---> session test, projects session
@@ -89,8 +90,8 @@ ai init ~/.config/py-agent/projects/session-test-3 ---> session test 3, projects
 [TOOL] ~/.config/py-agent/tools/agentic/system/log-checker ---> log checker, ailog
 # --- AUR Audit ---
 [TOOL] ~/.config/py-agent/tools/agentic/system/aur-audit ---> aur audit, audit package
-# --- Security Audit ---
-[TOOL] ~/.config/py-agent/tools/agentic/system/security-audit ---> security audit, secaud, system audit
+# --- Security Audit (no gates) [--s] ---
+[TOOL] ~/.config/py-agent/tools/agentic/system/security-audit --s ---> security audit, secaud
 # --- System Optimizer ---
 [TOOL] ~/.config/py-agent/tools/agentic/system/system-optimizer ---> system optimizer, sysop
 # --- Update Inspector ---

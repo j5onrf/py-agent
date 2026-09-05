@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# AI Update Inspector - Universal Arch Linux Edition [j5onrf]
+# AI Update Inspector - Universal Arch Linux
 
 set -euo pipefail
 
-CFG_DIR="${HOME}/.config/py-agent"
+CFG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/py-agent"
+[[ -d "$CFG_DIR" ]] || CFG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/local-ai"
+
 spinner_chars=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
 SPINNER_PID=""
 
@@ -12,7 +14,7 @@ start_spinner() {
     (
         local i=0
         while true; do
-            printf "\r\033[1;32m%s\033[0m Checking for updates..." "${spinner_chars[i % 10]}" >&2
+            printf "\r\033[1;32m%s\033[0m Checking for updates & pending pacnew files..." "${spinner_chars[i % 10]}" >&2
             ((i++)); sleep 0.08
         done
     ) &
@@ -25,31 +27,32 @@ stop_spinner() {
         wait "$SPINNER_PID" 2>/dev/null || true
         SPINNER_PID=""
     fi
-    echo -ne "\r\033[2K\r\033[?25h" >&2
+    printf "\r\033[2K\r\033[?25h" >&2
 }
 
-trap stop_spinner EXIT
+trap stop_spinner EXIT INT TERM
 
 # 1. Start loading spinner
 start_spinner
 
 all_updates=""
 repo_summary=""
+total_native_count=0
+total_aur_count=0
 
 # 2. Gather Official / Native Repository Updates
 if command -v checkupdates >/dev/null 2>&1; then
     raw_repo=$(checkupdates 2>/dev/null || true)
     if [ -n "$raw_repo" ]; then
         all_updates="$raw_repo"
+        total_native_count=$(echo "$raw_repo" | grep -c -v "^$" || echo "0")
         pkg_names=$(echo "$raw_repo" | awk '{print $1}')
         
-        # Dynamically detect and group packages by their origin repository (core, extra, multilib, cachyos, endeavouros, etc.)
+        # Group packages dynamically by repository
         repo_info=$(pacman -Si $pkg_names 2>/dev/null | awk '/^Repository/ {repo=$3} /^Name/ {name=$3; if (!seen[name]) { print repo"|"name; seen[name]=1 } }')
-        
-        # Build dynamic counts per repository
         repos=$(echo "$repo_info" | cut -d'|' -f1 | sort -u)
         for r in $repos; do
-            count=$(echo "$repo_info" | grep "^${r}|" | wc -l)
+            count=$(echo "$repo_info" | grep -c "^${r}|" || true)
             pkgs=$(echo "$repo_info" | grep "^${r}|" | cut -d'|' -f2 | awk '{printf "%s\140%s\140", (NR==1?"":", "), $1} END {print ""}')
             repo_summary+=$"* **Repository \`$r\`**: \`$count\` packages\n  - Packages: $pkgs\n\n"
         done
@@ -57,45 +60,103 @@ if command -v checkupdates >/dev/null 2>&1; then
         repo_summary="* **Native Repositories**: \`0\` updates (System up to date)\n\n"
     fi
 else
-    repo_summary="* **Native Repositories**: *checkupdates utility missing (install pacman-contrib)*\n\n"
+    repo_summary="* **Native Repositories**: *checkupdates missing (install pacman-contrib)*\n\n"
 fi
 
-# 3. Gather AUR Updates (Auto-detect paru / yay)
-aur_helper=$(command -v paru >/dev/null && echo "paru" || { command -v yay >/dev/null && echo "yay"; } || echo "")
+# 3. Gather Foreign / AUR Updates
+aur_helper=$(command -v paru 2>/dev/null && echo "paru" || { command -v yay 2>/dev/null && echo "yay"; } || echo "")
 aur_summary=""
 
 if [ -n "$aur_helper" ]; then
     raw_aur=$($aur_helper -Qua 2>/dev/null || true)
     if [ -n "$raw_aur" ]; then
         all_updates+=$'\n'"$raw_aur"
-        aur_count=$(echo "$raw_aur" | wc -l)
+        total_aur_count=$(echo "$raw_aur" | grep -c -v "^$" || echo "0")
         aur_pkgs=$(echo "$raw_aur" | awk '{printf "%s\140%s\140", (NR==1?"":", "), $1} END {print ""}')
-        aur_summary="* **AUR ($aur_helper)**: \`$aur_count\` packages\n  - Packages: $aur_pkgs\n"
+        aur_summary="* **AUR ($aur_helper)**: \`$total_aur_count\` packages\n  - Packages: $aur_pkgs\n"
     else
         aur_summary="* **AUR ($aur_helper)**: \`0\` updates\n"
     fi
 else
-    aur_summary="* **AUR**: *No AUR helper (yay/paru) detected*\n"
+    aur_summary="* **AUR**: *No helper (yay/paru) detected*\n"
 fi
 
-# 4. Filter Universal Spotlight Applications across all categories
-# Matches browsers, editors, core system kernels, graphics drivers, desktop environments, and major tools
-SPOTLIGHT_REGEX="^(brave|firefox|chromium|zen-browser|librewolf|vivaldi|google-chrome|tor-browser|zed|neovim|code|vscodium|emacs|helix|yt-dlp|linux|linux-lts|linux-zen|linux-cachyos|nvidia|mesa|pipewire|wireplumber|hyprland|waybar|sway|plasma|gnome|cosmic|systemd|glibc|archlinux-keyring|python|rust|nodejs|docker|ollama|llama)"
+# 4. Check for Unmerged .pacnew Files in /etc
+pacnew_list=()
+while IFS= read -r -d '' pfile; do
+    pacnew_list+=("$pfile")
+done < <(find /etc -maxdepth 4 -name "*.pacnew" -print0 2>/dev/null || true)
+
+# 5. Core System Reboot & Risk Evaluation
+reboot_triggers=()
+if echo "$all_updates" | grep -iE "(linux|linux-cachyos|linux-lts|linux-zen|ucode)" >/dev/null 2>&1; then
+    reboot_triggers+=("Kernel / Microcode update")
+fi
+if echo "$all_updates" | grep -iE "(systemd|systemd-libs)" >/dev/null 2>&1; then
+    reboot_triggers+=("systemd core libraries")
+fi
+if echo "$all_updates" | grep -iE "^glibc " >/dev/null 2>&1; then
+    reboot_triggers+=("glibc core C library")
+fi
+if echo "$all_updates" | grep -iE "(nvidia|nvidia-utils)" >/dev/null 2>&1; then
+    reboot_triggers+=("Nvidia proprietary driver")
+fi
+
+# 6. Keyring Pre-Update Alert Check
+keyring_alert=""
+if echo "$all_updates" | grep -iE "(archlinux-keyring|cachyos-keyring)" >/dev/null 2>&1; then
+    keyring_alert="⚠️ **KEYRING PRIORITY**: Package keyring update detected. Recommend updating keyrings first to prevent signature verification errors: \`sudo pacman -Sy archlinux-keyring cachyos-keyring\`"
+fi
+
+# 7. Filter Spotlight Applications
+SPOTLIGHT_REGEX="^(brave|firefox|chromium|zen-browser|librewolf|google-chrome|zed|neovim|code|vscodium|emacs|helix|yt-dlp|linux|linux-lts|linux-zen|linux-cachyos|nvidia|mesa|vulkan-intel|intel-media-driver|pipewire|wireplumber|hyprland|waybar|sway|plasma|gnome|cosmic|systemd|glibc|archlinux-keyring|cachyos-keyring|limine|python|rust|nodejs|docker|ollama|llama|kitty|ghostty)"
 spotlight_raw=""
 if [ -n "$all_updates" ]; then
     spotlight_raw=$(echo "$all_updates" | grep -iE "$SPOTLIGHT_REGEX" || true)
 fi
 
-# 5. Stop loading spinner
+# 8. Stop spinner
 stop_spinner
 
-# 6. Output Directives & Structured Data
+# 9. Output Skill Directives and Dynamic Telemetry
 SKILL_FILE="$CFG_DIR/skills/system/update-inspector.md"
 if [ -f "$SKILL_FILE" ]; then
     cat "$SKILL_FILE"
     echo ""
+    echo "---"
+    echo ""
 fi
 
+echo "## REAL-TIME UPDATE TELEMETRY"
+echo "* Total Pending Updates: \`$((total_native_count + total_aur_count))\` (Native: \`$total_native_count\`, AUR: \`$total_aur_count\`)"
+
+if [ ${#reboot_triggers[@]} -gt 0 ]; then
+    reboot_str=$(IFS=", "; echo "${reboot_triggers[*]}")
+    echo "* Reboot Required: **YES** ($reboot_str)"
+else
+    echo "* Reboot Required: **NO** (Only user-space packages pending)"
+fi
+
+if [ -n "$keyring_alert" ]; then
+    echo "* $keyring_alert"
+fi
+echo ""
+
+# Configuration Merges (.pacnew)
+if [ ${#pacnew_list[@]} -gt 0 ]; then
+    echo "### PENDING CONFIGURATION MERGES (.pacnew)"
+    echo "⚠️ The following unmerged \`.pacnew\` files were found in \`/etc\`. Run \`sudo pacdiff\` to merge before updating:"
+    for pf in "${pacnew_list[@]}"; do
+        echo "* \`$pf\`"
+    done
+    echo ""
+else
+    echo "### PENDING CONFIGURATION MERGES (.pacnew)"
+    echo "* None detected. All \`/etc\` configurations are up to date."
+    echo ""
+fi
+
+# Spotlight Updates
 if [ -n "$spotlight_raw" ]; then
     echo "### KEY / SPOTLIGHT APPLICATION UPDATES"
     while IFS= read -r line; do
@@ -108,6 +169,7 @@ if [ -n "$spotlight_raw" ]; then
     echo ""
 fi
 
+# Detailed Repository Breakdown
 echo "### REPOSITORY BREAKDOWN"
 echo -e "$repo_summary"
 echo -e "$aur_summary"
