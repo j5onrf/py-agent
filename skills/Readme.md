@@ -44,4 +44,20 @@ skills/
 | **One-Shot Run** | `/s <name> <prompt>` | Loads skill and executes query in single turn. |
 | **Unload Skills** | `/s off` (or `/s clear`) | Reverts to base workspace profile. |
 | **Select Workspace Profile** | `ai init <dir>` | Selects base profile from `profiles/` with toggle auto-sync. |
+| **Dynamic Context Tool** | Registered in `ai-context.md` | Ephemeral single-turn context injection via `cat`. |
+
+---
+
+### Setting Up Workspace Shortcuts
+
+To launch any workspace instantly from your shell using short trigger words, register it in `~/.config/py-agent/ai-context.md` under **Section 2**:
+
+```properties
+## Workspaces
+
+ai init ~/.config/py-agent/projects/my-app ---> my-app, mapp
+ai init ~/projects/my-app ---> my-app, mapp
+```
+
+* **Usage**: Typing `sys-ops` or `my-app` anywhere in your terminal automatically teleports to the directory and boots the configured workspace agent.
 
