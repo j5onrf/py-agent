@@ -59,5 +59,5 @@ ai init ~/.config/py-agent/projects/my-app ---> my-app, mapp
 ai init ~/projects/my-app ---> my-app, mapp
 ```
 
-* **Usage**: Typing `sys-ops` or `my-app` anywhere in your terminal automatically teleports to the directory and boots the configured workspace agent.
+* **Usage**: Typing `my-app` or `mapp` anywhere in your terminal automatically teleports to the directory and boots the configured workspace agent.
 
