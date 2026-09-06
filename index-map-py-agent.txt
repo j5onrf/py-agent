@@ -1,11 +1,11 @@
-# CODEBASE INDEX MAP | Generated: 2026-09-05 12:14 | Workspace: py-agent | Path: ~/.config/py-agent
+# CODEBASE INDEX MAP | Generated: 2026-09-05 18:32 | Workspace: py-agent | Path: ~/.config/py-agent
 # Active symbols and structural connections mapped in the local index.
 # -----------------------------------------------------------------------------------------
 # Codebase Modules & Active Architecture:
 #   ├── .env                     - ~/.config/local-ai/.env
 #   ├── .env.example             - ==============================================================================
 #   ├── .gitignore               - Secrets & Credentials
-#   ├── .last_cloud_key.txt      - OPENROUTER_API_KEY
+#   ├── .last_cloud_key.txt      - GEMINI_API_KEY
 #   ├── .openrouter_cache_v2.json - {
 #   ├── .request_log             - 1788137364|gemini
 #   ├── .spend_ledger.json       - {
@@ -14,7 +14,7 @@
 #   ├── LICENSE                  - MODIFIED MIT LICENSE (NON-COMMERCIAL / NO BUSINESS USE)
 #   ├── README.md                - <div align="center">
 #   ├── SECURITY.md              - Security Policy
-#   ├── ai-agent.py              - Py Agent [j5onrf] [v0.9.9.17] - Main CLI Runtime, Workspace Agent & Command Dispatcher
+#   ├── ai-agent.py              - Py Agent [j5onrf] [v0.9.9.18] - Main CLI Runtime, Workspace Agent & Command Dispatcher
 #   ├── ai-context.md            - Py-Agent Plugins
 #   ├── ai-hook.sh               - Production Py-Agent Shell Hook v0.9.9
 #   ├── custom_spaces.json       - {
@@ -24,7 +24,7 @@
 #   ├── modules/agent_adapters.py - Tool Format Adapters & Self-Healing Parser for Small-Models
 #   ├── modules/agent_cloud.py   - Dynamic Cloud Cascade Engine - Top-down .env provider API priority with automatic fallback.
 #   ├── modules/agent_context.py - Context Search & Indexing Engine - Jaccard intent matching.
-#   ├── modules/agent_core.py    - Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [Universal High-Performance En
+#   ├── modules/agent_core.py    - Core Module - Streaming SSE, dynamic tool execution, & Rich rendering
 #   ├── modules/agent_ipython.py - Local-AI Standalone IPython Kernel & RLM Harness Module
 #   ├── modules/agent_memories.py - SQLite-backed semantic recall and Temporal Personality Memory (TPM) manager [In-Memory Module & CLI]
 #   ├── modules/agent_sessions.py - SQLite-backed session, checkpoint, and turn logger with sub-agent registry [Self-Healing In-Memory M
@@ -39,13 +39,12 @@
 #   ├── modules/ai-agent-memories - SQLite-backed semantic recall and Temporal Personality Memory (TPM) manager [In-Memory Module & CLI]
 #   ├── modules/ai-agent-sessions - SQLite-backed session, checkpoint, and turn logger with sub-agent registry [Self-Healing In-Memory M
 #   ├── modules/chat             - Unified Agentic Brainstorm, Thinking & Follow-up Recommendation Engine.
-#   ├── modules/index-map-modules.txt - CODEBASE INDEX MAP | Generated: 2026-09-02 18:15 | Workspace: modules | Path: ~/.config/py-agent/mod
 #   ├── modules/model-select.py  - Streamlined TUI Model Selector driven by Local/HF, Google Gemini & OpenRouter
 #   └── modules/speed_test.py    - Precise token generation & TPS speed test statistics tracker
 # -----------------------------------------------------------------------------------------
 [example:.env.example] sum:==============================================================================
 [file:.gitignore] sum:Secrets & Credentials
-[txt:.last_cloud_key.txt] sum:OPENROUTER_API_KEY
+[txt:.last_cloud_key.txt] sum:GEMINI_API_KEY
 [markdown:CONTRIBUTING.md] title:Contributing to Py-Agent
 [file:LICENSE] sum:MODIFIED MIT LICENSE (NON-COMMERCIAL / NO BUSINESS USE)
 [markdown:README.md] title:1. Install system dependencies & clone | links:Readme.md,ai-context.md
@@ -88,17 +87,6 @@
 [python:setup/model-select-local.py] imp:asyncio,os,re,select,shutil,subprocess,sys,tempfile,termios,tty | fn:async_set_cpu_chill,async_set_cpu_balanced,get_current_running_model,async_stop_all_engines,launch_local_server,async_get_key,_read,draw_menu,async_main
 [shell:setup/q2bu.sh] sum:==========================================
 [shell:setup/q35b.sh] sum:==========================================
-[markdown:skills/coding/architect.md] title:architect
-[markdown:skills/coding/coder.md] title:SOFTWARE DEVELOPER ACTIVE SKILL
-[markdown:skills/coding/loop/Readme.md] title:Readme
-[markdown:skills/coding/loop/plan-build.md] title:Role & Objective
-[markdown:skills/coding/loop/review-audit.md] title:Role & Objective
-[markdown:skills/coding/loop/simplify-ship.md] title:Role & Objective
-[markdown:skills/coding/refactor.md] title:SURGICAL AST REFACTORING SKILL
-[markdown:skills/coding/tui.md] title:TERMINAL UI (TUI) DESIGNER SKILL
-[markdown:skills/identity/business/mybiz.md] title:IDENTITY: BUSINESS SYSTEM ENGINEER
-[markdown:skills/identity/marketing/strategy.md] title:IDENTITY: MARKETING STRATEGIST & CONTENT ENGINE
-[markdown:skills/identity/workout/routine.md] title:IDENTITY: ATHLETIC PERFORMANCE & ROUTINE OPTIMIZER
 [markdown:skills/meta/brainstorm.md] title:[SKILL] brainstorm ---> brainstorm, lateral, creative, perspective, future, trends, macro
 [markdown:skills/meta/cot.md] title:cot
 [markdown:skills/meta/eval.md] title:eval
@@ -111,14 +99,10 @@
 [markdown:skills/meta/prompt/prompt.md] title:Role & Objective
 [markdown:skills/meta/thinking.md] title:[SKILL] thinking ---> thinking, think, analyze, next-steps, details, critique, risk
 [markdown:skills/on-demand/Readme.md] title:On-Demand Skills (`/s` & `/skill`)
-[markdown:skills/on-demand/chat/chat-gpt.md] title:[SKILL] chat ---> chat, convo, talk, friendly, chatty, assistant, speak
 [markdown:skills/on-demand/chat/chat.md] title:[SKILL] chat ---> chat, convo, talk, friendly, chatty, assistant, speak
-[markdown:skills/on-demand/chat/gemini/ai-studio.md] title:[SKILL] Chat Role & Personality Profile: Gemini AI Studio Developer
-[markdown:skills/on-demand/chat/gemini/gemini.md] title:[SKILL] Google AI Studio Developer Profile
+[markdown:skills/on-demand/code/herdr.md] title:[SKILL] herdr ---> herdr, split, multiplexer, pane, tab, layout
 [markdown:skills/on-demand/code/ponytail-py.md] title:[SKILL] Ponytail-Py ---> ponytail-py, senior python dev, yagni, minimal python, pythonic simplicity
 [markdown:skills/on-demand/code/ponytail.md] title:[SKILL] Ponytail ---> ponytail, lazy senior dev, yagni, minimal code, simplify code
-[markdown:skills/on-demand/herdr.md] title:[SKILL] herdr ---> herdr, split, multiplexer, pane, tab, layout
-[markdown:skills/on-demand/offload.md] title:[SKILL] offload ---> offload, reasoning offload, reasoning-offloading, offload plan
 [markdown:skills/on-demand/omarchy/capture.md] title:Screen Capture & Sharing Directives
 [markdown:skills/on-demand/omarchy/contributing.md] title:Bug Reporting & Upstream Directives
 [markdown:skills/on-demand/omarchy/diagnose-crash.md] title:Crash & Core Dump Diagnosis Directives
@@ -130,19 +114,14 @@
 [markdown:skills/on-demand/omarchy/theming.md] title:Theming & Appearance Directives
 [markdown:skills/on-demand/personality/caveman.md] title:[SKILL] Caveman Mode ---> caveman, talk like caveman, caveman-mode, less tokens, be brief
 [markdown:skills/on-demand/personality/pirate.md] title:[SKILL] Pirate Talk ---> pirate, talk like a pirate, pirate-talk, nautical, captain
-[markdown:skills/on-demand/reviewer.md] title:[SKILL] reviewer ---> review, check, audit, bug, standard, code review
-[markdown:skills/on-demand/small/minicpm.md] title:[SKILL] mini ---> mini, 1b, 2b, small, light, minicpm5-1b-agentic-tooluse
-[markdown:skills/on-demand/small/qwen3.5-2b.md] title:[SKILL] qwen2b ---> qwen2b, qwen3.5-2b, qwen2, small-qwen, 2b
 [markdown:skills/profiles/claude/pro.md] title:Official Claude Systems Engineer
 [markdown:skills/profiles/custom/base.md] title:Custom Developer Agent Profile Template (Base Lean)
 [markdown:skills/profiles/custom/lfm2.md] title:Liquid Systems Engineer (8B Lite Dev)
 [markdown:skills/profiles/custom/q2b.md] title:Qwen Systems Engineer (2B Lite Dev)
+[markdown:skills/profiles/custom/sysadmin.md] title:IDENTITY & ROLE: SENIOR ARCH LINUX / CACHYOS SYSTEMS ADMINISTRATOR
 [markdown:skills/profiles/hermes/pro.md] title:Nous Hermes Agent System Prompt
 [markdown:skills/profiles/pi/pro.md] title:Official Pi Agent System Prompt
-[markdown:skills/research/brief.md] title:ECOSYSTEM CHANGELOG & RELEASE SUMMARIZER
-[markdown:skills/research/readme.md] title:readme
 [markdown:skills/system/aur-audit.md] title:AUR PRE-INSTALL SECURITY AUDIT SKILL
-[markdown:skills/system/init.md] title:init
 [markdown:skills/system/mysys.md] title:SYSTEM ARCHITECTURE BLUEPRINT
 [markdown:skills/system/security-audit.md] title:SYSTEM SECURITY AUDIT DIRECTIVES
 [markdown:skills/system/system-optimizer.md] title:GENERAL LINUX DESKTOP OPTIMIZATION SKILL
@@ -153,13 +132,13 @@
 [python:tools/agentic/identity/workout/routine] imp:os,sys | fn:main
 [file:tools/agentic/system/ai-commit] sum:ai-commit - Automate Git Commits with AI Context
 [file:tools/agentic/system/ai-status] sum:ai-status - Diagnostics for Py-Agent Cloud Models
-[file:tools/agentic/system/aur-audit] sum:aur-audit - Interactive Zero-Trust AUR Package Auditor v1.1.6
-[file:tools/agentic/system/log-checker] sum:AI Log Triage & Diagnostics v2.0.0 (Zero-Config / One-And-Done)
+[file:tools/agentic/system/aur-audit] sum:aur-audit - Interactive Zero-Trust AUR Package Auditor v2.1.0
+[file:tools/agentic/system/log-checker] sum:AI Log Triage & Diagnostics v2.5.0 (Zero-Config / High-Precision)
 [markdown:tools/agentic/system/readme.md] title:Ai-Commit
-[file:tools/agentic/system/security-audit] sum:security-audit - Dynamic Security Profile Integrator & System Auditor v1.3.6
-[file:tools/agentic/system/system-health] sum:system-health - Context-Aware Real-time Hardware Inspector v1.4.2 [j5onrf]
-[file:tools/agentic/system/system-optimizer] sum:sysop - Dynamic Optimization & Hardware Profile Integrator v1.0.1
-[file:tools/agentic/system/update-inspector] sum:AI Update Inspector - Universal Arch Linux Edition [j5onrf]
+[file:tools/agentic/system/security-audit] sum:security-audit - Dynamic Security Profile Integrator & System Auditor v2.2.0
+[file:tools/agentic/system/system-health] sum:system-health - Context-Aware Real-time Hardware Inspector
+[file:tools/agentic/system/system-optimizer] sum:sysop - Dynamic Optimization & Hardware Profile Integrator v2.0.0
+[file:tools/agentic/system/update-inspector] sum:AI Update Inspector - Universal Arch Linux
 [markdown:tools/agentic/web/Readme.md] title:Firecrawl Scraper API Configurations
 [python:tools/agentic/web/firecrawl] imp:os,re,requests,sys
 [python:tools/agentic/web/web-reader] imp:glob,os,re,shutil,subprocess,sys,tempfile,urllib | fn:scrape_webpage,extract_youtube_subtitles,main
@@ -175,4 +154,4 @@
 [shell:tools/subsec/apps/stopwatch/stopwatch.sh] sum:Minimalist Pure Bash High-Resolution Stopwatch
 [file:tools/subsec/hyprstate/gitcom] sum:Hyprland Workspace State Manager -- GitCom
 [file:tools/subsec/hyprstate/work] sum:Hyprland Workspace State Manager -- Work
-[python:tools/test-agent] imp:agent_adapters,agent_context,agent_core,agent_ipython,agent_tools,agent_tts,agent_tui,agent_usage,importlib,json,os,py_compile,shutil,subprocess,sys,tempfile | fn:print_result
+[python:tools/test-agent] imp:agent_adapters,agent_context,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tools,agent_tts,agent_tui,agent_usage,ast,glob,importlib,json,os,py_compile,re,shutil,subprocess,sys,tempfile,time | fn:print_result

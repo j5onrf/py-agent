@@ -20,6 +20,7 @@ ai-history
 tools/agentic/fusion/logs/
 .agent/
 custom_spaces.json
+.last_cloud_key.txt
 
 # Databases & SQLite WAL
 projects/database/*.db*
