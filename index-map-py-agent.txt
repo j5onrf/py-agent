@@ -1,8 +1,8 @@
-# CODEBASE INDEX MAP | Generated: 2026-09-05 18:32 | Workspace: py-agent | Path: ~/.config/py-agent
+# CODEBASE INDEX MAP | Generated: 2026-09-05 19:22 | Workspace: py-agent | Path: ~/.config/py-agent
 # Active symbols and structural connections mapped in the local index.
 # -----------------------------------------------------------------------------------------
 # Codebase Modules & Active Architecture:
-#   ├── .env                     - ~/.config/local-ai/.env
+#   ├── .env                     - ~/.config/py-agent/.env
 #   ├── .env.example             - ==============================================================================
 #   ├── .gitignore               - Secrets & Credentials
 #   ├── .last_cloud_key.txt      - GEMINI_API_KEY
@@ -44,7 +44,6 @@
 # -----------------------------------------------------------------------------------------
 [example:.env.example] sum:==============================================================================
 [file:.gitignore] sum:Secrets & Credentials
-[txt:.last_cloud_key.txt] sum:GEMINI_API_KEY
 [markdown:CONTRIBUTING.md] title:Contributing to Py-Agent
 [file:LICENSE] sum:MODIFIED MIT LICENSE (NON-COMMERCIAL / NO BUSINESS USE)
 [markdown:README.md] title:1. Install system dependencies & clone | links:Readme.md,ai-context.md
