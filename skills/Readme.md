@@ -29,8 +29,7 @@ skills/
 │   └── update-inspector.md    Pacnew & rolling upgrade risk triage.
 │
 └── meta/        ──► Reasoning harnesses & prompt engineering.
-    ├── brainstorm.md, thinking.md, follow-up.md
-    └── prompt/        Visual prompt generation tools.
+    └── brainstorm.md, thinking.md, follow-up.md
 ```
 
 ---
