@@ -241,7 +241,7 @@ AI_MAX_TOKENS="8192"
 - [x] **llama.cpp WebAgent Gateway:** Real-time tool execution, Gemini vision pre-processing, and streaming proxy for the official `llama.cpp` WebUI (`/webui`).
 - [x] **Google Search Grounding (/gnd):** Live web grounding via Gemini Search tool with automatic DuckDuckGo keyless fallback across CLI, TUI, WebUI, and PyCode.
 - [x] **Zero-Trust Hardened Containment:** Non-bypassable interactive `[Y/n]` fallback gate for out-of-bounds access and package management tools (`pip`, `pacman`, `sudo`).
-- [ ] **PyBot Integration ([OpenBot](https://github.com/CopilotKit/OpenBot) Plugin):** Embedded web assistant & customizable agent widget plugin.
+- [ ] **PyBot Integration ([OpenBot](https://github.com/opencoredev/akeru-bot) Plugin):** Embedded web assistant & customizable agent widget plugin.
 - [ ] **v1.0.0 Production Release Tag!**
 
 ---
