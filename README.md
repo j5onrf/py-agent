@@ -1,8 +1,10 @@
+**New in v0.9.9.19:** Integrated **Hugging Face `smolagents`** code-first execution into the persistent kernel (`/py`). Models can now batch multi-step tasks across files using native Python loops, cleanly signal completion with `final_answer()`, and execute safely under a 30-second `SIGALRM` runaway loop breaker.
+
 <div align="center">
   <img alt="py-agent" src="logo.svg" height="130" />
 </div>
 
-<h1 align="center">Py Agent <img src="https://shieldcn.dev/badge/version-v0.9.9.18.svg?variant=secondary" alt="Version"><a href="https://github.com/j5onrf/py-agent"></a></h1>
+<h1 align="center">Py Agent <img src="https://shieldcn.dev/badge/version-v0.9.9.19.svg?variant=secondary" alt="Version"><a href="https://github.com/j5onrf/py-agent"></a></h1>
 
 <p align="center">
   <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/github/last-commit/j5onrf/py-agent.svg?color=emerald&variant=secondary" alt="Last Commit"></a>
@@ -60,7 +62,7 @@ Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`)
 | **Engine** | **Zero-Daemon** | 0% idle CPU/RAM usage. Native Python standard-library execution. |
 | **Providers** | **Active Provider** | Direct `.env` configuration: Custom Endpoints / HF, Gemini, OpenRouter, OpenAI, Claude, Grok, or Local GGUF. |
 | **Multi-Agent** | **Subagents** | [Vercel Eve](https://github.com/vercel/eve)-style sub-agents with [herdr](https://github.com/ogulcancelik/herdr) multiplexing (`-save`/`-load`) + in-kernel `delegate("goal")` sandboxes. |
-| **Safety** | **Zero-Trust Fallback** | Mandatory non-bypassable `[Y/n]` confirmation for out-of-bounds paths and package managers (`pip`, `pacman`, `sudo`). |
+| **Safety** | **Zero-Trust Fallback** | Mandatory non-bypassable `[Y/n]` confirmation for out-of-bounds workspace paths, mutating system actions (`systemctl start/stop`), and package managers (`sudo`, `pacman -S`, `pip`) across both CLI tools and in-kernel Python execution. |
 | **Integrity** | **Type-Safe & AST Guard** | [Pydantic AI](https://github.com/pydantic/pydantic-ai) schemas + AST-validated Python file writes with live diff previews. |
 | **Resilience** | **Self-Healing Tools** | Unsloth-inspired JSON argument healer re-serializing valid schemas to prevent server `HTTP 500` errors. |
 | **Optimization** | **Token-Slasher** | Custom [`tools/`](tools/) and [`skills/`](skills/) integration built for minimal token consumption. |
@@ -232,7 +234,7 @@ AI_MAX_TOKENS="8192"
 - [x] **Ralph Autonomous Task Loop:** Self-directed iteration engine (`/task`, `TASK.md`) with failure-state decomposition.
 - [x] **Voice to Text:** Low-latency HTTPS voice bridge, Gemini transcription, and non-blocking stdin injection loop (`/v [auto]`).
 - [x] **Kokoro Neural Text-to-Speech:** Real-time local neural voice reader (`/tts`), PipeWire audio integration, and automatic thinking/code block filtering.
-- [x] **NOOA IPython Kernel Harness:** Single-tool Python kernel execution engine (`/py`) with NVIDIA NOOA bounded previews (`preview()`), model-callable `memory`/`graph` APIs, in-kernel `delegate()` sub-agents, AST safety gates, and stateful context conservation.
+- [x] **NOOA & Smolagents IPython Kernel Harness:** Single-tool Python kernel execution engine (`/py`) combining NVIDIA NOOA bounded previews (`preview()`) with Hugging Face `smolagents` code-first batching (`final_answer()`, `search_code()`), 30s `SIGALRM` loop breakers, model-callable `memory`/`graph` APIs, and in-kernel `delegate()` sub-agents.
 - [x] **DeepSeek Session Audit & IPC:** Real-time JSONL event logging (`.agent/session.jsonl`), JSON-RPC 2.0 socket IPC, and YAML skill profile frontmatter headers.
 - [x] **Modular Sub-27B Adapters & Self-Healing Parser:** Dedicated `agent_adapters.py` handling Hermes XML, DSML, Mistral, and raw function call extraction for small quantized models.
 - [x] **SmallCoder Surgical Edits & AST Skeleton:** Whitespace/indentation tolerance in `edit_file`, overwrite protection on `write_file`, and AST outline reading for large files (>250 lines).

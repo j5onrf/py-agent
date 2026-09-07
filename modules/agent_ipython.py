@@ -6,6 +6,7 @@ import builtins
 import contextlib
 import io
 import os
+import signal
 import subprocess
 import sys
 import traceback
@@ -28,15 +29,23 @@ except ImportError:
 
 _shell_globals: dict[str, Any] = {}
 _shell_instance = None
+_final_answer_val: Any = None
 
 try:
     from IPython.core.interactiveshell import InteractiveShell
     from IPython.utils.capture import capture_output
-
     _has_ipython = True
 except ImportError:
     _has_ipython = False
     capture_output = None
+
+
+class CellTimeoutError(TimeoutError):
+    pass
+
+
+def _timeout_handler(signum, frame):
+    raise CellTimeoutError("Cell execution timed out (30s limit exceeded - potential infinite loop halted).")
 
 
 def is_ipython_enabled() -> bool:
@@ -57,7 +66,7 @@ _is_executing_cell = False
 
 
 def bounded_repr(val: Any, max_len: int = 1200) -> str:
-    """NOOA-inspired bounded preview generator."""
+    """Bounded preview generator for in-kernel data objects."""
     if val is None:
         return "None"
     if hasattr(val, "shape") and hasattr(val, "head"):
@@ -83,105 +92,62 @@ def bounded_repr(val: Any, max_len: int = 1200) -> str:
 
 
 class MemorySDK:
-    """Direct in-memory model-callable Harness API for TPM."""
-
     def __init__(self, workspace: str, safe_name: str):
         self.workspace, self.safe_name = workspace, safe_name
 
     def search(self, query: str) -> str:
-        if memories:
-            return (
-                memories.search_past_context(self.safe_name, query)
-                or "No matching memories found."
-            )
-        return "Memory module unavailable."
+        return memories.search_past_context(self.safe_name, query) or "No matching memories found." if memories else "Memory unavailable."
 
     def get_facts(self) -> str:
-        if memories:
-            return memories.tpm_get(self.safe_name) or "No facts stored."
-        return "Memory module unavailable."
+        return memories.tpm_get(self.safe_name) or "No facts stored." if memories else "Memory unavailable."
 
     def add_fact(self, key: str, value: str) -> str:
         if memories:
-            memories.tpm_reconcile(
-                self.safe_name, {key.strip().lower(): str(value).strip()}
-            )
+            memories.tpm_reconcile(self.safe_name, {key.strip().lower(): str(value).strip()})
             return f"Fact reconciled: {key} = {value}"
-        return "Memory module unavailable."
+        return "Memory unavailable."
 
 
 class GraphSDK:
-    """Direct in-memory model-callable Harness API for Codebase Index Graph."""
-
     def __init__(self, workspace: str):
         self.workspace = workspace
 
     def snippet(self, symbol: str) -> str:
-        return (
-            tools.run_graph_cmd("snippet", symbol, self.workspace)
-            if tools
-            else "Tools module unavailable."
-        )
+        return tools.run_graph_cmd("snippet", symbol, self.workspace) if tools else "Tools unavailable."
 
     def trace(self, symbol: str) -> str:
-        return (
-            tools.run_graph_cmd("trace", symbol, self.workspace)
-            if tools
-            else "Tools module unavailable."
-        )
+        return tools.run_graph_cmd("trace", symbol, self.workspace) if tools else "Tools unavailable."
 
     def blast_radius(self, symbol: str) -> str:
-        return (
-            tools.run_graph_cmd("blast-radius", symbol, self.workspace)
-            if tools
-            else "Tools module unavailable."
-        )
+        return tools.run_graph_cmd("blast-radius", symbol, self.workspace) if tools else "Tools unavailable."
 
     def search(self, pattern: str) -> str:
-        return (
-            tools.run_graph_cmd("search", pattern, self.workspace)
-            if tools
-            else "Tools module unavailable."
-        )
+        return tools.run_graph_cmd("search", pattern, self.workspace) if tools else "Tools unavailable."
 
     def architecture(self) -> str:
-        return (
-            tools.run_graph_cmd("architecture", "", self.workspace)
-            if tools
-            else "Tools module unavailable."
-        )
+        return tools.run_graph_cmd("architecture", "", self.workspace) if tools else "Tools unavailable."
 
 
 def delegate(goal: str, workspace: str = ".") -> str:
-    """NOOA-inspired Sub-Agent Delegation."""
     try:
         ws_real = os.path.realpath(workspace)
         sub_history = [
-            {
-                "role": "system",
-                "content": f"You are an isolated sub-agent worker in workspace '{ws_real}'.\nGoal: {goal}\nExecute required tool operations to complete the goal, then output ONLY a concise final summary report.",
-            },
+            {"role": "system", "content": f"You are an isolated sub-agent in '{ws_real}'. Goal: {goal}. Execute tools, then output concise report."},
             {"role": "user", "content": f"Execute sub-task: {goal}"},
         ]
-        ans = (
-            core.stream_response(
-                sub_history,
-                prefix="SubAgent:",
-                show_stats=False,
-                thinking_budget=0,
-                is_agent=True,
-            )
-            if core
-            else None
-        )
+        ans = core.stream_response(sub_history, prefix="SubAgent:", show_stats=False, thinking_budget=0, is_agent=True) if core else None
         return (ans or "Sub-agent completed task.").strip()
     except Exception as e:
         return f"[error] Sub-agent delegation failed: {e}"
 
 
-def _init_kernel_sdk(
-    workspace: str, confirm_gate_fn: Callable[[str], bool] | None = None
-) -> None:
+def _final_answer(val: Any) -> Any:
+    global _final_answer_val
+    _final_answer_val = val
+    return val
+
+
+def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | None = None) -> None:
     global _shell_globals, _shell_instance, _confirm_gate_fn
     if confirm_gate_fn:
         _confirm_gate_fn = confirm_gate_fn
@@ -199,15 +165,11 @@ def _init_kernel_sdk(
         _shell_instance = InteractiveShell.instance()
 
     def _is_outside(path_str: str) -> bool:
-        full = os.path.realpath(
-            path_str if os.path.isabs(path_str) else os.path.join(ws_real, path_str)
-        )
+        full = os.path.realpath(path_str if os.path.isabs(path_str) else os.path.join(ws_real, path_str))
         return full != ws_real and not full.startswith(ws_real + os.sep)
 
     def _check_boundary(path_str: str, op_name: str) -> bool:
-        full = os.path.realpath(
-            path_str if os.path.isabs(path_str) else os.path.join(ws_real, path_str)
-        )
+        full = os.path.realpath(path_str if os.path.isabs(path_str) else os.path.join(ws_real, path_str))
         if _is_outside(full):
             gate_msg = f"OUT-OF-BOUNDS KERNEL {op_name}: {full}"
             if _confirm_gate_fn:
@@ -226,70 +188,47 @@ def _init_kernel_sdk(
     def safe_listdir(path="."):
         if not _check_boundary(str(path), "LIST DIR"):
             raise PermissionError(f"[denied] Out-of-bounds list_dir blocked: {path}")
-        full = os.path.realpath(
-            str(path) if os.path.isabs(str(path)) else os.path.join(ws_real, str(path))
-        )
+        full = os.path.realpath(str(path) if os.path.isabs(str(path)) else os.path.join(ws_real, str(path)))
         return _orig_listdir(full)
 
     def _read_file(path: str) -> str:
         if not _check_boundary(path, "READ"):
             return "[denied] Out-of-bounds read blocked."
-        return (
-            tools.run_tool(
-                "read_file", {"path": path}, ws_real, confirm_gate_fn=_confirm_gate_fn
-            )
-            if tools
-            else ""
-        )
+        return tools.run_tool("read_file", {"path": path}, ws_real, confirm_gate_fn=_confirm_gate_fn) if tools else ""
 
     def _edit_file(path: str, old_str: str, new_str: str) -> str:
         if not _check_boundary(path, "EDIT"):
             return "[denied] Out-of-bounds edit blocked."
-        return (
-            tools.run_tool(
-                "edit_file",
-                {"path": path, "old_str": old_str, "new_str": new_str},
-                ws_real,
-                confirm_gate_fn=_confirm_gate_fn,
-            )
-            if tools
-            else ""
-        )
+        return tools.run_tool("edit_file", {"path": path, "old_str": old_str, "new_str": new_str}, ws_real, confirm_gate_fn=_confirm_gate_fn) if tools else ""
 
     def _write_file(path: str, content: str, overwrite: bool = False) -> str:
         if not _check_boundary(path, "WRITE"):
             return "[denied] Out-of-bounds write blocked."
-        return (
-            tools.run_tool(
-                "write_file",
-                {"path": path, "content": content, "overwrite": overwrite},
-                ws_real,
-                confirm_gate_fn=_confirm_gate_fn,
-            )
-            if tools
-            else ""
-        )
+        return tools.run_tool("write_file", {"path": path, "content": content, "overwrite": overwrite}, ws_real, confirm_gate_fn=_confirm_gate_fn) if tools else ""
 
     def _list_dir(path: str = ".") -> list[str]:
         if not _check_boundary(path, "LIST DIR"):
             return ["[denied] Out-of-bounds list_dir blocked."]
-        full = os.path.realpath(
-            path if os.path.isabs(path) else os.path.join(ws_real, path)
-        )
+        full = os.path.realpath(path if os.path.isabs(path) else os.path.join(ws_real, path))
         return sorted(_orig_listdir(full))
 
+    def _search_code(pattern: str, path: str = ".") -> str:
+        return tools._search_codebase(pattern, path, ws_real) if tools else ""
+
     def _run_command(cmd: str) -> str:
-        res = subprocess.run(
-            cmd, shell=True, cwd=ws_real, capture_output=True, text=True, timeout=120
-        )
+        if tools and hasattr(tools, "_check_command_security"):
+            if sec_reason := tools._check_command_security(cmd, ws_real):
+                gate_msg = f"OUT-OF-BOUNDS KERNEL EXECUTION: $ {cmd} ({sec_reason})"
+                if _confirm_gate_fn and not _confirm_gate_fn(gate_msg):
+                    return f"[denied] Execution halted: {sec_reason}"
+                elif ui and not ui.confirm_tool(gate_msg):
+                    return f"[denied] Execution halted: {sec_reason}"
+        res = subprocess.run(cmd, shell=True, cwd=ws_real, capture_output=True, text=True, timeout=120)
         return ((res.stdout or "") + ("\n" + res.stderr if res.stderr else "")).strip()
 
     safe_name = os.path.basename(ws_real)
     mem_sdk = MemorySDK(ws_real, safe_name)
     graph_sdk = GraphSDK(ws_real)
-
-    def _delegate(goal: str) -> str:
-        return delegate(goal, ws_real)
 
     sdk = {
         "open": safe_open,
@@ -297,7 +236,9 @@ def _init_kernel_sdk(
         "edit_file": _edit_file,
         "write_file": _write_file,
         "list_dir": _list_dir,
+        "search_code": _search_code,
         "run_command": _run_command,
+        "final_answer": _final_answer,
         "read_symbol": graph_sdk.snippet,
         "trace_symbol": graph_sdk.trace,
         "blast_radius": graph_sdk.blast_radius,
@@ -307,12 +248,10 @@ def _init_kernel_sdk(
         "bounded_repr": bounded_repr,
         "memory": mem_sdk,
         "graph": graph_sdk,
-        "delegate": _delegate,
+        "delegate": lambda goal: delegate(goal, ws_real),
         "workspace": ws_real,
     }
     _shell_globals.update(sdk)
-    
-    # Kernel Zero-Trust Overrides
     builtins.open = safe_open
     os.listdir = safe_listdir
 
@@ -320,9 +259,7 @@ def _init_kernel_sdk(
         _shell_instance.user_ns.update(sdk)
 
 
-def inspect_ast_safety(
-    code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] | None = None
-) -> str | None:
+def inspect_ast_safety(code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] | None = None) -> str | None:
     clean = code.strip()
     if clean.startswith("!"):
         if confirm_gate_fn and not confirm_gate_fn(f"PYTHON SHELL ESCAPE: {clean[:40]}"):
@@ -333,38 +270,52 @@ def inspect_ast_safety(
         tree = ast.parse(code)
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
-                fn_name = getattr(node.func, "id", "") or getattr(node.func, "attr", "")
-                if fn_name in ("system", "Popen", "exec", "eval", "remove", "rmtree"):
-                    if confirm_gate_fn and not confirm_gate_fn(f"PYTHON DANGEROUS OP: {fn_name}() cell execution"):
+                # Direct standalone calls: exec(), eval(), system()
+                if isinstance(node.func, ast.Name) and node.func.id in ("exec", "eval", "system"):
+                    if confirm_gate_fn and not confirm_gate_fn(f"PYTHON DANGEROUS OP: {node.func.id}() cell execution"):
                         return "[denied] Dangerous operation rejected by user gate."
+                # Module calls: os.remove(), os.system(), shutil.rmtree() (allows list.remove / set.remove)
+                elif isinstance(node.func, ast.Attribute):
+                    mod_name = getattr(node.func.value, "id", "")
+                    attr_name = node.func.attr
+                    if (mod_name == "os" and attr_name in ("system", "remove", "unlink")) or \
+                       (mod_name == "shutil" and attr_name in ("rmtree", "rmdir")) or \
+                       (mod_name == "subprocess" and attr_name in ("Popen", "call")):
+                        if confirm_gate_fn and not confirm_gate_fn(f"PYTHON DANGEROUS OP: {mod_name}.{attr_name}() cell execution"):
+                            return "[denied] Dangerous operation rejected by user gate."
     except SyntaxError as e:
         return f"[error] Python syntax error in code cell: {e}"
     return None
 
 
-def run_cell(
-    code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] | None = None
-) -> str:
-    global _is_executing_cell
+def run_cell(code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] | None = None) -> str:
+    global _is_executing_cell, _final_answer_val
     _init_kernel_sdk(workspace, confirm_gate_fn)
     if denial := inspect_ast_safety(code, workspace, confirm_gate_fn):
         return denial
 
+    _final_answer_val = None
     _is_executing_cell = True
+
+    # 30-Second Infinite Loop Guard
+    has_alarm = hasattr(signal, "SIGALRM")
+    old_handler = None
+    if has_alarm:
+        old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+        signal.alarm(30)
+
     try:
         if _shell_instance and capture_output:
             with capture_output() as captured:
                 res = _shell_instance.run_cell(code, store_history=True)
                 if res.error_in_exec:
-                    traceback.print_exception(
-                        type(res.error_in_exec),
-                        res.error_in_exec,
-                        res.error_in_exec.__traceback__,
-                    )
+                    traceback.print_exception(type(res.error_in_exec), res.error_in_exec, res.error_in_exec.__traceback__)
             out = (captured.stdout or "").strip()
             err = (captured.stderr or "").strip()
             eval_result = getattr(res, "result", None)
 
+            if _final_answer_val is not None:
+                return f"### Final Answer\n{bounded_repr(_final_answer_val)}"
             if not out and eval_result is not None:
                 out = bounded_repr(eval_result)
             elif out:
@@ -375,27 +326,32 @@ def run_cell(
         else:
             stdout_buf = io.StringIO()
             eval_result = None
-            with (
-                contextlib.redirect_stdout(stdout_buf),
-                contextlib.redirect_stderr(stdout_buf),
-            ):
+            with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stdout_buf):
                 try:
                     eval_result = eval(code, _shell_globals)
                 except SyntaxError:
                     eval_result = None
                     exec(code, _shell_globals)
             out = stdout_buf.getvalue().strip()
+
+            if _final_answer_val is not None:
+                return f"### Final Answer\n{bounded_repr(_final_answer_val)}"
             if not out and eval_result is not None:
                 out = bounded_repr(eval_result)
             elif out:
                 out = bounded_repr(out)
             return out or "(Cell executed successfully with no output)"
+    except CellTimeoutError as e:
+        return f"[timeout] {e}"
     except PermissionError as e:
         return f"[denied] {e}"
     except Exception as e:
         err_msg = str(e).strip().split("\n")[0]
         return f"[error] Cell execution failed: {err_msg}"
     finally:
+        if has_alarm and old_handler:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
         _is_executing_cell = False
 
 
@@ -404,7 +360,7 @@ IPYTHON_TOOL = [
         "type": "function",
         "function": {
             "name": "exec_python",
-            "description": "Execute Python code in the live persistent kernel. Data, variables, and imports stay in memory across cells.",
+            "description": "Execute Python code in the persistent kernel. Data, variables, and imports stay in memory across cells. Compose loops, filter files, and call final_answer(result) when complete.",
             "parameters": {
                 "type": "object",
                 "properties": {

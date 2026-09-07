@@ -60,12 +60,14 @@ All auto-created agent metadata files are strictly isolated inside `project/.age
 Running `ai init <path>` initializes a workspace and opens the interactive profile selector with instant RAM frontmatter pre-caching and single-letter hotkeys.
 
 ```console
-[ai init] Select default Agent Profile for workspace my-project:
+[ai init] Select default Agent Profile for workspace project:
 
   ─── Custom ────────────────────────
      1. Custom Base          (~200t)
      2. Custom Lfm2          (~200t)
-     3. Custom Q2B           (~200t)
+     3. Custom Pysmol        (~200t)
+     4. Custom Q2B           (~200t)
+     5. Custom Sysadmin      (~200t)
 
   ─── Agents ────────────────────────
      1. Pi Pro               (~180t)
@@ -73,7 +75,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
   ❯  3. Hermes Pro           (~180t)
 
   :: ↵ select    ↑/↓ navigate    Esc: default
-     Tab: YOLO [ON]    m: Map [ON]    d: Mem [ON]    p: Py [ON]
+     Tab: YOLO [ON]    m: Map [OFF]    d: Mem [OFF]    p: Py [ON]
 ```
 
 * **Customize Profiles:** Modify or create profile `.md` files in `~/.config/py-agent/skills/profiles/`.
@@ -81,7 +83,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 * **Single-Letter Overrides:**
   * **`Tab`** ➔ Toggle Autonomous YOLO mode (`[ON]` disables confirmation gates).
   * **`m`** ➔ Toggle Codebase Index-Map (11 tools + AST graph intelligence).
-  * **`d` (or `Shift+M`)** ➔ Toggle Database Session Memory & TPM Facts.
+  * **`d`** ➔ Toggle Database Session Memory & TPM Facts.
   * **`p`** ➔ Toggle In-Memory IPython Kernel Harness (`exec_python`).
 * **Hierarchy of Precedence:** Manual button presses take precedence over frontmatter defaults and are saved permanently to `<workspace>/.agent/config.json`.
 * **Auto-Compiling Index-Map:** When Map is `[ON]`, `ai init` automatically builds missing or stale index maps on startup and injects them directly into turn 0.
@@ -138,7 +140,8 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
   * **Database 1 (Codebase Graph):** `.agent/index-map-memory-<ws>.db` — Stores AST relationships (functions, classes, callers/callees). Toggled via **`/m`**.
   * **Database 2 (Session Memory):** `~/.config/py-agent/projects/database/<ws>.db` — Stores conversation history, checkpoints, and long-term user facts (TPM). Toggled via **`/mem`**.
 * **Zero-Trust Mandatory Fallback:** Out-of-bounds file access (e.g. `/etc/os-release`, `~/.ssh/`) and system package commands (`sudo`, `pacman`, `pip`) **always trigger an interactive `[Y/n]` prompt**, even in Autonomous YOLO mode.
-* **Kernel Zero-Trust Overrides (`agent_ipython.py`):** In Python REPL mode, `builtins.open` is intercepted during cell execution to enforce workspace boundaries while allowing background system threads (TTS, logging) to operate without false alarms.
+* **Zero-Trust Mandatory Fallback:** Out-of-bounds workspace access (e.g. `/etc/`, `~/.ssh/`, external project dirs), mutating system actions (`systemctl start/stop/restart/mask`), and package manager modifications (`sudo`, `pacman -S/-R`, `pip`) **always trigger an interactive `[Y/n]` prompt**, even in Autonomous YOLO mode. Safe read-only inspection commands (`pacman -Q*`, `systemctl status/list-units`, `journalctl`) run autonomously without interruptions. This zero-trust boundary is strictly enforced across native tools, shell commands, and in-kernel Python execution (`agent_ipython.py`).
+* **Smolagents Code-First Batching & Loop Protection:** Models operating in `/py` mode write composable Python loops (`read_file`, `search_code`, `list_dir`) to complete multi-step tasks in a single turn instead of ping-ponging single tool calls. Outputs are cleanly decoupled using `final_answer(data)`, and cells are guarded by a 30-second `SIGALRM` execution alarm to halt runaway `while True` loops.
 * **3-Stage Resilient File Editing (`edit_file`):**
   1. *Exact match* replacement.
   2. *Whitespace-normalized* indentation matching (handles 2- vs 4-space discrepancies).
@@ -154,7 +157,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 * **PyCode React Desktop IDE (`/pyc`):** Connects via ACP stdio JSON-RPC 2.0 with live thought/token streaming, ambient aurora glow, and workspace sync.
 * **llama.cpp WebAgent (`/webui`):** Autonomous tool reverse proxy for `llama-server` (:8080) with auxiliary Gemini Flash Lite vision pre-processing.
 * **Textual PyTUI (`/tui`):** Full-screen terminal interface with `uvloop` background services, real-time thought glimmer waves, adaptive light/dark theme typography, and compact 9-line Quick Tips.
-* **NOOA IPython Kernel (`/py`):** Live Python REPL keeping variables, imports, and DataFrames in memory across conversational turns, with real-time status line code previews.
+* **NOOA & Smolagents IPython Kernel (`/py`):** Live Python REPL combining NVIDIA NOOA bounded previews (`preview()`), Hugging Face `smolagents` code-first batch loops, and `final_answer()` completion hooks with real-time status line code previews.
 
 ---
 

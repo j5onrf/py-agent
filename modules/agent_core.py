@@ -476,9 +476,19 @@ def agentic_turn(
 
     consecutive_tool_failures = 0
 
+    def _calc_msg_tokens(msg_list: list[dict[str, Any]]) -> int:
+        total = 0
+        for m in msg_list:
+            total += get_accurate_token_count(m.get("content") or "")
+            for tc in m.get("tool_calls", []):
+                fn = tc.get("function", {})
+                total += get_accurate_token_count(fn.get("name", ""))
+                total += get_accurate_token_count(fn.get("arguments", ""))
+        return total
+
     for _round in range(10):
-        if sum(get_accurate_token_count(m.get("content") or "") for m in messages) > int(max_ctx * 0.8):
-            messages = prune_history(messages, max_tokens=int(max_ctx * 0.6))
+        if _calc_msg_tokens(messages) > int(max_ctx * 0.75):
+            messages = prune_history(messages, max_tokens=int(max_ctx * 0.55))
 
         if consecutive_tool_failures >= 2:
             decomp_steer = (
@@ -525,6 +535,14 @@ def agentic_turn(
             res = _session.post(url, json=body_tools, headers={"Content-Type": "application/json", **headers}, timeout=timeout, stream=True)
             if res.status_code != 200:
                 err_text = res.text[:200].replace("\n", " ").strip()
+                # Self-healing: Catch context window breach and auto-compact history
+                if res.status_code == 400 and ("exceed" in err_text.lower() or "context" in err_text.lower()):
+                    if spinner:
+                        spinner.stop()
+                    sys.stderr.write("\r\033[1;33m[sys] Context window full. Auto-compacting conversation history...\033[0m\r\n")
+                    messages = prune_history(messages, max_tokens=int(max_ctx * 0.5))
+                    continue
+
                 if spinner:
                     spinner.stop()
                 sys.stderr.write(f"\r\033[1;31m[error] Server HTTP {res.status_code}: {err_text}\033[0m\r\n")
@@ -700,6 +718,11 @@ def agentic_turn(
                 if "[denied]" in result:
                     messages.append({"role": "system", "content": "Action was explicitly declined by the user. Do not retry or attempt alternative workarounds for this resource."})
                     return "[denied] Action cancelled by user."
+
+                # Smolagents Completion Signal: Prevent infinite loops after final_answer is returned
+                if fname == "exec_python" and "### Final Answer" in result:
+                    messages.append({"role": "system", "content": "final_answer() was received. Output your concise summary to the user now. Do not call any further tools."})
+                    body.pop("tools", None)
 
                 if result.startswith("[error") or result.startswith("[tool error"):
                     consecutive_tool_failures += 1
