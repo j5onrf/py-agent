@@ -1,4 +1,6 @@
+<div align="center">
 **New in v0.9.9.19:** Integrated **Hugging Face `smolagents`** code-first execution into the persistent kernel (`/py`). Models can now batch multi-step tasks across files using native Python loops, cleanly signal completion with `final_answer()`, and execute safely under a 30-second `SIGALRM` runaway loop breaker.
+</div>
 
 <div align="center">
   <img alt="py-agent" src="logo.svg" height="130" />
