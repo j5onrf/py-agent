@@ -38,9 +38,11 @@
 ```properties
 # --- Workspaces ---
 ai init ~/.config/py-agent/projects/sys-ops ---> sys-ops
+ai init ~/.config/py-agent/projects/omarchyv4 ---> omarchyv4
 
 ai init ~/.config/py-agent/projects/pysmol-test ---> pysmol test, pysmol
-ai init ~/.config/py-agent/projects/omarchyv4 ---> omarchyv4
+ai init ~/.config/py-agent/projects/minicpm ---> minicpm
+
 ai init ~/.config/py-agent/projects/session-test ---> session test, projects session
 ai init ~/.config/py-agent/projects/session-test-2 ---> session test 2, projects session
 ai init ~/.config/py-agent/projects/session-test-3 ---> session test 3, projects session
@@ -70,33 +72,38 @@ ai init ~/.config/py-agent/projects/session-test-3 ---> session test 3, projects
 [TOOL] ~/.config/py-agent/tools/agentic/web/web-reader youtube $1 ---> web reader yt, webr
 # --- File Reader ---
 [TOOL] cat $1 ---> view file, read file, show file, vf
-# --- Memories ---
-[TOOL] view .agent/tpm.md | less -R ---> show memories, mem
-[TOOL] read -p "Search Memories: " query && view .agent/tpm.md | grep --color=always -A 5 -B 2 -i "$query" ---> search memories, ms
-# --- History ---
-[TOOL] view history.md | less -R ---> show history, hist, history
-[TOOL] read -p "Search Page: " query && view history.md | grep --color=always -A 15 -B 2 -i "$query" ---> search page, hs
+
+# --- Memories & Hindsight ---
+[TOOL] cat ~/.config/py-agent/skills/on-demand/hindsight.md --s ---> hindsight, what did we learn, session retrospective, compile lessons
+[TOOL] f=".agent/tpm.md"; [[ -f "$f" ]] || f="tpm.md"; [[ -f "$f" ]] && view "$f" | less -R || echo "No memories found." ---> show memories, mem
+[TOOL] q="$1"; [[ -z "$q" ]] && read -p "Search Memories: " q; f=".agent/tpm.md"; [[ -f "$f" ]] || f="tpm.md"; [[ -f "$f" ]] && grep --color=always -A 5 -B 2 -i "$q" "$f" || echo "No memories found." ---> search memories, ms
+
+# --- History & Transcript Search ---
+[TOOL] f=".agent/history.md"; [[ -f "$f" ]] || f="history.md"; [[ -f "$f" ]] && view "$f" | less -R || echo "No history recorded yet." ---> show history, hist, history
+[TOOL] q="$1"; [[ -z "$q" ]] && read -p "Search Page: " q; f=".agent/history.md"; [[ -f "$f" ]] || f="history.md"; [[ -f "$f" ]] && grep --color=always -A 15 -B 2 -i "$q" "$f" || echo "No history found." ---> search page, hs
 ```
 
 ## 6. System & Health
 
 ```properties
 # --- System Profile ---
-[TOOL] cat ~/.config/py-agent/skills/system/mysys.md ---> mysys
+[TOOL] cat ~/.config/py-agent/skills/system/mysys.md --s ---> mysys
 [TOOL] ~/.config/py-agent/tools/generate-profile ---> generate profile, genp
 
 # --- System Health ---
-[TOOL] ~/.config/py-agent/tools/agentic/system/system-health ---> system health, sysh
+[TOOL] ~/.config/py-agent/tools/agentic/system/system-health --s ---> system health, sysh
 # --- Log Checker ---
-[TOOL] ~/.config/py-agent/tools/agentic/system/log-checker ---> log checker, ailog
+[TOOL] ~/.config/py-agent/tools/agentic/system/log-checker --s ---> log checker, ailog
 # --- AUR Audit ---
-[TOOL] ~/.config/py-agent/tools/agentic/system/aur-audit ---> aur audit, audit package
-# --- Security Audit (no gates) [--s] ---
+[TOOL] ~/.config/py-agent/tools/agentic/system/aur-audit --s ---> aur audit, audit package
+# --- Security Audit ---
 [TOOL] ~/.config/py-agent/tools/agentic/system/security-audit --s ---> security audit, secaud
 # --- System Optimizer ---
 [TOOL] ~/.config/py-agent/tools/agentic/system/system-optimizer ---> system optimizer, sysop
 # --- Update Inspector ---
-[TOOL] ~/.config/py-agent/tools/agentic/system/update-inspector ---> update inspector
+[TOOL] ~/.config/py-agent/tools/agentic/system/update-inspector --s ---> update inspector
+# --- Composite System Triage ---
+[TOOL] ~/.config/py-agent/tools/agentic/system/system-health --s && ~/.config/py-agent/tools/agentic/system/log-checker --s && ~/.config/py-agent/tools/agentic/system/update-inspector --s ---> triage, full check, syscheck
 ```
 
 ## 7. TUI Apps
@@ -119,4 +126,3 @@ ai init ~/.config/py-agent/projects/session-test-3 ---> session test 3, projects
 [TOOL] curl -s wttr.in --cat ---> weather full, get weather
 # --- Time & Date ---
 [TOOL] date "+Current System Date, Time: %-I %M %p on %A, %B %-d, %Y" ---> get date, get time
-```

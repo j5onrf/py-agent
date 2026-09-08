@@ -34,6 +34,12 @@ LOCAL_MODELS = [
         "script": "q2bu.sh",
     },
     {
+        "name": "MiniCPM5-2B (DSpark Speculative)",
+        "alias": "MiniCPM5-2B-DSpark",
+        "file": "MiniCPM5-2B-Q4_K_M.gguf",
+        "script": "Mini2Bs.sh",
+    },
+    {
         "name": "LFM2.5-8B-A1B-APEX-I-Compact",
         "file": "LFM2.5-8B-A1B.gguf",
         "script": "lfm2.sh",

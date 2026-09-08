@@ -66,6 +66,13 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
         else:
             cleaned["path"] = raw_p.strip('\'"`\\\n\r\t ').strip()
 
+        # Auto-heal hallucinated sandbox root prefixes (e.g. /home/user/script.py -> script.py)
+        cleaned["path"] = re.sub(
+            r"^[\"']?(?:/home/(?:user|developer|runner|admin)|/workspace|/app)/(.*)$",
+            r"\1",
+            cleaned["path"],
+        ).strip('\'"')
+
     if "command" not in cleaned:
         for alt in ("cmd", "exec", "shell_command", "script", "bash"):
             if alt in cleaned:
@@ -76,6 +83,13 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
         c = cleaned["command"].strip()
         if r"\"" in c or r"\'" in c:
             c = c.replace(r"\"", '"').replace(r"\'", "'")
+
+        # Auto-heal hallucinated directory navigation (e.g. "cd /home/user && python foo.py" -> "python foo.py")
+        c = re.sub(
+            r"^\s*cd\s+[\"']?(?:/home/(?:user|developer|runner|admin)|/workspace|/root|/app|\.|\~)(?:/[^;&|\n]*)?[\"']?\s*(?:&&|;)\s*",
+            "",
+            c,
+        ).strip()
         cleaned["command"] = c
 
     if "pattern" not in cleaned:

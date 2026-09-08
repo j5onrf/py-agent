@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# syscheck - Composite System Triage & Diagnostics Orchestrator
+set -euo pipefail
+
+SYS_TOOLS_DIR="$(dirname "$0")"
+
+echo "# COMPOSITE SYSTEM TRIAGE & INCIDENT REPORT"
+echo ""
+
+# Run all 3 diagnostics in order
+"$SYS_TOOLS_DIR/system-health"
+echo -e "\n---\n"
+"$SYS_TOOLS_DIR/log-checker"
+echo -e "\n---\n"
+"$SYS_TOOLS_DIR/update-inspector"

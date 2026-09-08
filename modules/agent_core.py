@@ -581,7 +581,7 @@ def agentic_turn(
 
                     is_tool_incoming = bool(delta.get("tool_calls")) or any(k in content for k in ("<tool_call", "<function=", "<｜DSML｜", "<|tool_call"))
                     if is_tool_incoming:
-                        if streamer and streamer.ans_started:
+                        if streamer:
                             streamer.stop()
                             streamer = None
                         if spinner and not spinner.active:
@@ -652,7 +652,7 @@ def agentic_turn(
                 if spinner:
                     spinner.stop()
                 user_msg = next((m.get("content", "") or "" for m in reversed(messages) if m.get("role") == "user"), "")
-                _log_turn_usage(final_model, in_tok, final_out, 0.0, show_stats and not speed_test, in_tok + final_out, user_msg=user_msg, assistant_msg=ans_text)
+                _log_turn_usage(final_model, in_tok, final_out, 0.0, show_stats, in_tok + final_out, user_msg=user_msg, assistant_msg=ans_text)
                 return ans_text if ans_text else "(No response generated)"
 
             # Re-serialize healed tool arguments
