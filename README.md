@@ -183,7 +183,7 @@ nano ~/.config/py-agent/.env
 
 ```env
 # ==============================================================================
-# Py-Agent Environment Configuration (.env)
+# Py-Agent Environment Configuration (.env.example)
 #
 # RULES:
 # 1. Top-Down: First uncommented key is active.
@@ -197,8 +197,8 @@ nano ~/.config/py-agent/.env
 CUSTOM_URL="https://router.huggingface.co/v1/chat/completions"
 CUSTOM_MODEL="Qwen/Qwen3.8-27B"
 
-# ── Custom 2 / DeepSeek Direct API ───────────────────────────────────────────
-# CUSTOM2_API_KEY="sk-your-real-deepseek-key-here"
+# ── Custom 2 / Generic Endpoint (DeepSeek, OpenAI, etc.) ──────────────────────
+# CUSTOM2_API_KEY="sk-your-key-here"
 CUSTOM2_URL="https://api.deepseek.com/chat/completions"
 CUSTOM2_MODEL="deepseek-chat"
 

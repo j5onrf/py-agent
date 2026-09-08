@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Streamlined TUI Model Selector"""
+"""Streamlined TUI Model Selector driven by Local/HF, Generic Custom 2, Google Gemini & OpenRouter"""
 
 import asyncio
 import atexit
@@ -241,6 +241,35 @@ def toggle_single_provider(key_name: str, model_var: str, default_model: str) ->
         return True
 
 
+def toggle_independent_key(key_name: str) -> bool:
+    """Toggles an auxiliary service key (GND_KEY, GEM_VOICE, IMG_VOICE) without disturbing primary chat models."""
+    if not os.path.exists(ENV_PATH):
+        return False
+    try:
+        with open(ENV_PATH, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        now_active = False
+        found = False
+        for i, l in enumerate(lines):
+            if re.match(rf"^#?\s*{key_name}\s*=", l.strip()):
+                found = True
+                if l.strip().startswith("#"):
+                    lines[i] = re.sub(r"^#\s*", "", l)
+                    now_active = True
+                else:
+                    lines[i] = f"#{l}"
+                    now_active = False
+                break
+        if not found:
+            lines.append(f'{key_name}="AIzaSyYourApiKeyHere"\n')
+            now_active = True
+        with open(ENV_PATH, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+        return now_active
+    except OSError:
+        return False
+
+
 def toggle_env_api_keys():
     if not os.path.exists(ENV_PATH):
         return False
@@ -466,6 +495,8 @@ async def async_main():
         active_keys = get_active_key_set()
         env = load_env_vars()
 
+        col_w = 25
+
         # ── Custom 1 (Local / HF) Status ──
         custom_curr = env.get("CUSTOM_MODEL", "default")
         for k, v in spaces.items():
@@ -506,18 +537,21 @@ async def async_main():
         else:
             c2_name, c2_icon = "Direct Endpoint", "🌐"
 
+        c2_label = f"Custom 2 ({c2_name})"
+
         or_model_val = env.get("OPENROUTER_MODEL", "").lower()
         is_or_active = "OPENROUTER_API_KEY" in active_keys
         is_free_active = is_or_active and ("free" in or_model_val or not or_model_val)
         is_paid_active = is_or_active and not is_free_active
 
-        col_w = 25
-        c2_label = f"Custom 2 ({c2_name})"
-
         fmt = lambda curr, k: f"{GREEN}{curr}{RESET}" if k in active_keys else f"{RED}DISABLED{RESET}"
         fmt_or_free = f"{GREEN}{env.get('OPENROUTER_MODEL', 'openrouter/free')}{RESET}" if is_free_active else f"{RED}DISABLED{RESET}"
         fmt_or_paid = f"{GREEN}{env.get('OPENROUTER_MODEL', 'anthropic/claude-3.7-sonnet')}{RESET}" if is_paid_active else f"{RED}DISABLED{RESET}"
         status_all = f"{GREEN}ENABLED{RESET}" if any(k in active_keys for k in PROVIDER_KEYS) else f"{RED}DISABLED{RESET}"
+
+        gnd_curr = env.get("GND_MODEL", "gemini-2.5-flash")
+        voice_curr = env.get("GEM_MODEL", "gemini-3.5-flash-lite")
+        img_curr = env.get("IMG_MODEL", "gemini-3.5-flash-lite")
 
         sys.stdout.write(f"\x1b[H\x1b[2J\n   {BOLD}  LOCAL-AI CONFIGURATION{RESET}\n   {DIM}{'─'*60}{RESET}\n\n")
         options = [
@@ -527,12 +561,19 @@ async def async_main():
             f"✨  {'Google Gemini':<{col_w}} {fmt(env.get('GEMINI_MODEL', 'gemini-3.8-flash'), 'GEMINI_API_KEY')}\n       {DIM}Free daily tier via Google AI Studio{RESET}",
             f"🌐  {'OpenRouter Free':<{col_w}} {fmt_or_free}\n       {DIM}Top rotating community models (100% free){RESET}",
             f"🌐  {'OpenRouter Paid':<{col_w}} {fmt_or_paid}\n       {DIM}High-end paid catalog (Claude, GPT, DeepSeek, Llama){RESET}",
+            f"🔍  {'Search Grounding (/gnd)':<{col_w}} {fmt(gnd_curr, 'GND_KEY')}\n       {DIM}Live Google search retrieval for facts & documentation{RESET}",
+            f"🎙️  {'Voice Transcription':<{col_w}} {fmt(voice_curr, 'GEM_VOICE')}\n       {DIM}Low-latency voice-to-text bridge (:9999){RESET}",
+            f"👁️  {'Vision OCR Multimodal':<{col_w}} {fmt(img_curr, 'IMG_VOICE')}\n       {DIM}Gemini OCR pre-processor for text-only local models{RESET}",
             f"↺  Refresh API Lists        {DIM}Sync live endpoints (Gemini, OpenRouter, HF){RESET}",
             "✕  Save & Close",
         ]
 
         for i, opt in enumerate(options):
-            sys.stdout.write(f"{f'   {AMBER}❯{RESET}  {BOLD}' if i == menu_idx else '      '}{opt}{RESET}\n{'\n' if 1 <= i <= 5 else ''}")
+            if i == 6:
+                sys.stdout.write(f"   {DIM}{'─'*19}  Auxiliary Services  {'─'*19}{RESET}\n\n")
+            elif i == 9:
+                sys.stdout.write(f"   {DIM}{'─'*60}{RESET}\n")
+            sys.stdout.write(f"{f'   {AMBER}❯{RESET}  {BOLD}' if i == menu_idx else '      '}{opt}{RESET}\n{'\n' if (1 <= i <= 5 or 6 <= i <= 8) else ''}")
         sys.stdout.write(f"\n   {DIM}{'─'*60}{RESET}\n   {message or f'{DIM}▲/▼: Navigate | Space: Toggle | Enter: Select | Q: Quit{RESET}'}\n")
         sys.stdout.flush()
         message = ""
@@ -544,28 +585,34 @@ async def async_main():
             menu_idx = (menu_idx + 1) % len(options)
         elif key in ("q", "esc"):
             break
-        elif key == "space" and 1 <= menu_idx <= 5:
-            k_map = {
-                1: ("CUSTOM_API_KEY", "CUSTOM_MODEL", "Qwen/Qwen3.8-27B"),
-                2: ("CUSTOM2_API_KEY", "CUSTOM2_MODEL", custom2_curr or "deepseek-chat"),
-                3: ("GEMINI_API_KEY", "GEMINI_MODEL", "gemini-3.8-flash"),
-                4: ("OPENROUTER_API_KEY", "OPENROUTER_MODEL", "openrouter/free"),
-                5: ("OPENROUTER_API_KEY", "OPENROUTER_MODEL", "anthropic/claude-3.7-sonnet"),
-            }
-            k_name, m_var, d_model = k_map[menu_idx]
-            now_on = toggle_single_provider(k_name, m_var, d_model)
-            label = "OpenRouter" if "OPENROUTER" in k_name else ("Gemini" if "GEMINI" in k_name else (f"Custom 2 ({c2_name})" if "CUSTOM2" in k_name else "Custom 1/HF"))
-            message = f"✓ {label}: {GREEN+'ENABLED'+RESET if now_on else RED+'DISABLED'+RESET}"
+        elif key == "space" and 1 <= menu_idx <= 8:
+            if 1 <= menu_idx <= 5:
+                k_map = {
+                    1: ("CUSTOM_API_KEY", "CUSTOM_MODEL", "Qwen/Qwen3.8-27B"),
+                    2: ("CUSTOM2_API_KEY", "CUSTOM2_MODEL", custom2_curr or "deepseek-chat"),
+                    3: ("GEMINI_API_KEY", "GEMINI_MODEL", "gemini-3.8-flash"),
+                    4: ("OPENROUTER_API_KEY", "OPENROUTER_MODEL", "openrouter/free"),
+                    5: ("OPENROUTER_API_KEY", "OPENROUTER_MODEL", "anthropic/claude-3.7-sonnet"),
+                }
+                k_name, m_var, d_model = k_map[menu_idx]
+                now_on = toggle_single_provider(k_name, m_var, d_model)
+                label = "OpenRouter" if "OPENROUTER" in k_name else ("Gemini" if "GEMINI" in k_name else (f"Custom 2 ({c2_name})" if "CUSTOM2" in k_name else "Custom 1/HF"))
+                message = f"✓ {label}: {GREEN+'ENABLED'+RESET if now_on else RED+'DISABLED'+RESET}"
+            else:
+                aux_keys = {6: "GND_KEY", 7: "GEM_VOICE", 8: "IMG_VOICE"}
+                aux_labels = {6: "Grounding (/gnd)", 7: "Voice Bridge", 8: "Vision OCR"}
+                target_k = aux_keys[menu_idx]
+                now_on = toggle_independent_key(target_k)
+                message = f"✓ {aux_labels[menu_idx]}: {GREEN+'ENABLED'+RESET if now_on else RED+'DISABLED'+RESET}"
         elif key == "enter":
             if menu_idx == 0:
                 is_on = toggle_env_api_keys()
                 message = f"✓ Switched Connection: {GREEN+'ENABLED'+RESET if is_on else RED+'DISABLED'+RESET}"
             elif menu_idx == 2:
-                # Dedicated Generic Custom 2 Submenu
-                provider_key = next((k for k in DEFAULTS["custom2_models"] if k in c2_url.lower()), None)
+                provider_key = next((k for k in DEFAULTS["custom2_models"] if k in c2_url), None)
                 preset_models = DEFAULTS["custom2_models"].get(provider_key, [custom2_curr]) if provider_key else [custom2_curr]
                 c2_menu_items = list(dict.fromkeys(preset_models + ["deepseek-chat", "deepseek-reasoner"]))
-                
+
                 res = await run_interactive_menu(
                     f"Custom 2 ({c2_name})",
                     c2_menu_items,
@@ -640,14 +687,40 @@ async def async_main():
                         target_var = "GEMINI_MODEL" if menu_idx == 3 else "OPENROUTER_MODEL"
                         update_env_multiple({target_var: res})
                     message = f"✓ Primary model set: {res}"
-            elif menu_idx == 6:
+            elif 6 <= menu_idx <= 8:
+                aux_cfg = {
+                    6: ("Search Grounding (/gnd)", "GND_KEY", "GND_MODEL", gnd_curr, ["gemini-2.5-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite"]),
+                    7: ("Voice Transcription", "GEM_VOICE", "GEM_MODEL", voice_curr, ["gemini-3.5-flash-lite", "gemini-2.5-flash"]),
+                    8: ("Vision OCR Multimodal", "IMG_VOICE", "IMG_MODEL", img_curr, ["gemini-3.5-flash-lite", "gemini-2.5-flash"]),
+                }[menu_idx]
+                a_title, a_key, a_mod_var, a_cur_m, a_presets = aux_cfg
+                res = await run_interactive_menu(a_title, a_presets, a_cur_m, a_key in active_keys, [f"🚫 Turn Off {a_title}", "🔑 [Edit API Key]", "✏️  [Custom Model Name]"])
+                if not res:
+                    continue
+                if res.startswith("🚫 Turn Off"):
+                    toggle_independent_key(a_key)
+                    message = f"✓ {a_title} disabled."
+                elif res == "🔑 [Edit API Key]":
+                    if k_in := prompt_user_input(f"Enter API Key for {a_title}"):
+                        update_env_multiple({a_key: k_in})
+                        message = f"✓ {a_key} saved and activated."
+                elif res == "✏️  [Custom Model Name]":
+                    if m_in := prompt_user_input(f"Enter model for {a_title} (current: {a_cur_m})"):
+                        update_env_multiple({a_mod_var: m_in})
+                        message = f"✓ {a_mod_var} updated: {m_in}"
+                else:
+                    update_env_multiple({a_mod_var: res})
+                    if a_key not in active_keys:
+                        toggle_independent_key(a_key)
+                    message = f"✓ {a_title} model set: {res}"
+            elif menu_idx == 9:
                 message = f"{AMBER}↺ Querying live models...{RESET}"
                 remote_data = await async_fetch_remote(env, spaces)
                 cache.update(remote_data)
                 save_json(CACHE_PATH, cache)
                 custom_list = list(spaces.keys()) + [x for x in cache.get("custom", []) if x not in spaces]
                 message = "✓ Synchronized endpoints live."
-            elif menu_idx == 7:
+            elif menu_idx == 10:
                 break
 
     cleanup_terminal()
