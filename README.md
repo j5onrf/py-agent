@@ -1,5 +1,5 @@
 <div align="center">
-**New in v0.9.9.20:** Added first-class support for **MiniCPM5-2B** powered by the dedicated **DSpark speculative decoding engine** (`draft-dspark`). Includes an optimized sub-27B agent profile (`custom/minicpm`), automated sandbox command self-healing in `agent_adapters`.
+**New in v0.9.9.21:** Added first-class support for **MiniCPM5-2B** powered by the dedicated **DSpark speculative decoding engine** (`draft-dspark`). Includes an optimized sub-27B agent profile (`custom/minicpm`), automated sandbox command self-healing in `agent_adapters`.
 </div>
 <br>
 <div align="center">

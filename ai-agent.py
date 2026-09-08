@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.18] - Main CLI Runtime, Workspace Agent & Command Dispatcher"""
+"""Py Agent [j5onrf] [v0.9.9.21] - Main CLI Runtime, Workspace Agent & Command Dispatcher"""
 
 import json
 import os
@@ -22,6 +22,15 @@ BASE_PROMPT_AGENT: str = "Active local workspace developer agent."
 
 
 def load_env_file(path: str) -> None:
+    # Auto-publish .env from .env.example for fresh installs / new machines
+    if not os.path.isfile(path):
+        example_p = os.path.join(os.path.dirname(path), ".env.example")
+        if os.path.isfile(example_p):
+            try:
+                shutil.copy2(example_p, path)
+            except OSError:
+                pass
+
     if os.path.isfile(path):
         try:
             with open(path, "r", encoding="utf-8") as f:

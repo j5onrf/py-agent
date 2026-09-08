@@ -119,14 +119,20 @@ def ensure_env_exists():
 
         template = (
             "# ==============================================================================\n"
-            "# Py-Agent Environment Configuration Template\n"
-            "# Top-Down Priority: The first active (uncommented) provider key is used.\n"
+            "# Py-Agent Environment Configuration (.env.example)\n"
+            "#\n"
+            "# RULES:\n"
+            "# 1. Top-Down: First uncommented key is active.\n"
+            "# 2. Toggle: Add '#' to disable; remove '#' to enable.\n"
+            "# 3. Add More: Define CUSTOM3_*, CUSTOM4_*, etc. anywhere.\n"
+            "# 4. Fallback: If all keys have '#', routes to local server (:8080).\n"
+            "# 5. TUI Config: Run 'model select' to configure everything interactively.\n"
             "# ==============================================================================\n\n"
             "# ── 1. Custom 1 / Hugging Face Router ─────────────────────────────────────────\n"
             '# CUSTOM_API_KEY="not-needed"\n'
             'CUSTOM_URL="https://router.huggingface.co/v1/chat/completions"\n'
             'CUSTOM_MODEL="Qwen/Qwen3.8-27B"\n\n'
-            "# ── 2. Custom 2 / Generic Endpoint (DeepSeek, Groq, Mistral, etc.) ────────────\n"
+            "# ── 2. Custom 2 / Generic Endpoint (DeepSeek, OpenAI, etc.) ───────────────────\n"
             '# CUSTOM2_API_KEY="sk-your-key-here"\n'
             'CUSTOM2_URL="https://api.deepseek.com/chat/completions"\n'
             'CUSTOM2_MODEL="deepseek-chat"\n\n'
@@ -136,7 +142,17 @@ def ensure_env_exists():
             "# ── 4. OpenRouter (Free community models & Universal paid gateway) ────────────\n"
             '# OPENROUTER_API_KEY="sk-or-v1-YourOpenRouterKeyHere"\n'
             'OPENROUTER_MODEL="openrouter/free"\n\n'
-            "# ── Context Window Budget ────────────────────────────────────────────────────\n"
+            "# ── Auxiliary Services (Independent Toggles) ──────────────────────────────────\n\n"
+            "# Google Search Grounding (/gnd)\n"
+            '# GND_KEY="AIzaSyYourGeminiApiKeyHere"\n'
+            '# GND_MODEL="gemini-2.5-flash"\n\n'
+            "# Voice Bridge Transcription (Speech-to-Text on :9999)\n"
+            '# GEM_VOICE="AIzaSyYourGeminiApiKeyHere"\n'
+            '# GEM_MODEL="gemini-3.5-flash-lite"\n\n'
+            "# Multimodal Vision OCR (Pre-processor for text-only local models)\n"
+            '# IMG_VOICE="AIzaSyYourGeminiApiKeyHere"\n'
+            '# IMG_MODEL="gemini-3.5-flash-lite"\n\n'
+            "# ── Context Window Budget ─────────────────────────────────────────────────────\n"
             'AI_MAX_TOKENS="8192"\n'
         )
         try:
