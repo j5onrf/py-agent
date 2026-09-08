@@ -548,7 +548,7 @@ def agentic_turn(
                 sys.stderr.write(f"\r\033[1;31m[error] Server HTTP {res.status_code}: {err_text}\033[0m\r\n")
                 return None
 
-            first_chunk, acc_content, tool_calls_map, in_think_block, captured_usage = True, [], {}, False, None
+            first_chunk, acc_content, tool_calls_map, in_think_block, captured_usage, captured_timings = True, [], {}, False, None, None
 
             for line in res.iter_lines():
                 if not line:
@@ -563,6 +563,7 @@ def agentic_turn(
                 try:
                     data = json.loads(data_str)
                     captured_usage = data.get("usage") or captured_usage
+                    captured_timings = data.get("timings") or data.get("usage", {}).get("timings") or captured_timings
                     
                     # Capture and preserve underlying resolved model (e.g. from openrouter/free gateway)
                     if m_candidate := (data.get("model") or (data.get("choices", [{}])[0].get("model") if data.get("choices") else None)):

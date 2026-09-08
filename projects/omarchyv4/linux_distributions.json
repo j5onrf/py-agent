@@ -1,0 +1,37 @@
+[
+  {
+    "name": "Ubuntu",
+    "base": "Debian",
+    "package_manager": "apt",
+    "default_desktop": "Ubuntu Desktop",
+    "init_system": "systemd"
+  },
+  {
+    "name": "Fedora",
+    "base": "Red Hat",
+    "package_manager": "dnf",
+    "default_desktop": "Fedora Workstation",
+    "init_system": "systemd"
+  },
+  {
+    "name": "Arch Linux",
+    "base": "Arch Linux",
+    "package_manager": "pacman",
+    "default_desktop": "Xfce",
+    "init_system": "systemd"
+  },
+  {
+    "name": "Debian",
+    "base": "Debian",
+    "package_manager": "apt",
+    "default_desktop": "Bunty",
+    "init_system": "systemd"
+  },
+  {
+    "name": "Linux Mint",
+    "base": "Debian",
+    "package_manager": "apt",
+    "default_desktop": "Mint Desktop",
+    "init_system": "systemd"
+  }
+]

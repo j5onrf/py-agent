@@ -416,18 +416,21 @@ def extract_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
     if not calls:
         balanced_objs = _extract_balanced_json(text)
         for i, obj in enumerate(balanced_objs):
-            if "name" in obj:
-                fname = obj.get("name", "")
-                raw_args = obj.get("arguments", {})
+            # Guard: Must have an arguments/parameters payload and a valid function identifier (no spaces)
+            has_args = any(k in obj for k in ("arguments", "parameters", "args", "input"))
+            fname = obj.get("name", "")
+            is_valid_fn = isinstance(fname, str) and bool(re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", fname))
+
+            if is_valid_fn and has_args:
+                raw_args = obj.get("arguments") or obj.get("parameters") or obj.get("args") or obj.get("input") or {}
                 healed = heal_json_args(raw_args)
-                if fname:
-                    calls.append(
-                        {
-                            "id": f"call_naked_{i}_{int(time.time())}",
-                            "type": "function",
-                            "function": {"name": fname, "arguments": json.dumps(healed)},
-                        }
-                    )
+                calls.append(
+                    {
+                        "id": f"call_naked_{i}_{int(time.time())}",
+                        "type": "function",
+                        "function": {"name": fname, "arguments": json.dumps(healed)},
+                    }
+                )
             elif "commands" in obj and isinstance(obj["commands"], list):
                 for cmd_item in obj["commands"]:
                     if isinstance(cmd_item, dict):
