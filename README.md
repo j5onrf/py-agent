@@ -29,7 +29,7 @@
 
 <h2 align="center">Overview & Execution Modes</h2>
 
-Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`) controlling a C++ backend `llama-server`. Optimized for fine-tuned quantized local models (`Qwen3.5-2B+` / `MiniCPM5-2B-DSpark` / `LFM2.5-8B+` for chat & fast single-task tool execution, `Qwen3.6-35B` / `Qwen3.8-27B` for full autonomous agents) and cloud providers—supporting native JSON tool calling, and IPython kernel (`/py`).
+Lightweight Python orchestration (`rich` + `requests` + `sqlite-vec` + `uvloop`) controlling a C++ backend `llama-server`. Optimized for fine-tuned quantized local models (`Qwen3.5-2B` / `MiniCPM5-2B-DSpark` / `LFM2.5-8B` for chat & fast single-task tool execution, `Qwen3.6-35B` / `Qwen3.8-27B` for full autonomous agents) and cloud providers—supporting native JSON tool calling, and IPython kernel (`/py`).
 
 🟢 **Active:** Official `Hugging Face` Router endpoints ([`Qwen/Qwen3.8-27B`](https://huggingface.co/Qwen/Qwen3.8-27B), [`moonshotai/Kimi-K3`](https://huggingface.co/moonshotai/Kimi-K3), [`zai-org/GLM-5.3-Flash`](https://huggingface.co/zai-org/GLM-5.3-Flash), [`DeepSeek-V4-Flash-0731`](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731), [`Qwen/Qwen3.8-2.4T-A95B`](https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B)).
 > 💡 *Use `model select` to auto-configure free community HF Spaces.*
@@ -183,26 +183,36 @@ nano ~/.config/py-agent/.env
 
 ```env
 # ==============================================================================
-# Py-Agent Environment Configuration Template
-# Top-Down Priority: The first active (uncommented) provider key is used.
+# Py-Agent Environment Configuration (.env)
+#
+# RULES:
+# 1. Top-Down: First uncommented key is active.
+# 2. Toggle: Add '#' to disable; remove '#' to enable.
+# 3. Add More: Define CUSTOM3_*, CUSTOM4_*, etc. anywhere.
+# 4. Fallback: If all keys have '#', routes to local server (:8080).
 # ==============================================================================
 
-# ── 1. Custom Endpoints / Hugging Face Router ─────────────────────────────────
+# ── Custom 1 / Hugging Face Router ───────────────────────────────────────────
 # CUSTOM_API_KEY="not-needed"
 CUSTOM_URL="https://router.huggingface.co/v1/chat/completions"
 CUSTOM_MODEL="Qwen/Qwen3.8-27B"
 
-# ── 2. Google Gemini (Free daily tier via Google AI Studio) ───────────────────
+# ── Custom 2 / DeepSeek Direct API ───────────────────────────────────────────
+# CUSTOM2_API_KEY="sk-your-real-deepseek-key-here"
+CUSTOM2_URL="https://api.deepseek.com/chat/completions"
+CUSTOM2_MODEL="deepseek-chat"
+
+# ── Google Gemini (Free daily tier via Google AI Studio) ─────────────────────
 # GEMINI_API_KEY="AIzaSyYourGeminiApiKeyHere"
 GEMINI_MODEL="gemini-3.8-flash"
 
-# ── 3. OpenRouter (Free community models & Universal paid gateway) ────────────
+# ── OpenRouter (Free community models & Universal paid gateway) ──────────────
 # OPENROUTER_API_KEY="sk-or-v1-YourOpenRouterKeyHere"
 OPENROUTER_MODEL="openrouter/free"
 
 # ── Google Search Grounding (/gnd) (Optional) ────────────────────────────────
 # GND_KEY="AIzaSyYourGeminiApiKeyHere"
-# GND_MODEL="gemini-2.0-flash"
+# GND_MODEL="gemini-2.5-flash"
 
 # ── Voice Bridge Transcription (Optional) ────────────────────────────────────
 # GEM_VOICE="AIzaSyYourGeminiApiKeyHere"

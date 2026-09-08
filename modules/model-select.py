@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Streamlined TUI Model Selector driven by Local/HF, Google Gemini & OpenRouter"""
+"""Streamlined TUI Model Selector"""
 
 import asyncio
 import atexit
@@ -68,9 +68,21 @@ DEFAULTS = {
         "Local llama-server / vLLM (Port 8080)": {"url": "http://127.0.0.1:8080/v1/chat/completions", "model": "local-model"},
         "Local Ollama (Port 11434)": {"url": "http://127.0.0.1:11434/v1/chat/completions", "model": "llama3.3"},
     },
+    "custom2_models": {
+        "deepseek": ["deepseek-chat", "deepseek-reasoner"],
+        "x.ai": ["grok-2-latest", "grok-2-vision-latest", "grok-beta"],
+        "anthropic": ["claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"],
+        "openai": ["gpt-4o", "gpt-4o-mini", "o3-mini", "o1"],
+        "meta": ["meta-llama/Llama-3.3-70B-Instruct", "meta-llama/Llama-3.1-8B-Instruct"],
+        "spark": ["spark-lite", "spark-v3.5", "spark-max", "spark-ultra"],
+        "muse": ["muse-v1", "muse-chat"],
+        "groq": ["llama-3.3-70b-versatile", "mixtral-8x7b-32768", "llama-3.1-8b-instant"],
+        "mistral": ["mistral-large-latest", "codestral-latest", "mistral-small-latest"],
+        "together": ["meta-llama/Llama-3.3-70B-Instruct-Turbo", "deepseek-ai/DeepSeek-V3"],
+    }
 }
 
-PROVIDER_KEYS = ["CUSTOM_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY"]
+PROVIDER_KEYS = ["CUSTOM_API_KEY", "CUSTOM2_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY"]
 
 
 def load_json(path, default):
@@ -110,22 +122,20 @@ def ensure_env_exists():
             "# Py-Agent Environment Configuration Template\n"
             "# Top-Down Priority: The first active (uncommented) provider key is used.\n"
             "# ==============================================================================\n\n"
-            "# ── 1. Custom Endpoints / Hugging Face Router ─────────────────────────────────\n"
+            "# ── 1. Custom 1 / Hugging Face Router ─────────────────────────────────────────\n"
             '# CUSTOM_API_KEY="not-needed"\n'
             'CUSTOM_URL="https://router.huggingface.co/v1/chat/completions"\n'
             'CUSTOM_MODEL="Qwen/Qwen3.8-27B"\n\n'
-            "# ── 2. Google Gemini (Free daily tier via Google AI Studio) ───────────────────\n"
+            "# ── 2. Custom 2 / Generic Endpoint (DeepSeek, Groq, Mistral, etc.) ────────────\n"
+            '# CUSTOM2_API_KEY="sk-your-key-here"\n'
+            'CUSTOM2_URL="https://api.deepseek.com/chat/completions"\n'
+            'CUSTOM2_MODEL="deepseek-chat"\n\n'
+            "# ── 3. Google Gemini (Free daily tier via Google AI Studio) ───────────────────\n"
             '# GEMINI_API_KEY="AIzaSyYourGeminiApiKeyHere"\n'
             'GEMINI_MODEL="gemini-3.8-flash"\n\n'
-            "# ── 3. OpenRouter (Free community models & Universal paid gateway) ────────────\n"
+            "# ── 4. OpenRouter (Free community models & Universal paid gateway) ────────────\n"
             '# OPENROUTER_API_KEY="sk-or-v1-YourOpenRouterKeyHere"\n'
             'OPENROUTER_MODEL="openrouter/free"\n\n'
-            "# ── Google Search Grounding (/gnd) ───────────────────────────────────────────\n"
-            '# GND_KEY="AIzaSyYourGeminiApiKeyHere"\n'
-            '# GND_MODEL="gemini-2.5-flash"\n\n'
-            "# ── Voice Bridge Transcription & Vision (Optional) ───────────────────────────\n"
-            '# GEM_VOICE="AIzaSyYourGeminiApiKeyHere"\n'
-            '# GEM_MODEL="gemini-3.5-flash-lite"\n\n'
             "# ── Context Window Budget ────────────────────────────────────────────────────\n"
             'AI_MAX_TOKENS="8192"\n'
         )
@@ -191,7 +201,7 @@ def update_env_multiple(updates: dict[str, str]):
 
 
 def isolate_active_key(active_key_name: str):
-    """Activates ONLY the chosen key and comments out others. If active_key_name is empty, comments out all."""
+    """Activates ONLY the chosen key and comments out others."""
     if not os.path.exists(ENV_PATH):
         return
     try:
@@ -219,7 +229,6 @@ def isolate_active_key(active_key_name: str):
 
 
 def toggle_single_provider(key_name: str, model_var: str, default_model: str) -> bool:
-    """Toggles ONE provider on/off. When turning ON, turns off other providers (mutual toggle)."""
     active_keys = get_active_key_set()
     if key_name in active_keys:
         isolate_active_key("")
@@ -233,16 +242,13 @@ def toggle_single_provider(key_name: str, model_var: str, default_model: str) ->
 
 
 def toggle_env_api_keys():
-    """Smart Master Switch: Disables cloud if any key is on; restores ONLY the last active key if off."""
     if not os.path.exists(ENV_PATH):
         return False
     active_keys = get_active_key_set()
     if any(k in active_keys for k in PROVIDER_KEYS):
-        # Turn OFF cloud completely
         isolate_active_key("")
         return False
     else:
-        # Restore ONLY the last used key, NEVER all of them!
         last_key = "OPENROUTER_API_KEY"
         if os.path.isfile(LAST_KEY_FILE):
             try:
@@ -311,7 +317,6 @@ async def async_fetch_remote(env_vars: dict, spaces: dict):
         except Exception:
             pass
 
-        # Pin openrouter/free permanently at the very top of the free list
         if "openrouter/free" in free_c:
             free_c.remove("openrouter/free")
         free_c.insert(0, "openrouter/free")
@@ -448,7 +453,6 @@ async def async_main():
         except Exception:
             pass
 
-    # Ensure openrouter/free is pinned to the top of the cache immediately
     free_list = cache.get("free", DEFAULTS["free"])
     if "openrouter/free" in free_list:
         free_list.remove("openrouter/free")
@@ -462,28 +466,73 @@ async def async_main():
         active_keys = get_active_key_set()
         env = load_env_vars()
 
+        # ── Custom 1 (Local / HF) Status ──
         custom_curr = env.get("CUSTOM_MODEL", "default")
         for k, v in spaces.items():
             if custom_curr == v.get("model") or env.get("CUSTOM_URL") == v.get("url"):
                 custom_curr = k
                 break
 
+        # ── Custom 2 (Generic Endpoint) Dynamic Brand & Icon Detection ──
+        custom2_curr = env.get("CUSTOM2_MODEL", "default")
+        c2_url = env.get("CUSTOM2_URL", "").lower()
+        c2_mod = custom2_curr.lower()
+
+        if "deepseek" in c2_url or "deepseek" in c2_mod:
+            c2_name, c2_icon = "DeepSeek", "🐳"
+        elif "x.ai" in c2_url or "grok" in c2_mod:
+            c2_name, c2_icon = "xAI (Grok)", "🪐"
+        elif "anthropic" in c2_url or "claude" in c2_mod:
+            c2_name, c2_icon = "Anthropic", "🪸"
+        elif "openai" in c2_url or any(x in c2_mod for x in ("gpt-", "o1", "o3-", "chatgpt")):
+            c2_name, c2_icon = "OpenAI", "✳️"
+        elif "meta" in c2_url or "llama" in c2_mod:
+            c2_name, c2_icon = "Meta (Llama)", "🦙"
+        elif "spark" in c2_url or "xfyun" in c2_url or "spark" in c2_mod:
+            c2_name, c2_icon = "iFlytek Spark", "✨"
+        elif "muse" in c2_url or "muse" in c2_mod:
+            c2_name, c2_icon = "Muse", "🎨"
+        elif "groq" in c2_url:
+            c2_name, c2_icon = "Groq", "⚡"
+        elif "mistral" in c2_url or "codestral" in c2_mod:
+            c2_name, c2_icon = "Mistral", "🌪️"
+        elif "together" in c2_url:
+            c2_name, c2_icon = "Together AI", "🤝"
+        elif "perplexity" in c2_url:
+            c2_name, c2_icon = "Perplexity", "🔮"
+        elif c2_url:
+            host = c2_url.split("://")[-1].split("/")[0]
+            c2_name, c2_icon = host, "🌐"
+        else:
+            c2_name, c2_icon = "Direct Endpoint", "🌐"
+
+        or_model_val = env.get("OPENROUTER_MODEL", "").lower()
+        is_or_active = "OPENROUTER_API_KEY" in active_keys
+        is_free_active = is_or_active and ("free" in or_model_val or not or_model_val)
+        is_paid_active = is_or_active and not is_free_active
+
+        col_w = 25
+        c2_label = f"Custom 2 ({c2_name})"
+
         fmt = lambda curr, k: f"{GREEN}{curr}{RESET}" if k in active_keys else f"{RED}DISABLED{RESET}"
-        status_all = f"{GREEN}[ ENABLED ]{RESET}" if any(k in active_keys for k in PROVIDER_KEYS) else f"{RED}[ DISABLED ]{RESET}"
+        fmt_or_free = f"{GREEN}{env.get('OPENROUTER_MODEL', 'openrouter/free')}{RESET}" if is_free_active else f"{RED}DISABLED{RESET}"
+        fmt_or_paid = f"{GREEN}{env.get('OPENROUTER_MODEL', 'anthropic/claude-3.7-sonnet')}{RESET}" if is_paid_active else f"{RED}DISABLED{RESET}"
+        status_all = f"{GREEN}ENABLED{RESET}" if any(k in active_keys for k in PROVIDER_KEYS) else f"{RED}DISABLED{RESET}"
 
         sys.stdout.write(f"\x1b[H\x1b[2J\n   {BOLD}  LOCAL-AI CONFIGURATION{RESET}\n   {DIM}{'─'*60}{RESET}\n\n")
         options = [
-            f"🔌  Cloud Connection        {status_all}",
-            f"🤗  Custom / Local / HF      {fmt(custom_curr, 'CUSTOM_API_KEY')}\n       {DIM}Local llama-server, Ollama, HF Spaces & official HF Router{RESET}",
-            f"♊  Google Gemini            {fmt(env.get('GEMINI_MODEL', 'gemini-3.8-flash'), 'GEMINI_API_KEY')}\n       {DIM}Free daily tier via Google AI Studio{RESET}",
-            f"🌐  OpenRouter Free         {fmt(env.get('OPENROUTER_MODEL', 'openrouter/free'), 'OPENROUTER_API_KEY')}\n       {DIM}Top rotating community models (100% free){RESET}",
-            f"🌐  OpenRouter Paid         {fmt(env.get('OPENROUTER_MODEL', 'openrouter/free'), 'OPENROUTER_API_KEY')}\n       {DIM}High-end paid catalog (Claude, GPT, DeepSeek, Llama){RESET}",
+            f"🔌  {'Cloud Connection':<{col_w}} {status_all}",
+            f"🤗  {'Custom 1 (Local / HF)':<{col_w}} {fmt(custom_curr, 'CUSTOM_API_KEY')}\n       {DIM}Local llama-server, Ollama, HF Spaces & official HF Router{RESET}",
+            f"{c2_icon}  {c2_label:<{col_w}} {fmt(custom2_curr, 'CUSTOM2_API_KEY')}\n       {DIM}Direct endpoint via {c2_url or 'OpenAI-compatible URL'}{RESET}",
+            f"✨  {'Google Gemini':<{col_w}} {fmt(env.get('GEMINI_MODEL', 'gemini-3.8-flash'), 'GEMINI_API_KEY')}\n       {DIM}Free daily tier via Google AI Studio{RESET}",
+            f"🌐  {'OpenRouter Free':<{col_w}} {fmt_or_free}\n       {DIM}Top rotating community models (100% free){RESET}",
+            f"🌐  {'OpenRouter Paid':<{col_w}} {fmt_or_paid}\n       {DIM}High-end paid catalog (Claude, GPT, DeepSeek, Llama){RESET}",
             f"↺  Refresh API Lists        {DIM}Sync live endpoints (Gemini, OpenRouter, HF){RESET}",
             "✕  Save & Close",
         ]
 
         for i, opt in enumerate(options):
-            sys.stdout.write(f"{f'   {AMBER}❯{RESET}  {BOLD}' if i == menu_idx else '      '}{opt}{RESET}\n{'\n' if 1 <= i <= 4 else ''}")
+            sys.stdout.write(f"{f'   {AMBER}❯{RESET}  {BOLD}' if i == menu_idx else '      '}{opt}{RESET}\n{'\n' if 1 <= i <= 5 else ''}")
         sys.stdout.write(f"\n   {DIM}{'─'*60}{RESET}\n   {message or f'{DIM}▲/▼: Navigate | Space: Toggle | Enter: Select | Q: Quit{RESET}'}\n")
         sys.stdout.flush()
         message = ""
@@ -495,28 +544,65 @@ async def async_main():
             menu_idx = (menu_idx + 1) % len(options)
         elif key in ("q", "esc"):
             break
-        elif key == "space" and 1 <= menu_idx <= 4:
-            # Spacebar toggles ONLY the selected provider
+        elif key == "space" and 1 <= menu_idx <= 5:
             k_map = {
                 1: ("CUSTOM_API_KEY", "CUSTOM_MODEL", "Qwen/Qwen3.8-27B"),
-                2: ("GEMINI_API_KEY", "GEMINI_MODEL", "gemini-3.8-flash"),
-                3: ("OPENROUTER_API_KEY", "OPENROUTER_MODEL", "openrouter/free"),
-                4: ("OPENROUTER_API_KEY", "OPENROUTER_MODEL", "anthropic/claude-3.7-sonnet"),
+                2: ("CUSTOM2_API_KEY", "CUSTOM2_MODEL", custom2_curr or "deepseek-chat"),
+                3: ("GEMINI_API_KEY", "GEMINI_MODEL", "gemini-3.8-flash"),
+                4: ("OPENROUTER_API_KEY", "OPENROUTER_MODEL", "openrouter/free"),
+                5: ("OPENROUTER_API_KEY", "OPENROUTER_MODEL", "anthropic/claude-3.7-sonnet"),
             }
             k_name, m_var, d_model = k_map[menu_idx]
             now_on = toggle_single_provider(k_name, m_var, d_model)
-            label = "OpenRouter" if "OPENROUTER" in k_name else ("Gemini" if "GEMINI" in k_name else "Custom/HF")
+            label = "OpenRouter" if "OPENROUTER" in k_name else ("Gemini" if "GEMINI" in k_name else (f"Custom 2 ({c2_name})" if "CUSTOM2" in k_name else "Custom 1/HF"))
             message = f"✓ {label}: {GREEN+'ENABLED'+RESET if now_on else RED+'DISABLED'+RESET}"
         elif key == "enter":
             if menu_idx == 0:
                 is_on = toggle_env_api_keys()
                 message = f"✓ Switched Connection: {GREEN+'ENABLED'+RESET if is_on else RED+'DISABLED'+RESET}"
-            elif 1 <= menu_idx <= 4:
+            elif menu_idx == 2:
+                # Dedicated Generic Custom 2 Submenu
+                provider_key = next((k for k in DEFAULTS["custom2_models"] if k in c2_url.lower()), None)
+                preset_models = DEFAULTS["custom2_models"].get(provider_key, [custom2_curr]) if provider_key else [custom2_curr]
+                c2_menu_items = list(dict.fromkeys(preset_models + ["deepseek-chat", "deepseek-reasoner"]))
+                
+                res = await run_interactive_menu(
+                    f"Custom 2 ({c2_name})",
+                    c2_menu_items,
+                    custom2_curr,
+                    "CUSTOM2_API_KEY" in active_keys,
+                    ["🚫 Turn Off Custom 2", "✏️  [Edit Model Name]", "🔗 [Edit Endpoint URL]", "🔑 [Edit API Key]"]
+                )
+
+                if not res:
+                    continue
+                if res.startswith("🚫 Turn Off"):
+                    isolate_active_key("")
+                    message = "✓ Custom 2 disabled."
+                elif res == "✏️  [Edit Model Name]":
+                    if m_in := prompt_user_input(f"Enter model name for {c2_name} (current: {custom2_curr})"):
+                        update_env_multiple({"CUSTOM2_MODEL": m_in})
+                        isolate_active_key("CUSTOM2_API_KEY")
+                        message = f"✓ Custom 2 Model set to: {m_in}"
+                elif res == "🔗 [Edit Endpoint URL]":
+                    if u_in := prompt_user_input("Enter OpenAI-compatible completions URL"):
+                        update_env_multiple({"CUSTOM2_URL": u_in})
+                        message = f"✓ Custom 2 URL updated to: {u_in}"
+                elif res == "🔑 [Edit API Key]":
+                    if k_in := prompt_user_input(f"Enter API Key for {c2_name}"):
+                        update_env_multiple({"CUSTOM2_API_KEY": k_in})
+                        isolate_active_key("CUSTOM2_API_KEY")
+                        message = f"✓ Custom 2 API key updated and activated."
+                else:
+                    isolate_active_key("CUSTOM2_API_KEY")
+                    update_env_multiple({"CUSTOM2_MODEL": res})
+                    message = f"✓ Custom 2 Model set: {res}"
+            elif 1 <= menu_idx <= 5:
                 cfg = {
-                    1: ("Custom / HuggingFace", custom_list, custom_curr, "CUSTOM_API_KEY", ["🚫 Turn Off Custom / HF", "➕ [Add Endpoint / Space URL]", "🗑  [Delete Custom Space]"]),
-                    2: ("Gemini", cache.get("gemini", DEFAULTS["gemini"]), env.get("GEMINI_MODEL", ""), "GEMINI_API_KEY", ["🚫 Turn Off Gemini"]),
-                    3: ("OpenRouter Free", cache.get("free", DEFAULTS["free"]), env.get("OPENROUTER_MODEL", ""), "OPENROUTER_API_KEY", ["🚫 Turn Off OpenRouter"]),
-                    4: ("OpenRouter Paid", cache.get("paid", DEFAULTS["paid"]), env.get("OPENROUTER_MODEL", ""), "OPENROUTER_API_KEY", ["🚫 Turn Off OpenRouter"]),
+                    1: ("Custom 1 / HuggingFace", custom_list, custom_curr, "CUSTOM_API_KEY", ["🚫 Turn Off Custom 1", "➕ [Add Endpoint / Space URL]", "🗑  [Delete Custom Space]"]),
+                    3: ("Gemini", cache.get("gemini", DEFAULTS["gemini"]), env.get("GEMINI_MODEL", ""), "GEMINI_API_KEY", ["🚫 Turn Off Gemini"]),
+                    4: ("OpenRouter Free", cache.get("free", DEFAULTS["free"]), env.get("OPENROUTER_MODEL", ""), "OPENROUTER_API_KEY", ["🚫 Turn Off OpenRouter"]),
+                    5: ("OpenRouter Paid", cache.get("paid", DEFAULTS["paid"]), env.get("OPENROUTER_MODEL", ""), "OPENROUTER_API_KEY", ["🚫 Turn Off OpenRouter"]),
                 }[menu_idx]
 
                 title, model_items, cur_val, key_name, extra_opts = cfg
@@ -546,23 +632,22 @@ async def async_main():
                             custom_list.remove(del_res)
                         message = f"✓ Removed space: '{del_res}'"
                 else:
-                    # Mutual Toggle: Activates ONLY the chosen provider, turns off others
                     isolate_active_key(key_name)
                     if menu_idx == 1:
                         sp = spaces.get(res, {"url": HF_ROUTER_URL, "model": res})
-                        update_env_multiple({"CUSTOM_URL": sp["url"], "CUSTOM_MODEL": sp["model"], "CUSTOM_API_KEY": "not-needed"})
+                        update_env_multiple({"CUSTOM_URL": sp["url"], "CUSTOM_MODEL": sp["model"]})
                     else:
-                        target_var = "GEMINI_MODEL" if menu_idx == 2 else "OPENROUTER_MODEL"
+                        target_var = "GEMINI_MODEL" if menu_idx == 3 else "OPENROUTER_MODEL"
                         update_env_multiple({target_var: res})
                     message = f"✓ Primary model set: {res}"
-            elif menu_idx == 5:
+            elif menu_idx == 6:
                 message = f"{AMBER}↺ Querying live models...{RESET}"
                 remote_data = await async_fetch_remote(env, spaces)
                 cache.update(remote_data)
                 save_json(CACHE_PATH, cache)
                 custom_list = list(spaces.keys()) + [x for x in cache.get("custom", []) if x not in spaces]
                 message = "✓ Synchronized endpoints live."
-            elif menu_idx == 6:
+            elif menu_idx == 7:
                 break
 
     cleanup_terminal()
