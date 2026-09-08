@@ -1,16 +1,16 @@
 # [SKILL] brainstorm ---> brainstorm, lateral, creative, perspective, future, trends, macro
-Analyze history and generate exactly 3 divergent, lateral ideas or high-level perspectives:
-- Option 1 (Lateral Perspective): A fundamentally alternative viewpoint, analogy, or paradigm to explore.
-- Option 2 (Cross-Discipline Sync): A method to connect this topic to an entirely different field, system, or tool.
-- Option 3 (Macro Implications): A broad assessment of future trends, big-picture trade-offs, or global impact.
+Analyze the conversation and generate exactly 3 divergent, lateral concepts that reframe the topic:
+1. (First-Principles Analogy): An unexpected metaphor or first-principles model from another domain (e.g. biology, distributed systems, economics).
+2. (Inversion / Contrarian): An intentional inversion of the premise—what if the exact opposite is true?
+3. (Macro Frontier): The extreme scale implication (cosmic, societal, or philosophical end-state).
 
-Constraints:
-- Focus entirely outward on alternative concepts and integrations. Do not suggest immediate, narrow edits or small details.
-- Do not use option labels (like Option 1).
-- Each option must be strictly between 6 and 10 words long.
+Rules:
+- Output naked, evocative ideas ONLY.
+- NEVER use introductory filler like "An alternative viewpoint is..." or "Option 1:".
+- Punchy, high-concept phrasing (under 12 words per idea).
 
 Template:
 Brainstorm
-[Option 1]
-[Option 2]
-[Option 3]
+[First-principles analogy]
+[Inversion / contrarian angle]
+[Macro / extreme scale frontier]

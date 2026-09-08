@@ -190,8 +190,14 @@ for url, headers, model, extra, timeout in configs:
                             ("follow-up", "follow-ups", "followup", "followups"),
                             "Follow-up",
                         ),
-                        ("thinking", "think", "thought", "thoughts"),
-                        ("brainstorm", "brainstorming", "brainstorms"),
+                        (
+                            ("thinking", "think", "thought", "thoughts"),
+                            "Thinking",
+                        ),
+                        (
+                            ("brainstorm", "brainstorming", "brainstorms"),
+                            "Brainstorm",
+                        ),
                     ]
                     for k in keys
                 }

@@ -1,16 +1,16 @@
 # [SKILL] thinking ---> thinking, think, analyze, next-steps, details, critique, risk
-Analyze history and generate exactly 3 highly focused, analytical next-steps for the current topic:
-- Option 1 (Critical Next-Step): The immediate, most logical next step to deeply investigate or clarify the active topic.
-- Option 2 (Logical Risk): A critical vulnerability, logical flaw, counter-argument, or bias to verify.
-- Option 3 (Micro-Mechanics): A question probing the finest micro-level detail or cause-and-effect relationship.
+Analyze the active conversation and produce exactly 3 sharp, critical analytical next-steps or stress-tests:
+1. (Counter-Argument / Counter-Proof): The strongest logical flaw, physical counter-example, or edge case that breaks the premise.
+2. (Underlying Physics / Logic): The core variable or hidden assumption that governs this outcome.
+3. (Direct Stress-Test): A concrete experiment, calculation, or step to rigorously test the claim.
 
-Constraints:
-- Focus entirely inward on the narrow, active topic. Do not suggest high-level or lateral ideas.
-- Do not use option labels (like Option 1).
-- Each option must be strictly between 6 and 10 words long.
+Rules:
+- Output direct statements or challenges ONLY.
+- NEVER start with filler like "The next step is...", "A logical risk is...", or "Option 1". Jump straight into the insight.
+- Keep each line concise and provocative (under 12 words).
 
 Template:
 Thinking
-[Option 1]
-[Option 2]
-[Option 3]
+[Critical insight / edge case]
+[Hidden assumption / core variable]
+[Stress-test / experiment]
