@@ -10,7 +10,7 @@ High-speed local developer agent, episodic memory, SQLite checkpoints, NOOA-enha
 │     model:  Hermes3.6-35B-A3B.gguf                       │
 │ directory:  ~/.config/py-agent/projects/omarchyv4        │
 │     skill:  hermes/pro                                   │
-│  database:  active (map + tpm: 2f/5t)                    │
+│  database:  active (map + mem: 2f/5t)                    │
 ╰───────────────────────────────────────── Ctrl+C to exit ─╯
  Startup context: 896 tokens
 

@@ -243,7 +243,7 @@ def draw_session_box(
             use_map = os.environ.get("AI_USE_MAP") == "1"
 
         if memory_active and use_map:
-            db_status = f"active (map + tpm: {tpm_count}f/{db_turns}t)"
+            db_status = f"active (map + mem: {tpm_count}f/{db_turns}t)"
         elif use_map:
             db_status = "active (codebase map)"
         elif memory_active:
