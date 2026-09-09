@@ -74,7 +74,7 @@ ai init ~/.config/py-agent/projects/session-test-3 ---> session test 3, projects
 [TOOL] cat $1 ---> view file, read file, show file, vf
 
 # --- Memories & Hindsight ---
-[TOOL] cat ~/.config/py-agent/skills/on-demand/hindsight.md --s ---> hindsight, what did we learn, session retrospective, compile lessons
+[TOOL] cat ~/.config/py-agent/skills/on-demand/hindsight.md --s ---> hindsight
 [TOOL] f=".agent/tpm.md"; [[ -f "$f" ]] || f="tpm.md"; [[ -f "$f" ]] && view "$f" | less -R || echo "No memories found." ---> show memories, mem
 [TOOL] q="$1"; [[ -z "$q" ]] && read -p "Search Memories: " q; f=".agent/tpm.md"; [[ -f "$f" ]] || f="tpm.md"; [[ -f "$f" ]] && grep --color=always -A 5 -B 2 -i "$q" "$f" || echo "No memories found." ---> search memories, ms
 

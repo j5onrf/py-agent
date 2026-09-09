@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.21] - Main CLI Runtime, Workspace Agent & Command Dispatcher"""
+"""Py Agent [j5onrf] [v0.9.9.22] - Main CLI Runtime, Workspace Agent & Command Dispatcher"""
 
 import json
 import os
@@ -201,6 +201,11 @@ def run_interactive_chat(args: list[str]) -> None:
         active_system_prompt = profile_content or BASE_PROMPT_AGENT
         os.environ["AI_ACTIVE_SKILL"] = clean_name
 
+        # Baseline from profile frontmatter
+        st_init = core.get_state()
+        reasoning_budget = st_init.get("reasoning_budget", 500)
+        reasoning_active = st_init.get("reasoning_active", reasoning_budget > 0)
+
         # Workspace config.json strictly takes precedence over profile frontmatter
         if os.path.isfile(cfg_file):
             try:
@@ -217,6 +222,9 @@ def run_interactive_chat(args: list[str]) -> None:
                     if "reasoning" in d:
                         reasoning_active = bool(d["reasoning"])
                         core.save_state("reasoning_active", reasoning_active)
+                    if "reasoning_budget" in d:
+                        reasoning_budget = int(d["reasoning_budget"])
+                        core.save_state("reasoning_budget", reasoning_budget)
             except Exception:
                 pass
         else:
@@ -539,6 +547,7 @@ def run_interactive_chat(args: list[str]) -> None:
                             with open(cfg_file, "r+", encoding="utf-8") as cf:
                                 data = json.load(cf)
                                 data["reasoning"] = reasoning_active
+                                data["reasoning_budget"] = reasoning_budget
                                 cf.seek(0)
                                 json.dump(data, cf, indent=2)
                                 cf.truncate()

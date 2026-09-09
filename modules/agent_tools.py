@@ -307,8 +307,15 @@ def _check_command_security(cmd: str, workspace: str) -> str | None:
                 if t == sys_dir or t.startswith(f"{sys_dir}/"):
                     return f"System directory reference: '{t}'"
 
+        # Skip path inspection on inline python code arguments
+        if binary in ("python", "python3") and any(a in tokens for a in ("-c", "-m")):
+            tokens = [t for t in tokens if not t.startswith(("import ", "def ", "from ", "print("))]
+
         for t in tokens:
-            if ".." in t or t.startswith("~/") or t.startswith("/"):
+            # Ignore lone '/' division operators or arithmetic tokens
+            if t == "/" or len(t) <= 1:
+                continue
+            if ".." in t or t.startswith("~/") or (t.startswith("/") and not t.startswith("//")):
                 exp = os.path.realpath(os.path.expanduser(t))
                 if (os.path.exists(exp) or t.startswith("/home/")) and _is_outside_workspace(root_ws, exp):
                     return f"Path outside workspace: '{t}'"
@@ -883,7 +890,7 @@ def run_tool(
 
         shell = os.environ.get("SHELL") or "/bin/sh"
         try:
-            res = subprocess.run([shell, "-lc", cmd], cwd=workspace, capture_output=True, text=True, timeout=300)
+            res = subprocess.run([shell, "-c", cmd], cwd=workspace, capture_output=True, text=True, timeout=300)
             out = ((res.stdout or "") + (("\n" + res.stderr) if res.stderr else "")).strip()[:10000]
             if print_output_fn:
                 print_output_fn(out)

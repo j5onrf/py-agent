@@ -1,4 +1,4 @@
 def calculate_average(numbers):
     if not numbers:
         return 0.0
-    return sum(numbers) / len(numbers)
+    return round(sum(numbers) / len(numbers), 2)

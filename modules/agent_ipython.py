@@ -349,9 +349,10 @@ def run_cell(code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] |
         err_msg = str(e).strip().split("\n")[0]
         return f"[error] Cell execution failed: {err_msg}"
     finally:
-        if has_alarm and old_handler:
+        if has_alarm:
             signal.alarm(0)
-            signal.signal(signal.SIGALRM, old_handler)
+            if old_handler is not None:
+                signal.signal(signal.SIGALRM, old_handler)
         _is_executing_cell = False
 
 

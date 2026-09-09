@@ -45,7 +45,13 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
     cleaned: dict[str, Any] = {}
     for k, v in args.items():
         if isinstance(v, str):
-            clean_v = v.strip().strip("'\"").strip()
+            clean_v = v.strip()
+            # Only strip outer wrapping quotes if the ENTIRE parameter was enclosed in matching quotes
+            if len(clean_v) >= 2:
+                if (clean_v.startswith('"') and clean_v.endswith('"')) or (clean_v.startswith("'") and clean_v.endswith("'")):
+                    if clean_v.count(clean_v[0]) == 2:
+                        clean_v = clean_v[1:-1].strip()
+
             if k in ("pattern", "query", "regex") and "\n" in clean_v:
                 clean_v = " ".join(clean_v.split())
             cleaned[k] = clean_v
@@ -81,8 +87,6 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
 
     if "command" in cleaned and isinstance(cleaned["command"], str):
         c = cleaned["command"].strip()
-        if r"\"" in c or r"\'" in c:
-            c = c.replace(r"\"", '"').replace(r"\'", "'")
 
         # Auto-heal hallucinated directory navigation (e.g. "cd /home/user && python foo.py" -> "python foo.py")
         c = re.sub(
@@ -90,6 +94,21 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
             "",
             c,
         ).strip()
+
+        # Auto-heal broken python3 -c quoting (converts brittle double-quotes to safe single-quoted literal strings)
+        if py_m := re.match(r"^(python3?\s+-c\s+)([\"']?)([\s\S]*)$", c):
+            cmd_prefix, _, py_code = py_m.groups()
+            py_clean = py_code.rstrip("'\"").strip()
+            # Escape internal single quotes safely for bash
+            escaped_py = py_clean.replace("'", "'\\''")
+            c = f"{cmd_prefix}'{escaped_py}'"
+        else:
+            # Auto-heal unbalanced inline quotes (when small models collapse \"\" into \")
+            if c.count('"') % 2 != 0:
+                c += '"'
+            elif c.count("'") % 2 != 0:
+                c += "'"
+
         cleaned["command"] = c
 
     if "pattern" not in cleaned:
@@ -111,6 +130,20 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
             if alt in cleaned:
                 cleaned["symbol"] = cleaned.pop(alt)
                 break
+
+    # Auto-heal small-model overwrite aliases & string booleans ("true", "yes", "force", "replace")
+    for alt in ("force", "replace", "overwrite_file", "clobber"):
+        if alt in cleaned:
+            cleaned["overwrite"] = True
+            cleaned.pop(alt, None)
+            break
+
+    if "overwrite" in cleaned:
+        ov = cleaned["overwrite"]
+        if isinstance(ov, str):
+            cleaned["overwrite"] = ov.lower() in ("true", "1", "yes", "on")
+        else:
+            cleaned["overwrite"] = bool(ov)
 
     return cleaned
 
@@ -235,12 +268,18 @@ def heal_json_args(raw: str | dict[str, Any]) -> dict[str, Any]:
     except Exception:
         pass
 
-    extracted = {
-        k: v.strip()
-        for k, v in re.findall(
-            r'"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s*:\s*["\']?([^,"\']+)["\']?', cleaned
-        )
-    }
+    # Pass 3: Multi-line string fallback extractor (handles unescaped quotes inside code/content)
+    extracted: dict[str, Any] = {}
+    for match in re.finditer(r'"(?P<key>[a-zA-Z_][a-zA-Z0-9_]*)"\s*:\s*"(?P<val>[\s\S]*?)(?="\s*,\s*"[a-zA-Z_]|\s*"$|\s*\}\s*$)', cleaned):
+        extracted[match.group("key")] = match.group("val")
+
+    if not extracted:
+        extracted = {
+            k: v.strip()
+            for k, v in re.findall(
+                r'"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s*:\s*["\']?([^,"\']+)["\']?', cleaned
+            )
+        }
     return normalize_params(extracted)
 
 
