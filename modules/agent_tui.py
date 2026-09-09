@@ -662,7 +662,7 @@ class LocalAITUI(App):
             for d in [os.path.join(self.workspace_path, ".agent"), os.path.join(SESSIONS_DIR, f"{self.safe_name}.db")]:
                 try: (os.remove(d) if os.path.isfile(d) else shutil.rmtree(d)) if os.path.exists(d) else None
                 except Exception: pass
-            core.run_mod("ai-agent-sessions", "clear", self.safe_name); core.run_mod("ai-agent-memories", "tpm-clear", self.safe_name)
+            core.run_mod("agent_sessions.py", "clear", self.safe_name); core.run_mod("agent_memories.py", "tpm-clear", self.safe_name)
             for c in list(self.chat_area.children): c.remove()
             self.refresh_db_counts(); self.notify("Workspace reset complete.")
         elif root == "/tok":
@@ -734,7 +734,7 @@ class LocalAITUI(App):
         ui.confirm_tool = lambda reason: self.prompt_tui_confirm(reason)
 
         try:
-            tpm_ctx = (core.run_mod("ai-agent-memories", "tpm-get", self.safe_name) if (self.is_agent and self.memory_active and isinstance(query, str)) else "")
+            tpm_ctx = (core.run_mod("agent_memories.py", "tpm-get", self.safe_name) if (self.is_agent and self.memory_active and isinstance(query, str)) else "")
             user_txt = query if isinstance(query, str) else next((i["text"] for i in query if isinstance(i, dict) and i.get("type") == "text"), "Multimodal Query")
             assistant_msg = Message("Agent", "Thinking...")
             self.call_from_thread(self.chat_area.mount, assistant_msg)
@@ -877,7 +877,7 @@ class LocalAITUI(App):
 
             if user_txt:
                 try:
-                    core.run_mod("ai-agent-sessions", "log-turn", self.safe_name, user_txt, accumulated)
+                    core.run_mod("agent_sessions.py", "log-turn", self.safe_name, user_txt, accumulated)
                     self.refresh_db_counts()
                     if hasattr(self, "lbl_database"): self.call_from_thread(self.lbl_database.update, f"[dim]DB State[/dim]  {self.get_db_status_string()}")
                     if self.is_agent and self.memory_active: threading.Thread(target=core.background_tpm_update, args=(user_txt, accumulated, self.safe_name, self.workspace_path), daemon=True).start()

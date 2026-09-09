@@ -66,8 +66,6 @@ files_to_compile = [
     "modules/agent_memories.py",
     "modules/model-select.py",
     "modules/speed_test.py",
-    "modules/ai-agent-sessions",
-    "modules/ai-agent-memories",
     "modules/chat",
     "tools/index-map/index-map",
     "tools/loop/ralph.py",

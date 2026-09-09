@@ -234,12 +234,30 @@ def draw_session_box(
     table.add_row("model:", model_name)
     table.add_row("directory:", display_dir)
     table.add_row("skill:", clean_name or "chat")
-    mem_status = f"active ({tpm_count} facts, {db_turns} turns)" if memory_active else "stateless"
-    table.add_row("database:", mem_status if is_agent else "stateless")
+
+    if is_agent:
+        try:
+            import agent_core as core
+            use_map = bool(core.get_state("use_map", False)) or os.environ.get("AI_USE_MAP") == "1"
+        except Exception:
+            use_map = os.environ.get("AI_USE_MAP") == "1"
+
+        if memory_active and use_map:
+            db_status = f"active (map + tpm: {tpm_count}f/{db_turns}t)"
+        elif use_map:
+            db_status = "active (codebase map)"
+        elif memory_active:
+            db_status = f"active ({tpm_count} facts, {db_turns} turns)"
+        else:
+            db_status = "stateless"
+    else:
+        db_status = "stateless"
+
+    table.add_row("database:", db_status)
 
     if box_style == 8:
         title_str = f"  \u223f Py Agent [sub-agent #{sub_id}]" if sub_id else "  \u223f Py Agent"
-        max_val_len = max(len(model_name), len(display_dir), len(clean_name or "chat"), len(mem_status), 16)
+        max_val_len = max(len(model_name), len(display_dir), len(clean_name or "chat"), len(db_status), 16)
         sep_str = " " + "─" * (10 + 2 + max_val_len)
         panel = Panel(
             Group(Text(title_str, style="bold bright_green"), Text(sep_str, style="dim green"), table),
@@ -448,7 +466,6 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
 
     options = custom_opts + standard_agents
 
-    # One-time RAM pre-cache (<1ms): Zero disk reads during navigation
     profile_cache = {}
     for k, _, _, _ in options:
         sf = skills.find_skill_file(os.path.join(CFG_DIR, "skills"), k)
@@ -484,7 +501,6 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
             if last_rendered_lines > 0:
                 sys.stderr.write(f"\033[{last_rendered_lines}A\r\033[J")
 
-            # Instant RAM lookup on arrow-key navigation
             cur_key = options[current_idx][0]
             cur_meta = profile_cache.get(cur_key, {})
             if "yolo" not in user_overrides:
@@ -526,7 +542,6 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
             mem_badge  = b_on if is_mem   else b_off
             py_badge   = b_on if is_py    else b_off
 
-            # Solution B: Spacious 2-row layout
             sys.stderr.write(
                 f"\r\x1b[K\n\r\x1b[K  \033[2m::\033[0m "
                 f"\033[1;37m↵\033[0m \033[37mselect\033[0m    "
@@ -564,21 +579,22 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                 b_mem  = f" {badge_col}[Mem: ON]\033[0m" if is_mem else ""
                 b_py   = f" {badge_col}[Py: ON]\033[0m" if is_py else ""
                 sys.stderr.write(
-                    f"\x1b[{last_rendered_lines}A\r\x1b[J\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}\n\n"
+                    f"\x1b[{last_rendered_lines + 3}A\r\x1b[J\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}\n\n"
                 )
                 sys.stderr.flush()
                 return key, is_yolo, use_map, is_py, is_mem
             elif char in ("\r", "\n", ""):
                 key, label = options[current_idx][0], options[current_idx][1]
-                sys.stderr.write(f"\x1b[{last_rendered_lines}A\r\x1b[J")
+                sys.stderr.write(f"\x1b[{last_rendered_lines + 3}A\r\x1b[J")
                 if not is_yolo:
-                    sys.stderr.write("\033[1;36mEnable Autonomous YOLO mode? [y/N]: \033[0m")
+                    sys.stderr.write(f"\033[1;36mEnable Autonomous YOLO mode for {label}? [y/N]: \033[0m")
                     sys.stderr.flush()
                     c = get_key().lower()
                     sys.stderr.write("y\n" if c == "y" else "n\n")
                     sys.stderr.flush()
                     if c == "y":
                         is_yolo = True
+                    sys.stderr.write("\x1b[1A\r\x1b[2K")
                 badge_col = "\033[1;36m"
                 b_yolo = f" {badge_col}[Yolo: ON]\033[0m" if is_yolo else ""
                 b_map  = f" {badge_col}[Map: ON]\033[0m" if use_map else ""

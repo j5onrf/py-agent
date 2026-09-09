@@ -63,8 +63,8 @@ Built to be lightweight, auditable by a single developer, and private by design.
 
 5. Memory, Indexing & Storage
    ├── agent_context.py         - Jaccard semantic intent router (ai-context.md)
-   ├── ai-agent-sessions        - SQLite session logger, checkpoints (-save / -load)
-   └── ai-agent-memories        - Temporal Personality Memory (TPM) background compiler
+   ├── agent_sessions.py        - SQLite session logger, checkpoints (-save / -load)
+   └── agent_memories.py        - Temporal Personality Memory (TPM) background compiler
 ```
 
 ---

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ai-status - Diagnostics for Py-Agent Cloud Models
+# ai-status - Diagnostics for Py-Agent Cloud Models & Quotas v2.3.0
 
 set -euo pipefail
 
@@ -15,35 +15,34 @@ if [[ -f "$ENV_PATH" ]]; then
     set -u
 fi
 
-# Helper to dynamically map Gemini rate limits based on current GEMINI_MODEL
+# Helper to dynamically map Google AI Studio Gemini rate limits
 get_gemini_limits() {
     local model="${1:-gemini-3.8-flash}"
     local m_low; m_low=$(echo "$model" | tr '[:upper:]' '[:lower:]')
     
-    if [[ "$m_low" == *"3.8-flash"* ]]; then
-        echo "15 RPM / 1,500 RPD"
-    elif [[ "$m_low" == *"3.7-flash"* ]]; then
-        echo "15 RPM / 1,500 RPD"
-    elif [[ "$m_low" == *"3.6-flash"* ]]; then
-        echo "15 RPM / 1,500 RPD"
-    elif [[ "$m_low" == *"3.5-flash-lite"* ]]; then
-        echo "30 RPM / 1,500 RPD"
-    elif [[ "$m_low" == *"3.5-flash"* ]]; then
-        echo "15 RPM / 1,500 RPD"
-    elif [[ "$m_low" == *"3.1-flash-lite"* ]]; then
-        echo "30 RPM / 1,500 RPD"
-    elif [[ "$m_low" == *"3-flash"* ]]; then
-        echo "15 RPM / 1,500 RPD"
-    elif [[ "$m_low" == *"2.5-flash-lite"* ]]; then
-        echo "30 RPM / 1,500 RPD"
-    elif [[ "$m_low" == *"2.5-flash"* ]]; then
-        echo "15 RPM / 1,500 RPD"
-    elif [[ "$m_low" == *"2.5-pro"* ]]; then
-        echo "5 RPM / 50 RPD (Trial only)"
-    elif [[ "$m_low" == *"1.5-pro"* ]]; then
-        echo "2 RPM / 50 RPD (Legacy)"
+    # 1. Flash-Lite Models (Higher daily/RPM throughput)
+    if [[ "$m_low" == *"3.5-flash-lite"* || "$m_low" == *"3.1-flash-lite"* ]]; then
+        echo "15 RPM / 1,000 RPD (Free Tier)"
+    elif [[ "$m_low" == *"2.5-flash-lite"* || "$m_low" == *"2.0-flash-lite"* ]]; then
+        echo "30 RPM / 1,500 RPD (Free Tier)"
+
+    # 2. Heavy Reasoning / Restricted 3.x Flash Models
+    elif [[ "$m_low" == *"3.8-flash"* ]]; then
+        echo "5 RPM / 20 RPD (Free Tier)"
+    elif [[ "$m_low" == *"3.7-flash"* || "$m_low" == *"3.6-flash"* || "$m_low" == *"3.5-flash"* ]]; then
+        echo "5 RPM / 25 RPD (Free Tier)"
+
+    # 3. Pro Models
+    elif [[ "$m_low" == *"-pro"* ]]; then
+        echo "5 RPM / 25 RPD (Free Tier)"
+
+    # 4. Legacy Standard Flash Models (1.5, 2.0, 2.5)
+    elif [[ "$m_low" == *"2.5-flash"* || "$m_low" == *"2.0-flash"* || "$m_low" == *"1.5-flash"* ]]; then
+        echo "10 RPM / 250 RPD (Free Tier)"
+
+    # Safe fallback default
     else
-        echo "15 RPM / 1,500 RPD"
+        echo "5 RPM / 25 RPD (Free Tier)"
     fi
 }
 
@@ -54,53 +53,64 @@ mask_key() {
 
 # Unified 1-line connection and key-existence checker
 check_conn() {
-    [[ -n "${1:-}" ]] && curl -s -I --connect-timeout 1.5 "$2" >/dev/null && echo 0 || echo 1
+    local key="${1:-}" endpoint="${2:-}"
+    [[ -z "$key" || -z "$endpoint" ]] && { echo 1; return; }
+    
+    # Extract scheme + host for safe ping check
+    local host_url
+    host_url=$(echo "$endpoint" | grep -o -E '^https?://[^/]+' || echo "$endpoint")
+    
+    curl -s -I --connect-timeout 1.5 "$host_url" >/dev/null 2>&1 && echo 0 || echo 1
 }
 
 # --- DYNAMIC TOP-DOWN SCRIPT PARSING ---
-# Parse .env sequentially to find active API keys, fallback models, and priorities
 active_providers=()
 active_keys=()
 active_models=()
+active_urls=()
 
 if [[ -f "$ENV_PATH" ]]; then
     while IFS= read -r line || [[ -n "$line" ]]; do
         stripped=$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' 2>/dev/null || echo "$line")
         [[ -z "$stripped" || "$stripped" == "#"* ]] && continue
         
-        # Match active key assignments: e.g. GEMINI_API_KEY="xxx"
+        # Match active key assignments: e.g. CUSTOM2_API_KEY="xxx"
         if [[ "$stripped" =~ ^([A-Z0-9_]+_API_KEY|[A-Z0-9_]+_KEY)=\"?(.*)\"?$ ]]; then
             k_name="${BASH_REMATCH[1]}"
             k_val="${BASH_REMATCH[2]}"
             k_val=$(echo "$k_val" | sed -e 's/"$//' -e "s/'$//" 2>/dev/null || echo "$k_val")
             
-            # Skip placeholders
+            # Skip unconfigured placeholders
             if [[ -n "$k_val" && "$k_val" != *"your"* && "$k_val" != *"here"* ]]; then
-                provider=$(echo "$k_name" | cut -d'_' -f1 | tr '[:upper:]' '[:lower:]')
+                prefix=$(echo "$k_name" | sed -E 's/_(API_)?KEY$//')
+                provider=$(echo "$prefix" | tr '[:upper:]' '[:lower:]')
                 
-                # Find matching model variable name in .env
-                m_var="OPENROUTER_MODEL"
-                if [[ "$provider" != "openrouter" ]]; then
-                    m_var="$(echo "$provider" | tr '[:lower:]' '[:upper:]')_MODEL"
+                m_var="${prefix}_MODEL"
+                u_var="${prefix}_URL"
+                
+                # Defaults
+                if [[ "$provider" == "openrouter" ]]; then
+                    m_val="${OPENROUTER_MODEL:-openrouter/free}"
+                    u_val="https://openrouter.ai/api/v1/chat/completions"
+                elif [[ "$provider" == "gemini" ]]; then
+                    m_val="${GEMINI_MODEL:-gemini-3.8-flash}"
+                    u_val="https://generativelanguage.googleapis.com"
+                elif [[ "$provider" == "custom2" ]]; then
+                    m_val="${CUSTOM2_MODEL:-deepseek-chat}"
+                    u_val="${CUSTOM2_URL:-https://api.deepseek.com/chat/completions}"
+                elif [[ "$provider" == "custom" ]]; then
+                    m_val="${CUSTOM_MODEL:-Qwen/Qwen3.8-27B}"
+                    u_val="${CUSTOM_URL:-https://router.huggingface.co/v1/chat/completions}"
+                else
+                    m_val="${!m_var:-default-model}"
+                    u_val="${!u_var:-https://api.openai.com/v1/chat/completions}"
                 fi
                 
-                # Read single active exported variable directly
-                m_val="${!m_var:-}"
-                if [[ -z "$m_val" ]]; then
-                    if [[ "$provider" == "gemini" ]]; then m_val="${GEMINI_MODEL:-gemini-3.8-flash}"
-                    elif [[ "$provider" == "openai" ]]; then m_val="${OPENAI_MODEL:-gpt-5.5}"
-                    elif [[ "$provider" == "claude" ]]; then m_val="${CLAUDE_MODEL:-claude-fable-5}"
-                    elif [[ "$provider" == "xai" ]]; then m_val="${XAI_MODEL:-grok-4.5}"
-                    elif [[ "$provider" == "custom" ]]; then m_val="${CUSTOM_MODEL:-Qwen/Qwen3.8-27B}"
-                    else m_val="default-model"
-                    fi
-                fi
-                
-                # Prevent duplicate entries for the same provider
                 if [[ ! " ${active_providers[*]:-} " =~ " ${provider} " ]]; then
                     active_providers+=("$provider")
                     active_keys+=("$k_val")
                     active_models+=("$m_val")
+                    active_urls+=("$u_val")
                 fi
             fi
         fi
@@ -108,15 +118,15 @@ if [[ -f "$ENV_PATH" ]]; then
 fi
 
 # Fetch cloud metrics and prune old logs in a single Python pass
-request_stats="0|0|0|0|0|0|0|0|0|0"
+request_stats="0|0|0|0"
 if [[ -f "$LOG_FILE" ]]; then
     request_stats=$(python3 -c "
 import os, time
 log_file = os.path.expanduser('~/.config/py-agent/.request_log')
 now = int(time.time())
 day_ago, min_ago = now - 86400, now - 60
-rpd = {'gemini': 0, 'openrouter': 0, 'openai': 0, 'claude': 0, 'grok': 0}
-rpm = {'gemini': 0, 'openrouter': 0, 'openai': 0, 'claude': 0, 'grok': 0}
+rpd = {'gemini': 0, 'openrouter': 0}
+rpm = {'gemini': 0, 'openrouter': 0}
 valid = []
 try:
     with open(log_file, 'r') as f:
@@ -135,31 +145,23 @@ try:
             f.write(f'{entry}\n')
 except:
     pass
-print(f\"{rpd['gemini']}|{rpm['gemini']}|{rpd['openrouter']}|{rpm['openrouter']}|{rpd['openai']}|{rpm['openai']}|{rpd['claude']}|{rpm['claude']}|{rpd['grok']}|{rpm['grok']}\")
-" || echo "0|0|0|0|0|0|0|0|0|0")
+print(f\"{rpd['gemini']}|{rpm['gemini']}|{rpd['openrouter']}|{rpm['openrouter']}\")
+" 2>/dev/null || echo "0|0|0|0")
 fi
 
 gemini_rpd=$(echo "$request_stats" | cut -d'|' -f1)
 gemini_rpm=$(echo "$request_stats" | cut -d'|' -f2)
 or_rpd=$(echo "$request_stats" | cut -d'|' -f3)
 or_rpm=$(echo "$request_stats" | cut -d'|' -f4)
-openai_rpd=$(echo "$request_stats" | cut -d'|' -f5)
-openai_rpm=$(echo "$request_stats" | cut -d'|' -f6)
-claude_rpd=$(echo "$request_stats" | cut -d'|' -f7)
-claude_rpm=$(echo "$request_stats" | cut -d'|' -f8)
-grok_rpd=$(echo "$request_stats" | cut -d'|' -f9)
-grok_rpm=$(echo "$request_stats" | cut -d'|' -f10)
 
-# Check individual connectivity
-custom_status=$(check_conn "${CUSTOM_API_KEY:-}" "https://router.huggingface.co")
+# Probe endpoints
+custom_status=$(check_conn "${CUSTOM_API_KEY:-}" "${CUSTOM_URL:-https://router.huggingface.co}")
+custom2_status=$(check_conn "${CUSTOM2_API_KEY:-}" "${CUSTOM2_URL:-https://api.deepseek.com}")
 gemini_status=$(check_conn "${GEMINI_API_KEY:-}" "https://generativelanguage.googleapis.com")
-openai_status=$(check_conn "${OPENAI_API_KEY:-}" "https://api.openai.com")
-claude_status=$(check_conn "${CLAUDE_API_KEY:-}" "https://api.anthropic.com")
-xai_status=$(check_conn "${XAI_API_KEY:-}" "https://api.x.ai")
 or_status=$(check_conn "${OPENROUTER_API_KEY:-}" "https://openrouter.ai")
-local_status=$(curl -s -I --connect-timeout 1.0 "http://localhost:8080" >/dev/null && echo 0 || echo 1)
+local_status=$(curl -s -I --connect-timeout 1.0 "http://localhost:8080" >/dev/null 2>&1 && echo 0 || echo 1)
 
-# Fetch Local Server active model dynamically if online
+# Fetch Local Server model if online
 local_model="Local Server"
 if [[ $local_status -eq 0 ]]; then
     local_model=$(curl -s "http://localhost:8080/v1/models" | python3 -c "
@@ -170,32 +172,31 @@ try:
     else: print('Local Server')
 except:
     print('Local Server')
-" || echo "Local Server")
+" 2>/dev/null || echo "Local Server")
 fi
 
-# Evaluate active runtime route and fallback dynamically based on .env priority order
+# Evaluate active runtime route based on strict top-down .env priority
 resolved_provider="*None / All Offline*"
 resolved_model="*None*"
-fallback_provider="*None Configured*"
-fallback_model="*None*"
 
 for i in "${!active_providers[@]}"; do
-    provider="${active_providers[$i]}"
-    key_val="${active_keys[$i]}"
-    model_val="${active_models[$i]}"
+    prov="${active_providers[$i]}"
+    key_v="${active_keys[$i]}"
+    mod_v="${active_models[$i]}"
+    url_v="${active_urls[$i]}"
     
-    domain="https://api.openai.com"
-    if [[ "$provider" == "gemini" ]]; then domain="https://generativelanguage.googleapis.com"
-    elif [[ "$provider" == "claude" ]]; then domain="https://api.anthropic.com"
-    elif [[ "$provider" == "xai" ]]; then domain="https://api.x.ai"
-    elif [[ "$provider" == "openrouter" ]]; then domain="https://openrouter.ai"
-    elif [[ "$provider" == "custom" ]]; then domain="https://router.huggingface.co"
-    fi
-    
-    status=$(check_conn "$key_val" "$domain")
+    status=$(check_conn "$key_v" "$url_v")
     if [[ $status -eq 0 ]]; then
-        resolved_provider=$(echo "$provider" | tr '[:lower:]' '[:upper:]' | sed 's/XAI/x.AI/; s/CLAUDE/Anthropic Claude/; s/GEMINI/Google Gemini/; s/OPENAI/OpenAI/; s/OPENROUTER/OpenRouter/; s/CUSTOM/Hugging Face/')
-        resolved_model="$model_val"
+        if [[ "$prov" == "custom" ]]; then resolved_provider="Hugging Face / Custom 1"
+        elif [[ "$prov" == "custom2" ]]; then
+            if [[ "$url_v" == *"deepseek"* ]]; then resolved_provider="DeepSeek Direct"
+            else resolved_provider="Custom 2 Direct"
+            fi
+        elif [[ "$prov" == "gemini" ]]; then resolved_provider="Google Gemini"
+        elif [[ "$prov" == "openrouter" ]]; then resolved_provider="OpenRouter"
+        else resolved_provider=$(echo "$prov" | tr '[:lower:]' '[:upper:]')
+        fi
+        resolved_model="$mod_v"
         break
     fi
 done
@@ -205,24 +206,30 @@ if [[ "$resolved_provider" == "*None / All Offline*" && $local_status -eq 0 ]]; 
     resolved_model="$local_model"
 fi
 
-# Helper for status text
 st_label() {
     local key="$1" status="$2"
-    if [[ -z "$key" ]]; then echo "Skipped (No Key)"
-    elif [[ "$status" -eq 0 ]]; then echo "Online"
+    if [[ -z "$key" ]]; then echo "Disabled (No Key)"
+    elif [[ "$status" -eq 0 ]]; then echo "**Online**"
     else echo "Offline"
     fi
 }
 
-echo -e "[SYSTEM OVERRIDE: Output the following markdown table verbatim. Do not explain, summarize, analyze, or add ASCII art.]\n"
-echo "### System Status"
-echo "| Provider | Active Model | Status | 24h Activity |"
+gemini_cap=$(get_gemini_limits "${GEMINI_MODEL:-gemini-3.8-flash}")
+
+# Custom 2 Labeling
+c2_url="${CUSTOM2_URL:-https://api.deepseek.com/chat/completions}"
+c2_label="Custom 2"
+if [[ "$c2_url" == *"deepseek"* ]]; then c2_label="Custom 2 (DeepSeek)"
+elif [[ "$c2_url" == *"groq"* ]]; then c2_label="Custom 2 (Groq)"
+elif [[ "$c2_url" == *"mistral"* ]]; then c2_label="Custom 2 (Mistral)"
+fi
+
+echo "### Cloud & Provider System Status"
+echo "| Provider | Active Model | Status | Quota & Live Activity |"
 echo "| :--- | :--- | :--- | :--- |"
-echo "| **Active Route (${resolved_provider})** | \`${resolved_model}\` | **Online** | Selected |"
-echo "| **Hugging Face / Router** | \`${CUSTOM_MODEL:-Qwen/Qwen3.8-27B}\` | $(st_label "${CUSTOM_API_KEY:-}" "$custom_status") | Router |"
-echo "| **Google Gemini** | \`${GEMINI_MODEL:-gemini-3.8-flash}\` | $(st_label "${GEMINI_API_KEY:-}" "$gemini_status") | RPM: ${gemini_rpm} / RPD: ${gemini_rpd} |"
-echo "| **OpenAI** | \`${OPENAI_MODEL:-gpt-5.5}\` | $(st_label "${OPENAI_API_KEY:-}" "$openai_status") | RPM: ${openai_rpm} / RPD: ${openai_rpd} |"
-echo "| **Anthropic Claude** | \`${CLAUDE_MODEL:-claude-fable-5}\` | $(st_label "${CLAUDE_API_KEY:-}" "$claude_status") | RPM: ${claude_rpm} / RPD: ${claude_rpd} |"
-echo "| **x.AI Grok** | \`${XAI_MODEL:-grok-4.5}\` | $(st_label "${XAI_API_KEY:-}" "$xai_status") | RPM: ${grok_rpm} / RPD: ${grok_rpd} |"
+echo "| **Active Route (${resolved_provider})** | \`${resolved_model}\` | **Online** | Priority Active |"
+echo "| **Custom 1 (Local / HF)** | \`${CUSTOM_MODEL:-Qwen/Qwen3.8-27B}\` | $(st_label "${CUSTOM_API_KEY:-}" "$custom_status") | Router / Spaces |"
+echo "| **${c2_label}** | \`${CUSTOM2_MODEL:-deepseek-chat}\` | $(st_label "${CUSTOM2_API_KEY:-}" "$custom2_status") | Direct Endpoint |"
+echo "| **Google Gemini** | \`${GEMINI_MODEL:-gemini-3.8-flash}\` | $(st_label "${GEMINI_API_KEY:-}" "$gemini_status") | RPM: ${gemini_rpm} / RPD: ${gemini_rpd} • Cap: ${gemini_cap} |"
 echo "| **OpenRouter** | \`${OPENROUTER_MODEL:-openrouter/free}\` | $(st_label "${OPENROUTER_API_KEY:-}" "$or_status") | RPM: ${or_rpm} / RPD: ${or_rpd} |"
-echo "| **Local Server** | \`${local_model}\` | $([[ $local_status -eq 0 ]] && echo "Online" || echo "Offline") | GGUF |"
+echo "| **Local Server** | \`${local_model}\` | $([[ $local_status -eq 0 ]] && echo "**Online**" || echo "Offline") | Port 8080 |"

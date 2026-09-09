@@ -138,7 +138,7 @@ def ensure_env_exists():
             'CUSTOM2_MODEL="deepseek-chat"\n\n'
             "# ── 3. Google Gemini (Free daily tier via Google AI Studio) ───────────────────\n"
             '# GEMINI_API_KEY="AIzaSyYourGeminiApiKeyHere"\n'
-            'GEMINI_MODEL="gemini-3.8-flash"\n\n'
+            'GEMINI_MODEL="gemini-3.5-flash-lite"\n\n'
             "# ── 4. OpenRouter (Free community models & Universal paid gateway) ────────────\n"
             '# OPENROUTER_API_KEY="sk-or-v1-YourOpenRouterKeyHere"\n'
             'OPENROUTER_MODEL="openrouter/free"\n\n'

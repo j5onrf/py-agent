@@ -347,21 +347,30 @@ def compile_flat_shorthand(skeleton):
     return "\n".join(lines)
 
 
-def run_indexing(target_dir, force=False, is_agent=False, no_db=False):
+def run_indexing(target_dir, force=False, is_agent=False, no_db=False, print_output=False):
     if os.path.basename(target_dir) == ".agent":
         target_dir = os.path.dirname(target_dir)
     proj_name = os.path.basename(target_dir)
 
-    if not is_agent and not os.path.isdir(os.path.join(target_dir, ".agent")):
-        out_dir = target_dir
-        no_db = True
-    else:
+    # If run manually, output text map to current directory without creating .db clutter
+    if is_agent:
         out_dir = os.path.join(target_dir, ".agent")
+    else:
+        out_dir = target_dir
+        if not any(flag in sys.argv for flag in ("--db", "--with-db")):
+            no_db = True
 
     os.makedirs(out_dir, exist_ok=True)
     output_file = os.path.join(out_dir, f"index-map-{proj_name}.txt")
 
-    if not force and is_map_up_to_date(target_dir, output_file, DEFAULT_IGNORED): return
+    if not force and is_map_up_to_date(target_dir, output_file, DEFAULT_IGNORED):
+        if print_output and os.path.isfile(output_file):
+            with open(output_file, 'r', encoding='utf-8', errors='ignore') as f:
+                sys.stdout.write(f.read())
+                sys.stdout.flush()
+        elif not is_agent:
+            sys.stderr.write(f"\r\x1b[2K\033[1;32m[ok] Index map is up to date: {output_file}\033[0m\n")
+        return
 
     db_conn, use_vec = None, False
     if not no_db:
@@ -431,6 +440,9 @@ def run_indexing(target_dir, force=False, is_agent=False, no_db=False):
         os.replace(tmp, output_file)
 
         sys.stderr.write(f"\r\x1b[2K\033[1;32m[ok] Mapping complete! [{proj_name} index-map {'& SQLite graph database updated' if db_conn else 'updated'}]\033[0m\n"); sys.stderr.flush()
+        if print_output:
+            sys.stdout.write(flat_map)
+            sys.stdout.flush()
     except Exception as e:
         sys.stderr.write(f"\r\x1b[2K\033[1;31m[error] Error: Failed to write output files: {e}\033[0m\n"); sys.stderr.flush()
 
@@ -615,9 +627,12 @@ def main():
     is_agent = "--agent" in raw_args
     force_compile = "--force" in raw_args or "-f" in raw_args
     no_db = "--no-db" in raw_args or "--txt-only" in raw_args
-    args = [a for a in raw_args if a not in ("--agent", "--db", "--with-db", "--no-db", "--txt-only", "--force", "-f")]
+    print_cat = any(f in raw_args for f in ("--cat", "-p", "--print", "--show", "cat", "show"))
+    args = [a for a in raw_args if a not in ("--agent", "--db", "--with-db", "--no-db", "--txt-only", "--force", "-f", "--cat", "-p", "--print", "--show", "cat", "show")]
 
-    if not args: run_indexing(os.getcwd(), force=force_compile, is_agent=is_agent, no_db=no_db); return
+    if not args:
+        run_indexing(os.getcwd(), force=force_compile, is_agent=is_agent, no_db=no_db, print_output=print_cat)
+        return
     cmd = args[0].lower()
 
     if cmd in ("--help", "-h"):
