@@ -588,6 +588,7 @@ def agentic_turn(
                         if streamer:
                             streamer.stop()
                             streamer = None
+                            first_chunk = True
                         if spinner and not spinner.active:
                             spinner.start("Drafting tool action...")
 
@@ -732,6 +733,12 @@ def agentic_turn(
                     consecutive_tool_failures += 1
                 else:
                     consecutive_tool_failures = 0
+
+                # Universal duplicate read deterrent
+                if fname == "read_file" and len(messages) >= 4:
+                    prev_tools = [m for m in messages[-4:] if m.get("role") == "tool" and m.get("name") == "read_file"]
+                    if len(prev_tools) >= 2:
+                        messages.append({"role": "user", "content": "[System Directive]: File already inspected. Do not read again. Proceed immediately to edit, test, or final answer."})
 
         except KeyboardInterrupt:
             if streamer:
