@@ -162,6 +162,8 @@ def _read_fd(fd: int) -> str:
         tty.setraw(fd)
         termios.tcflush(fd, termios.TCIFLUSH)
         char_bytes = os.read(fd, 1)
+        if char_bytes == b"\x03":
+            raise KeyboardInterrupt
         if char_bytes == b"\x1b" and select.select([fd], [], [], 0.05)[0]:
             char_bytes += os.read(fd, 2)
         return char_bytes.decode("utf-8", errors="ignore")

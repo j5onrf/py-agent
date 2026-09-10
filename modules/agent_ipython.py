@@ -65,7 +65,7 @@ _confirm_gate_fn = None
 _is_executing_cell = False
 
 
-def bounded_repr(val: Any, max_len: int = 1200) -> str:
+def bounded_repr(val: Any, max_len: int = 6000) -> str:
     """Bounded preview generator for in-kernel data objects."""
     if val is None:
         return "None"
@@ -274,14 +274,15 @@ def inspect_ast_safety(code: str, workspace: str, confirm_gate_fn: Callable[[str
                 if isinstance(node.func, ast.Name) and node.func.id in ("exec", "eval", "system"):
                     if confirm_gate_fn and not confirm_gate_fn(f"PYTHON DANGEROUS OP: {node.func.id}() cell execution"):
                         return "[denied] Dangerous operation rejected by user gate."
-                # Module calls: os.remove(), os.system(), shutil.rmtree() (allows list.remove / set.remove)
+                # Module calls: os.remove(), os.system(), shutil.rmtree(), subprocess execution
                 elif isinstance(node.func, ast.Attribute):
                     mod_name = getattr(node.func.value, "id", "")
                     attr_name = node.func.attr
-                    if (mod_name == "os" and attr_name in ("system", "remove", "unlink")) or \
+                    if (mod_name == "os" and attr_name in ("system", "remove", "unlink", "popen")) or \
                        (mod_name == "shutil" and attr_name in ("rmtree", "rmdir")) or \
-                       (mod_name == "subprocess" and attr_name in ("Popen", "call")):
-                        if confirm_gate_fn and not confirm_gate_fn(f"PYTHON DANGEROUS OP: {mod_name}.{attr_name}() cell execution"):
+                       (mod_name == "subprocess" and attr_name in ("run", "Popen", "call", "check_output", "check_call", "getoutput", "getstatusoutput")):
+                        gate = confirm_gate_fn or (ui.confirm_tool if ui else None)
+                        if gate and not gate(f"OUT-OF-BOUNDS KERNEL EXECUTION: {mod_name}.{attr_name}()"):
                             return "[denied] Dangerous operation rejected by user gate."
     except SyntaxError as e:
         return f"[error] Python syntax error in code cell: {e}"

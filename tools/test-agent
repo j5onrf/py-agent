@@ -316,8 +316,8 @@ try:
         text=True,
         timeout=15,
     )
-    arch_out = tools.run_graph_cmd("architecture", "", sandbox_dir)
-    p7_d = "Active Files" in arch_out and map_compile.returncode == 0
+    search_out = tools.run_graph_cmd("search", "add", sandbox_dir)
+    p7_d = map_compile.returncode == 0 and ("[Matches for:" in search_out or "calc.py" in search_out)
     print_result("Index-Map Relational Graph Probe", p7_d, "SQLite AST index compiled")
 
     all_passed = all_passed and p7_a and p7_b and p7_c and p7_d

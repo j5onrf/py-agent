@@ -113,7 +113,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 │   /f, /tk, /b, /a        - Follow-up, Think, Brainstorm, All modes  │
 │                                                                     │
 │   Memory & Workspace                                                │
-│   /m, /map               - Toggle Codebase index-map (11 tools)     │
+│   /m, /map               - Toggle Codebase index-map (8 tools)      │
 │   /mem, /memory          - Toggle database session memory & TPM     │
 │   /com, /compact         - 3-Zone context compaction                │
 │   /tok                   - Context token usage status               │

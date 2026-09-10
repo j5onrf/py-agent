@@ -329,8 +329,6 @@ def _search_codebase(pattern: str, search_root: str, workspace: str, max_results
         return "[error] Parameter 'pattern' cannot be empty."
 
     target_path = _safe_path(workspace, search_root)
-    if _is_outside_workspace(workspace, target_path):
-        return f"[denied] Search path '{search_root}' is outside workspace."
 
     try:
         regex = re.compile(pattern, re.IGNORECASE)
@@ -667,6 +665,10 @@ def run_tool(
     if name == "search_code":
         pattern = args.get("pattern", "")
         search_root = args.get("path", ".")
+        target_path = _safe_path(workspace, search_root)
+        if _is_outside_workspace(workspace, target_path):
+            if not _security_gate(f"OUT-OF-BOUNDS SEARCH: {target_path}"):
+                return f"[denied] User declined search of '{search_root}' outside workspace."
         out = _search_codebase(pattern, search_root, workspace)
         if print_output_fn:
             print_output_fn(out)

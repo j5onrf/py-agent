@@ -1,4 +1,4 @@
-# CODEBASE INDEX MAP | Generated: 2026-09-09 21:00 | Workspace: py-agent | Path: ~/.config/py-agent
+# CODEBASE INDEX MAP | Generated: 2026-09-10 10:53 | Workspace: py-agent | Path: ~/.config/py-agent
 # Active symbols and structural connections mapped in the local index.
 # -----------------------------------------------------------------------------------------
 # Codebase Modules & Active Architecture:
@@ -51,7 +51,7 @@
 [shell:ai-hook.sh] sum:Production Py-Agent Shell Hook v0.9.9
 [image/svg:logo.svg] dim:x | size:1.4KB
 [markdown:modules/Readme.md] title:Privacy-First
-[python:modules/agent_adapters.py] imp:ast,json,re,time,typing | fn:normalize_params,_extract_balanced_json,heal_json_args,_extract_ast_python_calls,extract_fallback_tool_calls
+[python:modules/agent_adapters.py] imp:ast,json,re,time,typing | fn:normalize_params,_extract_balanced_json,heal_tool_call,heal_json_args,_extract_ast_python_calls,extract_fallback_tool_calls
 [python:modules/agent_cloud.py] imp:os,re,typing | fn:_is_valid_key,get_active_configs
 [python:modules/agent_context.py] imp:os,re,sys,typing | fn:tokenize,load_context_entries,jaccard_search,clean_tool_prefix
 [python:modules/agent_core.py] imp:agent_adapters,agent_cloud,agent_ipython,agent_memories,agent_tools,agent_ui,agent_usage,base64,json,os,re,requests,rich,shutil,speed_test,subprocess,sys,time,typing,urllib | cls:RichStreamer | fn:_get_console,_get_img_config,describe_image_gemini,preprocess_multimodal_messages,_heal_tool_args,get_state,save_state,workspace_safe_name,run_mod,background_tpm_update,__init__,_stop_spinner,start,update,stop,_log_turn_usage,_process_stream_chunk,_calc_turn_tokens,_confirm_gate,_print_tool_output,_run_edit_tool,agentic_turn,_calc_msg_tokens,stream_response,get_accurate_token_count,show_memory_status,prune_history

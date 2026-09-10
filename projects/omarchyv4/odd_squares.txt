@@ -1,0 +1,13 @@
+Odd Numbers and Their Squares (1 to 15)
+=========================================
+1² = 1
+3² = 9
+5² = 25
+7² = 49
+9² = 81
+11² = 121
+13² = 169
+15² = 225
+
+All odd numbers from 1 to 15 have been squared.
+Total count: 8 odd numbers

@@ -492,12 +492,12 @@ def agentic_turn(
 
         if consecutive_tool_failures >= 2:
             decomp_steer = (
-                "[Harness Directive - Task Decomposition]: Your previous action failed repeatedly. "
+                "[System Directive - Task Decomposition]: Your previous action failed repeatedly. "
                 "Stop retrying the whole file. Decompose your immediate next step: "
                 "1) Read the exact 15-20 lines using read_file(path, line_start, line_end) or search_code(pattern). "
                 "2) Apply a targeted edit_file to only that section with unique context lines."
             )
-            messages.append({"role": "system", "content": decomp_steer})
+            messages.append({"role": "user", "content": decomp_steer})
             consecutive_tool_failures = 0
 
         body_tools = {**body, "messages": messages, "stream": True, "stream_options": {"include_usage": True}}
@@ -698,8 +698,8 @@ def agentic_turn(
                     if spinner:
                         spinner.stop()
 
-                # 2. Large Tool Result Scratchpad Offload (TrueForge-inspired)
-                if len(result) > 1500:
+                # 2. Large Tool Result Scratchpad Offload
+                if len(result) > 8000:
                     scratch_dir = os.path.join(workspace, ".agent", "scratchpad")
                     os.makedirs(scratch_dir, exist_ok=True)
                     scratch_file = os.path.join(scratch_dir, f"{fname}_{int(time.time())}.txt")
@@ -708,24 +708,24 @@ def agentic_turn(
                             sf.write(result)
                         rel_scratch = os.path.relpath(scratch_file, workspace)
                         pruned_result = (
-                            result[:1200]
+                            result[:6000]
                             + f"\n... [Output truncated: Full {len(result):,} chars saved to '{rel_scratch}'. "
                             + f"Use read_file('{rel_scratch}', line_start, line_end) to inspect specific blocks.]"
                         )
                     except OSError:
-                        pruned_result = result[:1200] + "\n... [snipped]"
+                        pruned_result = result[:6000] + "\n... [snipped]"
                 else:
                     pruned_result = result
 
                 messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": fname, "content": pruned_result})
 
                 if "[denied]" in result:
-                    messages.append({"role": "system", "content": "Action was explicitly declined by the user. Do not retry or attempt alternative workarounds for this resource."})
+                    messages.append({"role": "user", "content": "[System Notice]: Action was explicitly declined by the user. Do not retry or attempt alternative workarounds for this resource."})
                     return "[denied] Action cancelled by user."
 
                 # Smolagents Completion Signal: Prevent infinite loops after final_answer is returned
-                if fname == "exec_python" and "### Final Answer" in result:
-                    messages.append({"role": "system", "content": "final_answer() was received. Output your concise summary to the user now. Do not call any further tools."})
+                if fname == "exec_python" and ("### Final Answer" in result or "Final Answer" in result):
+                    messages.append({"role": "user", "content": "[System Directive]: final_answer() was received. Output your concise summary to the user now. Do not call any further tools."})
                     body.pop("tools", None)
 
                 if result.startswith("[error") or result.startswith("[tool error"):

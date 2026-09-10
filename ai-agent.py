@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.22] - Main CLI Runtime, Workspace Agent & Command Dispatcher"""
+"""Py Agent [j5onrf] [v0.9.9.23] - Main CLI Runtime, Workspace Agent & Command Dispatcher"""
 
 import json
 import os
@@ -366,7 +366,7 @@ def run_interactive_chat(args: list[str]) -> None:
                         for msg in chat_history:
                             if "### CODESPACE MAP:" in msg["content"]:
                                 msg["content"] = msg["content"].split("### CODESPACE MAP:")[0].strip()
-                    ui._console.print(f"[green][sys] index-map {'enabled (11 tools active)' if use_map else 'disabled (lean 6 tools)'}.[/green]\n")
+                    ui._console.print(f"[green][sys] index-map {'enabled (8 tools active)' if use_map else 'disabled (6 tools active)'}.[/green]\n")
                     continue
 
                 if cmd in ("/mem", "/memory"):

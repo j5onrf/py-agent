@@ -235,6 +235,24 @@ def _extract_balanced_json(text: str) -> list[dict[str, Any]]:
 
 # ── 4. Self-Healing JSON Argument Parser ──────────────────────────────────────
 
+def heal_tool_call(fname: str, raw_args: str | dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """Universal tool adapter for small models: heals parameters, aliases, and misdirected inline shell calls."""
+    healed_dict = heal_json_args(raw_args)
+
+    # Auto-adapt small models attempting inline python3 -c via shell: route directly to in-memory exec_python
+    if fname == "run_command" and "command" in healed_dict:
+        cmd_raw = str(healed_dict["command"]).strip()
+        if cmd_raw.startswith(("python3 -c", "python -c")):
+            py_code = re.sub(r"^python3?\s+-c\s+", "", cmd_raw).strip()
+            py_code = re.sub(r"\s*(2>&1|\|\|.*|&&.*)$", "", py_code).strip()
+            py_code = re.sub(r"^['\"]|['\"]$", "", py_code).strip()
+            py_code = re.sub(r"from\s+tools\s+import\s+exec_python\s*;?\s*", "", py_code).strip()
+            if py_code:
+                return "exec_python", {"code": py_code}
+
+    return fname, healed_dict
+
+
 def heal_json_args(raw: str | dict[str, Any]) -> dict[str, Any]:
     """Self-healing JSON tool argument parser for small quantized models (2B–8B)."""
     if isinstance(raw, dict):
