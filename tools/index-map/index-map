@@ -1,318 +1,245 @@
 #!/usr/bin/env python3
-"""Graph-Enabled Index-Map Workspace Intelligence Engine [In-Memory & CLI Module]"""
+"""Graph-Enabled Index-Map Workspace Intelligence Engine [Zero-Config FTS5 Edition]"""
 
-import os, re, ast, json, fnmatch, time, sys, warnings, sqlite3, struct, urllib.request as urlreq
-
-try: import sqlite_vec; HAS_VEC = True
-except ImportError: HAS_VEC = False
-
-EMBEDDING_SERVER = "http://localhost:8080"
+import ast
+import fnmatch
+import json
+import os
+import re
+import sqlite3
+import struct
+import sys
+import time
 
 LANG_RULES = {
-    'rust': {'class': r'\b(?:struct|enum|trait|union)\s+(\w+)', 'func': r'\b(?:async\s+)?(?:pub(?:\([^)]+\))?\s+)?fn\s+(\w+)', 'call': r'\b(\w+)\s*\('},
-    'go': {'class': r'\btype\s+(\w+)\s+struct\b', 'func': r'\bfunc\s+(?:\([^)]+\)\s+)?(\w+)', 'call': r'\b(\w+)\s*\('},
-    'lua': {'class': r'\b(\w+)\s*=\s*\{\}', 'func': r'\bfunction\s+([\w.:]+)', 'call': r'\b([\w.:]+)\s*\('},
-    'javascript': {'class': r'\bclass\s+(\w+)', 'func': r'\b(?:async\s+)?(?:function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[^\s=]+)\s*=>|(?:const|let|var)\s+(\w+)\s*=\s*function)', 'call': r'\b(\w+)\s*\('},
-    'typescript': {'class': r'\b(?:class|interface|type)\s+(\w+)', 'func': r'\b(?:async\s+)?(?:function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[^\s=]+)\s*=>|(?:public|private|protected|static|async)?\s*(\w+)\s*\([^)]*\)\s*:\s*[\w<>\[\]\s|]+)', 'call': r'\b(\w+)\s*\('},
-    'cpp': {'class': r'\b(?:class|struct)\s+(\w+)', 'func': r'\b\w+(?:<[^>]+>)?\s+(\w+)\s*\([^)]*\)\s*\{', 'call': r'\b(\w+)\s*\('},
-    'c': {'class': r'\bstruct\s+(\w+)', 'func': r'\b\w+\s+(\w+)\s*\([^)]*\)\s*\{', 'call': r'\b(\w+)\s*\('}
+    'rust': {'class': r'\b(?:struct|enum|trait|union)\s+(\w+)', 'func': r'\b(?:async\s+)?(?:pub(?:\([^)]+\))?\s+)?fn\s+(\w+)'},
+    'go': {'class': r'\btype\s+(\w+)\s+struct\b', 'func': r'\bfunc\s+(?:\([^)]+\)\s+)?(\w+)'},
+    'lua': {'class': r'\b(\w+)\s*=\s*\{\}', 'func': r'\bfunction\s+([\w.:]+)'},
+    'javascript': {'class': r'\bclass\s+(\w+)', 'func': r'\b(?:async\s+)?(?:function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[^\s=]+)\s*=>)'},
+    'typescript': {'class': r'\b(?:class|interface|type)\s+(\w+)', 'func': r'\b(?:async\s+)?(?:function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[^\s=]+)\s*=>)'},
+    'cpp': {'class': r'\b(?:class|struct)\s+(\w+)', 'func': r'\b\w+(?:<[^>]+>)?\s+(\w+)\s*\([^)]*\)\s*\{'},
+    'c': {'class': r'\bstruct\s+(\w+)', 'func': r'\b\w+\s+(\w+)\s*\([^)]*\)\s*\{'}
 }
 COMPILED_LANG_RULES = {l: {k: re.compile(v) for k, v in r.items()} for l, r in LANG_RULES.items()}
 
-DEFAULT_IGNORED = frozenset({'.git', '__pycache__', 'logs', '.auto-f', 'node_modules', 'venv', '.venv', 'SSD_BACKUPS', '.cargo', '.rustup', '.cache', '.npm', '.local', '.mozilla', 'target', '.agent', '.idea', '.vscode', 'projects'})
+DEFAULT_IGNORED = frozenset({
+    '.git', '__pycache__', 'logs', '.auto-f', 'node_modules', 'venv', '.venv',
+    'SSD_BACKUPS', '.cargo', '.rustup', '.cache', '.npm', '.local', '.mozilla',
+    'target', '.agent', '.idea', '.vscode', 'projects', 'dist', 'build'
+})
 
 RE_MD_TITLE = re.compile(r'^#\s+(.*)', re.M)
 RE_MD_FRONTMATTER = re.compile(r'^---\s*\n(.*?)\n---\s*\n', re.DOTALL)
 RE_MD_TAGS = re.compile(r'tags\s*:\s*[\[\']?([^\]\']+)\]?', re.I)
 RE_MD_WIKI_LINKS = re.compile(r'\[\[([^#\]|]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]')
 RE_MD_STD_LINKS = re.compile(r'\[[^\]]+\]\(([^)]+\.(?:md|txt|py|sh|rs|go|lua))\)')
-
-RE_QML_COMMENTS = re.compile(r'//.*|/\*.*?\*/', re.DOTALL)
-RE_QML_PROPS = re.compile(r'\bproperty\s+\w+\s+(\w+)')
-RE_QML_FUNCS = re.compile(r'\bfunction\s+(\w+)')
-
 RE_SVG_WIDTH = re.compile(r'width\s*=\s*["\']([^"\']+)["\']')
 RE_SVG_HEIGHT = re.compile(r'height\s*=\s*["\']([^"\']+)["\']')
 
 
-def load_gitignore_patterns(target_dir):
+def load_gitignore_patterns(target_dir: str) -> list[str]:
     p = os.path.join(target_dir, ".gitignore")
     if os.path.isfile(p):
         try:
             with open(p, 'r', encoding='utf-8', errors='ignore') as f:
                 return [l.strip() for l in f if l.strip() and not l.strip().startswith(('#', '!'))]
-        except Exception: pass
+        except Exception:
+            pass
     return []
 
 
-def should_ignore(rel_path, is_dir, gitignore_patterns, default_ignored):
+def should_ignore(rel_path: str, is_dir: bool, gitignore_patterns: list[str]) -> bool:
     parts = rel_path.replace(os.sep, '/').lower().split('/')
-    if any(p in default_ignored for p in parts): return True
+    if any(p in DEFAULT_IGNORED for p in parts):
+        return True
     fn = parts[-1]
-    if fn in ('history.md', 'tpm.md', '.state.json', '.ds_store', 'thumbs.db') or fn.startswith('index-map-') or any(fn.endswith(ext) for ext in ('.db', '.sqlite', '.sqlite3', '.log', '.tmp')): return True
+    if (fn in ('history.md', 'tpm.md', '.state.json', '.ds_store', 'thumbs.db') or
+            fn.startswith('index-map-') or
+            any(fn.endswith(ext) for ext in ('.db', '.db-wal', '.db-shm', '.sqlite', '.sqlite3', '.log', '.tmp'))):
+        return True
 
     for pattern in gitignore_patterns:
         pat, dir_only = pattern.rstrip('/'), pattern.endswith('/')
-        if dir_only and not is_dir: continue
+        if dir_only and not is_dir:
+            continue
         target = '/'.join(parts) if not dir_only else '/'.join(parts).rstrip('/')
         if pat.startswith('/'):
             p_clean = pat[1:]
-            if fnmatch.fnmatchcase(target, p_clean) or (len(parts) >= len(p_clean.split('/')) and fnmatch.fnmatchcase('/'.join(parts[:len(p_clean.split('/'))]), p_clean)): return True
+            if fnmatch.fnmatchcase(target, p_clean) or (len(parts) >= len(p_clean.split('/')) and fnmatch.fnmatchcase('/'.join(parts[:len(p_clean.split('/'))]), p_clean)):
+                return True
         else:
-            if any(fnmatch.fnmatchcase(part, pat) for part in parts): return True
+            if any(fnmatch.fnmatchcase(part, pat) for part in parts):
+                return True
     return False
 
 
-def is_binary(filepath):
+def is_binary(filepath: str) -> bool:
     try:
-        with open(filepath, 'rb') as f: return b'\x00' in f.read(1024)
-    except Exception: return True
+        with open(filepath, 'rb') as f:
+            return b'\x00' in f.read(1024)
+    except Exception:
+        return True
 
 
-def get_file_summary(filepath, limit=10):
-    if not os.path.isfile(filepath) or is_binary(filepath): return ""
+def get_file_summary(filepath: str, limit: int = 10) -> str:
+    if not os.path.isfile(filepath) or is_binary(filepath):
+        return ""
     try:
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
             for line in f.readlines()[:limit]:
                 s = line.strip()
                 if s and not line.startswith("#!") and not s.lower().startswith(("file:", "path:", "description:", "author:", "license:")):
                     return s.strip('#"\'/ \t')[:100].strip()
-    except Exception: pass
+    except Exception:
+        pass
     return ""
 
 
-def is_map_up_to_date(target_dir, map_file, default_ignored):
-    if not os.path.exists(map_file):
-        alt = os.path.join(target_dir, ".agent", os.path.basename(map_file)) if os.path.dirname(map_file) == target_dir else os.path.join(target_dir, os.path.basename(map_file))
-        if os.path.exists(alt): map_file = alt
-        else: return False
-
-    map_mtime, patterns = os.path.getmtime(map_file), load_gitignore_patterns(target_dir)
-    try:
-        for root, dirs, files in os.walk(target_dir):
-            dirs[:] = [d for d in dirs if not should_ignore(os.path.relpath(os.path.join(root, d), target_dir), True, patterns, default_ignored)]
-            for file in files:
-                fp = os.path.join(root, file)
-                if not should_ignore(os.path.relpath(fp, target_dir), False, patterns, default_ignored) and os.path.getmtime(fp) > map_mtime + 0.1:
-                    return False
-        return True
-    except Exception: return False
-
-
 class PythonGraphVisitor(ast.NodeVisitor):
-    def __init__(self, filepath):
-        self.filepath, self.classes, self.functions, self.calls, self.imports = filepath, [], [], [], []
-        self.current_class = self.current_function = None
+    def __init__(self, filepath: str):
+        self.filepath, self.classes, self.functions, self.imports = filepath, [], [], []
 
     def visit_Import(self, node):
-        for alias in node.names: self.imports.append((alias.name, alias.asname or alias.name))
+        for alias in node.names:
+            self.imports.append((alias.name, alias.asname or alias.name))
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node):
         if node.module:
-            for alias in node.names: self.imports.append((f"{node.module}.{alias.name}", alias.asname or alias.name))
+            for alias in node.names:
+                self.imports.append((f"{node.module}.{alias.name}", alias.asname or alias.name))
         self.generic_visit(node)
 
     def visit_ClassDef(self, node):
-        prev_class, self.current_class = self.current_class, node.name
         bases = [b.id for b in node.bases if isinstance(b, ast.Name)] or [b.attr for b in node.bases if isinstance(b, ast.Attribute)]
-        self.classes.append((node.name, node.lineno, getattr(node, 'end_lineno', node.lineno), bases))
+        doc = ast.get_docstring(node) or ""
+        self.classes.append((node.name, node.lineno, getattr(node, 'end_lineno', node.lineno), bases, doc))
         self.generic_visit(node)
-        self.current_class = prev_class
 
-    def visit_FunctionDef(self, node): self.visit_any_func(node)
-    def visit_AsyncFunctionDef(self, node): self.visit_any_func(node)
+    def visit_FunctionDef(self, node):
+        self.visit_any_func(node)
+
+    def visit_AsyncFunctionDef(self, node):
+        self.visit_any_func(node)
 
     def visit_any_func(self, node):
-        prev_func, self.current_function = self.current_function, node.name
-        self.functions.append((node.name, self.current_class, node.lineno, getattr(node, 'end_lineno', node.lineno), [a.arg for a in node.args.args]))
-        self.generic_visit(node)
-        self.current_function = prev_func
-
-    def visit_Call(self, node):
-        if self.current_function:
-            callee = node.func.id if isinstance(node.func, ast.Name) else (node.func.attr if isinstance(node.func, ast.Attribute) else None)
-            if callee: self.calls.append((self.current_function, self.current_class, callee, node.lineno))
+        doc = ast.get_docstring(node) or ""
+        args = [a.arg for a in node.args.args]
+        self.functions.append((node.name, node.lineno, getattr(node, 'end_lineno', node.lineno), args, doc))
         self.generic_visit(node)
 
 
-def parse_non_python_file(filepath, ext):
+def parse_non_python_file(filepath: str, ext: str) -> dict:
     lang = {'.rs': 'rust', '.go': 'go', '.lua': 'lua', '.js': 'javascript', '.ts': 'typescript', '.cpp': 'cpp', '.hpp': 'cpp', '.c': 'c', '.h': 'c'}.get(ext)
-    empty = {'classes': [], 'functions': [], 'calls': [], 'imports': []}
-    if not lang or lang not in COMPILED_LANG_RULES: return empty
-    rules, classes, functions, calls = COMPILED_LANG_RULES[lang], [], [], []
+    empty = {'classes': [], 'functions': []}
+    if not lang or lang not in COMPILED_LANG_RULES:
+        return empty
+    rules, classes, functions = COMPILED_LANG_RULES[lang], [], []
 
     try:
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
             lines = f.readlines()
-    except Exception: return empty
+    except Exception:
+        return empty
 
-    cur_class, cur_func = None, None
     for idx, line in enumerate(lines, 1):
         clean = line.strip()
-        if not clean or clean[:2] in ('//', '/*', '--') or clean[0] == '#': continue
-
-        if cm := rules['class'].search(clean): cur_class = cm.group(1); classes.append((cur_class, idx, idx))
+        if not clean or clean[:2] in ('//', '/*', '--') or clean[0] == '#':
+            continue
+        if cm := rules['class'].search(clean):
+            classes.append((cm.group(1), idx, idx, [], ""))
         if fm := rules['func'].search(clean):
-            if cur_func and functions: functions[-1] = (functions[-1][0], functions[-1][1], functions[-1][2], idx - 1, [])
-            if fn_name := next((g for g in fm.groups() if g), None): cur_func = fn_name; functions.append((fn_name, cur_class, idx, idx, []))
-        if cur_func:
-            for callee in rules['call'].findall(clean):
-                if callee not in ('if', 'for', 'while', 'switch', 'return', 'fn', 'func', 'function', 'struct', 'class', 'let', 'const', 'var', 'import', 'require') and callee != cur_func:
-                    calls.append((cur_func, cur_class, callee, idx))
+            if fn_name := next((g for g in fm.groups() if g), None):
+                functions.append((fn_name, idx, idx, [], ""))
 
-    if cur_func and functions: functions[-1] = (functions[-1][0], functions[-1][1], functions[-1][2], len(lines), [])
-    return {'classes': classes, 'functions': functions, 'calls': calls, 'imports': []}
+    return {'classes': classes, 'functions': functions}
 
 
-def analyze_markdown_file(filepath):
+def analyze_markdown_file(filepath: str) -> dict:
     try:
-        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f: content = f.read()
+        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
         tm, tags, links = RE_MD_TITLE.search(content), set(), set()
         if fm_match := RE_MD_FRONTMATTER.search(content):
             if tags_match := RE_MD_TAGS.search(fm_match.group(1)):
                 tags.update(t.strip().lower() for t in tags_match.group(1).split(',') if t.strip())
-        for w in RE_MD_WIKI_LINKS.findall(content): links.add(w.strip())
+        for w in RE_MD_WIKI_LINKS.findall(content):
+            links.add(w.strip())
         for ml in RE_MD_STD_LINKS.findall(content):
-            if not ml.startswith(("http", "https")): links.add(os.path.basename(ml))
+            if not ml.startswith(("http", "https")):
+                links.add(os.path.basename(ml))
         return {"type": "markdown", "title": tm.group(1).strip() if tm else os.path.splitext(os.path.basename(filepath))[0], "tags": sorted(list(tags)), "links": sorted(list(links))}
-    except Exception: return {"type": "markdown", "title": os.path.splitext(os.path.basename(filepath))[0]}
+    except Exception:
+        return {"type": "markdown", "title": os.path.splitext(os.path.basename(filepath))[0]}
 
 
-def analyze_image_file(filepath):
+def analyze_image_file(filepath: str) -> dict:
     ext, size_bytes = os.path.splitext(filepath)[1].lstrip('.').lower(), os.path.getsize(filepath)
     size_str = f"{size_bytes / 1024:.1f}KB" if size_bytes < 1024 * 1024 else f"{size_bytes / (1024 * 1024):.1f}MB"
     try:
-        with open(filepath, 'rb') as f: head = f.read(512)
+        with open(filepath, 'rb') as f:
+            head = f.read(512)
         w, h = 0, 0
-        if ext == "png" and head.startswith(b'\x89PNG\r\n\x1a\n'): w, h = struct.unpack('>II', head[16:24])
-        elif ext == "gif" and head.startswith((b'GIF87a', b'GIF89a')): w, h = struct.unpack('<HH', head[6:10])
+        if ext == "png" and head.startswith(b'\x89PNG\r\n\x1a\n'):
+            w, h = struct.unpack('>II', head[16:24])
+        elif ext == "gif" and head.startswith((b'GIF87a', b'GIF89a')):
+            w, h = struct.unpack('<HH', head[6:10])
         elif ext in ("jpg", "jpeg") and head.startswith(b'\xff\xd8'):
             idx = 2
             while idx < len(head):
                 marker, length = struct.unpack('>HH', head[idx:idx + 4])
-                if 0xffc0 <= marker <= 0xffc3: w, h = struct.unpack('>HH', head[idx + 5:idx + 9]); break
+                if 0xffc0 <= marker <= 0xffc3:
+                    w, h = struct.unpack('>HH', head[idx + 5:idx + 9])
+                    break
                 idx += length + 2
         elif ext == "svg":
             text = head.decode("utf-8", errors="ignore")
             wm, hm = RE_SVG_WIDTH.search(text), RE_SVG_HEIGHT.search(text)
             return {"type": "image/svg", "dim": f"{wm.group(1) if wm else ''}x{hm.group(1) if hm else ''}", "size": size_str}
         return {"type": f"image/{ext}", "dim": f"{w}x{h}", "size": size_str} if w and h else {"type": f"image/{ext}", "size": size_str}
-    except Exception: return {"type": f"image/{ext}", "size": size_str}
+    except Exception:
+        return {"type": f"image/{ext}", "size": size_str}
 
 
-def analyze_json_file(filepath):
-    try:
-        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f: data = json.load(f)
-        return {"type": "json", "keys": list(data.keys()) if isinstance(data, dict) else []}
-    except Exception: return {"type": "json", "error": "Malformed JSON"}
-
-
-def analyze_qml_file(filepath):
+def analyze_json_file(filepath: str) -> dict:
     try:
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-            content = RE_QML_COMMENTS.sub('', f.read())
-        return {"type": "qml", "properties": RE_QML_PROPS.findall(content), "functions": RE_QML_FUNCS.findall(content)}
-    except Exception: return {"type": "qml", "error": "Unparseable"}
+            data = json.load(f)
+        return {"type": "json", "keys": list(data.keys()) if isinstance(data, dict) else []}
+    except Exception:
+        return {"type": "json", "error": "Malformed JSON"}
 
 
-def analyze_shell_file(filepath): return {"type": "shell", "summary": get_file_summary(filepath, 10) or "Shell Module"}
-def analyze_generic_file(filepath): return {"type": f"binary/{os.path.splitext(filepath)[1].lstrip('.') or 'bin'}"} if is_binary(filepath) else {"type": os.path.splitext(filepath)[1].lstrip('.') or "file", "summary": get_file_summary(filepath, 15) or "Empty file"}
+def analyze_shell_file(filepath: str) -> dict:
+    return {"type": "shell", "summary": get_file_summary(filepath, 10) or "Shell Module"}
 
 
-def get_embedding(text, server_url=EMBEDDING_SERVER):
-    if not (text := text.replace("\n", " ").strip()[:3000]): return None
-    try:
-        req = urlreq.Request(f"{server_url}/v1/embeddings", data=json.dumps({"input": text, "model": "text-embedding-ada-002"}).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
-        with urlreq.urlopen(req, timeout=1.5) as res: return json.loads(res.read().decode("utf-8"))["data"][0]["embedding"]
-    except Exception: return None
+def analyze_generic_file(filepath: str) -> dict:
+    return {"type": f"binary/{os.path.splitext(filepath)[1].lstrip('.') or 'bin'}"} if is_binary(filepath) else {"type": os.path.splitext(filepath)[1].lstrip('.') or "file", "summary": get_file_summary(filepath, 15) or "Empty file"}
 
 
-def serialize_vec(vector): return struct.pack(f"{len(vector)}f", *vector)
-
-
-def init_db(db_path, use_vec=False, dim=384):
+def init_db(db_path: str) -> sqlite3.Connection:
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
-    cur.execute("PRAGMA journal_mode=WAL;"); cur.execute("PRAGMA synchronous=OFF;")
-
-    vec_loaded = False
-    if use_vec:
-        try:
-            conn.enable_load_extension(True); sqlite_vec.load(conn); conn.enable_load_extension(False)
-            vec_loaded = True
-        except Exception: pass
-
-    cur.execute("DROP TABLE IF EXISTS edges"); cur.execute("DROP TABLE IF EXISTS nodes")
-    if vec_loaded: cur.execute("DROP TABLE IF EXISTS nodes_vec")
-
-    cur.execute("CREATE TABLE nodes (id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, filepath TEXT NOT NULL, language TEXT, meta TEXT)")
-    cur.execute("CREATE TABLE edges (source TEXT, target TEXT, type TEXT NOT NULL, PRIMARY KEY (source, target, type), FOREIGN KEY (source) REFERENCES nodes(id) ON DELETE CASCADE, FOREIGN KEY (target) REFERENCES nodes(id) ON DELETE CASCADE)")
-    for idx in ("idx_nodes_name ON nodes(name)", "idx_nodes_type ON nodes(type)", "idx_edges_source ON edges(source)", "idx_edges_target ON edges(target)"): cur.execute(f"CREATE INDEX {idx}")
-    if vec_loaded: cur.execute(f"CREATE VIRTUAL TABLE nodes_vec USING vec0(id INTEGER PRIMARY KEY, embedding float[{dim}])")
-
+    cur.execute("PRAGMA journal_mode=WAL;")
+    cur.execute("DROP TABLE IF EXISTS nodes;")
+    cur.execute("CREATE VIRTUAL TABLE nodes USING fts5(id, name, type, filepath, language, signature, doc, lines);")
     conn.commit()
-    return conn, vec_loaded
+    return conn
 
 
-def find_db_path(start_dir=None):
+def find_db_path(start_dir: str | None = None) -> str | None:
     curr = os.path.abspath(start_dir or os.getcwd())
     while True:
         for check in (os.path.join(curr, ".agent"), curr):
             if os.path.isdir(check):
-                if found := next((os.path.join(check, f) for f in os.listdir(check) if f.startswith("index-map-memory-") and f.endswith(".db")), None): return found
-        if (parent := os.path.dirname(curr)) == curr: break
+                if found := next((os.path.join(check, f) for f in os.listdir(check) if f.startswith("index-map-memory-") and f.endswith(".db")), None):
+                    return found
+        if (parent := os.path.dirname(curr)) == curr:
+            break
         curr = parent
     return None
-
-
-def insert_node(conn, node_id, name, ntype, filepath, lang, meta_dict, text_to_embed, use_vec, server_url):
-    cur = conn.cursor()
-    cur.execute("INSERT OR REPLACE INTO nodes VALUES (?, ?, ?, ?, ?, ?)", (node_id, name, ntype, filepath, lang, json.dumps(meta_dict)))
-    if use_vec and text_to_embed and (emb := get_embedding(text_to_embed, server_url)):
-        try: cur.execute("INSERT INTO nodes_vec(id, embedding) VALUES (?, ?)", (cur.lastrowid, serialize_vec(emb)))
-        except Exception: pass
-
-
-def _commit_structures_to_db(db_conn, rel_path, ext_label, classes, functions, file_lines, use_vec):
-    for item in classes:
-        name, start, end = item[0], item[1], item[2]
-        bases = item[3] if len(item) > 3 else []
-        cid = f"class:{rel_path}:{name}"
-        insert_node(db_conn, cid, name, 'class', rel_path, ext_label, {'line_start': start, 'line_end': end, 'bases': bases}, "\n".join(file_lines[max(0, start - 1):end]).strip() if file_lines else "", use_vec, EMBEDDING_SERVER)
-        db_conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, ?)", (f"file:{rel_path}", cid, 'contains'))
-        for b in bases:
-            db_conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, ?)", (cid, f"class:{rel_path}:{b}", 'inherits'))
-
-    for name, parent_class, start, end, args in functions:
-        fid = f"func:{rel_path}:{parent_class}:{name}" if parent_class else f"func:{rel_path}:{name}"
-        insert_node(db_conn, fid, name, 'function', rel_path, ext_label, {'line_start': start, 'line_end': end, 'args': args}, "\n".join(file_lines[max(0, start - 1):end]).strip() if file_lines else "", use_vec, EMBEDDING_SERVER)
-        db_conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, ?)", (f"class:{rel_path}:{parent_class}" if parent_class else f"file:{rel_path}", fid, 'contains'))
-
-
-def resolve_and_insert_edges(conn, raw_calls, file_imports):
-    cur = conn.cursor()
-    target_map = {}
-    for tid, name, ntype, filepath in cur.execute("SELECT id, name, type, filepath FROM nodes WHERE type IN ('function', 'class')").fetchall():
-        target_map.setdefault(name, []).append((tid, filepath, ntype))
-
-    edges = []
-    for filepath, calls in raw_calls.items():
-        imp_names = {imp_as: full_name for full_name, imp_as in file_imports.get(filepath, [])}
-        for caller_func, caller_class, callee_name, line in calls:
-            caller_id = f"func:{filepath}:{caller_class}:{caller_func}" if caller_class else f"func:{filepath}:{caller_func}"
-            resolved = next((c[0] for c in target_map.get(callee_name, []) if c[1] == filepath), None)
-            if not resolved and callee_name in imp_names and (cands := target_map.get(imp_names[callee_name].split('.')[-1], [])): resolved = cands[0][0]
-            if not resolved and len(cands := target_map.get(callee_name, [])) == 1: resolved = cands[0][0]
-
-            if resolved: edges.append((caller_id, resolved, 'calls'))
-            elif len(cands) > 1:
-                for cand_id, _, _ in cands: edges.append((caller_id, cand_id, 'calls'))
-
-    try: cur.executemany("INSERT OR IGNORE INTO edges VALUES (?, ?, ?)", edges)
-    except Exception: pass
-    conn.commit()
 
 
 def compile_ascii_tree(target_dir: str) -> str:
@@ -320,9 +247,10 @@ def compile_ascii_tree(target_dir: str) -> str:
     for root in (target_dir, os.path.join(target_dir, "modules")):
         if os.path.isdir(root):
             sub = "modules" if "modules" in root else ""
-            files.extend((sub, f, os.path.join(root, f)) for f in sorted(os.listdir(root)) if os.path.isfile(os.path.join(root, f)))
+            files.extend((sub, f, os.path.join(root, f)) for f in sorted(os.listdir(root)) if os.path.isfile(os.path.join(root, f)) and not f.startswith("index-map-") and not f.endswith(('.db', '.tmp', '.log')))
 
-    if not files: return ""
+    if not files:
+        return ""
     lines = ["# Codebase Modules & Active Architecture:"]
     for idx, (subdir, name, path) in enumerate(files):
         disp, desc = os.path.join(subdir, name) if subdir else name, get_file_summary(path)
@@ -331,28 +259,34 @@ def compile_ascii_tree(target_dir: str) -> str:
     return "\n".join(lines) + "\n# -----------------------------------------------------------------------------------------\n"
 
 
-def compile_flat_shorthand(skeleton):
+def compile_flat_shorthand(skeleton: dict) -> str:
     lines = []
     for rel_path, data in sorted(skeleton.items()):
         t = data.get("type", "file")
-        if t == "python": parts = [f"imp:{','.join(data['imports'])}" if data.get('imports') else "", f"cls:{','.join(data['classes'])}" if data.get('classes') else "", f"fn:{','.join(data['functions'])}" if data.get('functions') else ""]
-        elif t in ("rust", "go", "lua", "qml"): parts = [f"cls:{','.join(data['classes'])}" if data.get('classes') else "", f"fn:{','.join(data['functions'])}" if data.get('functions') else ""]
-        elif t == "markdown": parts = [f"title:{data['title']}" if data.get('title') else "", f"tags:{','.join(data['tags'])}" if data.get('tags') else "", f"links:{','.join(data['links'])}" if data.get('links') else ""]
-        elif t.startswith("image/"): parts = [f"dim:{data['dim']}" if data.get('dim') else "", f"size:{data['size']}" if data.get('size') else ""]
-        elif t == "json": parts = [f"keys:{','.join(data['keys'])}" if data.get('keys') else ""]
-        else: parts = [f"sum:{data.get('summary', '').replace('\n', ' ').strip()}" if data.get('summary') else ""]
+        if t == "python":
+            parts = [f"imp:{','.join(data['imports'])}" if data.get('imports') else "", f"cls:{','.join(data['classes'])}" if data.get('classes') else "", f"fn:{','.join(data['functions'])}" if data.get('functions') else ""]
+        elif t in ("rust", "go", "lua", "javascript", "typescript", "cpp", "c"):
+            parts = [f"cls:{','.join(data['classes'])}" if data.get('classes') else "", f"fn:{','.join(data['functions'])}" if data.get('functions') else ""]
+        elif t == "markdown":
+            parts = [f"title:{data['title']}" if data.get('title') else "", f"tags:{','.join(data['tags'])}" if data.get('tags') else "", f"links:{','.join(data['links'])}" if data.get('links') else ""]
+        elif t.startswith("image/"):
+            parts = [f"dim:{data['dim']}" if data.get('dim') else "", f"size:{data['size']}" if data.get('size') else ""]
+        elif t == "json":
+            parts = [f"keys:{','.join(data['keys'])}" if data.get('keys') else ""]
+        else:
+            parts = [f"sum:{data.get('summary', '').replace('\n', ' ').strip()}" if data.get('summary') else ""]
 
         meta = " | ".join(filter(None, parts))
         lines.append(f"[{t}:{rel_path}] {meta}" if meta else f"[{t}:{rel_path}]")
     return "\n".join(lines)
 
 
-def run_indexing(target_dir, force=False, is_agent=False, no_db=False, print_output=False):
+def run_indexing(target_dir: str, force: bool = False, is_agent: bool = False, no_db: bool = False, print_output: bool = False) -> None:
     if os.path.basename(target_dir) == ".agent":
         target_dir = os.path.dirname(target_dir)
     proj_name = os.path.basename(target_dir)
 
-    # If run manually, output text map to current directory without creating .db clutter
+    # Strictly place inside .agent/ for agent mode, or avoid db unless requested in CLI
     if is_agent:
         out_dir = os.path.join(target_dir, ".agent")
     else:
@@ -363,71 +297,71 @@ def run_indexing(target_dir, force=False, is_agent=False, no_db=False, print_out
     os.makedirs(out_dir, exist_ok=True)
     output_file = os.path.join(out_dir, f"index-map-{proj_name}.txt")
 
-    if not force and is_map_up_to_date(target_dir, output_file, DEFAULT_IGNORED):
-        if print_output and os.path.isfile(output_file):
-            with open(output_file, 'r', encoding='utf-8', errors='ignore') as f:
-                sys.stdout.write(f.read())
-                sys.stdout.flush()
-        elif not is_agent:
-            sys.stderr.write(f"\r\x1b[2K\033[1;32m[ok] Index map is up to date: {output_file}\033[0m\n")
-        return
-
-    db_conn, use_vec = None, False
+    db_conn = None
     if not no_db:
         db_path = os.path.join(out_dir, f"index-map-memory-{proj_name}.db")
-        use_vec = HAS_VEC and bool(get_embedding("test"))
-        sys.stderr.write(f"\r\x1b[2K\033[2m[info] Mapping workspace... [{'Embedding server found' if use_vec else 'Relational graph only'}]\033[0m"); sys.stderr.flush()
-        db_conn, use_vec = init_db(db_path, use_vec=use_vec)
+        db_conn = init_db(db_path)
 
-    patterns, skeleton, raw_calls, file_imports = load_gitignore_patterns(target_dir), {}, {}, {}
+    patterns, skeleton = load_gitignore_patterns(target_dir), {}
+    db_rows = []
+
     for root, dirs, files in os.walk(target_dir):
-        dirs[:] = [d for d in dirs if not should_ignore(os.path.relpath(os.path.join(root, d), target_dir), True, patterns, DEFAULT_IGNORED)]
+        dirs[:] = [d for d in dirs if not should_ignore(os.path.relpath(os.path.join(root, d), target_dir), True, patterns)]
         for file in files:
             fp = os.path.join(root, file)
             rel_path = os.path.relpath(fp, target_dir)
-            if should_ignore(rel_path, False, patterns, DEFAULT_IGNORED): continue
+            if should_ignore(rel_path, False, patterns):
+                continue
 
             ext = os.path.splitext(file)[1].lower()
-            
             is_py_shebang = False
             if not ext and not is_binary(fp):
                 try:
                     with open(fp, 'r', encoding='utf-8', errors='ignore') as f:
-                        first_line = f.readline()
-                        if first_line.startswith("#!") and "python" in first_line:
+                        if f.readline().startswith("#!") and "python" in f.readline():
                             is_py_shebang = True
-                except Exception: pass
-
-            if db_conn: insert_node(db_conn, f"file:{rel_path}", rel_path, 'file', rel_path, (ext.lstrip('.') or ('python' if is_py_shebang else 'file')), {}, rel_path, use_vec, EMBEDDING_SERVER)
+                except Exception:
+                    pass
 
             if ext == '.py' or is_py_shebang:
                 try:
-                    with open(fp, 'r', encoding='utf-8', errors='replace') as f: content = f.read()
-                    lines = content.splitlines()
-                    with warnings.catch_warnings():
-                        warnings.simplefilter("ignore", SyntaxWarning)
-                        tree = ast.parse(content, filename=fp)
+                    with open(fp, 'r', encoding='utf-8', errors='replace') as f:
+                        content = f.read()
+                    tree = ast.parse(content, filename=fp)
                     v = PythonGraphVisitor(rel_path)
                     v.visit(tree)
-                    raw_calls[rel_path], file_imports[rel_path] = v.calls, v.imports
-                    skeleton[rel_path] = {"type": "python", "imports": sorted(list({i[0].split('.')[0] for i in v.imports})), "classes": [c[0] for c in v.classes], "functions": [f[0] for f in v.functions]}
-                    if db_conn: _commit_structures_to_db(db_conn, rel_path, 'python', v.classes, v.functions, lines, use_vec)
-                except Exception as e: skeleton[rel_path] = {"type": "python", "error": f"AST error: {e}"}
+                    skeleton[rel_path] = {
+                        "type": "python",
+                        "imports": sorted(list({i[0].split('.')[0] for i in v.imports})),
+                        "classes": [c[0] for c in v.classes],
+                        "functions": [f[0] for f in v.functions]
+                    }
+                    if db_conn:
+                        for cname, start, end, bases, doc in v.classes:
+                            db_rows.append((f"class:{rel_path}:{cname}", cname, "class", rel_path, "python", f"class {cname}({', '.join(bases)})", doc, f"{start}-{end}"))
+                        for fname, start, end, args, doc in v.functions:
+                            db_rows.append((f"func:{rel_path}:{fname}", fname, "function", rel_path, "python", f"{fname}({', '.join(args)})", doc, f"{start}-{end}"))
+                except Exception as e:
+                    skeleton[rel_path] = {"type": "python", "error": f"AST error: {e}"}
             elif ext in ('.rs', '.go', '.lua', '.js', '.ts', '.cpp', '.hpp', '.c', '.h'):
                 parsed = parse_non_python_file(fp, ext)
-                raw_calls[rel_path] = parsed['calls']
-                try:
-                    with open(fp, 'r', encoding='utf-8', errors='ignore') as f:
-                        file_lines = f.read().splitlines()
-                except Exception: file_lines = []
                 skeleton[rel_path] = {"type": ext.lstrip('.'), "classes": [c[0] for c in parsed['classes']], "functions": [f[0] for f in parsed['functions']]}
-                if db_conn: _commit_structures_to_db(db_conn, rel_path, ext.lstrip('.'), parsed['classes'], parsed['functions'], file_lines, use_vec)
+                if db_conn:
+                    for cname, start, end, _, doc in parsed['classes']:
+                        db_rows.append((f"class:{rel_path}:{cname}", cname, "class", rel_path, ext.lstrip('.'), cname, doc, f"{start}-{end}"))
+                    for fname, start, end, _, doc in parsed['functions']:
+                        db_rows.append((f"func:{rel_path}:{fname}", fname, "function", rel_path, ext.lstrip('.'), fname, doc, f"{start}-{end}"))
             else:
-                dispatch = {'.md': analyze_markdown_file, '.sh': analyze_shell_file, '.json': analyze_json_file, '.qml': analyze_qml_file, '.png': analyze_image_file, '.jpg': analyze_image_file}
-                skeleton[rel_path] = dispatch.get(ext, analyze_generic_file)(fp)
+                dispatch = {'.md': analyze_markdown_file, '.sh': analyze_shell_file, '.json': analyze_json_file, '.png': analyze_image_file, '.jpg': analyze_image_file, '.svg': analyze_image_file}
+                res = dispatch.get(ext, analyze_generic_file)(fp)
+                skeleton[rel_path] = res
+                if db_conn and res.get("title"):
+                    db_rows.append((f"doc:{rel_path}", res.get("title", ""), "markdown", rel_path, "markdown", res.get("title", ""), ", ".join(res.get("tags", [])), "1-1"))
 
-    if db_conn:
-        db_conn.commit(); resolve_and_insert_edges(db_conn, raw_calls, file_imports); db_conn.close()
+    if db_conn and db_rows:
+        db_conn.cursor().executemany("INSERT INTO nodes VALUES (?, ?, ?, ?, ?, ?, ?, ?)", db_rows)
+        db_conn.commit()
+        db_conn.close()
 
     disp_dir = target_dir.replace(os.path.expanduser("~"), "~", 1) if target_dir.startswith(os.path.expanduser("~")) else target_dir
     header = f"# CODEBASE INDEX MAP | Generated: {time.strftime('%Y-%m-%d %H:%M')} | Workspace: {proj_name} | Path: {disp_dir}\n# Active symbols and structural connections mapped in the local index.\n# -----------------------------------------------------------------------------------------\n"
@@ -436,234 +370,108 @@ def run_indexing(target_dir, force=False, is_agent=False, no_db=False, print_out
 
     try:
         tmp = f"{output_file}.tmp"
-        with open(tmp, 'w', encoding='utf-8') as f: f.write(flat_map)
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.write(flat_map)
         os.replace(tmp, output_file)
-
-        sys.stderr.write(f"\r\x1b[2K\033[1;32m[ok] Mapping complete! [{proj_name} index-map {'& SQLite graph database updated' if db_conn else 'updated'}]\033[0m\n"); sys.stderr.flush()
         if print_output:
             sys.stdout.write(flat_map)
             sys.stdout.flush()
+        elif not is_agent:
+            sys.stderr.write(f"\r\x1b[2K\033[1;32m[ok] Mapping complete! [{proj_name} index-map {'& SQLite database updated' if db_conn else 'updated'}]\033[0m\n")
     except Exception as e:
-        sys.stderr.write(f"\r\x1b[2K\033[1;31m[error] Error: Failed to write output files: {e}\033[0m\n"); sys.stderr.flush()
+        sys.stderr.write(f"\r\x1b[2K\033[1;31m[error] Failed to write map: {e}\033[0m\n")
 
 
-def show_architecture(workspace=None) -> str:
+def search_symbols(pattern: str, workspace: str | None = None) -> str:
     db = find_db_path(workspace)
-    if not db: return "[error] SQLite index-map-memory database file not found. Initialize with 'init' first."
+    if not db:
+        return "[error] Index database not found. Initialize with 'ai init' or 'index-map init --db'."
     conn = sqlite3.connect(db)
     cur = conn.cursor()
-    fc = cur.execute("SELECT COUNT(*) FROM nodes WHERE type='file'").fetchone()[0]
-    cc = cur.execute("SELECT COUNT(*) FROM nodes WHERE type='class'").fetchone()[0]
-    fnc = cur.execute("SELECT COUNT(*) FROM nodes WHERE type='function'").fetchone()[0]
-    ec = cur.execute("SELECT COUNT(*) FROM edges WHERE type='calls'").fetchone()[0]
 
-    res = [
-        "\n\033[1;36m[Workspace Architecture Overview]\033[0m",
-        f"Active Files      : {fc}",
-        f"Detected Classes  : {cc}",
-        f"Detected Functions: {fnc}",
-        f"Call Connections  : {ec}",
-        "\n\033[1;32mMajor Entrypoints & File Structure:\033[0m"
-    ]
-    for name, lang in cur.execute("SELECT name, language FROM nodes WHERE type='file' LIMIT 20").fetchall():
-        out_edges = cur.execute("SELECT COUNT(*) FROM edges WHERE source LIKE ?", (f"%{name}%",)).fetchone()[0]
-        res.append(f"  ├── {name:<35} ({lang or 'unknown'}) - {out_edges} exports/relations")
+    clean_query = re.sub(r'[^a-zA-Z0-9_* ]', ' ', pattern).strip()
+    if not clean_query:
+        conn.close()
+        return "[error] Empty search pattern."
+
+    fts_terms = " OR ".join(f"{w}*" for w in clean_query.split())
+    sql = "SELECT id, type, filepath, signature, doc, lines, bm25(nodes) as rank FROM nodes WHERE nodes MATCH ? ORDER BY rank LIMIT 15"
+    try:
+        rows = cur.execute(sql, (fts_terms,)).fetchall()
+    except Exception:
+        rows = cur.execute("SELECT id, type, filepath, signature, doc, lines, 0 FROM nodes WHERE name LIKE ? LIMIT 15", (f"%{clean_query}%",)).fetchall()
     conn.close()
+
+    if not rows:
+        return f"[no matches found for '{pattern}']"
+
+    res = [f"\n\033[1;32m[Matches for: '{pattern}']\033[0m"]
+    for nid, ntype, fpath, sig, doc, lines, _ in rows:
+        doc_snippet = f" • [italic]{doc.splitlines()[0][:60]}[/italic]" if doc else ""
+        res.append(f"  • \033[1;36m{sig}\033[0m [{ntype}] in \033[33m{fpath}:{lines}\033[0m{doc_snippet}")
     return "\n".join(res)
 
 
-def trace_symbol(symbol: str, workspace=None) -> str:
+def extract_snippet(symbol: str, workspace: str | None = None) -> str:
     db = find_db_path(workspace)
-    if not db: return "[error] Database not found."
+    if not db:
+        return "[error] Database not found."
     conn = sqlite3.connect(db)
     cur = conn.cursor()
-    
-    clean_sym = symbol.replace('.', ':').replace('/', ':')
-    short_sym = symbol.split('.')[-1].split(':')[-1]
-    query_sql = "SELECT id, type, filepath, meta FROM nodes WHERE name = ? OR name = ? OR id LIKE ? OR id LIKE ?"
-    nodes = cur.execute(query_sql, (symbol, short_sym, f"%:{clean_sym}", f"%:{short_sym}")).fetchall()
-    if not nodes:
-        conn.close()
-        return f"[error] Symbol '{symbol}' was not found in the relationship map."
-
-    res = []
-    for node_id, node_type, filepath, meta_str in nodes:
-        meta = json.loads(meta_str) if meta_str else {}
-        args_str = f"({', '.join(meta.get('args', []))})" if 'args' in meta else ""
-        lines_str = f" (Lines {meta.get('line_start')}-{meta.get('line_end')})" if meta.get('line_start') else ""
-        res.append(f"\n\033[1;34m[Trace Call Tree] For: {symbol}{args_str} [{node_type}] in {filepath}{lines_str}\033[0m")
-
-        for title, rel_type in (("\n\033[1;32m<-- [Callers] (Who invokes/uses this symbol):\033[0m", "target"), ("\n\033[1;35m--> [Callees] (Who/What this symbol calls):\033[0m", "source")):
-            res.append(title)
-            q = f"SELECT n.name, n.type, n.filepath, n.meta FROM edges e JOIN nodes n ON n.id = e.{'source' if rel_type == 'target' else 'target'} WHERE e.{rel_type} = ? AND e.type IN ('calls', 'inherits')"
-            rows = cur.execute(q, (node_id,)).fetchall()
-            if not rows: res.append("  (None detected)")
-            for rname, rtype, rpath, rmeta in rows:
-                rm = json.loads(rmeta) if rmeta else {}
-                rargs = f"({', '.join(rm.get('args', []))})" if 'args' in rm else ""
-                res.append(f"  ├── \033[36m{rname}\033[0m{rargs} [{rtype}] ({rpath})")
+    rows = cur.execute("SELECT filepath, lines, type, name FROM nodes WHERE name = ? OR id LIKE ? LIMIT 5", (symbol, f"%:{symbol}")).fetchall()
     conn.close()
-    return "\n".join(res)
 
-
-def get_blast_radius(symbol: str, workspace=None) -> str:
-    db = find_db_path(workspace)
-    if not db: return "[error] Database not found."
-    conn = sqlite3.connect(db)
-    cur = conn.cursor()
-    clean_sym = symbol.replace('.', ':').replace('/', ':')
-    short_sym = symbol.split('.')[-1].split(':')[-1]
-    query_sql = "SELECT id, type, filepath FROM nodes WHERE name = ? OR name = ? OR id LIKE ? OR id LIKE ?"
-    starts = cur.execute(query_sql, (symbol, short_sym, f"%:{clean_sym}", f"%:{short_sym}")).fetchall()
-    if not starts:
-        conn.close()
-        return f"[error] Symbol '{symbol}' not found."
-
-    res = []
-    for node_id, node_type, filepath in starts:
-        res.append(f"\n\033[1;31m[Blast Radius] Upstream structural impact map for modifying: {symbol}\033[0m\nTarget Anchor: {node_id} ({node_type})")
-        visited, queue, levels = {node_id}, [(node_id, 0)], {}
-        while queue:
-            curr, lvl = queue.pop(0)
-            if lvl > 0: levels.setdefault(lvl, []).append(curr)
-            if lvl >= 5: continue
-            for (source,) in cur.execute("SELECT source FROM edges WHERE target = ? AND type IN ('calls', 'contains')", (curr,)).fetchall():
-                if source not in visited: visited.add(source); queue.append((source, lvl + 1))
-
-        if not levels: res.append("  -> \033[32mNo upstream dependencies detected. Low risk index block.\033[0m")
-        else:
-            for lvl in sorted(levels.keys()):
-                res.append(f"  {'  ' * lvl}-> Level {lvl} {'Direct Impact (Callers/Containers):' if lvl == 1 else 'Indirect Transitive Impact:'}")
-                for item in levels[lvl]:
-                    p = item.split(":")
-                    res.append(f"  {'  ' * lvl}  - \033[1;33m{p[-1]}\033[0m [{p[0]}] ({p[1]})")
-    conn.close()
-    return "\n".join(res)
-
-
-def extract_snippet(symbol: str, workspace=None) -> str:
-    db = find_db_path(workspace)
-    if not db: return "[error] Database not found."
-    conn = sqlite3.connect(db)
-    cur = conn.cursor()
-    
-    clean_sym = symbol.replace('.', ':').replace('/', ':')
-    short_sym = symbol.split('.')[-1].split(':')[-1]
-    query_sql = "SELECT filepath, meta, type, name FROM nodes WHERE name = ? OR name = ? OR id LIKE ? OR id LIKE ?"
-    results = cur.execute(query_sql, (symbol, short_sym, f"%:{clean_sym}", f"%:{short_sym}")).fetchall()
-    if not results:
-        conn.close()
+    if not rows:
         return f"[error] Symbol '{symbol}' not found."
 
     res = []
     root_dir = os.path.dirname(os.path.dirname(db)) if os.path.basename(os.path.dirname(db)) == ".agent" else os.path.dirname(db)
-    for filepath, meta_str, node_type, name in results:
-        meta = json.loads(meta_str) if meta_str else {}
-        l_start, l_end = meta.get('line_start'), meta.get('line_end')
+    for filepath, lines_str, node_type, name in rows:
+        if not lines_str or "-" not in lines_str:
+            continue
+        l_start, l_end = map(int, lines_str.split("-"))
         full_path = os.path.join(root_dir, filepath)
-        if not os.path.isfile(full_path): res.append(f"[error] Target path does not exist on disk: {filepath}"); continue
+        if not os.path.isfile(full_path):
+            continue
 
         res.append(f"\n\033[1;36m[Snippet] {node_type.upper()} {name} in {filepath} (Lines {l_start} to {l_end}):\033[0m")
-        if l_start and l_end:
-            try:
-                with open(full_path, 'r', encoding='utf-8', errors='ignore') as f: lines = f.readlines()
-                res.append("".join(lines[max(0, l_start - 1):l_end]))
-            except Exception as e: res.append(f"[error] Snippet extract read failure: {e}")
-        else: res.append("  (Offsets were not cached for this node structure)")
-    conn.close()
-    return "\n".join(res)
-
-
-def run_custom_query(sql_str: str, workspace=None) -> str:
-    db = find_db_path(workspace)
-    if not db: return "[error] Database not found."
-    conn = sqlite3.connect(db)
-    cur = conn.cursor()
-    res = []
-    try:
-        cur.execute(sql_str)
-        headers, rows = [d[0] for d in cur.description] if cur.description else [], cur.fetchall()
-        res.append(f"\n\033[1;32m[SQL Results: {len(rows)} rows matched]\033[0m")
-        if headers:
-            res.append(" | ".join(f"\033[1;34m{h}\033[0m" for h in headers))
-            res.append("-" * (len(" | ".join(headers)) + 5))
-        for row in rows: res.append(" | ".join(str(val) for val in row))
-    except Exception as e: res.append(f"[error] SQL Syntax Execution Error: {e}")
-    conn.close()
-    return "\n".join(res)
-
-
-def search_symbols(pattern: str, server_url=EMBEDDING_SERVER, workspace=None) -> str:
-    db = find_db_path(workspace)
-    if not db: return "[error] Database not found."
-    conn = sqlite3.connect(db)
-    use_vec = False
-    if HAS_VEC:
         try:
-            conn.enable_load_extension(True); sqlite_vec.load(conn); conn.enable_load_extension(False)
-            use_vec = conn.cursor().execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='nodes_vec'").fetchone()[0] > 0
-        except Exception: pass
-
-    cur = conn.cursor()
-    res = []
-    if use_vec and (emb := get_embedding(pattern, server_url)):
-        res.append(f"\n\033[1;32m[Semantic Search Matches for: '{pattern}']\033[0m")
-        try:
-            for rid, rtype, rpath, dist in cur.execute("SELECT n.id, n.type, n.filepath, v.distance FROM nodes_vec v JOIN nodes n ON n.rowid = v.id WHERE embedding MATCH ? AND k = 10 ORDER BY distance ASC", (serialize_vec(emb),)).fetchall():
-                res.append(f"  - \033[1;36m{rid}\033[0m [{rtype}] ({rpath}) [dist: {dist:.4f}]")
-            conn.close()
-            return "\n".join(res)
-        except Exception: pass
-
-    rows = cur.execute("SELECT id, type, filepath FROM nodes WHERE name LIKE ? OR filepath LIKE ? LIMIT 50", (f"%{pattern}%", f"%{pattern}%")).fetchall()
-    res.append(f"\n\033[1;32m[Matches Found: {len(rows)}]\033[0m")
-    for rid, rtype, rpath in rows: res.append(f"  - \033[1;36m{rid}\033[0m [{rtype}] ({rpath})")
-    conn.close()
+            with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
+                lines = f.readlines()
+            res.append("".join(lines[max(0, l_start - 1):l_end]))
+        except Exception as e:
+            res.append(f"[error] Extract failed: {e}")
     return "\n".join(res)
 
 
 def main():
     raw_args = sys.argv[1:]
     is_agent = "--agent" in raw_args
-    force_compile = "--force" in raw_args or "-f" in raw_args
+    force = "--force" in raw_args or "-f" in raw_args
     no_db = "--no-db" in raw_args or "--txt-only" in raw_args
     print_cat = any(f in raw_args for f in ("--cat", "-p", "--print", "--show", "cat", "show"))
     args = [a for a in raw_args if a not in ("--agent", "--db", "--with-db", "--no-db", "--txt-only", "--force", "-f", "--cat", "-p", "--print", "--show", "cat", "show")]
 
     if not args:
-        run_indexing(os.getcwd(), force=force_compile, is_agent=is_agent, no_db=no_db, print_output=print_cat)
+        run_indexing(os.getcwd(), force=force, is_agent=is_agent, no_db=no_db, print_output=print_cat)
         return
+
     cmd = args[0].lower()
-
     if cmd in ("--help", "-h"):
-        print("""
-Usage: index-map <command> [argument] [--db] [--no-db] [--force]
-
-Commands:
-  (no arguments)        Interactive initialization & map compiler in local directory
-  init [dir]            Initializes and builds the codebase map
-  architecture          Visualizes core architectural connections and metadata counts
-  search <pattern>      Searches database entries matching symbol queries
-  trace <symbol>        Traces callers (upstream) and callees (downstream) for a symbol
-  blast-radius <symbol> Traces recursively what dependencies will be broken if changed
-  snippet <symbol>      Statically loads structural code blocks directly via offsets
-  query "<SQL>"         Executes low-level queries directly against the graph schema
-Flags:
-  --db                  Forces SQLite relational graph database generation
-  --no-db               Skips SQLite database generation and produces index-map-<project>.txt only
-  --force, -f           Forces full re-compilation, bypassing modification cache
-        """)
-    elif cmd == "init": run_indexing(os.path.abspath(os.path.expanduser(args[1])) if len(args) > 1 else os.getcwd(), force=force_compile, is_agent=is_agent, no_db=no_db)
-    elif cmd == "architecture": print(show_architecture(workspace=args[1] if len(args) > 1 else None))
-    elif cmd == "search": print(search_symbols(args[1], EMBEDDING_SERVER, workspace=args[2] if len(args) > 2 else None)) if len(args) >= 2 else print("[error] Must provide a search pattern.")
-    elif cmd == "trace": print(trace_symbol(args[1], workspace=args[2] if len(args) > 2 else None)) if len(args) >= 2 else print("[error] Must specify a class or function symbol.")
-    elif cmd == "blast-radius": print(get_blast_radius(args[1], workspace=args[2] if len(args) > 2 else None)) if len(args) >= 2 else print("[error] Must specify target symbol to evaluate.")
-    elif cmd == "snippet": print(extract_snippet(args[1], workspace=args[2] if len(args) > 2 else None)) if len(args) >= 2 else print("[error] Must specify symbol name.")
-    elif cmd == "query": print(run_custom_query(args[1], workspace=args[2] if len(args) > 2 else None)) if len(args) >= 2 else print("[error] Must specify SQLite query string wrapped in quotes.")
+        print("Usage: index-map [init | search <pattern> | snippet <symbol>] [--db] [--force]")
+    elif cmd == "init":
+        target = os.path.abspath(os.path.expanduser(args[1])) if len(args) > 1 else os.getcwd()
+        run_indexing(target, force=force, is_agent=is_agent, no_db=no_db)
+    elif cmd == "search":
+        print(search_symbols(args[1], workspace=args[2] if len(args) > 2 else None)) if len(args) > 1 else print("[error] Search pattern required.")
+    elif cmd == "snippet":
+        print(extract_snippet(args[1], workspace=args[2] if len(args) > 2 else None)) if len(args) > 1 else print("[error] Symbol required.")
     else:
         path_test = os.path.abspath(os.path.expanduser(args[0]))
-        if os.path.isdir(path_test): run_indexing(path_test, force=force_compile, is_agent=is_agent, no_db=no_db)
-        else: print(f"[error] Unknown command or folder: {args[0]}. Run with --help for documentation.")
+        if os.path.isdir(path_test):
+            run_indexing(path_test, force=force, is_agent=is_agent, no_db=no_db)
+        else:
+            print(f"[error] Unknown command: {args[0]}")
 
 
 if __name__ == "__main__":

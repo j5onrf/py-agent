@@ -2,8 +2,10 @@ from pkg.string_tools import slugify, truncate
 
 def test_slugify():
     assert slugify("Hello World") == "hello-world"
-    # This assert will FAIL because replace(" ", "-") gives "python---agent"
+    # Multiple spaces collapse to a single hyphen
     assert slugify("Python   Agent") == "python-agent", f"Got: {slugify('Python   Agent')}"
+    # Special characters are preserved in the slug (not lowercased)
+    assert slugify("Hello! @#") == "hello!-@#"
 
 def test_truncate():
     assert truncate("Short") == "Short"

@@ -95,13 +95,16 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
             c,
         ).strip()
 
-        # Auto-heal broken python3 -c quoting (converts brittle double-quotes to safe single-quoted literal strings)
+       # Auto-heal broken python3 -c quoting (handles missing trailing quotes & nested escapes)
         if py_m := re.match(r"^(python3?\s+-c\s+)([\"']?)([\s\S]*)$", c):
-            cmd_prefix, _, py_code = py_m.groups()
-            py_clean = py_code.rstrip("'\"").strip()
-            # Escape internal single quotes safely for bash
-            escaped_py = py_clean.replace("'", "'\\''")
-            c = f"{cmd_prefix}'{escaped_py}'"
+            cmd_prefix, quote_char, py_code = py_m.groups()
+            if quote_char and py_code.endswith(quote_char):
+                py_code = py_code[:-1]
+            # Strip rogue escaped backslashes emitted by small models (e.g., \' -> ')
+            clean_code = py_code.replace(r"\'", "'").replace(r'\"', '"')
+            # Safely escape single quotes for Bash (' -> '\'')
+            escaped_code = clean_code.replace("'", "'\\''")
+            c = f"{cmd_prefix}'{escaped_code}'"
         else:
             # Auto-heal unbalanced inline quotes (when small models collapse \"\" into \")
             if c.count('"') % 2 != 0:

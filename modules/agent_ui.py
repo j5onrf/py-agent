@@ -233,7 +233,7 @@ def draw_session_box(
 
     table.add_row("model:", model_name)
     table.add_row("directory:", display_dir)
-    table.add_row("skill:", clean_name or "chat")
+    table.add_row("profile:", clean_name or "chat")
 
     if is_agent:
         try:

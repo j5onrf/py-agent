@@ -1,8 +1,7 @@
-# CODEBASE INDEX MAP | Generated: 2026-09-09 13:16 | Workspace: py-agent | Path: ~/.config/py-agent
+# CODEBASE INDEX MAP | Generated: 2026-09-09 21:00 | Workspace: py-agent | Path: ~/.config/py-agent
 # Active symbols and structural connections mapped in the local index.
 # -----------------------------------------------------------------------------------------
 # Codebase Modules & Active Architecture:
-#   ├── .active_cd.485597        - home/j5/.config/py-agent/projects/session-test
 #   ├── .env                     - ~/.config/py-agent/.env
 #   ├── .env.example             - ==============================================================================
 #   ├── .gitignore               - Secrets & Credentials
@@ -50,7 +49,7 @@
 [python:ai-agent.py] imp:agent_context,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tts,agent_ui,agent_voice,contextlib,json,os,re,readline,shutil,sqlite3,subprocess,sys,threading,time | fn:load_env_file,workspace_db_counts,ensure_clean_agent_dir,sync_md_to_sqlite,clean_exit,_launch_surface,run_interactive_chat,run_direct_query,run_matching_search,main
 [markdown:ai-context.md] title:Py-Agent Plugins | links:-f "$f",-z "$q"
 [shell:ai-hook.sh] sum:Production Py-Agent Shell Hook v0.9.9
-[svg:logo.svg] sum:<svg xmlns="http://www.w3.org/2000/svg" viewBox="121 101 270 310">
+[image/svg:logo.svg] dim:x | size:1.4KB
 [markdown:modules/Readme.md] title:Privacy-First
 [python:modules/agent_adapters.py] imp:ast,json,re,time,typing | fn:normalize_params,_extract_balanced_json,heal_json_args,_extract_ast_python_calls,extract_fallback_tool_calls
 [python:modules/agent_cloud.py] imp:os,re,typing | fn:_is_valid_key,get_active_configs
@@ -67,7 +66,7 @@
 [python:modules/agent_ui.py] imp:agent_cloud,agent_core,agent_skills,collections,json,os,re,rich,select,sys,termios,threading,time,tty,typing,urllib | cls:InlineSpinner | fn:__init__,_get_theme_color,_glimmer,_spin,update,start,stop,_read_fd,get_key,get_local_model_name,draw_session_box,confirm_tool,run_interactive_selection,show_help,select_workspace_profile
 [python:modules/agent_usage.py] imp:json,os,time,typing | fn:record,turn_line
 [python:modules/agent_voice.py] imp:agent_core,base64,http,json,os,re,socket,ssl,subprocess,sys,time,urllib | cls:VoiceHandler | fn:is_bridge_running,load_voice_env,transcribe_gemini,get_prompt_input,log_message,do_POST,do_GET,run_server,toggle_voice_bridge
-[python:modules/chat] imp:agent_ui,json,os,re,sys,urllib
+[file:modules/chat] sum:Unified Agentic Brainstorm, Thinking & Follow-up Recommendation Engine.
 [python:modules/model-select.py] imp:asyncio,atexit,json,os,re,select,shutil,subprocess,sys,termios,time,tty,urllib | fn:cleanup_terminal,load_json,save_json,ensure_env_exists,load_env_vars,get_active_key_set,update_env_multiple,isolate_active_key,toggle_single_provider,toggle_independent_key,toggle_env_api_keys,parse_endpoint_url,async_fetch_remote,_fetch,async_get_key,_read,prompt_user_input,run_interactive_menu,filter_items,async_main
 [python:modules/speed_test.py] imp:sys,time | fn:start,count_token,end
 [markdown:plugins/Readme.md] title:Custom Plugins & Tools: `plugins/`
@@ -117,10 +116,10 @@
 [markdown:skills/system/security-audit.md] title:SYSTEM SECURITY AUDIT DIRECTIVES
 [markdown:skills/system/system-optimizer.md] title:GENERAL LINUX DESKTOP OPTIMIZATION SKILL
 [markdown:skills/system/update-inspector.md] title:ARCH LINUX UPGRADE DIRECTIVES
-[python:tools/agentic/identity/business/mybiz] imp:os,sys | fn:main
-[python:tools/agentic/identity/marketing/marketing] imp:os,sys | fn:main
+[file:tools/agentic/identity/business/mybiz] sum:import os
+[file:tools/agentic/identity/marketing/marketing] sum:import os
 [markdown:tools/agentic/identity/readme.md] title:Identity Layer (`agentic/identity/`)
-[python:tools/agentic/identity/workout/routine] imp:os,sys | fn:main
+[file:tools/agentic/identity/workout/routine] sum:import os
 [file:tools/agentic/system/ai-commit] sum:ai-commit - Automate Git Commits with AI Context
 [file:tools/agentic/system/ai-status] sum:ai-status - Diagnostics for Py-Agent Cloud Models & Quotas v2.3.0
 [file:tools/agentic/system/aur-audit] sum:aur-audit - Interactive Zero-Trust AUR Package Auditor v2.1.0
@@ -132,18 +131,18 @@
 [file:tools/agentic/system/system-optimizer] sum:sysop - Dynamic Optimization & Hardware Profile Integrator v2.0.0
 [file:tools/agentic/system/update-inspector] sum:AI Update Inspector - Universal Arch Linux
 [markdown:tools/agentic/web/Readme.md] title:Firecrawl Scraper API Configurations
-[python:tools/agentic/web/firecrawl] imp:os,re,requests,sys
-[python:tools/agentic/web/web-reader] imp:glob,os,re,shutil,subprocess,sys,tempfile,urllib | fn:scrape_webpage,extract_youtube_subtitles,main
-[python:tools/cheatsheet] imp:os,re,sys
+[file:tools/agentic/web/firecrawl] sum:File: ~/.config/local-ai/tools/agentic/web/firecrawl
+[file:tools/agentic/web/web-reader] sum:web-reader [Zero-Dependency Web Scraper & YouTube Subtitle Extractor] v1.0.4
+[file:tools/cheatsheet] sum:Cheatsheet - High-Speed Markdown-Native Plugin & Shortcut Map Generator
 [file:tools/email/.email] sum:--- Global fallback connection details ---
 [markdown:tools/email/Readme.md] title:Email TUI Monitor: `email-agent`
-[python:tools/email/email-agent] imp:agent_ui,concurrent,email,imaplib,os,re,sys | fn:load_email_config,clean_header,highlight_tags,fetch_single_account,fetch_emails,run_interactive_tui,main
-[python:tools/generate-profile] imp:glob,os,re,socket,subprocess,sys | fn:run
+[file:tools/email/email-agent] sum:email-agent [Secure Multi-Mailbox Tag-Filter Agent]
+[file:tools/generate-profile] sum:sysctl-aware system profiler for Py-Agent
 [markdown:tools/index-map/Readme.md] title:Codebase Mapping & Relational Knowledge Graph: `index-map`
-[python:tools/index-map/index-map] imp:ast,fnmatch,json,os,re,sqlite3,sqlite_vec,struct,sys,time,urllib,warnings | cls:PythonGraphVisitor | fn:load_gitignore_patterns,should_ignore,is_binary,get_file_summary,is_map_up_to_date,__init__,visit_Import,visit_ImportFrom,visit_ClassDef,visit_FunctionDef,visit_AsyncFunctionDef,visit_any_func,visit_Call,parse_non_python_file,analyze_markdown_file,analyze_image_file,analyze_json_file,analyze_qml_file,analyze_shell_file,analyze_generic_file,get_embedding,serialize_vec,init_db,find_db_path,insert_node,_commit_structures_to_db,resolve_and_insert_edges,compile_ascii_tree,compile_flat_shorthand,run_indexing,show_architecture,trace_symbol,get_blast_radius,extract_snippet,run_custom_query,search_symbols,main
+[file:tools/index-map/index-map] sum:Graph-Enabled Index-Map Workspace Intelligence Engine [Zero-Config FTS5 Edition]
 [python:tools/loop/ralph.py] imp:agent_core,agent_skills,agent_tools,agent_ui,argparse,json,os,re,sys,time,typing | fn:_read_spec_file,_log_task_turn,is_task_complete,run_task_loop,main
 [python:tools/subsec/apps/stopwatch/stopwatch.py] imp:math,re,select,shutil,sys,termios,time,tty | fn:strip_ansi,get_key_non_blocking,fmt_time_high_res,get_elapsed,generate_visualizer,draw_row_raw,run_stopwatch_tui
 [shell:tools/subsec/apps/stopwatch/stopwatch.sh] sum:Minimalist Pure Bash High-Resolution Stopwatch
 [file:tools/subsec/hyprstate/gitcom] sum:Hyprland Workspace State Manager -- GitCom
 [file:tools/subsec/hyprstate/work] sum:Hyprland Workspace State Manager -- Work
-[python:tools/test-agent] imp:agent_adapters,agent_context,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tools,agent_tts,agent_tui,agent_usage,ast,glob,importlib,json,os,py_compile,re,shutil,subprocess,sys,tempfile,time | fn:print_result
+[file:tools/test-agent] sum:Unified All-in-One Py-Agent Deep Diagnostic & Comprehensive System Test Suite
