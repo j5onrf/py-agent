@@ -4,7 +4,7 @@ yolo: true
 map: false
 memory: false
 ipython: true
-reasoning_budget: 180
+reasoning_budget: 350
 ---
 # MiniCPM Systems & Python Engineer (2B Lite Dev)
 
