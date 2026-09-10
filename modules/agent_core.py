@@ -617,6 +617,9 @@ def agentic_turn(
                         tc_entry = tool_calls_map.setdefault(idx, {"id": tc.get("id", ""), "type": "function", "function": {"name": tc.get("function", {}).get("name", ""), "arguments": ""}})
                         if tc.get("function", {}).get("name"):
                             tc_entry["function"]["name"] = tc["function"]["name"]
+                        for k in ("thought_signature", "thoughtSignature", "extra_content", "provider_specific_fields"):
+                            if k in tc:
+                                tc_entry[k] = tc[k]
                         arg_chunk = tc.get("function", {}).get("arguments", "")
                         if arg_chunk:
                             tc_entry["function"]["arguments"] += arg_chunk
@@ -660,19 +663,27 @@ def agentic_turn(
                 _log_turn_usage(final_model, in_tok, final_out, 0.0, show_stats, in_tok + final_out, user_msg=user_msg, assistant_msg=ans_text)
                 return ans_text if ans_text else "(No response generated)"
 
-            # Re-serialize healed tool arguments
+            # Re-serialize healed tool arguments with Gemini Thought Signature support
             healed_calls = []
             for tc in calls:
-                fname = tc.get("function", {}).get("name", "")
+                raw_fname = tc.get("function", {}).get("name", "")
                 raw_args = tc.get("function", {}).get("arguments") or ""
-                healed_dict = adapters.heal_json_args(raw_args)
+                fname, healed_dict = adapters.heal_tool_call(raw_fname, raw_args)
+                sig = (
+                    tc.get("thought_signature")
+                    or tc.get("thoughtSignature")
+                    or (tc.get("extra_content", {}).get("google", {}).get("thought_signature") if isinstance(tc.get("extra_content"), dict) else None)
+                    or "skip_thought_signature_validator"
+                )
                 healed_calls.append({
                     "id": tc.get("id") or f"call_{int(time.time())}",
                     "type": "function",
                     "function": {
                         "name": fname,
                         "arguments": json.dumps(healed_dict)
-                    }
+                    },
+                    "thought_signature": sig,
+                    "extra_content": {"google": {"thought_signature": sig}}
                 })
 
             # 1. Strip reasoning from turn history so older turns don't pollute subsequent context
