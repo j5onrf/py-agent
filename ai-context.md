@@ -24,6 +24,8 @@
 [TOOL] ~/.config/py-agent/tools/agentic/system/ai-status ---> aistatus, aistat, ais
 # --- Plugins Cheatsheet ---
 [TOOL] ~/.config/py-agent/tools/cheatsheet ---> cheatsheet, cs
+# --- Test Model & Profile (Agentic Tool Benchmark) ---
+~/.config/py-agent/tools/evals/eval-stack ---> eval-stack, eval stack
 ```
 
 ## 1. Plugins
@@ -40,7 +42,7 @@
 ai init ~/.config/py-agent/projects/sys-ops ---> sys-ops
 
 ai init ~/.config/py-agent/projects/gemini ---> gemini
-ai init ~/.config/py-agent/projects/cyber35b ---> cybr35b
+ai init ~/.config/py-agent/projects/cyber35b ---> cybr35b, cyber35b
 ai init ~/.config/py-agent/projects/omarchyv4 ---> omarchyv4
 ai init ~/.config/py-agent/projects/pysmol-test ---> pysmol test, pysmol
 ai init ~/.config/py-agent/projects/minicpm ---> minicpm
@@ -120,6 +122,8 @@ ai init ~/.config/py-agent/projects/session-test-3 ---> session test 3, projects
 ## 8. Tools & Utilities
 
 ```properties
+# --- eval-agent (HumanEval Benchmark) ---
+~/.config/py-agent/tools/evals/eval-agent ---> eval-agent, eval agent
 # --- AI Commit ---
 ~/.config/py-agent/tools/agentic/system/ai-commit ---> ai-commit, gc, git commit
 # --- Weather ---

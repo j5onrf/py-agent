@@ -145,7 +145,7 @@ def _exec_tool_cmd(cmd: str, interactive: bool = False) -> str:
         if interactive:
             subprocess.run(sanitized, shell=True, cwd=workspace, env=env)
             return "__ABORT_TURN__"
-        out = subprocess.check_output(sanitized, shell=True, text=True, timeout=15, cwd=workspace, env=env).strip()
+        out = subprocess.check_output(sanitized, shell=True, text=True, timeout=180, cwd=workspace, env=env).strip()
         return f"{out}\n" if out else "Action executed successfully.\n"
     except subprocess.CalledProcessError:
         sys.stderr.write("\033[1;31m[sys] Tool execution failed or was cancelled.\033[0m\n")
