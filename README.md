@@ -1,9 +1,9 @@
 <div align="center">
-**New in v0.9.9.20:** Added first-class support for **MiniCPM5-2B** powered by the dedicated **DSpark speculative decoding engine** (`draft-dspark`). Includes an optimized sub-27B agent profile (`custom/minicpm`), automated sandbox command self-healing in `agent_adapters`.
+**New in v0.9.9.24:** Added first-class support for **InclusionAI Ling-3.0-tiny** (7.9B MoE with 1.3B active compute). Achieved a perfect **5/5 (100%)** on the `eval-stack` agentic benchmark with ultra-fast execution speed. Includes the optimized `custom/lingtiny` profile featuring native `<think>` reasoning support and zero-chatter tool emission.
 </div>
 <br>
 <div align="center">
-**New in v0.9.9.19:** Integrated **Hugging Face `smolagents`** code-first execution into the persistent kernel (`/py`). Models can now batch multi-step tasks across files using native Python loops, cleanly signal completion with `final_answer()`, and execute safely under a 30-second `SIGALRM` runaway loop breaker.
+**New in v0.9.9.20:** Added first-class support for **MiniCPM5-2B** powered by the dedicated **DSpark speculative decoding engine** (`draft-dspark`). Includes an optimized sub-27B agent profile (`custom/minicpm`), automated sandbox command self-healing in `agent_adapters`.
 </div>
 <br>
 
@@ -11,7 +11,7 @@
   <img alt="py-agent" src="logo.svg" height="130" />
 </div>
 
-<h1 align="center">Py Agent <img src="https://shieldcn.dev/badge/version-v0.9.9.23.svg?variant=secondary" alt="Version"><a href="https://github.com/j5onrf/py-agent"></a></h1>
+<h1 align="center">Py Agent <img src="https://shieldcn.dev/badge/version-v0.9.9.24.svg?variant=secondary" alt="Version"><a href="https://github.com/j5onrf/py-agent"></a></h1>
 
 <p align="center">
   <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/github/last-commit/j5onrf/py-agent.svg?color=emerald&variant=secondary" alt="Last Commit"></a>
@@ -29,7 +29,7 @@
 
 <h2 align="center">Overview & Execution Modes</h2>
 
-Lightweight Python orchestration (`rich` + `requests`) controlling a C++ backend `llama-server`. Optimized for fine-tuned quantized local models (`Qwen3.5-2B` / `MiniCPM5-2B` / `LFM2.5-8B` for chat & fast single-task tool execution, `Qwen3.6-35B` / `Qwen3.8-27B` for full autonomous agents) and cloud providers—supporting native JSON tool calling, and IPython kernel (`/py`).
+Lightweight Python orchestration (`rich` + `requests`) controlling a C++ backend `llama-server`. Optimized for fine-tuned quantized local models (`Qwen3.5-2B` / `MiniCPM5-2B` / `LFM2.5-8B` / `Ling-3.0-tiny` for chat & fast single-task tool execution, `Qwen3.6-35B` / `Qwen3.8-27B` for full autonomous agents) and cloud providers—supporting native JSON tool calling, and IPython kernel (`/py`).
 
 🟢 **Active:** Official `Hugging Face` Router endpoints ([`Qwen/Qwen3.8-27B`](https://huggingface.co/Qwen/Qwen3.8-27B), [`moonshotai/Kimi-K3`](https://huggingface.co/moonshotai/Kimi-K3), [`zai-org/GLM-5.3-Flash`](https://huggingface.co/zai-org/GLM-5.3-Flash), [`DeepSeek-V4-Flash-0731`](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731), [`Qwen/Qwen3.8-2.4T-A95B`](https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B)).
 > 💡 *Use `model select` to auto-configure free community HF Spaces.*
@@ -265,6 +265,11 @@ AI_MAX_TOKENS="8192"
 - [x] **Zero-Trust Hardened Containment:** Non-bypassable interactive `[Y/n]` fallback gate for out-of-bounds access and package management tools (`pip`, `pacman`, `sudo`).
 - [ ] **PyBot Integration ([OpenBot](https://github.com/opencoredev/akeru-bot) Plugin):** Embedded web assistant & customizable agent widget plugin.
 - [ ] **v1.0.0 Production Release Tag!**
+
+<br>
+<div align="center">
+**New in v0.9.9.19:** Integrated **Hugging Face `smolagents`** code-first execution into the persistent kernel (`/py`). Models can now batch multi-step tasks across files using native Python loops, cleanly signal completion with `final_answer()`, and execute safely under a 30-second `SIGALRM` runaway loop breaker.
+</div>
 
 ---
 

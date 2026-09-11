@@ -231,5 +231,5 @@ echo "| **Active Route (${resolved_provider})** | \`${resolved_model}\` | **Onli
 echo "| **Custom 1 (Local / HF)** | \`${CUSTOM_MODEL:-Qwen/Qwen3.8-27B}\` | $(st_label "${CUSTOM_API_KEY:-}" "$custom_status") | Router / Spaces |"
 echo "| **${c2_label}** | \`${CUSTOM2_MODEL:-deepseek-chat}\` | $(st_label "${CUSTOM2_API_KEY:-}" "$custom2_status") | Direct Endpoint |"
 echo "| **Google Gemini** | \`${GEMINI_MODEL:-gemini-3.8-flash}\` | $(st_label "${GEMINI_API_KEY:-}" "$gemini_status") | RPM: ${gemini_rpm} / RPD: ${gemini_rpd} • Cap: ${gemini_cap} |"
-echo "| **OpenRouter** | \`${OPENROUTER_MODEL:-openrouter/free}\` | $(st_label "${OPENROUTER_API_KEY:-}" "$or_status") | RPM: ${or_rpm} / RPD: ${or_rpd} |"
+echo "| **OpenRouter** | \`${OPENROUTER_MODEL:-openrouter/free}\` | $(st_label "${OPENROUTER_API_KEY:-}" "$or_status") | RPM: ${or_rpm} / RPD: ${or_rpd} • Cap: 20 RPM / 50 RPD |"
 echo "| **Local Server** | \`${local_model}\` | $([[ $local_status -eq 0 ]] && echo "**Online**" || echo "Offline") | Port 8080 |"

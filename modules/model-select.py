@@ -51,9 +51,11 @@ DEFAULTS = {
     "gemini": ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.5-pro"],
     "free": [
         "openrouter/free",
+        "google/gemma-4-31b-it:free",
+        "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "minimax/minimax-m3:free",
         "meta-llama/llama-3.3-70b-instruct:free",
         "deepseek/deepseek-chat:free",
-        "google/gemini-2.0-flash-exp:free",
         "qwen/qwen-2.5-coder-32b-instruct:free",
     ],
     "paid": [
@@ -351,19 +353,38 @@ async def async_fetch_remote(env_vars: dict, spaces: dict):
                 pass
 
         try:
-            req = urlreq.Request("https://openrouter.ai/api/v1/models?sort=top-weekly", headers={"Authorization": f"Bearer {api_key_or}"} if api_key_or else {})
-            with urlreq.urlopen(req, timeout=8) as res:
+            req = urlreq.Request(
+                "https://openrouter.ai/api/v1/models",
+                headers={"Authorization": f"Bearer {api_key_or}"} if api_key_or else {}
+            )
+            with urlreq.urlopen(req, timeout=10) as res:
                 if res.status == 200:
-                    for it in json.loads(res.read().decode("utf-8")).get("data", []):
-                        if m_id := it.get("id"):
-                            p = it.get("pricing", {})
-                            is_f = "free" in m_id.lower() or (p and float(p.get("prompt", 0)) == 0 and float(p.get("completion", 0)) == 0)
-                            (free_c if is_f else paid_c).append(m_id)
+                    models_data = json.loads(res.read().decode("utf-8")).get("data", [])
+                    non_chat = ("embed", "rerank", "tts", "audio", "speech", "safety", "flux-")
+
+                    for it in models_data:
+                        m_id = it.get("id", "")
+                        if not m_id or any(k in m_id.lower() for k in non_chat):
+                            continue
+
+                        p = it.get("pricing", {})
+                        try:
+                            prompt_price = float(p.get("prompt", 0))
+                            comp_price = float(p.get("completion", 0))
+                        except (ValueError, TypeError):
+                            prompt_price, comp_price = 1.0, 1.0
+
+                        is_free = (":free" in m_id.lower()) or (prompt_price == 0 and comp_price == 0)
+
+                        if is_free:
+                            if m_id != "openrouter/free" and m_id not in free_c:
+                                free_c.append(m_id)
+                        else:
+                            paid_c.append(m_id)
         except Exception:
             pass
 
-        if "openrouter/free" in free_c:
-            free_c.remove("openrouter/free")
+        free_c.sort(key=lambda s: s.lower())
         free_c.insert(0, "openrouter/free")
 
         try:
@@ -490,7 +511,7 @@ async def async_main():
     cache = load_json(CACHE_PATH, DEFAULTS)
 
     cache_mtime = os.path.getmtime(CACHE_PATH) if os.path.exists(CACHE_PATH) else 0
-    if time.time() - cache_mtime > 259200:
+    if time.time() - cache_mtime > 86400:
         try:
             remote_data = await async_fetch_remote(env, spaces)
             cache.update(remote_data)
@@ -603,12 +624,13 @@ async def async_main():
             break
         elif key == "space" and 1 <= menu_idx <= 8:
             if 1 <= menu_idx <= 5:
+                cur_or_model = env.get("OPENROUTER_MODEL") or "openrouter/free"
                 k_map = {
                     1: ("CUSTOM_API_KEY", "CUSTOM_MODEL", "Qwen/Qwen3.8-27B"),
                     2: ("CUSTOM2_API_KEY", "CUSTOM2_MODEL", custom2_curr or "deepseek-chat"),
                     3: ("GEMINI_API_KEY", "GEMINI_MODEL", "gemini-3.8-flash"),
-                    4: ("OPENROUTER_API_KEY", "OPENROUTER_MODEL", "openrouter/free"),
-                    5: ("OPENROUTER_API_KEY", "OPENROUTER_MODEL", "anthropic/claude-3.7-sonnet"),
+                    4: ("OPENROUTER_API_KEY", "OPENROUTER_MODEL", cur_or_model if "free" in cur_or_model.lower() else "openrouter/free"),
+                    5: ("OPENROUTER_API_KEY", "OPENROUTER_MODEL", cur_or_model if "free" not in cur_or_model.lower() else "anthropic/claude-3.7-sonnet"),
                 }
                 k_name, m_var, d_model = k_map[menu_idx]
                 now_on = toggle_single_provider(k_name, m_var, d_model)

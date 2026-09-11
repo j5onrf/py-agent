@@ -42,7 +42,7 @@
 ai init ~/.config/py-agent/projects/sys-ops ---> sys-ops
 
 ai init ~/.config/py-agent/projects/gemini ---> gemini
-ai init ~/.config/py-agent/projects/cyber35b ---> cybr35b, cyber35b
+ai init ~/.config/py-agent/projects/ling-tiny ---> ling-tiny
 ai init ~/.config/py-agent/projects/omarchyv4 ---> omarchyv4
 ai init ~/.config/py-agent/projects/pysmol-test ---> pysmol test, pysmol
 ai init ~/.config/py-agent/projects/minicpm ---> minicpm
