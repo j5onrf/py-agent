@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.23] - Main CLI Runtime, Workspace Agent & Command Dispatcher"""
+"""Py Agent [j5onrf] [v0.9.9.25] - Main CLI Runtime, Workspace Agent & Command Dispatcher"""
 
 import json
 import os
@@ -69,24 +69,21 @@ except ImportError as e:
     sys.exit(1)
 
 
-def workspace_db_counts(safe_name: str) -> tuple[int, int]:
+def workspace_db_counts(safe_name: str, workspace_path: str = "") -> tuple[int, int]:
     db_path = os.path.join(SESSIONS_DIR, f"{safe_name}.db")
-    if not os.path.isfile(db_path):
-        return 0, 0
-    try:
-        with closing(sqlite3.connect(db_path, timeout=1.5)) as conn:
-            cur = conn.cursor()
-            try:
-                t = cur.execute("SELECT COUNT(*) FROM turns WHERE workspace = ?", (safe_name,)).fetchone()[0]
-            except sqlite3.Error:
-                t = 0
-            try:
-                f = cur.execute("SELECT COUNT(*) FROM tpm_memories").fetchone()[0]
-            except sqlite3.Error:
-                f = 0
-            return t, f
-    except sqlite3.Error:
-        return 0, 0
+    t = 0
+    if os.path.isfile(db_path):
+        try:
+            with closing(sqlite3.connect(db_path, timeout=1.5)) as conn:
+                cur = conn.cursor()
+                try:
+                    t = cur.execute("SELECT COUNT(*) FROM turns WHERE workspace = ?", (safe_name,)).fetchone()[0]
+                except sqlite3.Error:
+                    t = 0
+        except sqlite3.Error:
+            t = 0
+    m_count = memories.get_memory_count(workspace_path) if workspace_path else 0
+    return t, m_count
 
 
 def ensure_clean_agent_dir(workspace_path: str) -> None:
@@ -98,8 +95,7 @@ def ensure_clean_agent_dir(workspace_path: str) -> None:
         f"index-map-memory-{ws_name}.db",
         f"index-map-memory-{ws_name}.db-wal",
         f"index-map-memory-{ws_name}.db-shm",
-        "history.md",
-        "tpm.md"
+        "history.md"
     ]
     for fname in targets:
         src = os.path.join(workspace_path, fname)
@@ -109,17 +105,6 @@ def ensure_clean_agent_dir(workspace_path: str) -> None:
                 os.replace(src, os.path.join(agent_dir, fname))
             except OSError:
                 pass
-
-
-def sync_md_to_sqlite(workspace: str, workspace_path: str) -> None:
-    md_path = os.path.join(workspace_path, ".agent", "tpm.md")
-    if os.path.isfile(md_path):
-        try:
-            with open(md_path, "r", encoding="utf-8") as f:
-                if matches := re.findall(r"\*\s+\*\*([^*]+)\*\*:\s*(.*)", f.read()):
-                    memories.tpm_reconcile(workspace, {k.strip().lower(): v.strip() for k, v in matches})
-        except Exception:
-            pass
 
 
 def clean_exit(safe_name: str | None = None) -> None:
@@ -290,13 +275,11 @@ def run_interactive_chat(args: list[str]) -> None:
     os.environ["AI_SHOW_THINKING"] = "1" if st.get("show_thinking", True) else "0"
     if is_yolo or st.get("yolo_mode", False):
         os.environ["AI_CONFIRM_GATES"] = "0"
-    if is_agent and memory_active:
-        sync_md_to_sqlite(safe_name, workspace_path)
 
-    db_turns, tpm_count = workspace_db_counts(safe_name) if is_agent else (0, 0)
+    db_turns, mem_count = workspace_db_counts(safe_name, workspace_path) if is_agent else (0, 0)
     sub_id = sessions.get_sub_agent_id(safe_name, os.getpid()) if is_agent else None
 
-    ui.draw_session_box(workspace_path, home_dir, is_agent, db_turns, tpm_count, memory_active, active_system_prompt, clean_name, sub_id=sub_id, box_style=st.get("box_style", 2))
+    ui.draw_session_box(workspace_path, home_dir, is_agent, db_turns, mem_count, memory_active, active_system_prompt, clean_name, sub_id=sub_id, box_style=st.get("box_style", 2))
 
     try:
         while True:
@@ -370,6 +353,39 @@ def run_interactive_chat(args: list[str]) -> None:
                     continue
 
                 if cmd in ("/mem", "/memory"):
+                    sub_parts = query.split(maxsplit=2)
+                    sub_action = sub_parts[1].lower() if len(sub_parts) > 1 else ""
+
+                    if sub_action in ("save", "add", "set", "new"):
+                        if len(sub_parts) < 3:
+                            ui._console.print("[dim yellow][sys] Usage: /mem save <title>[: <content>]  (e.g. /mem save db: Use SQLite WAL mode)[/dim yellow]\n")
+                            continue
+                        raw_payload = sub_parts[2]
+                        if ":" in raw_payload:
+                            m_title, m_content = raw_payload.split(":", 1)
+                        elif "|" in raw_payload:
+                            m_title, m_content = raw_payload.split("|", 1)
+                        else:
+                            m_title, m_content = raw_payload, raw_payload
+                        ok, res_path = memories.save_memory_file(workspace_path, m_title.strip(), m_content.strip())
+                        if ok:
+                            ui._console.print(f"[green][sys] Saved memory: [bold]{os.path.basename(res_path)}[/bold][/green]\n")
+                        else:
+                            ui._console.print(f"[red][sys] {res_path}[/red]\n")
+                        continue
+
+                    if sub_action in ("list", "ls", "show"):
+                        items = memories.list_memories(workspace_path)
+                        if not items:
+                            ui._console.print("[dim yellow][sys] No memory files found in .agent/memory/[/dim yellow]\n")
+                        else:
+                            ui._console.print(f"[cyan]### Active Memory Files ({len(items)}):[/cyan]")
+                            for it in items:
+                                ui._console.print(f"  • [bold green]{it['filename']}[/bold green] [{it['type']}]: {it['title']} [dim]({it['content'][:60]}...)[/dim]")
+                            ui._console.print()
+                        continue
+
+                    # Toggle ON/OFF
                     memory_active = not memory_active
                     core.save_state("memory_active", memory_active)
                     if os.path.exists(cfg_file):
@@ -382,9 +398,8 @@ def run_interactive_chat(args: list[str]) -> None:
                                 cf.truncate()
                         except Exception:
                             pass
-                    if is_agent and memory_active:
-                        sync_md_to_sqlite(safe_name, workspace_path)
-                    ui._console.print(f"[green][sys] Memory & TPM database {'enabled' if memory_active else 'disabled'}.[/green]\n")
+                    m_cnt = memories.get_memory_count(workspace_path)
+                    ui._console.print(f"[green][sys] Project memory {'enabled (' + str(m_cnt) + ' files loaded)' if memory_active else 'disabled'}.[/green]\n")
                     continue
 
                 if cmd in ("/gnd", "/ground"):
@@ -599,8 +614,8 @@ def run_interactive_chat(args: list[str]) -> None:
                         except OSError:
                             pass
                     sessions.clear_turns(safe_name)
-                    memories.tpm_clear(safe_name)
-                    ui._console.print("[yellow][sys] Workspace reset complete (chat cleared & database purged).[/yellow]\n")
+                    memories.clear_memories(workspace_path)
+                    ui._console.print("[yellow][sys] Workspace reset complete (chat cleared & .agent purged).[/yellow]\n")
                     continue
 
                 if cmd in ("/compact", "/com", "/cpt"):
@@ -644,23 +659,7 @@ def run_interactive_chat(args: list[str]) -> None:
                     ui._console.print(f"[red]Error loading session: {e}[/red]")
                 continue
 
-            past_memory, tpm_context = "", ""
-            is_first_turn = len(chat_history) <= 2
-            if is_agent and memory_active:
-                if not is_first_turn and len(query) > 5:
-                    try:
-                        res_mem = memories.search_past_context(safe_name, query)
-                        if res_mem == "__CANCELLED__":
-                            pending_query = None
-                            continue
-                        if res_mem == "__DISABLE_MEMORY__":
-                            memory_active = False
-                            core.save_state("memory_active", False)
-                        elif res_mem:
-                            past_memory = res_mem
-                    except Exception:
-                        pass
-                tpm_context = memories.tpm_get(safe_name)
+            memory_ctx = memories.get_memory_context(workspace_path) if (is_agent and memory_active) else ""
 
             if re.match(r"^/?([ftba])(?:\s+(\d+))?$", query.lower()):
                 think_bin = f"{CFG_DIR}/modules/chat"
@@ -677,7 +676,7 @@ def run_interactive_chat(args: list[str]) -> None:
                 ui._console.print("[yellow][sys] Action cancelled.[/yellow]\n")
                 continue
 
-            comb_ctx = "\n\n".join(filter(None, [tpm_context, past_memory, sys_ctx]))
+            comb_ctx = "\n\n".join(filter(None, [memory_ctx, sys_ctx]))
             prompt = f"<context>\n{comb_ctx}\n</context>\n\nUser Question: {query}" if comb_ctx else f"User Question: {query}"
 
             chat_history.append({"role": "user", "content": prompt})
@@ -697,8 +696,6 @@ def run_interactive_chat(args: list[str]) -> None:
                             readline.set_startup_hook(lambda: readline.insert_text(match.group(1).strip()))
                         except Exception:
                             pass
-                    if memory_active:
-                        threading.Thread(target=core.background_tpm_update, args=(query, ans, safe_name, workspace_path), daemon=True).start()
 
                     agent_dir = os.path.join(workspace_path, ".agent")
                     os.makedirs(agent_dir, exist_ok=True)

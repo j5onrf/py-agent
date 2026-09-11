@@ -9,7 +9,7 @@ HOW TO USE:
 
 # HINDSIGHT: AGENTIC SELF-IMPROVEMENT & LESSON COMPILER
 
-You are acting as a reflective systems auditor. Your task is to perform a retrospective pass across this active conversation, extract durable engineering and workflow lessons, and update persistent memory so future sessions avoid repeating past mistakes.
+You are acting as a reflective systems auditor. Your task is to perform a retrospective pass across this active conversation, extract durable engineering and workflow lessons, and write persistent OKF Markdown files in `.agent/memory/` so future sessions avoid repeating past mistakes.
 
 ---
 
@@ -29,40 +29,19 @@ Ask yourself: **"Will this information save tokens, prevent dead ends, or change
 
 ---
 
-## 2. WORKSPACE STORAGE & CONVENTIONS
+## 2. WORKSPACE STORAGE & CONVENTIONS (OKF FORMAT)
 
-In this Py-Agent workspace, persistent memory is stored in:
-`<workspace>/.agent/tpm.md`
+In this Py-Agent workspace, persistent memories are stored as individual Markdown files inside:
+`<workspace>/.agent/memory/<topic-slug>.md`
 
-All entries MUST strictly adhere to this format for automatic SQLite database synchronization:
-`* **<category_or_topic>**: <Concise, actionable rule (1-2 sentences max)>`
+Every memory file MUST follow the Open Knowledge Format with YAML frontmatter:
 
-### Examples:
-* **omarchy_updates**: Never execute raw `yay -Syu` directly on Omarchy; run `omarchy update` to preserve migration hooks.
-* **bash_pipefail**: In scripts with `set -o pipefail`, avoid `grep -v '^$'` on nullable output; use `awk 'NF {print; exit}'` instead.
-* **subagent_pid**: Lockfiles in `.active_sessions` contain composite names (`workspace-sub_id-pid`); extract the trailing numeric PID with regex `(\d+)$`.
-
+```markdown
+---
+title: <Clear Descriptive Title>
+type: lesson
+date: YYYY-MM-DD
+tags: [tag1, tag2]
 ---
 
-## 3. EXECUTION STEPS
-
-1. **Read Existing Memory**: Use `read_file` to inspect `.agent/tpm.md` if it exists.
-2. **Identify Upstream Lessons**: Review the chat history for corrections, crashes, failed commands, or explicit user directives.
-3. **Check for Deduplication / In-Place Update**:
-   - If an existing key in `.agent/tpm.md` already covers the topic, update it in place using `edit_file`.
-   - If it is a genuinely new durable lesson, append it using `edit_file` or `write_file`.
-4. **Clean Session Handling**: If the session went smoothly with no corrections or new architectural rules, output:
-   `✔ Hindsight Pass: No durable lessons required; session was nominal.`
-   (Do NOT create padded or trivial memory entries).
-
----
-
-## 4. AGENT RESPONSE PROTOCOL
-
-Provide a concise, executive summary of what was recorded:
-
-### 🧠 HINDSIGHT RETROSPECTIVE
-* **Durable Lessons Identified**: [Count or "None"]
-* **Persisted Entries**:
-  - `* **<topic>**: <lesson summary>`
-* **Status**: Updated `.agent/tpm.md` (Synced to SQLite).
+<Concise, actionable lesson or rule (1-3 sentences max). Explain what to do and why.>

@@ -207,7 +207,7 @@ def draw_session_box(
     home_dir: str,
     is_agent: bool,
     db_turns: int,
-    tpm_count: int,
+    mem_count: int,
     memory_active: bool,
     active_system_prompt: str,
     clean_name: str,
@@ -245,11 +245,11 @@ def draw_session_box(
             use_map = os.environ.get("AI_USE_MAP") == "1"
 
         if memory_active and use_map:
-            db_status = f"active (map + mem: {tpm_count}f/{db_turns}t)"
+            db_status = f"active (map + mem: {mem_count}m/{db_turns}t)"
         elif use_map:
             db_status = "active (codebase map)"
         elif memory_active:
-            db_status = f"active ({tpm_count} facts, {db_turns} turns)"
+            db_status = f"active ({mem_count} memories, {db_turns} turns)"
         else:
             db_status = "stateless"
     else:
@@ -404,8 +404,8 @@ def show_help() -> None:
         ("/v \\[auto], /voice", "Voice to text"),
         ("/tts", "Text to speech (Kokoro)"),
         ("/py \\[code]", "IPython kernel execution"),
-        ("/m, /map", "Toggle Codebase index-map (11 tools)"),
-        ("/mem, /memory", "Toggle database session memory & TPM facts"),
+        ("/m, /map", "Toggle Codebase index-map"),
+        ("/mem \\[save|list]", "Toggle & manage OKF memory files"),
         ("/box \\[1-8]", "Box style preset"),
         ("/task \\[goal]", "Autonomous task loop"),
         ("/t \\[N|show|hide]", "Reasoning budget & display"),

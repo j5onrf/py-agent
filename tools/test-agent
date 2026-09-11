@@ -173,22 +173,36 @@ try:
 
     all_passed = all_passed and p3_a and p3_b and p3_c and p3_d and p3_e
 
-    # --- PASS 4: TEMPORAL PERSONALITY MEMORY (TPM) SUBSYSTEM ---
-    print(f"\n{CYAN}[Pass 4/10] Temporal Personality Memory (TPM) Facts Engine{RESET}")
-    memories.tpm_reconcile(test_ws, {"preferred_editor": "neovim", "role": "lead architect"})
-    tpm_facts = memories.tpm_get(test_ws)
-    p4_a = "preferred_editor" in tpm_facts and "neovim" in tpm_facts
-    print_result("TPM Memory Reconciliation & Storage", p4_a, "Facts persisted in SQLite")
+    # --- PASS 4: OPEN KNOWLEDGE FORMAT (OKF) MARKDOWN MEMORY SUBSYSTEM ---
+    print(f"\n{CYAN}[Pass 4/10] Open Knowledge Format (OKF) Markdown Memory Subsystem{RESET}")
+    
+    # 1. Save OKF Memory Files with YAML Frontmatter
+    ok1, fpath1 = memories.save_memory_file(sandbox_dir, "db-choice", "Using SQLite with WAL mode.", mem_type="decision", tags=["db", "sqlite"])
+    ok2, fpath2 = memories.save_memory_file(sandbox_dir, "code-style", "Prefer pathlib over os.path.", mem_type="rule", tags=["python", "style"])
+    p4_a = ok1 and ok2 and os.path.isfile(fpath1) and os.path.isfile(fpath2)
+    print_result("OKF Memory Save & Frontmatter Serialization", p4_a, "Written to .agent/memory/*.md")
 
-    tpm_count = memories.get_tpm_count(test_ws)
-    p4_b = tpm_count == 2
-    print_result("TPM Fact Counter", p4_b, f"{tpm_count} facts active")
+    # 2. Count Active Memory Files
+    mem_count = memories.get_memory_count(sandbox_dir)
+    p4_b = mem_count == 2
+    print_result("OKF Memory File Counter", p4_b, f"{mem_count} files active")
 
-    memories.tpm_clear(test_ws)
-    p4_c = memories.get_tpm_count(test_ws) == 0
-    print_result("TPM Memory Purge", p4_c, "Database facts cleared")
+    # 3. Context Prompt Generation
+    mem_ctx = memories.get_memory_context(sandbox_dir)
+    p4_c = "### PROJECT MEMORY" in mem_ctx and "db-choice" in mem_ctx and "code-style" in mem_ctx
+    print_result("OKF Memory System Prompt Generation", p4_c, "Compiled into structured context")
 
-    all_passed = all_passed and p4_a and p4_b and p4_c
+    # 4. List and Parse Memory Objects
+    items = memories.list_memories(sandbox_dir)
+    p4_d = len(items) == 2 and any(i["title"] == "db-choice" for i in items)
+    print_result("OKF Memory Listing & YAML Extraction", p4_d, f"Parsed {len(items)} memory items")
+
+    # 5. Clear Memories Purge
+    memories.clear_memories(sandbox_dir)
+    p4_e = memories.get_memory_count(sandbox_dir) == 0
+    print_result("OKF Memory Directory Purge", p4_e, "All memory files unlinked")
+
+    all_passed = all_passed and p4_a and p4_b and p4_c and p4_d and p4_e
 
     # --- PASS 5: SMALL-MODEL FALLBACK ADAPTERS & JSON HEALER ---
     print(f"\n{CYAN}[Pass 5/10] Small-Model Fallback Adapters & Self-Healing JSON{RESET}")

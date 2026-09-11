@@ -1,9 +1,9 @@
 <div align="center">
-**New in v0.9.9.24:** Added first-class support for **InclusionAI Ling-3.0-tiny** (7.9B MoE with 1.3B active compute). Achieved a perfect **5/5 (100%)** on the `eval-stack` agentic benchmark with ultra-fast execution speed. Includes the optimized `custom/lingtiny` profile.
+**New in v0.9.9.25:** Replaced legacy TPM with **Open Knowledge Format (OKF)** persistent memory (`.agent/memory/*.md`). Features Git-native Markdown directives with YAML frontmatter, instant `/mem save` & `/mem list` commands, 0ms post-turn background overhead, and complete `/m` (Map) & `/mem` (Memory) toggle independence.
 </div>
 <br>
 <div align="center">
-**New in v0.9.9.20:** Added first-class support for **MiniCPM5-2B** powered by the dedicated **DSpark speculative decoding engine** (`draft-dspark`). Includes an optimized sub-27B agent profile (`custom/minicpm`), automated sandbox command self-healing in `agent_adapters`.
+**New in v0.9.9.24:** Added first-class support for **InclusionAI Ling-3.0-tiny** (7.9B MoE with 1.3B active compute). Achieved a perfect **5/5 (100%)** on the `eval-stack` agentic benchmark with ultra-fast execution speed. Includes the optimized `custom/lingtiny` profile.
 </div>
 <br>
 
@@ -11,7 +11,7 @@
   <img alt="py-agent" src="logo.svg" height="130" />
 </div>
 
-<h1 align="center">py-agent <img src="https://shieldcn.dev/badge/version-v0.9.9.24.svg?variant=secondary" alt="Version"><a href="https://github.com/j5onrf/py-agent"></a></h1>
+<h1 align="center">py-agent <img src="https://shieldcn.dev/badge/version-v0.9.9.25.svg?variant=secondary" alt="Version"><a href="https://github.com/j5onrf/py-agent"></a></h1>
 
 <p align="center">
   <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/github/last-commit/j5onrf/py-agent.svg?color=emerald&variant=secondary" alt="Last Commit"></a>
@@ -45,7 +45,7 @@ Lightweight Python orchestration (`rich` + `requests`) controlling a C++ backend
 
 | Feature System | Foundation & Architectural Roots | Interface Command / Link |
 | :--- | :--- | :--- |
-| **Memory (TPM)** | Reconciles personal identity & workspace habits using [Weaviate Engram](https://github.com/weaviate/engram-python-sdk) concepts + [Noema](https://github.com/Fail-Safe/Noema) Markdown files. | `.agent/tpm.md` |
+| **Memory (OKF)** | Git-native Open Knowledge Format ([OKF](https://github.com/okf-memory/okf-agent-memory)) persistent Markdown rules, architectural decisions & zero-daemon project directives. | `.agent/memory/` |
 | **Codebase Graph & Index-Map** | Structural codebase maps ([Graphify](https://github.com/Graphify-Labs/graphify)) + relational queries ([codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)) + [sqlite-vec](https://github.com/asg017/sqlite-vec) vector RAG. | `index-map <dir>` |
 | **Autonomous Task Loop** | Self-directed iteration loop ([Ralph Wiggum](https://github.com/ghuntley/how-to-ralph-wiggum)) executing tasks against project specs (`TASK.md`) with failure decomposition. | `/task [goal]` |
 | **NOOA IPython Kernel Harness** | NVIDIA Object-Oriented Agent ([NOOA](https://github.com/NVIDIA-NeMo/labs-OO-Agents) + [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent)) stateful Python kernel with bounded previews (`preview()`), model-callable `memory`/`graph` APIs, and in-kernel `delegate()` sub-agents. | `/py` |
@@ -266,6 +266,10 @@ AI_MAX_TOKENS="8192"
 - [ ] **PyBot Integration ([OpenBot](https://github.com/opencoredev/akeru-bot) Plugin):** Embedded web assistant & customizable agent widget plugin.
 - [ ] **v1.0.0 Production Release Tag!**
 
+<br>
+<div align="center">
+**New in v0.9.9.20:** Added first-class support for **MiniCPM5-2B** powered by the dedicated **DSpark speculative decoding engine** (`draft-dspark`). Includes an optimized sub-27B agent profile (`custom/minicpm`), automated sandbox command self-healing in `agent_adapters`.
+</div>
 <br>
 <div align="center">
 **New in v0.9.9.19:** Integrated **Hugging Face `smolagents`** code-first execution into the persistent kernel (`/py`). Models can now batch multi-step tasks across files using native Python loops, cleanly signal completion with `final_answer()`, and execute safely under a 30-second `SIGALRM` runaway loop breaker.

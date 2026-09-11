@@ -10,7 +10,7 @@ High-speed local developer agent, episodic memory, SQLite checkpoints, NOOA-enha
 │     model:  Hermes3.6-35B-A3B.gguf                       │
 │ directory:  ~/.config/py-agent/projects/omarchyv4        │
 │   profile:  hermes/pro                                   │
-│  database:  active (map + mem: 2f/5t)                    │
+│  database:  active (map + mem: 3m/5t)                    │
 ╰───────────────────────────────────────── Ctrl+C to exit ─╯
  Startup context: 896 tokens
 
@@ -46,7 +46,7 @@ All auto-created agent metadata files are strictly isolated inside `project/.age
 | `~/.config/py-agent/.spend_ledger.json` | Global cloud API token usage and daily spend ledger. |
 | `~/<workspace>/.agent/config.json` | Project-scoped profile, YOLO, Map, Py, and Memory settings. |
 | `~/<workspace>/.agent/session.jsonl` | Structured JSONL turn audit log (timestamp, model, tokens, messages). |
-| `~/<workspace>/.agent/tpm.md` | Human-editable Markdown fact memory store. |
+| `~/<workspace>/.agent/memory/*.md` | Git-native Open Knowledge Format (OKF) Markdown files for architectural decisions, rules & constraints. |
 | `~/<workspace>/.agent/history.md` | Chronological session history log. |
 | `~/<workspace>/.agent/task_log.md` | Audit log for autonomous `/task` loop executions. |
 | `~/<workspace>/.agent/scratchpad/` | Large tool outputs (>1,500 chars) offloaded to preserve active context. |
@@ -83,7 +83,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 * **Single-Letter Overrides:**
   * **`Tab`** ➔ Toggle Autonomous YOLO mode (`[ON]` disables confirmation gates).
   * **`m`** ➔ Toggle Codebase Index-Map (11 tools + AST graph intelligence).
-  * **`d`** ➔ Toggle Database Session Memory & TPM Facts.
+  * **`d`** ➔ Toggle Database Session Memory & OKF Memory Directives.
   * **`p`** ➔ Toggle In-Memory IPython Kernel Harness (`exec_python`).
 * **Hierarchy of Precedence:** Manual button presses take precedence over frontmatter defaults and are saved permanently to `<workspace>/.agent/config.json`.
 * **Auto-Compiling Index-Map:** When Map is `[ON]`, `ai init` automatically builds missing or stale index maps on startup and injects them directly into turn 0.
@@ -113,8 +113,8 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 │   /f, /tk, /b, /a        - Follow-up, Think, Brainstorm, All modes  │
 │                                                                     │
 │   Memory & Workspace                                                │
-│   /m, /map               - Toggle Codebase index-map (8 tools)      │
-│   /mem, /memory          - Toggle database session memory & TPM     │
+│   /m, /map               - Toggle Codebase index-map                │
+│   /mem [save|list]       - Toggle & manage OKF memory files         │
 │   /com, /compact         - 3-Zone context compaction                │
 │   /tok                   - Context token usage status               │
 │   /sync                  - Sync codebase index-map AST graph        │
@@ -136,9 +136,9 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 
 ## 4. Tooling & Safety Architecture
 
-* **The Two Distinct Databases:**
-  * **Database 1 (Codebase Graph):** `.agent/index-map-memory-<ws>.db` — Stores AST relationships (functions, classes, callers/callees). Toggled via **`/m`**.
-  * **Database 2 (Session Memory):** `~/.config/py-agent/projects/database/<ws>.db` — Stores conversation history, checkpoints, and long-term user facts (TPM). Toggled via **`/mem`**.
+* **The Two Distinct Knowledge Layers:**
+  * **Codebase AST Graph (Database 1):** `.agent/index-map-memory-<ws>.db` — SQLite FTS5 database storing AST structural relationships (functions, classes, line spans). Toggled independently via **`/m`**.
+  * **Project Memory & Turn Log (Layer 2):** `<workspace>/.agent/memory/*.md` (OKF persistent directives) + `~/.config/py-agent/projects/database/<ws>.db` (SQLite session turn checkpoints). Toggled independently via **`/mem`**.
 * **Zero-Trust Mandatory Fallback:** Out-of-bounds file access (e.g. `/etc/os-release`, `~/.ssh/`) and system package commands (`sudo`, `pacman`, `pip`) **always trigger an interactive `[Y/n]` prompt**, even in Autonomous YOLO mode.
 * **Zero-Trust Mandatory Fallback:** Out-of-bounds workspace access (e.g. `/etc/`, `~/.ssh/`, external project dirs), mutating system actions (`systemctl start/stop/restart/mask`), and package manager modifications (`sudo`, `pacman -S/-R`, `pip`) **always trigger an interactive `[Y/n]` prompt**, even in Autonomous YOLO mode. Safe read-only inspection commands (`pacman -Q*`, `systemctl status/list-units`, `journalctl`) run autonomously without interruptions. This zero-trust boundary is strictly enforced across native tools, shell commands, and in-kernel Python execution (`agent_ipython.py`).
 * **Smolagents Code-First Batching & Loop Protection:** Models operating in `/py` mode write composable Python loops (`read_file`, `search_code`, `list_dir`) to complete multi-step tasks in a single turn instead of ping-ponging single tool calls. Outputs are cleanly decoupled using `final_answer(data)`, and cells are guarded by a 30-second `SIGALRM` execution alarm to halt runaway `while True` loops.
@@ -152,7 +152,36 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 
 ---
 
-## 5. Client Surfaces
+## 5. Open Knowledge Format (OKF) Project Memory
+
+Git-native, human-editable Markdown memory stored in `<workspace>/.agent/memory/*.md`. Zero daemons, zero background LLM calls.
+
+### Commands:
+* **`/mem`** ➔ Toggle memory injection ON / OFF.
+* **`/mem save <title>: <content>`** ➔ Create or update a memory directive.
+* **`/mem list`** (or `/mem ls`) ➔ List active memory files.
+* **`/s hindsight`** ➔ Retrospective audit that extracts durable lessons into `.agent/memory/`.
+
+### Manual Editing:
+Create or edit `.agent/memory/<slug>.md` directly in any editor:
+
+```yaml
+---
+title: Database Strategy
+type: decision
+tags: [sqlite, wal]
+date: 2026-09-11
+---
+Use SQLite with WAL mode and busy_timeout = 30000 for zero-daemon concurrency.
+```
+
+### Execution Flow:
+* **Memory ON (`/mem` / `d`):** Preloads all active rules and decisions into `<context>` (~50–200 tokens total).
+* **Memory OFF:** 0 tokens injected.
+
+---
+
+## 6. Client Surfaces
 
 * **PyCode React Desktop IDE (`/pyc`):** Connects via ACP stdio JSON-RPC 2.0 with live thought/token streaming, ambient aurora glow, and workspace sync.
 * **llama.cpp WebAgent (`/webui`):** Autonomous tool reverse proxy for `llama-server` (:8080) with auxiliary Gemini Flash Lite vision pre-processing.
@@ -161,7 +190,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 
 ---
 
-## 6. Official Skill Frontmatter Schema
+## 7. Official Skill Frontmatter Schema
 
 Skill profiles (`skills/profiles/**/*.md`) configure agent persona and defaults using YAML frontmatter (`---`).
 
@@ -181,13 +210,13 @@ reasoning_budget: 350
 | `description` | String | Profile summary displayed in the `ai init` selector menu. |
 | `yolo` | Boolean | Sets default Autonomous YOLO mode (`true` turns off confirmation gates). |
 | `map` | Boolean | Enables Codebase Index-Map (11 tools + AST graph context). |
-| `memory` (or `mem`) | Boolean | Enables persistent session turn logging and TPM user fact extraction. |
+| `memory` (or `mem`) | Boolean | Enables persistent session turn logging and OKF project memory pre-loading. |
 | `ipython` (or `py`) | Boolean | Enables live persistent in-memory Python kernel harness (`exec_python`). |
 | `reasoning_budget` | Integer | Deep reasoning token budget (e.g. `350`, `500`, or `0` to disable). |
 
 ---
 
-## 7. Sub-27B Lite Model Directives
+## 8. Sub-27B Lite Model Directives
 
 Models under ~27B (`LFM2.5-8B`, `Qwen3.5-2B`) operate as **single-task execution engines** with constrained tool loops.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Production Minimal Textual TUI for Py Agent Engine [Compact Edition]"""
+"""Production Minimal Textual TUI for Py Agent Engine"""
 
 import base64, json, os, re, sqlite3, subprocess, sys, threading, time, urllib.parse, requests
 from collections.abc import Iterator
@@ -25,7 +25,7 @@ from textual.widgets import Footer, Input, Static
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
 sys.path.append(os.path.join(CFG_DIR, "modules"))
 
-import agent_cloud, agent_core as core, agent_ipython as ipython, agent_skills as skills, agent_tools as tools, agent_tts as tts, agent_tui_async as tui_async, agent_ui as ui, agent_voice as voice
+import agent_cloud, agent_core as core, agent_ipython as ipython, agent_memories as memories, agent_skills as skills, agent_tools as tools, agent_tts as tts, agent_tui_async as tui_async, agent_ui as ui, agent_voice as voice
 
 CONTEXT_FILE = os.path.join(CFG_DIR, "ai-context.md")
 SKILLS_DIR, SESSIONS_DIR = os.path.join(CFG_DIR, "skills"), os.path.join(CFG_DIR, "projects", "database")
@@ -100,7 +100,7 @@ def _glimmer_tui_text(title: str, theme: str = "code1", is_dark: bool = True) ->
 def _format_tui_reasonix_text(text: str, theme: str = "code1", is_dark: bool = True) -> Text:
     if not is_dark:
         badge_style = "bold #0265dc"
-        body_style = "#303446"  # Crisp high-contrast charcoal for light backgrounds
+        body_style = "#303446"
     else:
         badge_style = {"code1": "bold #89b4fa", "code2": "bold #ff9e64", "dark": "bold cyan", "mono": "bold white"}.get(theme, "bold cyan")
         body_style = "#a6adc8" if theme in ("code1", "code2") else ("#b0b0b0" if theme == "dark" else "white")
@@ -331,7 +331,7 @@ class LocalAITUI(App):
         self.on_demand_skill = sp[1] if len(sp) > 1 else None
         self.active_skill = f"{self.base_skill} {self.on_demand_skill}".strip() if self.on_demand_skill else self.base_skill
 
-        self.memory_active, self.db_turns, self.tpm_count = core.get_state("memory_active", False), 0, 0
+        self.memory_active, self.db_turns, self.mem_count = core.get_state("memory_active", False), 0, 0
         self.refresh_db_counts()
         self.compact_mode = int(core.get_state("compact_mode", 0))
         self.reasoning_active, self.reasoning_budget, self.entering_reasoning_budget = core.get_state("reasoning_active", False), core.get_state("reasoning_budget", 500), False
@@ -383,15 +383,15 @@ class LocalAITUI(App):
 
     def refresh_db_counts(self) -> None:
         db = os.path.join(SESSIONS_DIR, f"{self.safe_name}.db")
-        if not os.path.exists(db): self.db_turns = self.tpm_count = 0; return
-        try:
-            with closing(sqlite3.connect(db, timeout=2)) as conn:
-                c = conn.cursor()
-                try: self.db_turns = (c.execute("SELECT COUNT(*) FROM turns WHERE workspace = ?", (self.safe_name,)).fetchone() or [0])[0]
-                except Exception: pass
-                try: self.tpm_count = (c.execute("SELECT COUNT(*) FROM tpm_memories").fetchone() or [0])[0]
-                except Exception: pass
-        except Exception: pass
+        self.db_turns = 0
+        if os.path.exists(db):
+            try:
+                with closing(sqlite3.connect(db, timeout=2)) as conn:
+                    c = conn.cursor()
+                    try: self.db_turns = (c.execute("SELECT COUNT(*) FROM turns WHERE workspace = ?", (self.safe_name,)).fetchone() or [0])[0]
+                    except Exception: pass
+            except Exception: pass
+        self.mem_count = memories.get_memory_count(self.workspace_path) if hasattr(memories, "get_memory_count") else 0
 
     def ensure_system_context(self) -> None:
         if not any(m.get("role") == "system" for m in self.history):
@@ -411,7 +411,7 @@ class LocalAITUI(App):
             self.history.insert(0, {"role": "system", "content": sys_p})
             if self.is_agent and len(self.history) == 1: self.history.append({"role": "assistant", "content": "Agent: Workspace loaded. Awaiting instructions."})
 
-    def get_db_status_string(self) -> str: return f"active • {self.tpm_count} facts" if (self.is_agent and self.memory_active) else "stateless"
+    def get_db_status_string(self) -> str: return f"active • {self.mem_count} memories" if (self.is_agent and self.memory_active) else "stateless"
 
     def update_welcome_banner(self) -> None:
         try:
@@ -568,7 +568,7 @@ class LocalAITUI(App):
             cmds = [
                 ("/help, /h", "Help"),
                 ("/m, /map", "Index Map"),
-                ("/mem", "Memory DB"),
+                ("/mem [save|ls]", "OKF Memory"),
                 ("/py", "NOOA IPython"),
                 ("/gnd", "Google Grounding"),
                 ("Tab", "Plan/Build"),
@@ -642,10 +642,34 @@ class LocalAITUI(App):
             if hasattr(self, "lbl_map"): self.lbl_map.update(f"[dim]Map[/dim]        {'Active' if self.use_map else 'Disabled'}")
             self.notify(f"index-map {'enabled' if self.use_map else 'disabled'}.")
         elif root in ("/mem", "/memory"):
-            self.memory_active = not self.memory_active
-            core.save_state("memory_active", self.memory_active)
-            if hasattr(self, "lbl_database"): self.lbl_database.update(f"[dim]DB State[/dim]  {self.get_db_status_string()}")
-            self.notify(f"Memory database {'enabled' if self.memory_active else 'disabled'}.")
+            if args:
+                sub = args.strip().split(maxsplit=1)
+                act = sub[0].lower()
+                if act in ("save", "add", "set", "new"):
+                    if len(sub) < 2:
+                        self.notify("Usage: /mem save <title>: <content>")
+                    else:
+                        payload = sub[1]
+                        if ":" in payload: title, body = payload.split(":", 1)
+                        elif "|" in payload: title, body = payload.split("|", 1)
+                        else: title, body = payload, payload
+                        ok, res = memories.save_memory_file(self.workspace_path, title.strip(), body.strip())
+                        self.refresh_db_counts()
+                        if hasattr(self, "lbl_database"): self.lbl_database.update(f"[dim]DB State[/dim]  {self.get_db_status_string()}")
+                        self.notify(f"Saved memory: [bold]{os.path.basename(res)}[/bold]" if ok else f"[red]{res}[/red]")
+                elif act in ("list", "ls", "show"):
+                    items = memories.list_memories(self.workspace_path)
+                    if not items:
+                        self.notify("No memory files found in .agent/memory/.")
+                    else:
+                        names = ", ".join(it["filename"] for it in items)
+                        self.notify(f"Active memories ({len(items)}): [bold green]{names}[/bold green]")
+            else:
+                self.memory_active = not self.memory_active
+                core.save_state("memory_active", self.memory_active)
+                self.refresh_db_counts()
+                if hasattr(self, "lbl_database"): self.lbl_database.update(f"[dim]DB State[/dim]  {self.get_db_status_string()}")
+                self.notify(f"Project memory {'enabled' if self.memory_active else 'disabled'}.")
         elif root in ("/plan", "/build", "/g", "/yolo"):
             if not self.is_agent:
                 self.notify("Autonomous / YOLO mode is disabled in Chat mode.", sys_prefix=False)
@@ -662,7 +686,8 @@ class LocalAITUI(App):
             for d in [os.path.join(self.workspace_path, ".agent"), os.path.join(SESSIONS_DIR, f"{self.safe_name}.db")]:
                 try: (os.remove(d) if os.path.isfile(d) else shutil.rmtree(d)) if os.path.exists(d) else None
                 except Exception: pass
-            core.run_mod("agent_sessions.py", "clear", self.safe_name); core.run_mod("agent_memories.py", "tpm-clear", self.safe_name)
+            core.run_mod("agent_sessions.py", "clear", self.safe_name)
+            memories.clear_memories(self.workspace_path)
             for c in list(self.chat_area.children): c.remove()
             self.refresh_db_counts(); self.notify("Workspace reset complete.")
         elif root == "/tok":
@@ -734,14 +759,14 @@ class LocalAITUI(App):
         ui.confirm_tool = lambda reason: self.prompt_tui_confirm(reason)
 
         try:
-            tpm_ctx = (core.run_mod("agent_memories.py", "tpm-get", self.safe_name) if (self.is_agent and self.memory_active and isinstance(query, str)) else "")
+            mem_ctx = (memories.get_memory_context(self.workspace_path) if (self.is_agent and self.memory_active and isinstance(query, str)) else "")
             user_txt = query if isinstance(query, str) else next((i["text"] for i in query if isinstance(i, dict) and i.get("type") == "text"), "Multimodal Query")
             assistant_msg = Message("Agent", "Thinking...")
             self.call_from_thread(self.chat_area.mount, assistant_msg)
             self.call_from_thread(self.chat_area.scroll_end, animate=False)
 
             sys_ctx = skills.get_system_context(user_txt, CONTEXT_FILE, STOP_WORDS, SKILLS_DIR, CFG_DIR) if (isinstance(query, str) and hasattr(skills, "get_system_context")) else ""
-            comb = "\n\n".join(filter(None, [tpm_ctx, sys_ctx if sys_ctx != "__ABORT_TURN__" else ""]))
+            comb = "\n\n".join(filter(None, [mem_ctx, sys_ctx if sys_ctx != "__ABORT_TURN__" else ""]))
 
             if isinstance(query, list): self.history.append({"role": "user", "content": query})
             else: self.history.append({"role": "user", "content": f"<context>\n{comb}\n</context>\n\nUser Question: {query}" if comb else f"User Question: {query}"})
@@ -796,7 +821,6 @@ class LocalAITUI(App):
                             tc_chunk = delta.get("content") or ""
                             th_chunk = delta.get("reasoning_content") or delta.get("thinking") or delta.get("reasoning") or ""
 
-                            # Suppress duplicate content echo when server sends reasoning_content
                             if th_chunk:
                                 tc_chunk = ""
 
@@ -830,7 +854,6 @@ class LocalAITUI(App):
                 has_web_call = use_gnd and any(c.get("function", {}).get("name") == "web_search" for c in (calls or []))
 
                 if not calls or (not self.is_agent and not has_web_call):
-                    # Invariant 5: Strip <think> from history to prevent compounding loops, but keep on screen
                     clean_for_history = re.sub(r"<think>[\s\S]*?</think>", "", accumulated).strip()
                     self.history.append({"role": "assistant", "content": clean_for_history or accumulated}); break
 
@@ -880,7 +903,6 @@ class LocalAITUI(App):
                     core.run_mod("agent_sessions.py", "log-turn", self.safe_name, user_txt, accumulated)
                     self.refresh_db_counts()
                     if hasattr(self, "lbl_database"): self.call_from_thread(self.lbl_database.update, f"[dim]DB State[/dim]  {self.get_db_status_string()}")
-                    if self.is_agent and self.memory_active: threading.Thread(target=core.background_tpm_update, args=(user_txt, accumulated, self.safe_name, self.workspace_path), daemon=True).start()
                 except Exception: pass
 
         except Exception as e:

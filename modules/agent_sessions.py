@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SQLite-backed session, checkpoint, and turn logger with sub-agent registry [Self-Healing In-Memory Module & CLI]"""
+"""SQLite-backed session, checkpoint, and turn logger with sub-agent registry"""
 
 import glob
 import json
@@ -112,9 +112,6 @@ def connect_db(db_path: str) -> sqlite3.Connection:
         )
         cur.execute(
             "CREATE TABLE IF NOT EXISTS turns (id INTEGER PRIMARY KEY AUTOINCREMENT, workspace TEXT NOT NULL, user_msg TEXT NOT NULL, assistant_msg TEXT NOT NULL, tokens TEXT NOT NULL, timestamp INTEGER NOT NULL);"
-        )
-        cur.execute(
-            "CREATE TABLE IF NOT EXISTS tpm_memories (key TEXT PRIMARY KEY, value TEXT NOT NULL, timestamp INTEGER NOT NULL);"
         )
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_turns_workspace ON turns (workspace);"

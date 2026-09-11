@@ -76,10 +76,10 @@ ai init ~/.config/py-agent/projects/session-test-3 ---> session test 3, projects
 # --- File Reader ---
 [TOOL] cat $1 ---> view file, read file, show file, vf
 
-# --- Memories & Hindsight ---
+# --- Memories & Hindsight (OKF) ---
 [TOOL] cat ~/.config/py-agent/skills/on-demand/hindsight.md --s ---> hindsight
-[TOOL] f=".agent/tpm.md"; [[ -f "$f" ]] || f="tpm.md"; [[ -f "$f" ]] && view "$f" | less -R || echo "No memories found." ---> show memories, mem
-[TOOL] q="$1"; [[ -z "$q" ]] && read -p "Search Memories: " q; f=".agent/tpm.md"; [[ -f "$f" ]] || f="tpm.md"; [[ -f "$f" ]] && grep --color=always -A 5 -B 2 -i "$q" "$f" || echo "No memories found." ---> search memories, ms
+[TOOL] d=".agent/memory"; [[ -d "$d" ]] && (for f in "$d"/*.md; do [[ -f "$f" ]] && { echo -e "\033[1;36m=== $(basename "$f") ===\033[0m"; cat "$f"; echo ""; }; done | less -R) || echo "No memory files found in .agent/memory/." ---> show memories, mem
+[TOOL] q="$1"; [[ -z "$q" ]] && read -p "Search Memories: " q; d=".agent/memory"; [[ -d "$d" ]] && grep --color=always -H -n -A 4 -B 1 -i "$q" "$d"/*.md 2>/dev/null || echo "No matches found in .agent/memory/." ---> search memories, ms
 
 # --- History & Transcript Search ---
 [TOOL] f=".agent/history.md"; [[ -f "$f" ]] || f="history.md"; [[ -f "$f" ]] && view "$f" | less -R || echo "No history recorded yet." ---> show history, hist, history

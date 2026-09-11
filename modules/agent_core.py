@@ -46,9 +46,6 @@ RE_JSON_OBJECT = re.compile(r"\{[\s\S]*\}")
 RE_TOOL_CALL_BLOCK = re.compile(r"<\|tool_call_start\|>.*?<\|tool_call_end\|>", re.DOTALL)
 RE_ATTACHED_IMAGE = re.compile(r'\[(?:Attached\s+)?(?:image|file)[^\]]*?saved\s+at:\s*([^\]]+)\]', re.IGNORECASE)
 
-_TPM_SKIP_QUERIES = frozenset({"hello", "hi", "hey", "exit", "quit", "q", "/clear", "/reset", "/stats", "/tok", "/m", "/r"})
-_TPM_BLACKLIST = frozenset({"files", "file", "file_list", "project", "code", "description", "features", "dependencies", "project_type", "directory", "folder", "workspace"})
-
 TOOL_VERBS: dict[str, str] = getattr(tools, "TOOL_VERBS", {})
 
 DEFAULTS = {
@@ -241,28 +238,6 @@ def run_mod(module_name: str, *args: str) -> str:
             except Exception as e:
                 return f"[error: {e}]"
     return ""
-
-
-def background_tpm_update(user_msg: str, assistant_msg: str, workspace: str, workspace_path: str) -> None:
-    clean = user_msg.lower().strip()
-    if len(clean) < 8 or clean in _TPM_SKIP_QUERIES:
-        return
-    try:
-        ex_facts = memories.tpm_get(workspace)
-        sys_p = "You are an async memory compiler. Extract ONLY persistent facts, roles, or preferences about the HUMAN USER. Output ONLY a flat JSON object or {} if no user facts exist."
-        payload = {"messages": [{"role": "system", "content": sys_p}, {"role": "user", "content": f"### Profile:\n{ex_facts or 'None'}\n\n### Turn:\nUser: {user_msg}\nAssistant: {assistant_msg}\n\nJSON:"}], "stream": False}
-        req = urlreq.Request("http://localhost:8080/v1/chat/completions", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST")
-        with urlreq.urlopen(req, timeout=10) as resp:
-            out = json.loads(resp.read().decode())["choices"][0]["message"].get("content", "")
-        if (m := RE_JSON_OBJECT.search(out)) and (parsed := {str(k).strip().lower(): str(v).strip() for k, v in json.loads(m.group(0)).items() if k and v is not None and str(k).strip().lower() not in _TPM_BLACKLIST}):
-            memories.tpm_reconcile(workspace, parsed)
-            if (res := memories.tpm_get(workspace)) and workspace_path and os.path.isdir(workspace_path) and os.path.realpath(workspace_path) not in (os.path.realpath(os.path.expanduser("~")), os.path.realpath(CFG_DIR)):
-                md_dir = os.path.join(workspace_path, ".agent")
-                os.makedirs(md_dir, exist_ok=True)
-                with open(os.path.join(md_dir, "tpm.md"), "w", encoding="utf-8") as f:
-                    f.write(res + "\n")
-    except Exception:
-        pass
 
 
 class RichStreamer:
@@ -510,7 +485,6 @@ def agentic_turn(
             use_map = st.get("use_map", False) or os.environ.get("AI_USE_MAP", "0") == "1"
 
             if is_py_mode and ipython:
-                # Expose in-memory Python AND lean file tools simultaneously on demand
                 active_tools = list(ipython.IPYTHON_TOOL) + [
                     t for t in getattr(tools, "LEAN_TOOLS", tools.EDIT_TOOLS) if t["function"]["name"] != "exec_python"
                 ]
@@ -538,7 +512,6 @@ def agentic_turn(
             res = _session.post(url, json=body_tools, headers={"Content-Type": "application/json", **headers}, timeout=timeout, stream=True)
             if res.status_code != 200:
                 err_text = res.text[:200].replace("\n", " ").strip()
-                # Self-healing: Catch context window breach and auto-compact history
                 if res.status_code == 400 and ("exceed" in err_text.lower() or "context" in err_text.lower()):
                     if spinner:
                         spinner.stop()
@@ -568,7 +541,6 @@ def agentic_turn(
                     captured_usage = data.get("usage") or captured_usage
                     captured_timings = data.get("timings") or data.get("usage", {}).get("timings") or captured_timings
                     
-                    # Capture and preserve underlying resolved model (e.g. from openrouter/free gateway)
                     if m_candidate := (data.get("model") or (data.get("choices", [{}])[0].get("model") if data.get("choices") else None)):
                         if not resolved_model or resolved_model == "openrouter/free" or m_candidate != "openrouter/free":
                             resolved_model = m_candidate
@@ -648,7 +620,6 @@ def agentic_turn(
 
             calls = [val for _, val in sorted(tool_calls_map.items())] if tool_calls_map else None
 
-            # Sub-27B Fallback Extraction via Modular Adapters
             if not calls and ans_text and is_agent:
                 calls = adapters.extract_fallback_tool_calls(ans_text) or None
 
@@ -663,7 +634,6 @@ def agentic_turn(
                 _log_turn_usage(final_model, in_tok, final_out, 0.0, show_stats, in_tok + final_out, user_msg=user_msg, assistant_msg=ans_text)
                 return ans_text if ans_text else "(No response generated)"
 
-            # Re-serialize healed tool arguments with Gemini Thought Signature support
             healed_calls = []
             for tc in calls:
                 raw_fname = tc.get("function", {}).get("name", "")
@@ -686,7 +656,6 @@ def agentic_turn(
                     "extra_content": {"google": {"thought_signature": sig}}
                 })
 
-            # 1. Strip reasoning from turn history so older turns don't pollute subsequent context
             clean_ans_text = re.sub(r"<think>[\s\S]*?</think>", "", ans_text).strip()
             messages.append({"role": "assistant", "content": clean_ans_text or "", "tool_calls": healed_calls})
 
@@ -710,7 +679,6 @@ def agentic_turn(
                     if spinner:
                         spinner.stop()
 
-                # 2. Large Tool Result Scratchpad Offload
                 if len(result) > 8000:
                     scratch_dir = os.path.join(workspace, ".agent", "scratchpad")
                     os.makedirs(scratch_dir, exist_ok=True)
@@ -735,7 +703,6 @@ def agentic_turn(
                     messages.append({"role": "user", "content": "[System Notice]: Action was explicitly declined by the user. Do not retry or attempt alternative workarounds for this resource."})
                     return "[denied] Action cancelled by user."
 
-                # Smolagents Completion Signal: Prevent infinite loops after final_answer is returned
                 if fname == "exec_python" and ("### Final Answer" in result or "Final Answer" in result):
                     messages.append({"role": "user", "content": "[System Directive]: final_answer() was received. Output your concise summary to the user now. Do not call any further tools."})
                     body.pop("tools", None)
@@ -745,7 +712,6 @@ def agentic_turn(
                 else:
                     consecutive_tool_failures = 0
 
-                # Universal duplicate read deterrent
                 if fname == "read_file" and len(messages) >= 4:
                     prev_tools = [m for m in messages[-4:] if m.get("role") == "tool" and m.get("name") == "read_file"]
                     if len(prev_tools) >= 2:
