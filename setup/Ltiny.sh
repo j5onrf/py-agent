@@ -45,14 +45,14 @@ export OMP_PLACES=cores
 ulimit -l unlimited 2>/dev/null
 
 # ==============================================================================
-# 5. Server Launch (APEX Recommended Thinking Profile)
+# 5. Server Launch
 # ==============================================================================
 SERVER_ARGS=(
   -m "$MODEL_PATH"
   --alias "$ALIAS"
   --host "$HOST"
   --port "$PORT"
-  -c 8192                # Use 32768 if you want the full native window
+  -c 8192
   -np 1
   -t "$CORE_COUNT"
   -tb "$CORE_COUNT"
@@ -64,9 +64,17 @@ SERVER_ARGS=(
   --no-ui
   --context-shift
   --jinja
-  --temp 1.0             # APEX Thinking Profile
-  --top-p 0.95           # APEX Thinking Profile
-  --top-k 20             # APEX Thinking Profile
+
+  # ── APEX Mode 1: Thinking (Default Recommended) ──
+  --temp 1.0
+  --top-p 0.95
+  --top-k 20
+
+  # ── APEX Mode 2: Fast / Instruct (Disable thinking via chat template) ──
+  # (To enable: comment out Mode 1 above and uncomment the 3 lines below)
+  # --temp 0.7
+  # --top-p 0.8
+  # --top-k 20
 )
 
 # Launch wrapped in UWSM with physical core affinity
