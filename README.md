@@ -1,5 +1,5 @@
 <div align="center">
-**New in v0.9.9.24:** Added first-class support for **InclusionAI Ling-3.0-tiny** (7.9B MoE with 1.3B active compute). Achieved a perfect **5/5 (100%)** on the `eval-stack` agentic benchmark with ultra-fast execution speed. Includes the optimized `custom/lingtiny` profile featuring native `<think>` reasoning support and zero-chatter tool emission.
+**New in v0.9.9.24:** Added first-class support for **InclusionAI Ling-3.0-tiny** (7.9B MoE with 1.3B active compute). Achieved a perfect **5/5 (100%)** on the `eval-stack` agentic benchmark with ultra-fast execution speed. Includes the optimized `custom/lingtiny` profile.
 </div>
 <br>
 <div align="center">
@@ -11,7 +11,7 @@
   <img alt="py-agent" src="logo.svg" height="130" />
 </div>
 
-<h1 align="center">Py Agent <img src="https://shieldcn.dev/badge/version-v0.9.9.24.svg?variant=secondary" alt="Version"><a href="https://github.com/j5onrf/py-agent"></a></h1>
+<h1 align="center">py-agent <img src="https://shieldcn.dev/badge/version-v0.9.9.24.svg?variant=secondary" alt="Version"><a href="https://github.com/j5onrf/py-agent"></a></h1>
 
 <p align="center">
   <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/github/last-commit/j5onrf/py-agent.svg?color=emerald&variant=secondary" alt="Last Commit"></a>
