@@ -45,14 +45,14 @@ export OMP_PLACES=cores
 ulimit -l unlimited 2>/dev/null
 
 # ==============================================================================
-# 5. Server Launch
+# 5. Server Launch (APEX Recommended Thinking Profile)
 # ==============================================================================
 SERVER_ARGS=(
   -m "$MODEL_PATH"
   --alias "$ALIAS"
   --host "$HOST"
   --port "$PORT"
-  -c 8192
+  -c 8192                # Use 32768 if you want the full native window
   -np 1
   -t "$CORE_COUNT"
   -tb "$CORE_COUNT"
@@ -64,10 +64,9 @@ SERVER_ARGS=(
   --no-ui
   --context-shift
   --jinja
-  --temp 0.3
-  --top-p 0.90
-  --min-p 0.05
-  --repeat-penalty 1.05
+  --temp 1.0             # APEX Thinking Profile
+  --top-p 0.95           # APEX Thinking Profile
+  --top-k 20             # APEX Thinking Profile
 )
 
 # Launch wrapped in UWSM with physical core affinity
