@@ -180,7 +180,7 @@ def get_system_context(query: str, context_file: str, stop_words: set[str], skil
         ent_tokens = entry.get("tokens", [])
         if any(q_tokens[i:i + len(ent_tokens)] == ent_tokens for i in range(len(q_tokens) - len(ent_tokens) + 1)):
             tool = entry.get("cmd", "").replace("[TOOL]", "").strip()
-            if any(ex in tool for ex in EXCLUDED_CONTEXT_TOOLS):
+            if tool.startswith("ai ") or "ai init" in tool or any(ex in tool for ex in EXCLUDED_CONTEXT_TOOLS):
                 continue
             if any(k in tool for k in ("read -p", "less", "fzf")): return run_interactive_tool(tool)
             if " --s" not in tool and not ui.confirm_tool(tool): return ""

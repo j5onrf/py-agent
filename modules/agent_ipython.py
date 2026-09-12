@@ -96,15 +96,24 @@ class MemorySDK:
         self.workspace, self.safe_name = workspace, safe_name
 
     def search(self, query: str) -> str:
-        return memories.search_past_context(self.safe_name, query) or "No matching memories found." if memories else "Memory unavailable."
+        if not memories:
+            return "Memory unavailable."
+        items = memories.list_memories(self.workspace)
+        q_low = query.lower()
+        matches = [
+            f"• {it['filename']} [{it['type']}]: {it['title']} - {it['content'][:80]}"
+            for it in items
+            if q_low in it["title"].lower() or q_low in it["content"].lower() or any(q_low in t for t in it.get("tags", []))
+        ]
+        return "\n".join(matches) if matches else "No matching memories found."
 
     def get_facts(self) -> str:
-        return memories.tpm_get(self.safe_name) or "No facts stored." if memories else "Memory unavailable."
+        return memories.get_memory_context(self.workspace) or "No memory directives stored." if memories else "Memory unavailable."
 
     def add_fact(self, key: str, value: str) -> str:
         if memories:
-            memories.tpm_reconcile(self.safe_name, {key.strip().lower(): str(value).strip()})
-            return f"Fact reconciled: {key} = {value}"
+            ok, path = memories.save_memory_file(self.workspace, key, value, mem_type="rule")
+            return f"Memory saved: {os.path.basename(path)}" if ok else f"Error: {path}"
         return "Memory unavailable."
 
 
@@ -191,6 +200,12 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
         full = os.path.realpath(str(path) if os.path.isabs(str(path)) else os.path.join(ws_real, str(path)))
         return _orig_listdir(full)
 
+    def _invalidate_module_cache(file_path: str) -> None:
+        if file_path.endswith(".py"):
+            mod_name = os.path.splitext(os.path.basename(file_path))[0]
+            if mod_name in sys.modules:
+                sys.modules.pop(mod_name, None)
+
     def _read_file(path: str) -> str:
         if not _check_boundary(path, "READ"):
             return "[denied] Out-of-bounds read blocked."
@@ -199,12 +214,18 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
     def _edit_file(path: str, old_str: str, new_str: str) -> str:
         if not _check_boundary(path, "EDIT"):
             return "[denied] Out-of-bounds edit blocked."
-        return tools.run_tool("edit_file", {"path": path, "old_str": old_str, "new_str": new_str}, ws_real, confirm_gate_fn=_confirm_gate_fn) if tools else ""
+        res = tools.run_tool("edit_file", {"path": path, "old_str": old_str, "new_str": new_str}, ws_real, confirm_gate_fn=_confirm_gate_fn) if tools else ""
+        if "Successfully edited" in res:
+            _invalidate_module_cache(path)
+        return res
 
     def _write_file(path: str, content: str, overwrite: bool = False) -> str:
         if not _check_boundary(path, "WRITE"):
             return "[denied] Out-of-bounds write blocked."
-        return tools.run_tool("write_file", {"path": path, "content": content, "overwrite": overwrite}, ws_real, confirm_gate_fn=_confirm_gate_fn) if tools else ""
+        res = tools.run_tool("write_file", {"path": path, "content": content, "overwrite": overwrite}, ws_real, confirm_gate_fn=_confirm_gate_fn) if tools else ""
+        if "wrote" in res:
+            _invalidate_module_cache(path)
+        return res
 
     def _list_dir(path: str = ".") -> list[str]:
         if not _check_boundary(path, "LIST DIR"):

@@ -74,6 +74,14 @@ def clear_session_tracking() -> None:
     _SESSION_MODIFIED_FILES.clear()
 
 
+def _invalidate_module_cache(file_path: str) -> None:
+    """Purges modified module from sys.modules so in-kernel imports always reload."""
+    if file_path.endswith(".py"):
+        mod_name = os.path.splitext(os.path.basename(file_path))[0]
+        if mod_name in sys.modules:
+            sys.modules.pop(mod_name, None)
+
+
 # Complete 12-Tool Suite
 EDIT_TOOLS: list[dict[str, Any]] = [
     {
@@ -772,6 +780,7 @@ def run_tool(
 
             rel_f = os.path.relpath(full, workspace)
             _SESSION_MODIFIED_FILES.add(rel_f)
+            _invalidate_module_cache(full)
 
             return f"Successfully edited {raw_path} (replaced {len(old_str)} chars with {len(new_str)} chars)."
         except OSError as e:
@@ -835,6 +844,7 @@ def run_tool(
             _SESSION_READ_FILES.add(full)
             rel_f = os.path.relpath(full, workspace)
             _SESSION_MODIFIED_FILES.add(rel_f)
+            _invalidate_module_cache(full)
             return f"wrote {len(content)} chars to {raw_path}"
         except OSError as e:
             return f"[error] failed to write file: {e}"

@@ -16,16 +16,18 @@
 ## 0. Start Agent
 
 ```properties
-# --- Stack Diagnostic Suite ---
+# --- Agent Diagnostic ---
 [TOOL] ~/.config/py-agent/tools/test-agent --cat --s ---> agent test, ta
-# --- Model Selector & .env Provider Configurator ---
+# --- Model Selector ---
 ~/.config/py-agent/modules/model-select.py ---> model select, cloud model
-# --- AI Status Model Route ---
+# --- Project Creator ---
+~/.config/py-agent/tools/new-project ---> new project, newproject, newp, new-project
+# --- AI Status ---
 [TOOL] ~/.config/py-agent/tools/agentic/system/ai-status ---> aistatus, aistat, ais
-# --- Plugins Cheatsheet ---
+# --- Cheatsheet ---
 [TOOL] ~/.config/py-agent/tools/cheatsheet ---> cheatsheet, cs
-# --- Test Model & Profile (Agentic Tool Benchmark) ---
-~/.config/py-agent/tools/evals/eval-stack ---> eval-stack, eval stack
+# --- Eval Model & Profile (Agentic Tool Benchmark) ---
+~/.config/py-agent/tools/evals/eval-stack --->  eval stack, eval-stack
 ```
 
 ## 1. Plugins
@@ -35,20 +37,16 @@
 ~/.config/py-agent/plugins/pycode/setup.sh ---> install-pycode, setup-pycode, setup pycode
 ```
 
-## 2. Workspaces
+## 2. Projects
 
 ```properties
 # --- Workspaces ---
-ai init ~/.config/py-agent/projects/sys-ops ---> sys-ops
-
 ai init ~/.config/py-agent/projects/gemini ---> gemini
 ai init ~/.config/py-agent/projects/ling-tiny ---> ling-tiny
 ai init ~/.config/py-agent/projects/omarchyv4 ---> omarchyv4
 ai init ~/.config/py-agent/projects/pysmol-test ---> pysmol test, pysmol
 ai init ~/.config/py-agent/projects/minicpm ---> minicpm
 ai init ~/.config/py-agent/projects/session-test ---> session test, projects session
-ai init ~/.config/py-agent/projects/session-test-2 ---> session test 2, projects session
-ai init ~/.config/py-agent/projects/session-test-3 ---> session test 3, projects session
 ```
 
 ## 3. Codebase Map

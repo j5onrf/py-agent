@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""Interactive & Direct Project Creator for Py-Agent with ai-context.md"""
+
+import os
+import re
+import sys
+
+CFG_DIR = os.path.expanduser("~/.config/py-agent")
+PROJECTS_DIR = os.path.join(CFG_DIR, "projects")
+CONTEXT_FILE = os.path.join(CFG_DIR, "ai-context.md")
+RE_SAFE_NAME = re.compile(r"[^a-zA-Z0-9_\-]")
+TRIGGER_ALIASES = frozenset({"newp", "newproject", "new-project", "new", "project", "$1"})
+
+
+def add_to_context_file(slug: str, intents_str: str) -> bool:
+    """Inserts workspace shortcut under Section 2 (# --- Workspaces ---) in ai-context.md."""
+    if not os.path.isfile(CONTEXT_FILE):
+        return False
+
+    entry_line = f"ai init ~/.config/py-agent/projects/{slug} ---> {intents_str}"
+
+    try:
+        with open(CONTEXT_FILE, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # Prevent duplicate entries
+        if f"projects/{slug}" in content:
+            return False
+
+        target_marker = "# --- Workspaces ---"
+        if target_marker in content:
+            parts = content.split(target_marker, 1)
+            updated_content = f"{parts[0]}{target_marker}\n{entry_line}{parts[1]}"
+        else:
+            updated_content = f"{content}\n{entry_line}"
+
+        with open(CONTEXT_FILE, "w", encoding="utf-8") as f:
+            f.write(updated_content)
+        return True
+    except OSError as e:
+        print(f"\033[1;31m[error] Failed to update ai-context.md: {e}\033[0m")
+        return False
+
+
+def main() -> None:
+    valid_args = [a for a in sys.argv[1:] if not a.startswith("-") and a.lower() not in TRIGGER_ALIASES]
+
+    # 1. Project Name Input
+    if valid_args:
+        raw_name = valid_args[0].strip()
+        print(f"\033[1;36m[new-project]\033[0m Project name: \033[1m{raw_name}\033[0m")
+    else:
+        try:
+            raw_name = input("\033[1;36m[new-project]\033[0m Enter project name: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\n\033[1;33mCancelled.\033[0m")
+            sys.exit(0)
+
+    if not raw_name:
+        print("\033[1;31m[error] Project name cannot be empty.\033[0m")
+        sys.exit(1)
+
+    slug = RE_SAFE_NAME.sub("-", raw_name.lower()).strip("-")
+    if not slug:
+        print("\033[1;31m[error] Invalid project name.\033[0m")
+        sys.exit(1)
+
+    # 2. Intents Input
+    default_intent = slug.replace("-", " ")
+    if len(valid_args) > 1:
+        raw_intents = " ".join(valid_args[1:]).strip()
+    else:
+        try:
+            prompt_str = f"\033[1;36m[new-project]\033[0m Enter intent keywords (e.g. \033[33m{slug}, {default_intent}\033[0m) [Enter for default]: "
+            raw_intents = input(prompt_str).strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\n\033[1;33mCancelled.\033[0m")
+            sys.exit(0)
+
+    # Clean and format intents
+    if raw_intents:
+        clean_intents = [i.strip(" []'\"") for i in raw_intents.split(",") if i.strip(" []'\"")]
+        intents_str = ", ".join(clean_intents) if clean_intents else slug
+        primary_intent = clean_intents[0] if clean_intents else slug
+    else:
+        intents_str = f"{slug}, {default_intent}" if slug != default_intent else slug
+        primary_intent = slug
+
+    # 3. Create Clean Workspace Directory
+    target_dir = os.path.join(PROJECTS_DIR, slug)
+    if os.path.exists(target_dir):
+        print(f"\n\033[1;33m[!] Workspace directory already exists:\033[0m {target_dir}")
+    else:
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+            print(f"\n\033[1;32m✔ Project workspace created:\033[0m \033[1m{target_dir}\033[0m")
+        except OSError as e:
+            print(f"\033[1;31m[error] Failed to create directory: {e}\033[0m")
+            sys.exit(1)
+
+    # 4. Register in ai-context.md
+    if add_to_context_file(slug, intents_str):
+        print(f"\033[1;32m✔ Added to ai-context.md:\033[0m \033[36mai init ~/.config/py-agent/projects/{slug}\033[0m \033[2m--->\033[0m \033[33m{intents_str}\033[0m")
+    else:
+        print(f"\033[2m[info] Shortcut already exists in ai-context.md\033[0m")
+
+    # 5. Launch Instructions
+    print(f"\n\033[2mLaunch workspace now:\033[0m \033[1;36mai init {target_dir}\033[0m")
+    print(f"\033[2mLaunch workspace now:\033[0m \033[1;32mtype {primary_intent} in terminal\033[0m\n")
+
+
+if __name__ == "__main__":
+    main()

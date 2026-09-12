@@ -1,6 +1,0 @@
-# Filler code for python agent
-def main():
-    print("Python agent initialized.")
-
-if __name__ == "__main__":
-    main()
