@@ -1,5 +1,6 @@
 from math_engine.calc import compute_fee
 
+
 def test_billing():
     # FIX: pass rate as keyword argument to match calc.py signature
     fee = compute_fee(amount=200.0, rate=0.10)

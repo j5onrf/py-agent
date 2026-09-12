@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 
+
 def test_ai_tool_call():
     """Test agent AI tool calling functionality"""
     # Simulate agent interaction

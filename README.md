@@ -3,7 +3,7 @@
 </div>
 <br>
 <div align="center">
-**New in v0.9.9.24:** Added first-class support for **InclusionAI Ling-3.0-tiny** (7.9B MoE with 1.3B active compute). Achieved a perfect **5/5 (100%)** on the `eval-stack` agentic benchmark with ultra-fast execution speed. Includes the optimized `custom/lingtiny` profile.
+**New in v0.9.9.24:** Added first-class support for **InclusionAI Ling-3.0-tiny** (7.9B MoE with 1.3B active compute). Achieved a perfect **5/5 (100%)** on the `eval-stack` agentic benchmark with ultra-fast execution speed. Includes the optimized `custom/lingtiny` profile and on-demand self-healing tool parser (`/adp`).
 </div>
 <br>
 
@@ -11,7 +11,7 @@
   <img alt="py-agent" src="logo.svg" height="130" />
 </div>
 
-<h1 align="center">py-agent <img src="https://shieldcn.dev/badge/version-v0.9.9.25.svg?variant=secondary" alt="Version"><a href="https://github.com/j5onrf/py-agent"></a></h1>
+<h1 align="center">py-agent <img src="https://shieldcn.dev/badge/version-v0.9.9.26.svg?variant=secondary" alt="Version"><a href="https://github.com/j5onrf/py-agent"></a></h1>
 
 <p align="center">
   <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/github/last-commit/j5onrf/py-agent.svg?color=emerald&variant=secondary" alt="Last Commit"></a>
@@ -46,7 +46,7 @@ Lightweight Python orchestration (`rich` + `requests`) controlling a C++ backend
 | Feature System | Foundation & Architectural Roots | Interface Command / Link |
 | :--- | :--- | :--- |
 | **Memory (OKF)** | Git-native Open Knowledge Format ([OKF](https://github.com/okf-memory/okf-agent-memory)) persistent Markdown rules, architectural decisions & zero-daemon project directives. | `.agent/memory/` |
-| **Codebase Graph & Index-Map** | Structural codebase maps ([Graphify](https://github.com/Graphify-Labs/graphify)) + relational queries ([codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)) + [sqlite-vec](https://github.com/asg017/sqlite-vec) vector RAG. | `index-map <dir>` |
+| **Codebase Graph & Index-Map** | Structural codebase maps ([Graphify](https://github.com/Graphify-Labs/graphify)) + relational queries ([codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)) + standard library SQLite FTS5 symbol graph. | `index-map <dir>` |
 | **Autonomous Task Loop** | Self-directed iteration loop ([Ralph Wiggum](https://github.com/ghuntley/how-to-ralph-wiggum)) executing tasks against project specs (`TASK.md`) with failure decomposition. | `/task [goal]` |
 | **NOOA IPython Kernel Harness** | NVIDIA Object-Oriented Agent ([NOOA](https://github.com/NVIDIA-NeMo/labs-OO-Agents) + [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent)) stateful Python kernel with bounded previews (`preview()`), model-callable `memory`/`graph` APIs, and in-kernel `delegate()` sub-agents. | `/py` |
 | **Surgical Edits** | Whitespace-tolerant replacements (`edit_file`) + AST skeleton guards (>250 lines) + overwrite protection (`write_file`) inspired by [SmallCoder](https://github.com/Doorman11991/smallcode). | `edit_file <path>` |
@@ -58,7 +58,7 @@ Lightweight Python orchestration (`rich` + `requests`) controlling a C++ backend
 | **Interactive Textual PyTUI** | Full-screen **[Textual](modules/Readme.md)** TUI workspace with JSON-RPC 2.0 socket IPC powered by a C-speed `uvloop` event loop. | `/tui` |
 | **PyCode Desktop IDE** | Customized [T3 Code](https://github.com/pingdotgg/t3code) fork connected via Agent Client Protocol (ACP) over stdio JSON-RPC 2.0 with live token & thought streaming. | `/pyc` (or `/pyc web`) |
 | **llama.cpp WebAgent Gateway** | Full autonomous agent tool execution (`list_dir`, `write_file`, AST graph) + Gemini multimodal vision for text-only local models. | `/webui` |
-| **Adapters** | **Sub-27B Healer** | Self-healing tool format adapters (`agent_adapters.py`) resolving Hermes XML, DSML, Mistral, and raw planning JSON out-of-band for 2B–8B models. |
+| **Adapters** | **Sub-27B Healer** | Self-healing tool format adapters (`agent_adapters.py`) resolving Hermes XML, DSML, Mistral, and raw planning JSON out-of-band for ≤27B models. | `/adp` |
 
 ---
 
@@ -94,7 +94,7 @@ Lightweight Python orchestration (`rich` + `requests`) controlling a C++ backend
 │  database:  stateless             │
 ╰────────────────── Ctrl+C to exit ─╯
  Startup context: 103 tokens
-❯ 
+❯ █
 ```
 
 ---
@@ -116,7 +116,7 @@ Lightweight Python orchestration (`rich` + `requests`) controlling a C++ backend
             <img src="https://github.com/user-attachments/assets/0a4fee18-12a8-4c0a-93e4-05948d26306e" alt="PyCode Desktop App" width="100%" />
           </kbd>
         </a><br><br>
-        <sub>Local-first React IDE with ACP stdio JSON-RPC 2.0, live thought streaming & ambient aurora glow.</sub>
+        <sub>Local-first React IDE with ACP stdio JSON-RPC 2.0, live thought streaming & ambient composer glow.</sub>
       </td>
       <td align="center" width="33%" valign="top">
         <h3>Textual PyTUI</h3>
@@ -238,7 +238,7 @@ AI_MAX_TOKENS="8192"
 | Surface | Setup / Command | Requirements |
 | :--- | :--- | :--- |
 | **Desktop IDE ([PyCode](https://github.com/j5onrf/pycode))** | `install-pycode`<br><sub>(or `~/.config/py-agent/plugins/pycode/setup.sh`)</sub> | Node.js 20+, pnpm |
-| **Textual PyTUI** | `sudo pacman -S python-textual python-uvloop && yay -S python-sqlite-vec` | uvloop & sqlite-vec |
+| **Textual PyTUI** | `sudo pacman -S python-textual python-uvloop` | uvloop (zero C-extension RAG dependencies) |
 | **Voice-to-Text Bridge** | `/v` (or `/v auto` on `:9999`) | `sudo pacman -S wtype openssl` & `GEM_VOICE` in `.env` |
 | **Neural Kokoro TTS** | `/tts`<br><sub>(or [Audio Plugin](plugins/audio))</sub> | `yay -S koko-bin pw-play wl-clipboard` |
 

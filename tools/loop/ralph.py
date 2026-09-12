@@ -2,20 +2,16 @@
 """Autonomous Task Loop Engine [Production Edition]"""
 
 import argparse
-import json
 import os
 import re
 import sys
 import time
-from typing import Any
 
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
 sys.path.append(os.path.join(CFG_DIR, "modules"))
 
 try:
     import agent_core as core
-    import agent_skills as skills
-    import agent_tools as tools
     import agent_ui as ui
 except ImportError as e:
     sys.stderr.write(f"\033[1;31m[Loop Engine] Module import error: {e}\033[0m\n")

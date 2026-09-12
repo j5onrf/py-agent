@@ -3,19 +3,21 @@
 High-speed local developer agent, episodic memory, SQLite checkpoints, NOOA-enhanced IPython kernel harness, and codebase index graph.
 
 ```console
-✓ Profile set to: Hermes Pro [Yolo: ON] [Map: ON] [Mem: ON] [Py: ON]
+~ ✗ ling
+[01/02] ❯ [ling-tiny] ai init ~/ling-tiny
+:: ↵ run  Esc: 
+✓ Profile set to: Custom Lingtiny [Yolo: ON] [Map: ON] [Mem: ON] [Py: ON] [Adp: ON]
 
  Map enabled: compiled index-map.
 ╭─  ∿ Py Agent  ───────────────────────────────────────────╮
-│     model:  Hermes3.6-35B-A3B.gguf                       │
-│ directory:  ~/.config/py-agent/projects/omarchyv4        │
-│   profile:  hermes/pro                                   │
+│     model:  Ling-3.0-tiny                                │
+│ directory:  ~/.config/py-agent/projects/ling-tiny        │
+│   profile:  custom/lingtiny                              │
 │  database:  active (map + mem: 3m/5t)                    │
 ╰───────────────────────────────────────── Ctrl+C to exit ─╯
- Startup context: 896 tokens
+ Startup context: 467 tokens
 
-Agent: Workspace loaded. Awaiting instructions.
-❯ 
+❯ █
 ```
 
 ---
@@ -41,17 +43,15 @@ All auto-created agent metadata files are strictly isolated inside `project/.age
 
 | Path | Purpose |
 | :--- | :--- |
-| `~/.config/py-agent/projects/database/*.db` | Global SQLite turn history and fact memory database. |
+| `~/.config/py-agent/projects/.database/*.db` | Global SQLite session checkpoints (`-save` / `-load`) and turn rollbacks. |
 | `~/.config/py-agent/.active_sessions/` | Sub-agent PID lockfiles for process tracking. |
-| `~/.config/py-agent/.spend_ledger.json` | Global cloud API token usage and daily spend ledger. |
-| `~/<workspace>/.agent/config.json` | Project-scoped profile, YOLO, Map, Py, and Memory settings. |
-| `~/<workspace>/.agent/session.jsonl` | Structured JSONL turn audit log (timestamp, model, tokens, messages). |
-| `~/<workspace>/.agent/memory/*.md` | Git-native Open Knowledge Format (OKF) Markdown files for architectural decisions, rules & constraints. |
-| `~/<workspace>/.agent/history.md` | Chronological session history log. |
-| `~/<workspace>/.agent/task_log.md` | Audit log for autonomous `/task` loop executions. |
+| `~/.config/py-agent/.spend_ledger.json` | Cloud API token spend ledger (zero I/O on local models). |
+| `~/<workspace>/.agent/config.json` | Workspace profile, YOLO, Map, Py, Memory, and Adapter settings. |
+| `~/<workspace>/.agent/memory/*.md` | Git-native Open Knowledge Format (OKF) Markdown files for persistent directives. |
+| `~/<workspace>/.agent/history.md` | Chronological session conversation log. |
 | `~/<workspace>/.agent/scratchpad/` | Large tool outputs (>1,500 chars) offloaded to preserve active context. |
-| `~/<workspace>/.agent/index-map-<project>.txt` | Shorthand codebase index map (preloaded into prompt when Map is ON). |
-| `~/<workspace>/.agent/index-map-memory-<project>.db` | Relational knowledge graph & `sqlite-vec` embeddings. |
+| `~/<workspace>/.agent/index-map-<project>.txt` | Shorthand codebase index map (injected into context when Map is ON). |
+| `~/<workspace>/.agent/index-map-memory-<project>.db` | Relational AST symbol graph & SQLite FTS5 index. |
 
 ---
 
@@ -65,7 +65,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
   ─── Custom ────────────────────────
      1. Custom Base          (~200t)
      2. Custom Lfm2          (~200t)
-     3. Custom Pysmol        (~200t)
+     3. Custom lingtiny      (~200t)
      4. Custom Q2B           (~200t)
      5. Custom Sysadmin      (~200t)
 
@@ -75,16 +75,17 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
   ❯  3. Hermes Pro           (~180t)
 
   :: ↵ select    ↑/↓ navigate    Esc: default
-     Tab: YOLO [ON]    m: Map [OFF]    d: Mem [OFF]    p: Py [ON]
+     Tab: YOLO [ON]    m: Map [OFF]    d: Mem [OFF]    p: Py [ON]    a: Adp [ON]
 ```
 
 * **Customize Profiles:** Modify or create profile `.md` files in `~/.config/py-agent/skills/profiles/`.
-* **Instant Frontmatter Auto-Sync** As you navigate `↑` / `↓` across profiles, the 4 toggles on Line 2 **automatically flip to reflect each author's recommended defaults.**
+* **Instant Frontmatter Auto-Sync:** As you navigate `↑` / `↓` across profiles, the 5 toggles on Line 2 **automatically flip to reflect each author's recommended defaults.**
 * **Single-Letter Overrides:**
   * **`Tab`** ➔ Toggle Autonomous YOLO mode (`[ON]` disables confirmation gates).
   * **`m`** ➔ Toggle Codebase Index-Map (11 tools + AST graph intelligence).
   * **`d`** ➔ Toggle Database Session Memory & OKF Memory Directives.
   * **`p`** ➔ Toggle In-Memory IPython Kernel Harness (`exec_python`).
+  * **`a`** ➔ Toggle Self-Healing Adapters (`agent_adapters.py` for ≤27B models).
 * **Hierarchy of Precedence:** Manual button presses take precedence over frontmatter defaults and are saved permanently to `<workspace>/.agent/config.json`.
 * **Auto-Compiling Index-Map:** When Map is `[ON]`, `ai init` automatically builds missing or stale index maps on startup and injects them directly into turn 0.
 
@@ -104,6 +105,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 │   /tts                   - Text to speech (Kokoro)                  │
 │                                                                     │
 │   Agent & Execution                                                 │
+│   /adp                   - Toggle small-model self-healing adapters │
 │   /py [code]             - In-memory IPython kernel execution       │
 │   /task [goal]           - Autonomous task loop                     │
 │   /t [N|show|hide]       - Reasoning budget & display               │
@@ -138,8 +140,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 
 * **The Two Distinct Knowledge Layers:**
   * **Codebase AST Graph (Database 1):** `.agent/index-map-memory-<ws>.db` — SQLite FTS5 database storing AST structural relationships (functions, classes, line spans). Toggled independently via **`/m`**.
-  * **Project Memory & Turn Log (Layer 2):** `<workspace>/.agent/memory/*.md` (OKF persistent directives) + `~/.config/py-agent/projects/database/<ws>.db` (SQLite session turn checkpoints). Toggled independently via **`/mem`**.
-* **Zero-Trust Mandatory Fallback:** Out-of-bounds file access (e.g. `/etc/os-release`, `~/.ssh/`) and system package commands (`sudo`, `pacman`, `pip`) **always trigger an interactive `[Y/n]` prompt**, even in Autonomous YOLO mode.
+  * **Project Memory & Turn Log (Layer 2):** `<workspace>/.agent/memory/*.md` (OKF persistent directives) + `~/.config/py-agent/projects/.database/<ws>.db` (SQLite session turn checkpoints). Toggled independently via **`/mem`**.
 * **Zero-Trust Mandatory Fallback:** Out-of-bounds workspace access (e.g. `/etc/`, `~/.ssh/`, external project dirs), mutating system actions (`systemctl start/stop/restart/mask`), and package manager modifications (`sudo`, `pacman -S/-R`, `pip`) **always trigger an interactive `[Y/n]` prompt**, even in Autonomous YOLO mode. Safe read-only inspection commands (`pacman -Q*`, `systemctl status/list-units`, `journalctl`) run autonomously without interruptions. This zero-trust boundary is strictly enforced across native tools, shell commands, and in-kernel Python execution (`agent_ipython.py`).
 * **Smolagents Code-First Batching & Loop Protection:** Models operating in `/py` mode write composable Python loops (`read_file`, `search_code`, `list_dir`) to complete multi-step tasks in a single turn instead of ping-ponging single tool calls. Outputs are cleanly decoupled using `final_answer(data)`, and cells are guarded by a 30-second `SIGALRM` execution alarm to halt runaway `while True` loops.
 * **3-Stage Resilient File Editing (`edit_file`):**
@@ -196,12 +197,13 @@ Skill profiles (`skills/profiles/**/*.md`) configure agent persona and defaults 
 
 ```yaml
 ---
-description: "Hermes autonomous software engineer"
+description: "Autonomous software engineer"
 yolo: true
 map: true
 memory: true
 ipython: true
-reasoning_budget: 350
+adapters: true
+reasoning_budget: 500
 ---
 ```
 
@@ -212,16 +214,27 @@ reasoning_budget: 350
 | `map` | Boolean | Enables Codebase Index-Map (11 tools + AST graph context). |
 | `memory` (or `mem`) | Boolean | Enables persistent session turn logging and OKF project memory pre-loading. |
 | `ipython` (or `py`) | Boolean | Enables live persistent in-memory Python kernel harness (`exec_python`). |
+| `adapters` (or `adp`) | Boolean | Enables self-healing tool parser (`agent_adapters.py`) for ≤27B models. |
 | `reasoning_budget` | Integer | Deep reasoning token budget (e.g. `350`, `500`, or `0` to disable). |
 
 ---
 
 ## 8. Sub-27B Lite Model Directives
 
-Models under ~27B (`LFM2.5-8B`, `Qwen3.5-2B`) operate as **single-task execution engines** with constrained tool loops.
+Models under ~27B (`Ling-3.0-tiny`, `LFM2.5-8B`, `MiniCPM5-2B`, `Qwen3.5-2B`) operate as **single-task execution engines** with constrained tool loops.
 
 * **Single-Task Horizon:** Scope prompts to single-file, 1–2 turn tasks. Avoid chaining multi-file refactors in one prompt.
 * **`write_file` for Small Files:** Use `write_file(path, content, overwrite=true)` on files < 50 lines to prevent multi-line `old_str` diff matching errors.
 * **1-Line Terminal Exit:** Require an explicit halt pattern (`✔ Task complete: <summary>`) upon test pass (`OK`) to prevent post-verification looping.
 * **Self-Healing Adapters (`agent_adapters.py`):** Automatically heals Hermes XML, DSML, Mistral, and naked JSON into executable tools without deleting parameter names like `"code"`.
 * **Historical `<think>` Stripping:** Previous turns are stripped of reasoning before appending to context, preventing small models from compounding or repeating previous thoughts.
+
+### 8.1 Adapter Performance Impact (`eval-stack`)
+
+Empirical results running the full-stack benchmark suite on **Ling-3.0-tiny (7.9B MoE)**:
+
+| Challenge | Without Adapters | With `/adp` Active | Efficiency Gain |
+| :--- | :---: | :---: | :--- |
+| **AG-03 (Surgical Edit & Test)** | 20.65s (16 turns) | **10.78s (6 turns)** | **62% fewer turns** (-10 turns) |
+| **AG-07 (In-Memory Batch Loop)** | 30.37s (14 turns) | **13.48s (2 turns)** | **85% fewer turns** (-12 turns) |
+| **Full Suite Total** | 123.45s @ 45.4 t/s | **92.39s @ 55.8 t/s** | **25% faster overall** (+10.4 t/s) |

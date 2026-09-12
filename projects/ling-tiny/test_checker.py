@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Tests for the markdown checklist parser."""
 
+import os
 import subprocess
 import sys
 import tempfile
-import os
 
 
 def run_checker(filepath: str) -> str:
@@ -16,6 +16,24 @@ def run_checker(filepath: str) -> str:
         cwd=os.path.dirname(__file__),
     )
     return result.stdout
+
+
+def main() -> None:
+    """Entry point: count total lines of code across all .py files."""
+    import os
+    workspace = os.path.dirname(__file__)
+    py_files = [f for f in os.listdir(workspace) if f.endswith(".py")]
+    total = 0
+    for f in py_files:
+        with open(os.path.join(workspace, f)) as fh:
+            lines = len(fh.readlines())
+            total += lines
+    print(f"Total .py files: {len(py_files)}")
+    print(f"Total lines: {total}")
+
+
+if __name__ == "__main__":
+    main()
 
 
 def test_empty_file():

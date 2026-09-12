@@ -240,9 +240,7 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
         if tools and hasattr(tools, "_check_command_security"):
             if sec_reason := tools._check_command_security(cmd, ws_real):
                 gate_msg = f"OUT-OF-BOUNDS KERNEL EXECUTION: $ {cmd} ({sec_reason})"
-                if _confirm_gate_fn and not _confirm_gate_fn(gate_msg):
-                    return f"[denied] Execution halted: {sec_reason}"
-                elif ui and not ui.confirm_tool(gate_msg):
+                if _confirm_gate_fn and not _confirm_gate_fn(gate_msg) or ui and not ui.confirm_tool(gate_msg):
                     return f"[denied] Execution halted: {sec_reason}"
         res = subprocess.run(cmd, shell=True, cwd=ws_real, capture_output=True, text=True, timeout=120)
         return ((res.stdout or "") + ("\n" + res.stderr if res.stderr else "")).strip()

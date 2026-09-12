@@ -10,7 +10,6 @@ import re
 import shlex
 import subprocess
 import sys
-import time
 import urllib.parse
 from collections.abc import Callable
 from typing import Any
@@ -305,7 +304,7 @@ def _check_command_security(cmd: str, workspace: str) -> str | None:
         elif binary == "journalctl":
             if any(t.startswith(("--vacuum", "--rotate")) for t in tokens):
                 return f"Journal maintenance command: '{' '.join(tokens)}'"
-            pass  # Standard journal log inspection allowed
+            # Standard journal log inspection allowed
 
         elif binary in FORBIDDEN_GLOBAL_COMMANDS:
             return f"Global system/package binary: '{binary}'"

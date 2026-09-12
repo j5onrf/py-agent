@@ -4,6 +4,7 @@ yolo: true
 map: false
 memory: false
 ipython: true
+adapters: true
 reasoning_budget: 350
 ---
 # Liquid Systems & Python Engineer (8B High-Speed Dev)

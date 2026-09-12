@@ -4,6 +4,7 @@ yolo: true
 map: false
 memory: false
 ipython: true
+adapters: true
 reasoning_budget: 500
 ---
 # Qwen Systems & Python Engineer (2B Lite Dev)

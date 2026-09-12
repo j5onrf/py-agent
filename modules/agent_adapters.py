@@ -239,19 +239,39 @@ def heal_tool_call(fname: str, raw_args: str | dict[str, Any]) -> tuple[str, dic
     """Universal tool adapter for small models: heals parameters, aliases, and misdirected inline shell calls."""
     healed_dict = heal_json_args(raw_args)
 
-    # Auto-adapt inline python -c via shell: route directly to in-memory exec_python with clean code unescaping
+    # 1. Clean hallucinated final_answer imports in exec_python
+    if fname == "exec_python" and "code" in healed_dict:
+        code_str = str(healed_dict["code"])
+        code_str = re.sub(r"^\s*from\s+[\w\.]+\s+import\s+final_answer\s*;?\s*", "", code_str, flags=re.MULTILINE)
+        code_str = re.sub(r"^\s*import\s+final_answer\s*;?\s*", "", code_str, flags=re.MULTILINE)
+        healed_dict["code"] = code_str.strip()
+
+    # 2. Auto-adapt inline shell commands
     if fname == "run_command" and "command" in healed_dict:
         cmd_raw = str(healed_dict["command"]).strip()
+
+        # Adapt inline python -c -> exec_python
         if cmd_raw.startswith(("python3 -c", "python -c")):
             py_code = re.sub(r"^python3?\s+-c\s+", "", cmd_raw).strip()
             py_code = re.sub(r"\s*(2>&1|\|\|.*|&&.*)$", "", py_code).strip()
-            # Clean outer quote wraps and unescape bash nested quotes ('\'' -> ')
             if (py_code.startswith("'") and py_code.endswith("'")) or (py_code.startswith('"') and py_code.endswith('"')):
                 py_code = py_code[1:-1]
             py_code = py_code.replace(r"'\''", "'").replace(r'\"', '"').strip()
-            py_code = re.sub(r"from\s+tools\s+import\s+exec_python\s*;?\s*", "", py_code).strip()
+            py_code = re.sub(r"from\s+[\w\.]+\s+import\s+(?:exec_python|final_answer)\s*;?\s*", "", py_code).strip()
             if py_code:
                 return "exec_python", {"code": py_code}
+
+        # Adapt shell cat << 'EOF' > file -> write_file
+        cat_m = re.match(r"^cat\s*<<\s*['\"]?(\w+)['\"]?\s*>\s*(\S+)\s*\n([\s\S]*?)\n\1\s*$", cmd_raw)
+        if cat_m:
+            _, target_path, file_content = cat_m.groups()
+            return "write_file", {"path": target_path.strip(), "content": file_content, "overwrite": True}
+
+        # Adapt echo "..." > file -> write_file
+        echo_m = re.match(r"^echo\s+['\"]([\s\S]*?)['\"]\s*>\s*(\S+)$", cmd_raw)
+        if echo_m:
+            file_content, target_path = echo_m.groups()
+            return "write_file", {"path": target_path.strip(), "content": file_content + "\n", "overwrite": True}
 
     return fname, healed_dict
 
@@ -322,6 +342,8 @@ def _extract_ast_python_calls(text: str) -> list[dict[str, Any]]:
         "trace_symbol",
         "blast_radius",
         "find_symbol",
+        "exec_python",
+        "final_answer",
     }
 
     for m in re.finditer(r"\b(?P<name>[a-zA-Z_]\w*)\s*\(", text):
@@ -364,6 +386,19 @@ def _extract_ast_python_calls(text: str) -> list[dict[str, Any]]:
                         if isinstance(kw.value, ast.Constant):
                             args_dict[kw.arg] = kw.value.value
 
+                    if fn == "final_answer":
+                        # Route bare final_answer(...) call directly to in-memory exec_python
+                        raw_call = ast.unparse(node) if hasattr(ast, "unparse") else f"final_answer({ast.dump(node.args[0]) if node.args else ''})"
+                        calls.append({
+                            "id": f"call_ast_{len(calls)}_{int(time.time())}",
+                            "type": "function",
+                            "function": {
+                                "name": "exec_python",
+                                "arguments": json.dumps({"code": raw_call}),
+                            },
+                        })
+                        continue
+
                     if not args_dict and node.args:
                         arg_keys = (
                             ["path", "old_str", "new_str"]
@@ -374,7 +409,7 @@ def _extract_ast_python_calls(text: str) -> list[dict[str, Any]]:
                                 else (
                                     ["pattern", "path"]
                                     if fn in ("search_code", "find_symbol")
-                                    else ["path", "content"]
+                                    else (["code"] if fn == "exec_python" else ["path", "content"])
                                 )
                             )
                         )
@@ -518,5 +553,23 @@ def extract_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
     # Format 6: AST-Parsed Python Function Calls
     if not calls:
         calls = _extract_ast_python_calls(text)
+
+    # Format 7: Standalone Python Markdown Code Block Auto-Execution
+    if not calls and "```python" in text:
+        py_blocks = re.findall(r"```python\s*([\s\S]*?)\s*```", text)
+        for i, code_block in enumerate(py_blocks):
+            clean_block = code_block.strip()
+            # Capture blocks executing final_answer or in-memory batch loops
+            if any(k in clean_block for k in ("final_answer(", "open(", "read_file(", "os.listdir(", "glob.")):
+                clean_block = re.sub(r"^\s*from\s+[\w\.]+\s+import\s+final_answer\s*;?\s*", "", clean_block, flags=re.MULTILINE)
+                calls.append({
+                    "id": f"call_py_block_{i}_{int(time.time())}",
+                    "type": "function",
+                    "function": {
+                        "name": "exec_python",
+                        "arguments": json.dumps({"code": clean_block}),
+                    },
+                })
+                break
 
     return calls

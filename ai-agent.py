@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.25] - Main CLI Runtime, Workspace Agent & Command Dispatcher"""
+"""Py Agent [j5onrf] [v0.9.9.26] - Main CLI Runtime, Workspace Agent & Command Dispatcher"""
 
 import json
 import os
@@ -8,14 +8,13 @@ import shutil
 import sqlite3
 import subprocess
 import sys
-import threading
 import time
 from contextlib import closing
 
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
 CONTEXT_FILE: str = os.path.join(CFG_DIR, "ai-context.md")
 SKILLS_DIR: str = os.path.join(CFG_DIR, "skills")
-SESSIONS_DIR: str = os.path.join(CFG_DIR, "projects", "database")
+SESSIONS_DIR: str = os.path.join(CFG_DIR, "projects", ".database")
 
 BASE_PROMPT_CHAT: str = "Active, natural conversational assistant."
 BASE_PROMPT_AGENT: str = "Active local workspace developer agent."
@@ -148,15 +147,15 @@ def run_interactive_chat(args: list[str]) -> None:
     ensure_clean_agent_dir(workspace_path)
     cfg_file = os.path.join(workspace_path, ".agent", "config.json")
     selected_profile = "pi/pro" if is_agent else "chat"
-    is_yolo, use_map, is_py, memory_active = False, False, False, False
+    is_yolo, use_map, is_py, memory_active, adapters_active = False, False, False, False, False
 
     if is_agent:
         if not os.path.exists(cfg_file):
-            selected_profile, is_yolo, use_map, is_py, memory_active = ui.select_workspace_profile(os.path.basename(workspace_path))
+            selected_profile, is_yolo, use_map, is_py, memory_active, adapters_active = ui.select_workspace_profile(os.path.basename(workspace_path))
             try:
                 os.makedirs(os.path.dirname(cfg_file), exist_ok=True)
                 with open(cfg_file, "w", encoding="utf-8") as cf:
-                    json.dump({"profile": selected_profile, "yolo": is_yolo, "map": use_map, "py": is_py, "memory": memory_active, "created_at": time.strftime("%Y-%m-%d %H:%M")}, cf, indent=2)
+                    json.dump({"profile": selected_profile, "yolo": is_yolo, "map": use_map, "py": is_py, "memory": memory_active, "adapters": adapters_active, "created_at": time.strftime("%Y-%m-%d %H:%M")}, cf, indent=2)
             except OSError:
                 pass
         else:
@@ -168,6 +167,7 @@ def run_interactive_chat(args: list[str]) -> None:
                     use_map = d.get("map", False)
                     is_py = d.get("py", False)
                     memory_active = d.get("memory", False)
+                    adapters_active = d.get("adapters", False)
             except (OSError, json.JSONDecodeError):
                 pass
 
@@ -210,6 +210,9 @@ def run_interactive_chat(args: list[str]) -> None:
                     if "reasoning_budget" in d:
                         reasoning_budget = int(d["reasoning_budget"])
                         core.save_state("reasoning_budget", reasoning_budget)
+                    if "adapters" in d or "adp" in d:
+                        adapters_active = bool(d.get("adapters", d.get("adp", True)))
+                        core.save_state("adapters_active", adapters_active)
             except Exception:
                 pass
         else:
@@ -221,6 +224,7 @@ def run_interactive_chat(args: list[str]) -> None:
         core.save_state("yolo_mode", is_yolo)
         core.save_state("ipython_mode", is_py)
         core.save_state("memory_active", memory_active)
+        core.save_state("adapters_active", adapters_active)
         os.environ["AI_USE_MAP"] = "1" if use_map else "0"
         os.environ["AI_IPYTHON_MODE"] = "1" if is_py else "0"
         if is_yolo:
@@ -450,6 +454,23 @@ def run_interactive_chat(args: list[str]) -> None:
                         active = tts.toggle_tts()
                         cur_speed = tts.get_tts_speed() if hasattr(tts, "get_tts_speed") else 1.15
                         ui._console.print(f"[cyan][sys] Text to speech {'enabled' if active else 'disabled'} ({cur_speed}x).[/cyan]\n")
+                    continue
+
+                if cmd in ("/adp", "/adapter", "/adapters"):
+                    cur_adp = core.get_state("adapters_active", True)
+                    new_adp = not cur_adp
+                    core.save_state("adapters_active", new_adp)
+                    if os.path.exists(cfg_file):
+                        try:
+                            with open(cfg_file, "r+", encoding="utf-8") as cf:
+                                data = json.load(cf)
+                                data["adapters"] = new_adp
+                                cf.seek(0)
+                                json.dump(data, cf, indent=2)
+                                cf.truncate()
+                        except Exception:
+                            pass
+                    ui._console.print(f"[cyan][sys] Self-healing adapters {'enabled (small-model resilience active)' if new_adp else 'disabled (strict native schema mode)'}.[/cyan]\n")
                     continue
 
                 if cmd in ("/py", "/ipython"):

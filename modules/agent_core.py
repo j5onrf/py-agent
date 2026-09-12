@@ -16,7 +16,6 @@ from typing import Any
 import agent_adapters as adapters
 import agent_cloud
 import agent_ipython as ipython
-import agent_memories as memories
 import agent_tools as tools
 import agent_ui as ui
 import requests
@@ -28,7 +27,7 @@ from rich.text import Text
 
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
 STATE_FILE: str = os.path.join(CFG_DIR, ".state.json")
-SESSIONS_DIR: str = os.path.join(CFG_DIR, "projects", "database")
+SESSIONS_DIR: str = os.path.join(CFG_DIR, "projects", ".database")
 
 
 def _get_console(stderr: bool = False) -> Console:
@@ -49,11 +48,11 @@ RE_ATTACHED_IMAGE = re.compile(r'\[(?:Attached\s+)?(?:image|file)[^\]]*?saved\s+
 TOOL_VERBS: dict[str, str] = getattr(tools, "TOOL_VERBS", {})
 
 DEFAULTS = {
-    "show_stats": True, "memory_active": False, "box_style": 1, "yolo_mode": False,
-    "show_thinking": True, "reasoning_active": False, "reasoning_budget": 500,
+    "show_stats": True, "memory_active": False, "box_style": 1, "yolo_mode": True,
+    "show_thinking": True, "reasoning_active": True, "reasoning_budget": 500,
     "compact_mode": 0, "sidebar_hidden": False, "footer_hidden": True, "tips_card_hidden": False,
     "tui_theme": "code1", "voice_auto_submit": True, "tts_enabled": False, "tui_borders_enabled": True,
-    "render_markdown": True
+    "render_markdown": True, "adapters_active": False
 }
 
 try:
@@ -187,8 +186,13 @@ def preprocess_multimodal_messages(messages: list[dict[str, Any]]) -> list[dict[
 
 
 def _heal_tool_args(raw: str) -> dict[str, Any]:
-    """Heals malformed JSON tool arguments via modular adapter."""
-    return adapters.heal_json_args(raw)
+    """Heals malformed JSON tool arguments via modular adapter if active."""
+    if get_state("adapters_active", True):
+        return adapters.heal_json_args(raw)
+    try:
+        return json.loads(raw) if isinstance(raw, str) else (raw or {})
+    except Exception:
+        return {}
 
 
 def get_state(key: str = "", default: Any = None) -> Any:
@@ -224,7 +228,7 @@ def save_state(key: str, value: Any) -> None:
 
 def workspace_safe_name(workspace_path: str, home_dir: str = "") -> str:
     home, ws = os.path.realpath(home_dir or os.path.expanduser("~")), os.path.realpath(workspace_path)
-    return "home" if ws == home else (ws.replace("/", "-").strip("-.") or "home")
+    return "home-chat" if ws == home else (ws.replace("/", "-").strip("-.") or "home-chat")
 
 
 def run_mod(module_name: str, *args: str) -> str:
@@ -366,15 +370,6 @@ class RichStreamer:
 
 
 def _log_turn_usage(model: str, in_tok: int, out_tok: int, cost: float, show_stats: bool, ctx_used: int | None = None, user_msg: str = "", assistant_msg: str = "") -> None:
-    try:
-        ws = os.environ.get("AI_WORKSPACE_PATH")
-        if ws and os.path.isdir(ws) and os.path.realpath(ws) not in (os.path.realpath(os.path.expanduser("~")), os.path.realpath(CFG_DIR)):
-            agent_dir = os.path.join(ws, ".agent")
-            os.makedirs(agent_dir, exist_ok=True)
-            with open(os.path.join(agent_dir, "session.jsonl"), "a", encoding="utf-8") as f:
-                f.write(json.dumps({"timestamp": int(time.time()), "user_msg": user_msg, "assistant_msg": assistant_msg, "model": model, "in_tok": in_tok, "out_tok": out_tok}) + "\n")
-    except OSError:
-        pass
     if not usage_log:
         return
     try:
@@ -619,8 +614,9 @@ def agentic_turn(
                 speed_test.end(actual_out_tokens=out_tok, is_local=is_local, resolved_model=final_model, active_model=body.get("model"))
 
             calls = [val for _, val in sorted(tool_calls_map.items())] if tool_calls_map else None
+            adapters_on = get_state("adapters_active", True)
 
-            if not calls and ans_text and is_agent:
+            if not calls and ans_text and is_agent and adapters_on:
                 calls = adapters.extract_fallback_tool_calls(ans_text) or None
 
             has_web_call = use_gnd and any(c.get("function", {}).get("name") == "web_search" for c in (calls or []))
@@ -638,7 +634,14 @@ def agentic_turn(
             for tc in calls:
                 raw_fname = tc.get("function", {}).get("name", "")
                 raw_args = tc.get("function", {}).get("arguments") or ""
-                fname, healed_dict = adapters.heal_tool_call(raw_fname, raw_args)
+                if adapters_on:
+                    fname, healed_dict = adapters.heal_tool_call(raw_fname, raw_args)
+                else:
+                    fname = raw_fname
+                    try:
+                        healed_dict = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+                    except Exception:
+                        healed_dict = {}
                 sig = (
                     tc.get("thought_signature")
                     or tc.get("thoughtSignature")

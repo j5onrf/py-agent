@@ -5,6 +5,7 @@ yolo: true
 map: false
 py: true
 memory: false
+adapters: true
 reasoning_budget: 0
 ---
 

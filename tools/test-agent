@@ -414,7 +414,7 @@ try:
     import agent_tui as tui
 
     # 1. Spend Ledger
-    orig_ledger = usage.LEDGER_PATH
+    orig_ledger = getattr(usage, "LEDGER_FILE", getattr(usage, "LEDGER_PATH", ""))
     try:
         usage.LEDGER_PATH = os.path.join(sandbox_dir, "test_ledger.json")
         usage.record("gemini", 50000, 20000, 0.05)
@@ -457,7 +457,7 @@ try:
 finally:
     # Safe teardown of test databases and sandbox directory
     shutil.rmtree(sandbox_dir, ignore_errors=True)
-    db_file = os.path.join(CFG_DIR, "projects", "database", f"{test_ws}.db")
+    db_file = os.path.join(CFG_DIR, "projects", ".database", f"{test_ws}.db")
     if os.path.exists(db_file):
         try:
             os.remove(db_file)

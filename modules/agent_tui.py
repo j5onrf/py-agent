@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
 """Production Minimal Textual TUI for Py Agent Engine"""
 
-import base64, json, os, re, sqlite3, subprocess, sys, threading, time, urllib.parse, requests
+import base64
+import json
+import os
+import re
+import sqlite3
+import subprocess
+import sys
+import threading
+import time
 from collections.abc import Iterator
 from contextlib import closing
 from typing import Any
+
+import requests
 
 try: import uvloop; uvloop.install()
 except (ImportError, NotImplementedError): pass
@@ -25,20 +35,29 @@ from textual.widgets import Footer, Input, Static
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
 sys.path.append(os.path.join(CFG_DIR, "modules"))
 
-import agent_cloud, agent_core as core, agent_ipython as ipython, agent_memories as memories, agent_skills as skills, agent_tools as tools, agent_tts as tts, agent_tui_async as tui_async, agent_ui as ui, agent_voice as voice
+import agent_cloud
+import agent_core as core
+import agent_ipython as ipython
+import agent_memories as memories
+import agent_skills as skills
+import agent_tools as tools
+import agent_tts as tts
+import agent_tui_async as tui_async
+import agent_ui as ui
+import agent_voice as voice
 
 CONTEXT_FILE = os.path.join(CFG_DIR, "ai-context.md")
-SKILLS_DIR, SESSIONS_DIR = os.path.join(CFG_DIR, "skills"), os.path.join(CFG_DIR, "projects", "database")
+SKILLS_DIR, SESSIONS_DIR = os.path.join(CFG_DIR, "skills"), os.path.join(CFG_DIR, "projects", ".database")
 LEFT_BAR, NO_BOX = Box("▌   \n" * 8), Box("    \n" * 8)
 
 TOKEN_RE = re.compile(r"[^\w\s]")
 STOP_WORDS = frozenset({"is", "what", "it", "do", "any", "i", "have", "the", "a", "an", "on", "to", "for", "me", "you", "my", "your", "we", "us", "are", "about", "in", "how"})
 CSI_U_REGEX = re.compile(r'(?:\x1b\[<|\x1b\[|\[<)?\d+;\d+;\d+[mM]|\x1b\[[0-9;]*[a-zA-Z~]|\x1b[\[\(\=][0-9;]*[a-zA-Z~]?')
 ANSI_CLEAN_REGEX = re.compile(r'\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-REASONIX_STEP_RE = re.compile(r'^(?:\d+\.\s*|Step \d+:?\s*|Phase \d+:?\s*|\#{1,3}\s*)\*\*?([^\n\*:]+)\*\*?:?', re.I)
+REASONIX_STEP_RE = re.compile(r'^(?:\d+\.\s*|Step \d+:?\s*|Phase \d+:?\s*|\#{1,3}\s*)\*\*?([^\n\*:]+)\*\*?:?', re.IGNORECASE)
 CLEAN_CODE_BLOCKS_RE = re.compile(r'```\n\s*\n+')
 MULTI_NEWLINE_RE = re.compile(r'\n{3,}')
-FINAL_ANSWER_RE = re.compile(r'^\s*Final Answer:\s*', re.I)
+FINAL_ANSWER_RE = re.compile(r'^\s*Final Answer:\s*', re.IGNORECASE)
 THINK_TAGS_RE = re.compile(r'<think>.*?</think>', re.DOTALL)
 BASE_PROMPT_CHAT, BASE_PROMPT_AGENT = "Active, natural conversational assistant.", "Active local workspace developer agent."
 _CACHED_CLIPBOARD_TOOL: list[str] | None = None
@@ -567,6 +586,7 @@ class LocalAITUI(App):
             t.add_column("Description", style="default")
             cmds = [
                 ("/help, /h", "Help"),
+                ("/adp", "Adapters (sub-8B healing)"),
                 ("/m, /map", "Index Map"),
                 ("/mem [save|ls]", "OKF Memory"),
                 ("/py", "NOOA IPython"),
@@ -591,6 +611,10 @@ class LocalAITUI(App):
             for c, d in cmds: t.add_row(c, d)
             await self.chat_area.mount(Static(Group(Text(""), Panel(t, title=" Commands & Shortcuts ", title_align="left", border_style=self.border_accent, box=ROUNDED, expand=False))))
             self.chat_area.scroll_end(animate=False)
+        elif root in ("/adp", "/adapter", "/adapters"):
+            act = not core.get_state("adapters_active", True)
+            core.save_state("adapters_active", act)
+            self.notify(f"Self-healing adapters {'enabled (small-model resilience active)' if act else 'disabled (strict native schema mode)'}.")
         elif root == "/theme":
             if args and args.strip().lower() in self.THEMES: self.theme = args.strip().lower(); self.notify(f"Theme: [bold]{self.theme}[/bold].", css_class="theme-notice")
             else: self.action_cycle_theme()

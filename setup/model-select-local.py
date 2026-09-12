@@ -44,6 +44,7 @@ LOCAL_MODELS = [
         "file": "LFM2.5-8B-A1B.gguf",
         "script": "lfm2.sh",
     },
+    {
         "name": "Ling-3.0-tiny-abliterated-APEX-I-Compact",
         "alias": "Ling-3.0-tiny",
         "file": "Ling-3.0-tiny-abliterated-APEX-I-Compact.gguf",

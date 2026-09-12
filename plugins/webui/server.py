@@ -26,7 +26,7 @@ import agent_tools as tools
 import agent_tts as tts
 import requests
 
-PORT = int(os.environ.get("PY_AGENT_WEB_PORT", 3000))
+PORT = int(os.environ.get("PY_AGENT_WEB_PORT", "3000"))
 LLAMA_BASE_URL = os.environ.get("AI_LLAMA_BASE_URL", "http://127.0.0.1:8080")
 LLAMA_SERVER_URL = f"{LLAMA_BASE_URL}/v1/chat/completions"
 

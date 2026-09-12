@@ -3,8 +3,6 @@
 
 import argparse
 import re
-import sys
-from pathlib import Path
 
 
 def parse_checklist(filepath: str) -> tuple[int, int]:

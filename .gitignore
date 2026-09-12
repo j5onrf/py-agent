@@ -23,7 +23,7 @@ custom_spaces.json
 .last_cloud_key.txt
 
 # Databases & SQLite WAL
-projects/database/*.db*
+projects/.database/*.db*
 *.db-wal
 *.db-shm
 

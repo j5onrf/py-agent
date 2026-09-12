@@ -97,12 +97,14 @@ def _safe_read(path: str) -> str:
             pass
     return ""
 
-# ── 5 Canonical Full-Stack Agentic Challenges ─────────────────────────────────
+
+# ── 7 Canonical Full-Stack Agentic Challenges for Py-Agent ────────────────────
 AGENTIC_BENCHMARKS = [
     {
         "id": "AG-01",
         "name": "In-Memory Math & Exit",
         "tools_tested": "exec_python, final_answer",
+        "par_turns": 1,
         "prompt": "Calculate the sum of all multiples of 3 or 5 below 100 in-memory using exec_python. Call final_answer with the integer result and finish.",
         "verify_fn": lambda ws, out: "2318" in str(out) or "2318" in str(getattr(ipython, "_final_answer_val", ""))
     },
@@ -110,6 +112,7 @@ AGENTIC_BENCHMARKS = [
         "id": "AG-02",
         "name": "File Create & Overwrite",
         "tools_tested": "write_file (overwrite)",
+        "par_turns": 2,
         "prompt": "1. Use write_file to create 'config.json' with {\"version\": 1}.\n2. Rewrite 'config.json' with overwrite=true to {\"version\": 2, \"status\": \"ready\"}.\n3. Conclude immediately with your task complete marker.",
         "verify_fn": lambda ws, out: (
             os.path.isfile(os.path.join(ws, "config.json"))
@@ -120,6 +123,7 @@ AGENTIC_BENCHMARKS = [
         "id": "AG-03",
         "name": "Surgical Edit & Test",
         "tools_tested": "read_file, edit_file, run_command",
+        "par_turns": 3,
         "setup_fn": lambda ws: open(os.path.join(ws, "calc.py"), "w").write(
             "def multiply(a, b):\n    return a + b\n\nif __name__ == '__main__':\n    assert multiply(3, 4) == 12, 'Test failed'\n    print('PASSED')\n"
         ),
@@ -133,6 +137,7 @@ AGENTIC_BENCHMARKS = [
         "id": "AG-04",
         "name": "Code Search & Multi-File",
         "tools_tested": "search_code, edit_file",
+        "par_turns": 4,
         "setup_fn": lambda ws: (
             open(os.path.join(ws, "mod_a.py"), "w").write("API_KEY = 'OLD_KEY'\n"),
             open(os.path.join(ws, "mod_b.py"), "w").write("TARGET = 'OLD_KEY'\n")
@@ -147,11 +152,36 @@ AGENTIC_BENCHMARKS = [
         "id": "AG-05",
         "name": "One-and-Done Discipline",
         "tools_tested": "write_file, exit_discipline",
+        "par_turns": 1,
         "prompt": "Create a file named 'done.txt' containing 'PROCESSED'. Once written, STOP immediately and output: '✔ Task complete: done.txt created'",
         "verify_fn": lambda ws, out: (
             os.path.isfile(os.path.join(ws, "done.txt"))
             and "PROCESSED" in _safe_read(os.path.join(ws, "done.txt"))
         )
+    },
+    {
+        "id": "AG-06",
+        "name": "Whitespace-Tolerant Edit",
+        "tools_tested": "edit_file (resilient match)",
+        "par_turns": 2,
+        "setup_fn": lambda ws: open(os.path.join(ws, "format_test.py"), "w").write(
+            "def greet(name):\n  # 2-space indentation\n  msg = f'Hello, {name}'\n  return msg\n"
+        ),
+        "prompt": "In 'format_test.py', replace `msg = f'Hello, {name}'` with `msg = f'Welcome, {name}!'` using edit_file. Preserve file syntax and complete the task.",
+        "verify_fn": lambda ws, out: "Welcome, {name}!" in _safe_read(os.path.join(ws, "format_test.py"))
+    },
+    {
+        "id": "AG-07",
+        "name": "In-Memory Batch Loop",
+        "tools_tested": "exec_python, final_answer",
+        "par_turns": 1,
+        "setup_fn": lambda ws: (
+            open(os.path.join(ws, "a.txt"), "w").write("10\n"),
+            open(os.path.join(ws, "b.txt"), "w").write("20\n"),
+            open(os.path.join(ws, "c.txt"), "w").write("30\n")
+        ),
+        "prompt": "Using exec_python, write a single Python loop to read 'a.txt', 'b.txt', and 'c.txt', sum their integer contents, and return the total (60) via final_answer(60).",
+        "verify_fn": lambda ws, out: "60" in str(out) or "60" in str(getattr(ipython, "_final_answer_val", ""))
     }
 ]
 
@@ -161,7 +191,7 @@ def list_available_profiles() -> list[tuple[str, str]]:
     skills_dir = os.path.join(CFG_DIR, "skills")
     profiles_dir = os.path.join(skills_dir, "profiles")
     found = []
-    
+
     if os.path.isdir(profiles_dir):
         for root, _, files in os.walk(profiles_dir):
             for f in sorted(files):
@@ -181,7 +211,7 @@ def select_profile_interactive(profiles: list[tuple[str, str]], default_key: str
     """Raw terminal arrow-key, vi-key, and number selector for profiles."""
     current_idx = 0
     for i, (k, _) in enumerate(profiles):
-        if k == default_key or k in ("custom/minicpm", "custom/pysmol"):
+        if k == default_key or k in ("custom/minicpm", "custom/pysmol", "custom/lingtiny"):
             current_idx = i
             break
 
@@ -223,7 +253,7 @@ def select_profile_interactive(profiles: list[tuple[str, str]], default_key: str
             lines_count += 2
 
             for idx, (k, lbl) in enumerate(profiles):
-                marker = " \033[1;32m★\033[0m" if k in (default_key, "custom/minicpm") else ""
+                marker = " \033[1;32m★\033[0m" if k in (default_key, "custom/minicpm", "custom/lingtiny") else ""
                 if idx == current_idx:
                     sys.stderr.write(f"\033[1;33m  ❯ {idx+1:2d}. {lbl:<22}\033[0m \033[90m({k})\033[0m{marker}\n")
                 else:
@@ -269,8 +299,8 @@ def select_profile_interactive(profiles: list[tuple[str, str]], default_key: str
 def resolve_dynamic_profile(cli_profile_arg: str | None = None) -> tuple[str, str]:
     """Dynamically detects active profile, opens interactive menu, or accepts CLI override."""
     skills_dir = os.path.join(CFG_DIR, "skills")
-    
-    # 1. Direct CLI argument (e.g. eval-stack pysmol, eval-stack minicpm)
+
+    # 1. Direct CLI argument
     if cli_profile_arg and not cli_profile_arg.startswith("-"):
         clean_arg = cli_profile_arg.lstrip("-")
         content = skills.load_skill_content(clean_arg, skills_dir, CFG_DIR)
@@ -302,7 +332,7 @@ def resolve_dynamic_profile(cli_profile_arg: str | None = None) -> tuple[str, st
         except Exception:
             pass
 
-    # 3. Interactive Arrow-Key Menu (if in terminal without args)
+    # 3. Interactive Arrow-Key Menu
     if not os.environ.get("AI_CONTEXT_RUN"):
         profiles = list_available_profiles()
         if profiles:
@@ -364,12 +394,13 @@ def run_single_agentic_test(bench: dict, model_name: str, profile_prompt: str) -
                 is_agent=True,
             )
         elapsed = time.time() - t0
-        
+
         turn_count = len([m for m in messages if m.get("role") in ("assistant", "tool")])
         total_tokens = sum(core.get_accurate_token_count(m.get("content") or "") for m in messages)
 
         passed = bench["verify_fn"](sandbox_dir, response or "")
-        detail = f"{elapsed:.2f}s ({turn_count} turns)" if passed else "State verification failed"
+        par_str = f"{turn_count}/{bench.get('par_turns', '-')}"
+        detail = f"{elapsed:.2f}s ({par_str} turns)" if passed else "State verification failed"
         return passed, elapsed, turn_count, total_tokens, detail
     except Exception as e:
         elapsed = time.time() - t0
@@ -389,7 +420,7 @@ def main():
 
     console.print(Panel(
         "[bold cyan]Py-Agent Full-Stack Agentic & Tool-Calling Benchmark Suite[/bold cyan]\n"
-        "[dim]Testing agent_core, agent_adapters, in-memory /py, surgical edits & exit discipline[/dim]",
+        "[dim]Testing agent_core, agent_adapters, in-memory /py, surgical edits, format tolerance & exit discipline[/dim]",
         border_style="cyan"
     ))
 
@@ -420,8 +451,10 @@ def main():
                 status_str = "[bold red]FAIL[/bold red]"
 
             tps = (toks / elapsed) if elapsed > 0 else 0
-            results.append((bench["id"], bench["name"], bench["tools_tested"], status_str, detail, f"{tps:.1f} t/s"))
-            console.print(f"  {'✔' if passed else '✖'} {status_str} : [bold]{bench['id']}[/bold] {bench['name']:<24} {detail:<22} @ [cyan]{tps:.1f} t/s[/cyan]")
+            par_val = bench.get("par_turns", "-")
+            turn_metrics = f"{turns}t (Par {par_val})" if passed else "FAILED"
+            results.append((bench["id"], bench["name"], bench["tools_tested"], status_str, turn_metrics, f"{tps:.1f} t/s"))
+            console.print(f"  {'✔' if passed else '✖'} {status_str} : [bold]{bench['id']}[/bold] {bench['name']:<25} {detail:<24} @ [cyan]{tps:.1f} t/s[/cyan]")
     finally:
         spinner.stop()
 
@@ -433,7 +466,7 @@ def main():
     table.add_column("Agent Challenge", style="white")
     table.add_column("Tools Exercised", style="dim")
     table.add_column("Result", justify="center")
-    table.add_column("Turn Metrics", style="dim")
+    table.add_column("Turns / Par", justify="center")
     table.add_column("Speed", style="green", justify="right")
 
     for row in results:

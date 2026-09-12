@@ -8,7 +8,6 @@ import os
 import re
 import select
 import shutil
-import subprocess
 import sys
 import termios
 import time
@@ -677,7 +676,7 @@ async def async_main():
                     if k_in := prompt_user_input(f"Enter API Key for {c2_name}"):
                         update_env_multiple({"CUSTOM2_API_KEY": k_in})
                         isolate_active_key("CUSTOM2_API_KEY")
-                        message = f"✓ Custom 2 API key updated and activated."
+                        message = "✓ Custom 2 API key updated and activated."
                 else:
                     isolate_active_key("CUSTOM2_API_KEY")
                     update_env_multiple({"CUSTOM2_MODEL": res})

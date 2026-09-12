@@ -12,7 +12,7 @@ import urllib.request as urlreq
 from collections.abc import Callable
 from typing import Any
 
-from rich.box import Box, DOUBLE, HEAVY, HORIZONTALS, ROUNDED, SQUARE
+from rich.box import DOUBLE, HEAVY, HORIZONTALS, ROUNDED, SQUARE, Box
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
@@ -403,6 +403,7 @@ def show_help() -> None:
         ("/tui", "Terminal UI (PyTUI)"),
         ("/v \\[auto], /voice", "Voice to text"),
         ("/tts", "Text to speech (Kokoro)"),
+        ("/adp", "Toggle self-healing adapters"),
         ("/py \\[code]", "IPython kernel execution"),
         ("/m, /map", "Toggle Codebase index-map"),
         ("/mem \\[save|list]", "Toggle & manage OKF memory files"),
@@ -443,7 +444,7 @@ def show_help() -> None:
     )
 
 
-def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool, bool]:
+def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool, bool, bool]:
     """Renders consolidated profile selector with automatic frontmatter pre-cache and 2-line layout."""
     import agent_skills as skills
 
@@ -471,7 +472,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
     profile_cache = {}
     for k, _, _, _ in options:
         sf = skills.find_skill_file(os.path.join(CFG_DIR, "skills"), k)
-        defaults = {"yolo": False, "map": False, "py": False, "mem": False}
+        defaults = {"yolo": False, "map": False, "py": False, "mem": False, "adp": False}
         if sf and os.path.isfile(sf):
             try:
                 with open(sf, "r", encoding="utf-8") as f:
@@ -480,6 +481,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                 defaults["map"] = str(meta.get("map", meta.get("use_map", ""))).lower() in ("true", "1", "yes", "on")
                 defaults["py"] = str(meta.get("ipython", meta.get("py", ""))).lower() in ("true", "1", "yes", "on")
                 defaults["mem"] = str(meta.get("memory", meta.get("mem", ""))).lower() in ("true", "1", "yes", "on")
+                defaults["adp"] = str(meta.get("adapters", meta.get("adp", meta.get("adapter", "")))).lower() in ("true", "1", "yes", "on")
             except Exception:
                 pass
         profile_cache[k] = defaults
@@ -496,6 +498,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
     use_map = init_meta.get("map", False)
     is_py = init_meta.get("py", False)
     is_mem = init_meta.get("mem", False)
+    is_adp = init_meta.get("adp", False)
     last_rendered_lines = 0
 
     try:
@@ -513,6 +516,8 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                 is_py = cur_meta.get("py", False)
             if "mem" not in user_overrides:
                 is_mem = cur_meta.get("mem", False)
+            if "adp" not in user_overrides:
+                is_adp = cur_meta.get("adp", False)
 
             lines_count = 0
             sub_idx = 1
@@ -543,6 +548,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
             map_badge  = b_on if use_map  else b_off
             mem_badge  = b_on if is_mem   else b_off
             py_badge   = b_on if is_py    else b_off
+            adp_badge  = b_on if is_adp   else b_off
 
             sys.stderr.write(
                 f"\r\x1b[K\n\r\x1b[K  \033[2m::\033[0m "
@@ -553,7 +559,8 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                 f"\033[37mTab: YOLO\033[0m {yolo_badge}    "
                 f"\033[37mm: Map\033[0m {map_badge}    "
                 f"\033[37md: Mem\033[0m {mem_badge}    "
-                f"\033[37mp: Py\033[0m {py_badge}"
+                f"\033[37mp: Py\033[0m {py_badge}    "
+                f"\033[37ma: Adp\033[0m {adp_badge}"
             )
             lines_count += 2
             sys.stderr.flush()
@@ -573,6 +580,9 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
             elif char in ("p", "P"):
                 is_py = not is_py
                 user_overrides.add("py")
+            elif char in ("a", "A"):
+                is_adp = not is_adp
+                user_overrides.add("adp")
             elif char in ("\x03", "\x1b"):
                 key, label = options[0][0], options[0][1]
                 badge_col = "\033[1;36m"
@@ -580,11 +590,12 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                 b_map  = f" {badge_col}[Map: ON]\033[0m" if use_map else ""
                 b_mem  = f" {badge_col}[Mem: ON]\033[0m" if is_mem else ""
                 b_py   = f" {badge_col}[Py: ON]\033[0m" if is_py else ""
+                b_adp  = f" {badge_col}[Adp: ON]\033[0m" if is_adp else ""
                 sys.stderr.write(
-                    f"\x1b[{last_rendered_lines + 3}A\r\x1b[J\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}\n\n"
+                    f"\x1b[{last_rendered_lines + 3}A\r\x1b[J\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}{b_adp}\n\n"
                 )
                 sys.stderr.flush()
-                return key, is_yolo, use_map, is_py, is_mem
+                return key, is_yolo, use_map, is_py, is_mem, is_adp
             elif char in ("\r", "\n", ""):
                 key, label = options[current_idx][0], options[current_idx][1]
                 sys.stderr.write(f"\x1b[{last_rendered_lines + 3}A\r\x1b[J")
@@ -602,11 +613,12 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                 b_map  = f" {badge_col}[Map: ON]\033[0m" if use_map else ""
                 b_mem  = f" {badge_col}[Mem: ON]\033[0m" if is_mem else ""
                 b_py   = f" {badge_col}[Py: ON]\033[0m" if is_py else ""
+                b_adp  = f" {badge_col}[Adp: ON]\033[0m" if is_adp else ""
                 sys.stderr.write(
-                    f"\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}\n\n"
+                    f"\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}{b_adp}\n\n"
                 )
                 sys.stderr.flush()
-                return key, is_yolo, use_map, is_py, is_mem
+                return key, is_yolo, use_map, is_py, is_mem, is_adp
             elif char in ("\x1b[A", "\x1b[B"):
                 current_idx = (current_idx + (1 if char == "\x1b[B" else -1) + num_opts) % num_opts
     finally:

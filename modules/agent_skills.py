@@ -7,7 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
-from typing import Any, Optional
+from typing import Any
 
 import agent_context as context
 import agent_ui as ui
@@ -129,6 +129,10 @@ def load_skill_content(skills_str: str, skills_dir: str, cfg_dir: str) -> str:
                             elif k_l in ("ipython", "py", "exec_python", "kernel"):
                                 if "AI_IPYTHON_MODE" not in os.environ:
                                     agent_core.save_state("ipython_mode", str(v).lower() in ("true", "1", "yes", "on"))
+                        
+                        # Set adapters explicitly from frontmatter, otherwise default to False
+                        adp_val = meta.get("adapters") or meta.get("adp") or meta.get("adapter")
+                        agent_core.save_state("adapters_active", str(adp_val).lower() in ("true", "1", "yes", "on") if adp_val is not None else False)
                     except Exception: pass
                     
                 contents.append(body or raw)
@@ -259,7 +263,7 @@ def load_skill_blueprints(base_skills_dir: str, stop_words: set[str]) -> list[di
     return blueprints
 
 
-def run_skill_selector(workspace: str, raw_cmd: str, base_skills_dir: str, stop_words: set[str], chat_history: Optional[list[dict[str, Any]]] = None) -> tuple[list[dict[str, Any]], Optional[str]]:
+def run_skill_selector(workspace: str, raw_cmd: str, base_skills_dir: str, stop_words: set[str], chat_history: list[dict[str, Any]] | None = None) -> tuple[list[dict[str, Any]], str | None]:
     """Interactive arrow-key skill loading overlay across all skill subdirectories."""
     if chat_history is None:
         try: chat_history = json.loads(sys.stdin.read().strip())

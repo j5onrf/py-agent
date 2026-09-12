@@ -12,7 +12,7 @@ from contextlib import closing
 from typing import Any
 
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
-SESSIONS_DIR: str = os.path.join(CFG_DIR, "projects", "database")
+SESSIONS_DIR: str = os.path.join(CFG_DIR, "projects", ".database")
 os.makedirs(SESSIONS_DIR, exist_ok=True)
 
 sys.path.append(os.path.join(CFG_DIR, "modules"))

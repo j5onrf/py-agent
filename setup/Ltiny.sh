@@ -56,8 +56,8 @@ SERVER_ARGS=(
   -np 1
   -t "$CORE_COUNT"
   -tb "$CORE_COUNT"
-  -b 512
-  -ub 256
+  -b 2048
+  -ub 512
   --flash-attn on
   --load-mode mlock
   --warmup

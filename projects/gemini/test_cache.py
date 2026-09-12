@@ -1,5 +1,7 @@
 import unittest
+
 from lru_cache import LRUCache
+
 
 class TestLRUCache(unittest.TestCase):
     def test_capacity_eviction(self):
