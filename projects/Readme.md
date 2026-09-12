@@ -138,24 +138,23 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 
 ## 4. Tooling & Safety Architecture
 
-* **The Two Distinct Knowledge Layers:**
-  * **Codebase AST Graph (Database 1):** `.agent/index-map-memory-<ws>.db` — SQLite FTS5 database storing AST structural relationships (functions, classes, line spans). Toggled independently via **`/m`**.
-  * **Project Memory & Turn Log (Layer 2):** `<workspace>/.agent/memory/*.md` (OKF persistent directives) + `~/.config/py-agent/projects/.database/<ws>.db` (SQLite session turn checkpoints). Toggled independently via **`/mem`**.
-* **Zero-Trust Mandatory Fallback:** Out-of-bounds workspace access (e.g. `/etc/`, `~/.ssh/`, external project dirs), mutating system actions (`systemctl start/stop/restart/mask`), and package manager modifications (`sudo`, `pacman -S/-R`, `pip`) **always trigger an interactive `[Y/n]` prompt**, even in Autonomous YOLO mode. Safe read-only inspection commands (`pacman -Q*`, `systemctl status/list-units`, `journalctl`) run autonomously without interruptions. This zero-trust boundary is strictly enforced across native tools, shell commands, and in-kernel Python execution (`agent_ipython.py`).
-* **Smolagents Code-First Batching & Loop Protection:** Models operating in `/py` mode write composable Python loops (`read_file`, `search_code`, `list_dir`) to complete multi-step tasks in a single turn instead of ping-ponging single tool calls. Outputs are cleanly decoupled using `final_answer(data)`, and cells are guarded by a 30-second `SIGALRM` execution alarm to halt runaway `while True` loops.
+* **Dual Knowledge Layers:**
+  * **Codebase AST Graph (Layer 1):** `.agent/index-map-memory-<ws>.db` SQLite FTS5 database storing AST structural connections, symbols, and line spans. Toggled via **`/m`**.
+  * **Project Memory & Turn Log (Layer 2):** `<workspace>/.agent/memory/*.md` (OKF persistent directives) and `~/.config/py-agent/projects/.database/<ws>.db` (SQLite session turn checkpoints). Toggled via **`/mem`**.
+* **Zero-Trust Mandatory Fallback:** Out-of-bounds workspace paths, mutating system actions (`systemctl start/stop/restart/mask`), and package modifications (`sudo`, `pacman -S/-R`, `pip`) **always trigger an interactive `[Y/n]` confirmation**, even in Autonomous YOLO mode. Safe read-only inspection commands (`pacman -Q*`, `systemctl status/list-units`, `journalctl`) run autonomously without prompts.
+* **Prime Agent, NOOA & Smolagents In-Memory Kernel (`/py`):** Stateful Python REPL combining Prime Agent stateful execution with in-kernel `delegate("goal")` sub-agents and model-callable `memory`/`graph` APIs, NVIDIA NOOA bounded previews (`preview()`), and Hugging Face `smolagents` code-first batch loops with `final_answer(data)` completion hooks, guarded by a 30-second `SIGALRM` runaway loop breaker.
 * **3-Stage Resilient File Editing (`edit_file`):**
   1. *Exact match* replacement.
   2. *Whitespace-normalized* indentation matching (handles 2- vs 4-space discrepancies).
-  3. *SequenceMatcher fuzzy fallback* (replaces target blocks with $>88\%$ similarity without corrupting file syntax).
-* **AST Skeleton Read Guards:** Calling `read_file` on files > 250 lines returns top-level imports, class structures, and function line spans instead of a raw dump. Use `line_start` and `line_end` to read specific blocks.
-* **Large Output Scratchpad Offload:** Tool results $> 1,500$ characters are automatically flushed to `.agent/scratchpad/<tool>_<timestamp>.txt`, injecting a concise 1,200-character preview with a pointer to prevent context overflow.
-* **Child Sub-Agent Isolation (`delegate_task`):** Isolates research queries to a leaf worker that returns only a 1-line summary report. Guarded by `AI_SUBAGENT_DEPTH` to prevent recursive sub-agent storms.
+  3. *SequenceMatcher fuzzy fallback* (replaces target blocks with $>88\%$ similarity without syntax corruption).
+* **AST Skeleton Read Guards:** Calling `read_file` on files > 250 lines returns top-level imports, class structures, and function line spans instead of a raw dump.
+* **Large Output Scratchpad Offload:** Tool results $> 1,500$ characters are automatically flushed to `.agent/scratchpad/<tool>_<timestamp>.txt`, injecting a concise 1,200-character preview with a pointer to preserve context.
 
 ---
 
 ## 5. Open Knowledge Format (OKF) Project Memory
 
-Git-native, human-editable Markdown memory stored in `<workspace>/.agent/memory/*.md`. Zero daemons, zero background LLM calls.
+Git-native, human-editable Markdown memory stored in `<workspace>/.agent/memory/*.md`.
 
 ### Commands:
 * **`/mem`** ➔ Toggle memory injection ON / OFF.
@@ -187,7 +186,6 @@ Use SQLite with WAL mode and busy_timeout = 30000 for zero-daemon concurrency.
 * **PyCode React Desktop IDE (`/pyc`):** Connects via ACP stdio JSON-RPC 2.0 with live thought/token streaming, ambient aurora glow, and workspace sync.
 * **llama.cpp WebAgent (`/webui`):** Autonomous tool reverse proxy for `llama-server` (:8080) with auxiliary Gemini Flash Lite vision pre-processing.
 * **Textual PyTUI (`/tui`):** Full-screen terminal interface with `uvloop` background services, real-time thought glimmer waves, adaptive light/dark theme typography, and compact 9-line Quick Tips.
-* **NOOA & Smolagents IPython Kernel (`/py`):** Live Python REPL combining NVIDIA NOOA bounded previews (`preview()`), Hugging Face `smolagents` code-first batch loops, and `final_answer()` completion hooks with real-time status line code previews.
 
 ---
 
