@@ -231,7 +231,7 @@ Models under ~27B (`Ling-3.0-tiny`, `LFM2.5-8B`, `MiniCPM5-2B`, `Qwen3.5-2B`) op
 
 ### 8.1 Adapter Performance Impact (`eval-stack`)
 
-Empirical results across small quantized models ($\le$27B):
+Empirical results across small quantized models (Sub-27B):
 
 | Benchmark Challenge | Without Adapters | With `/adp` Active | Efficiency Gain |
 | :--- | :---: | :---: | :--- |
