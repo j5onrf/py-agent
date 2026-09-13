@@ -6,10 +6,11 @@
 ---
 
 ### Syntax Guide
-1. `~/path`: Index workspace and launch session.
-2. `ai init --<skill>`: Index workspace with primed skill.
-3. `[TOOL] <command> [--s]`: Run background context tool.
-4. `<command>`: Launch terminal alias or viewer (`view`).
+1. `ai init [path]`: Index workspace and launch interactive agent session.
+2. `ai init --<skill> [path]`: Index workspace primed with a specific agent profile.
+3. `[TOOL] <command>`: Execute system tool (prompts for `[Y/n]` authorization).
+4. `[TOOL] <command> --s`: Execute tool silently (bypasses confirmation gate).
+5. `<command>`: Terminal shortcut, alias, or file viewer.
 
 ---
 
@@ -44,7 +45,6 @@
 ai init ~/.config/py-agent/projects/gemini ---> gemini
 ai init ~/.config/py-agent/projects/ling-tiny ---> ling-tiny
 ai init ~/.config/py-agent/projects/omarchyv4 ---> omarchyv4
-ai init ~/.config/py-agent/projects/pysmol-test ---> pysmol test, pysmol
 ai init ~/.config/py-agent/projects/minicpm ---> minicpm
 ai init ~/.config/py-agent/projects/session-test ---> session test, projects session
 ```
