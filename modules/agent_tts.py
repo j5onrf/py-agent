@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local-AI Kokoro Text-to-Speech Module [Zero-Lag Edition]"""
+"""Local-AI Kokoro Text-to-Speech Module [Production Ready]"""
 
 import os
 import re
@@ -15,8 +15,11 @@ DEFAULT_SPEED = 1.15
 RE_THINK_BLOCK = re.compile(r'<think(?:ing)?>[\s\S]*?(?:</think(?:ing)?>|$)|<thought>[\s\S]*?(?:</thought>|$)', re.DOTALL | re.IGNORECASE)
 RE_CODE_BLOCK = re.compile(r'```[\s\S]*?(?:```|$)', re.DOTALL)
 RE_INLINE_CODE = re.compile(r'`[^`\n]+`')
+RE_URL = re.compile(r'https?://\S+')
 RE_MARKDOWN_CHARS = re.compile(r'[*_#~>\[\]()|]')
 RE_TIME_COLON = re.compile(r'(\b\d{1,2}):(\d{2}\b)')
+
+_tts_lock = threading.Lock()
 
 try:
     import agent_core as core
@@ -25,7 +28,7 @@ except ImportError:
 
 
 def stop_tts() -> None:
-    subprocess.run("pkill -9 -f 'pw-play|koko'", shell=True, stderr=subprocess.DEVNULL)
+    subprocess.run(["pkill", "-9", "-f", "koko|pw-play"], stderr=subprocess.DEVNULL)
 
 
 def is_tts_enabled() -> bool:
@@ -80,13 +83,13 @@ def toggle_tts(enable: bool | None = None) -> bool:
 def clean_text_for_speech(text: str) -> str:
     if not text:
         return ""
-    # Minimal feedback for user denials and cancellations
     if "[denied]" in text or "Operation halted:" in text or "Action cancelled" in text:
         return "Action cancelled."
 
     clean = RE_THINK_BLOCK.sub('', text)
     clean = RE_CODE_BLOCK.sub('', clean)
     clean = RE_INLINE_CODE.sub('', clean)
+    clean = RE_URL.sub(' link ', clean)
     clean = RE_TIME_COLON.sub(r'\1 \2', clean)
     clean = clean.replace(':', ', ')
     clean = RE_MARKDOWN_CHARS.sub('', clean).strip()
@@ -101,21 +104,40 @@ def speak_text(text: str) -> None:
         return
 
     def _run():
-        stop_tts()
-        voice = "am_echo"
-        if os.path.exists(VOICE_FILE):
-            try:
-                with open(VOICE_FILE, "r", encoding="utf-8") as f:
-                    if v := f.read().strip():
-                        voice = v
-            except OSError:
-                pass
+        with _tts_lock:
+            stop_tts()
+            voice = "am_echo"
+            if os.path.exists(VOICE_FILE):
+                try:
+                    with open(VOICE_FILE, "r", encoding="utf-8") as f:
+                        if v := f.read().strip():
+                            voice = v
+                except OSError:
+                    pass
 
-        speed = get_tts_speed()
-        wav_path = "/dev/shm/tts.wav"
-        escaped = clean.replace('\\', '\\\\').replace('"', '\\"').replace('$', '\\$').replace('`', '\\`')
-        cmd = f'nice -n -10 env OMP_NUM_THREADS=6 OMP_WAIT_POLICY=PASSIVE koko --style "{voice}" --speed {speed} text "{escaped}" -o {wav_path} 2>/dev/null && pw-play {wav_path}'
-        subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            speed = get_tts_speed()
+            wav_path = f"/dev/shm/tts_{os.getpid()}.wav"
+
+            # Execute without shell=True to eliminate quote-escaping failures
+            koko_env = os.environ.copy()
+            koko_env["OMP_NUM_THREADS"] = "6"
+            koko_env["OMP_WAIT_POLICY"] = "PASSIVE"
+
+            koko_cmd = [
+                "nice", "-n", "-10",
+                "koko", "--style", voice, "--speed", str(speed),
+                "text", clean, "-o", wav_path
+            ]
+            try:
+                res = subprocess.run(koko_cmd, env=koko_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if res.returncode == 0 and os.path.exists(wav_path):
+                    subprocess.run(["pw-play", wav_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            finally:
+                if os.path.exists(wav_path):
+                    try:
+                        os.remove(wav_path)
+                    except OSError:
+                        pass
 
     threading.Thread(target=_run, daemon=True).start()
 
@@ -125,7 +147,6 @@ def speak_response(response_text: str) -> None:
 
 
 if __name__ == "__main__":
-    import sys
     if len(sys.argv) > 1:
         speak_text(" ".join(sys.argv[1:]))
     else:

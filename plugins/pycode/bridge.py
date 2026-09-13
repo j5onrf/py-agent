@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""ACP (Agent Client Protocol) stdio Bridge for PyCode / T3 Code WebApp [In-Memory Edition]
-Connects PyCode GUI directly to py-agent engine and local llama.cpp server with full multimodal vision and grounding.
+"""ACP (Agent Client Protocol) stdio Bridge for PyCode / T3 Code WebApp [Production Ready]
+Connects PyCode GUI directly to py-agent engine and local llama.cpp server with full multimodal vision, OKF memory, and adapters.
 """
 
 import json
@@ -22,6 +22,7 @@ SKILLS_DIR = os.path.join(CFG_DIR, "skills")
 if MODULES_DIR not in sys.path:
     sys.path.insert(0, MODULES_DIR)
 
+import agent_adapters as adapters
 import agent_cloud
 import agent_core as core
 import agent_ipython as ipython
@@ -98,7 +99,6 @@ def detect_workspace_mode(workspace: str) -> tuple[bool, str, bool]:
 
 
 def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) -> str:
-    safe_name = core.workspace_safe_name(workspace)
     use_gnd = core.get_state("grounding_active", False)
 
     if not is_agent:
@@ -106,12 +106,12 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
         skill_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
         prompt = skill_content or BASE_PROMPT_CHAT
         if use_gnd:
-            prompt += "\n\nCRITICAL GROUNDING DIRECTIVE: You have access to live Google Search via the 'web_search' tool. Always call web_search for real-time facts, current dates, market prices, or recent software releases. When tool results are returned, you MUST base your final answer strictly on the verified live tool data and disregard any outdated pre-training knowledge."
+            prompt += "\n\nCRITICAL GROUNDING DIRECTIVE: You have access to live Google Search via the 'web_search' tool. Always call web_search for real-time facts, current dates, or documentation. Base your answer strictly on verified live tool data."
         return prompt
 
     clean_name = profile_name if profile_name != "init" else "pi/pro"
     profile_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
-    
+
     if profile_content:
         profile_content = profile_content.replace('Reply ONLY with: "Workspace loaded. Awaiting instructions."', "Execute the requested action immediately.")
 
@@ -138,11 +138,12 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
                 except OSError:
                     pass
 
+    # Open Knowledge Format (OKF) Git-native memory injection
     if core.get_state("memory_active", False):
         try:
-            tpm_facts = memories.tpm_get(safe_name)
-            if tpm_facts:
-                sys_prompt += f"\n{tpm_facts}\n"
+            mem_ctx = memories.get_memory_context(workspace)
+            if mem_ctx:
+                sys_prompt += f"\n{mem_ctx}\n"
         except Exception:
             pass
 
@@ -167,6 +168,7 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
 
     st = core.get_state()
     use_gnd = st.get("grounding_active", False)
+    adapters_on = st.get("adapters_active", False)
     reasoning_active = st.get("reasoning_active", False)
     reasoning_budget = st.get("reasoning_budget", 500) if reasoning_active else 0
     enable_think = reasoning_active and reasoning_budget > 0
@@ -205,10 +207,10 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
             data = item.get("data") or item.get("image") or ""
             mime = item.get("mimeType") or item.get("mime_type") or "image/png"
             url = item.get("image_url", {}).get("url") if isinstance(item.get("image_url"), dict) else item.get("url")
-            
+
             if not url and data:
                 url = f"data:{mime};base64,{data}" if not data.startswith("data:") else data
-            
+
             if url:
                 multimodal_content.append({"type": "image_url", "image_url": {"url": url}})
 
@@ -259,7 +261,7 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
 
             active_tools = []
             if is_agent:
-                is_py = "-py" in profile_name.lower() or "py-" in profile_name.lower()
+                is_py = "-py" in profile_name.lower() or "py-" in profile_name.lower() or st.get("ipython_mode", False)
                 active_tools = list(ipython.IPYTHON_TOOL) if (is_py and ipython) else list(tools.EDIT_TOOLS)
             if use_gnd and hasattr(tools, "WEB_TOOL"):
                 active_tools.append(tools.WEB_TOOL)
@@ -358,11 +360,21 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
                         pass
                 ACTIVE_RESPONSES.pop(session_id, None)
 
+            # Ensure GUI quote block closes cleanly
+            if in_think_block:
+                send_acp_chunk(session_id, "\n\n")
+                in_think_block = False
+
             if session_id in CANCELLED_SESSIONS:
                 send_acp_chunk(session_id, "\n\n*(Generation stopped)*")
                 break
 
             calls = [val for _, val in sorted(tool_calls_map.items())] if tool_calls_map else None
+
+            # Self-healing fallback tool extraction for small models in GUI
+            if not calls and round_text and is_agent and adapters_on:
+                calls = adapters.extract_fallback_tool_calls(round_text) or None
+
             has_web_call = use_gnd and any(c.get("function", {}).get("name") == "web_search" for c in (calls or []))
 
             if not calls or (not is_agent and not has_web_call):
@@ -376,22 +388,22 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
                     break
                 fname = tc.get("function", {}).get("name", "")
                 raw_args = tc.get("function", {}).get("arguments") or ""
-                args = core._heal_tool_args(raw_args)
 
-                # Strategy A: Safe Read-Only Exception for web_search
-                if fname == "web_search":
-                    query_term = str(args.get("query", "")).strip()
-                    send_acp_chunk(session_id, f"\n\n*Searching Google for: `{query_term}`...*\n")
-                    try:
-                        result = tools.search_web_gemini(query_term) if hasattr(tools, "search_web_gemini") else tools.run_tool(fname, args, workspace)
-                    except Exception as e:
-                        result = f"[error] web search failed: {e}"
+                if adapters_on:
+                    fname, args = adapters.heal_tool_call(fname, raw_args)
                 else:
-                    send_acp_chunk(session_id, f"\n\n*Running tool: `{fname}`...*\n")
                     try:
-                        result = tools.run_tool(fname, args, workspace)
-                    except Exception as e:
-                        result = f"[error] tool execution failed: {e}"
+                        args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+                    except Exception:
+                        args = {}
+
+                brief = str(args.get("code") or args.get("symbol") or args.get("path") or args.get("command") or args.get("query") or "")[:80]
+                send_acp_chunk(session_id, f"\n\n*Running `{fname}`: `{brief}`...*\n")
+
+                try:
+                    result = tools.run_tool(fname, args, workspace)
+                except Exception as e:
+                    result = f"[error] tool execution failed: {e}"
 
                 pruned_result = result if len(result) <= 2000 else result[:1500] + f"\n... [Snipped {len(result) - 1500} chars]"
                 messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": fname, "content": pruned_result})
@@ -399,8 +411,6 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
         if is_agent and user_text and accumulated_ans and session_id not in CANCELLED_SESSIONS:
             try:
                 sessions.log_turn(safe_name, user_text, accumulated_ans)
-                if core.get_state("memory_active", False):
-                    core.background_tpm_update(user_text, accumulated_ans, safe_name, workspace)
             except Exception:
                 pass
 
@@ -418,38 +428,6 @@ def handle_acp_prompt(req_id: Any, session_id: str, prompt_items: list[dict[str,
 def main():
     default_workspace = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
     active_session_id = f"pyagent-{uuid.uuid4().hex[:8]}"
-
-    def _voice_watcher():
-        pending_file = os.path.join(CFG_DIR, ".voice_pending.txt")
-        while True:
-            try:
-                time.sleep(0.3)
-                if os.path.exists(pending_file) and os.path.getsize(pending_file) > 0:
-                    with open(pending_file, "r", encoding="utf-8") as vf:
-                        text = vf.read().strip()
-                    try:
-                        os.remove(pending_file)
-                    except OSError:
-                        pass
-                    if text and active_session_id:
-                        active_cwd = SESSION_WORKSPACES.get(active_session_id, default_workspace)
-                        sys.stdout.write(json.dumps({
-                            "jsonrpc": "2.0",
-                            "method": "session/update",
-                            "params": {
-                                "sessionId": active_session_id,
-                                "update": {
-                                    "sessionUpdate": "user_message_chunk",
-                                    "content": {"type": "text", "text": text}
-                                }
-                            }
-                        }) + "\n")
-                        sys.stdout.flush()
-                        threading.Thread(target=handle_acp_prompt, args=(None, active_session_id, [{"type": "text", "text": text}], active_cwd), daemon=True).start()
-            except Exception:
-                pass
-
-    threading.Thread(target=_voice_watcher, daemon=True).start()
 
     for raw_line in sys.stdin:
         line = raw_line.strip()

@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Native Tool Engine - Handles file editing, search, commands, & graph intelligence"""
+"""Native Tool Engine - Handles file editing, search, commands, & graph intelligence [Production Ready]"""
 
 import ast
 import difflib
-import importlib.util
 import json
 import os
 import re
@@ -11,6 +10,7 @@ import shlex
 import subprocess
 import sys
 import urllib.parse
+import urllib.request
 from collections.abc import Callable
 from typing import Any
 
@@ -40,7 +40,6 @@ FORBIDDEN_GLOBAL_COMMANDS = frozenset({
     "useradd", "usermod", "userdel", "passwd",
 })
 
-# Safe read-only inspection subcommands that do not mutate host state
 READONLY_INSPECTION_SUBCOMMANDS = {
     "systemctl": frozenset({
         "status", "is-active", "is-enabled", "is-failed",
@@ -55,7 +54,10 @@ FORBIDDEN_SYS_DIRS = (
     "/etc", "/usr", "/var", "/bin", "/sbin", "/opt", "/root", "/boot", "/sys", "/proc", "/dev"
 )
 
-RE_ABS_PATH = re.compile(r"/(?:[a-zA-Z0-9_\-\.]+/)*[a-zA-Z0-9_\-\.]*")
+RE_ROOT_SANDBOX = re.compile(
+    r"^/(?:workspace|app|home/(?:user|developer|runner|admin))(?:/(.*))?$",
+    re.IGNORECASE,
+)
 
 # In-Memory Session State
 _SESSION_READ_FILES: set[str] = set()
@@ -223,36 +225,23 @@ WEB_TOOL: dict[str, Any] = {
     },
 }
 
-_graph_module = None
-
-
-def _get_graph_engine():
-    global _graph_module
-    if _graph_module is not None:
-        return _graph_module
-    mod_path = os.path.join(CFG_DIR, "tools", "index-map", "index-map")
-    if os.path.exists(mod_path):
-        try:
-            spec = importlib.util.spec_from_file_location("index_map_engine", mod_path)
-            if spec and spec.loader:
-                mod = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(mod)
-                _graph_module = mod
-                return _graph_module
-        except Exception:
-            pass
-    return None
-
 
 def _safe_path(workspace: str, p: str) -> str:
+    """Resolves and normalizes workspace paths with container prefix self-healing."""
     if not p:
         return os.path.realpath(workspace)
     clean_p = os.path.expanduser(urllib.parse.unquote(str(p).strip().strip('\'"`\\\n\r\t ')))
     ws_real = os.path.realpath(workspace)
+
+    # Heal hallucinated /workspace, /app, or /home/user container prefixes
     if clean_p.startswith("/") and not clean_p.startswith(ws_real):
-        rel_candidate = clean_p.lstrip("/")
-        if os.path.exists(os.path.join(ws_real, rel_candidate)) or "/" not in rel_candidate:
-            clean_p = rel_candidate
+        if m := RE_ROOT_SANDBOX.match(clean_p):
+            clean_p = m.group(1) or "."
+        else:
+            rel_candidate = clean_p.lstrip("/")
+            if os.path.exists(os.path.join(ws_real, rel_candidate)) or "/" not in rel_candidate:
+                clean_p = rel_candidate
+
     return os.path.realpath(clean_p if os.path.isabs(clean_p) else os.path.join(ws_real, clean_p))
 
 
@@ -288,7 +277,7 @@ def _check_command_security(cmd: str, workspace: str) -> str | None:
         if binary == "systemctl":
             sub_actions = [t.lower() for t in tokens[1:] if not t.startswith("-")]
             if sub_actions and sub_actions[0] in READONLY_INSPECTION_SUBCOMMANDS["systemctl"]:
-                pass  # Read-only inspection allowed
+                pass
             else:
                 return f"Privileged or mutating systemctl action: '{' '.join(tokens[:2])}'"
 
@@ -296,7 +285,7 @@ def _check_command_security(cmd: str, workspace: str) -> str | None:
         elif binary == "pacman":
             action_flags = [t.lower() for t in tokens[1:] if t.startswith("-")]
             if action_flags and any(any(f.startswith(rf) for rf in READONLY_INSPECTION_SUBCOMMANDS["pacman"]) for f in action_flags):
-                pass  # Read-only package query allowed
+                pass
             else:
                 return f"Package manager modification: '{' '.join(tokens[:2])}'"
 
@@ -304,7 +293,6 @@ def _check_command_security(cmd: str, workspace: str) -> str | None:
         elif binary == "journalctl":
             if any(t.startswith(("--vacuum", "--rotate")) for t in tokens):
                 return f"Journal maintenance command: '{' '.join(tokens)}'"
-            # Standard journal log inspection allowed
 
         elif binary in FORBIDDEN_GLOBAL_COMMANDS:
             return f"Global system/package binary: '{binary}'"
@@ -319,7 +307,6 @@ def _check_command_security(cmd: str, workspace: str) -> str | None:
             tokens = [t for t in tokens if not t.startswith(("import ", "def ", "from ", "print("))]
 
         for t in tokens:
-            # Ignore lone '/' division operators or arithmetic tokens
             if t == "/" or len(t) <= 1:
                 continue
             if ".." in t or t.startswith("~/") or (t.startswith("/") and not t.startswith("//")):
@@ -541,7 +528,6 @@ def run_graph_cmd(cmd: str, arg: str, workspace: str) -> str:
         return f"[error] Graph command '{cmd}' failed: {e}"
 
 
-# ── Core Tool Dispatcher ──────────────────────────────────────────────────────
 def run_tool(
     name: str,
     args: dict[str, Any],
@@ -878,8 +864,10 @@ def run_tool(
                 gem_key = os.environ.get("GEM_API_KEY", "")
             if not gem_key:
                 return "[error] Google search requires GEM_API_KEY."
+            
+            gnd_model = os.environ.get("GND_MODEL", "gemini-2.5-flash")
             payload = {"contents": [{"parts": [{"text": f"Search the web and provide concise facts for: {q}"}]}], "tools": [{"googleSearch": {}}]}
-            req = urllib.request.Request(f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gem_key}", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST")
+            req = urllib.request.Request(f"https://generativelanguage.googleapis.com/v1beta/models/{gnd_model}:generateContent?key={gem_key}", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST")
             with urllib.request.urlopen(req, timeout=15) as resp:
                 data = json.loads(resp.read().decode())
             res = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")

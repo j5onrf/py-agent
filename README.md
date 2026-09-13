@@ -11,7 +11,7 @@
   <img alt="py-agent" src="logo.svg" height="130" />
 </div>
 
-<h1 align="center">py-agent <img src="https://shieldcn.dev/badge/version-v0.9.9.26.svg?variant=secondary" alt="Version"><a href="https://github.com/j5onrf/py-agent"></a></h1>
+<h1 align="center">py-agent <img src="https://shieldcn.dev/badge/version-v0.9.9.27.svg?variant=secondary" alt="Version"><a href="https://github.com/j5onrf/py-agent"></a></h1>
 
 <p align="center">
   <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/github/last-commit/j5onrf/py-agent.svg?color=emerald&variant=secondary" alt="Last Commit"></a>
@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <code>gguf</code> &nbsp; <code>llama-server</code> &nbsp; <code>gemini</code> &nbsp; <code>huggingface</code> &nbsp; <code>openrouter</code>
+  <code>gguf</code> &nbsp; <code>llama.cpp</code> &nbsp; <code>gemini</code> &nbsp; <code>huggingface</code> &nbsp; <code>openrouter</code>
 </p>
 
 ---
@@ -45,7 +45,7 @@ Lightweight Python orchestration (`rich` + `requests`) controlling a C++ backend
 
 | Feature System | Foundation & Architectural Roots | Interface Command / Link |
 | :--- | :--- | :--- |
-| **Memory (OKF)** | Git-native Open Knowledge Format ([OKF](https://github.com/okf-memory/okf-agent-memory)) persistent Markdown rules, architectural decisions & zero-daemon project directives. | `.agent/memory/` |
+| **Memory (OKF)** | Git-native Open Knowledge Format ([OKF](https://github.com/okf-memory/okf-agent-memory)) persistent Markdown rules, architectural decisions & project directives. | `.agent/memory/` |
 | **Codebase Graph & Index-Map** | Structural codebase maps ([Graphify](https://github.com/Graphify-Labs/graphify)) + relational queries ([codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)) + standard library SQLite FTS5 symbol graph. | `index-map <dir>` |
 | **Autonomous Task Loop** | Self-directed iteration loop ([Ralph Wiggum](https://github.com/ghuntley/how-to-ralph-wiggum)) executing tasks against project specs (`TASK.md`) with failure decomposition. | `/task [goal]` |
 | **NOOA IPython Kernel Harness** | NVIDIA Object-Oriented Agent ([NOOA](https://github.com/NVIDIA-NeMo/labs-OO-Agents) + [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent)) stateful Python kernel with bounded previews (`preview()`), model-callable `memory`/`graph` APIs, and in-kernel `delegate()` sub-agents. | `/py` |
@@ -194,7 +194,7 @@ nano ~/.config/py-agent/.env
 # ==============================================================================
 
 # ── 1. Custom 1 / Hugging Face Router ─────────────────────────────────────────
-# CUSTOM_API_KEY="not-needed"
+# CUSTOM_API_KEY="hugging-face-api-key"
 CUSTOM_URL="https://router.huggingface.co/v1/chat/completions"
 CUSTOM_MODEL="Qwen/Qwen3.8-27B"
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Open Knowledge Format (OKF) Project Memory Manager"""
+"""Open Knowledge Format (OKF) Project Memory Manager [Production Ready]"""
 
 import os
 import re
@@ -39,7 +39,10 @@ def parse_memory_file(filepath: str) -> dict[str, Any]:
 
         title = meta.get("title") or os.path.splitext(os.path.basename(filepath))[0]
         mem_type = meta.get("type", "note").lower()
-        tags = [t.strip().lower() for t in meta.get("tags", "").split(",") if t.strip()]
+
+        # Handle both comma-separated and bracketed lists: [sqlite, wal]
+        raw_tags = meta.get("tags", "").strip("[] ")
+        tags = [t.strip().strip("'\"").lower() for t in raw_tags.split(",") if t.strip()]
 
         return {
             "path": filepath,
@@ -66,19 +69,21 @@ def get_memory_count(workspace_path: str) -> int:
 
 
 def list_memories(workspace_path: str) -> list[dict[str, Any]]:
-    """Returns sorted list of all parsed memory items in the workspace."""
+    """Returns list of parsed memory items sorted by recency (most recent first)."""
     mem_dir = _get_memory_dir(workspace_path)
     if not os.path.isdir(mem_dir):
         return []
     items: list[dict[str, Any]] = []
     try:
-        for fname in sorted(os.listdir(mem_dir)):
+        for fname in os.listdir(mem_dir):
             if fname.endswith(".md"):
                 parsed = parse_memory_file(os.path.join(mem_dir, fname))
                 if parsed:
                     items.append(parsed)
     except OSError:
         pass
+    # Sort by mtime descending (most recently updated decisions prioritized first)
+    items.sort(key=lambda m: m.get("mtime", 0.0), reverse=True)
     return items
 
 
@@ -100,7 +105,7 @@ def get_memory_context(workspace_path: str, max_tokens: int = 600) -> str:
         content = m["content"].strip().replace("\r\n", "\n")
         tags_str = f" [{', '.join(m['tags'])}]" if m["tags"] else ""
 
-        # Compact one-liner vs structured block
+        # Compact single line vs indented multiline block
         if "\n" not in content and len(content) <= 120:
             entry = f"* **[{mtype}] {title}**{tags_str}: {content}"
         else:
@@ -124,7 +129,7 @@ def save_memory_file(
     mem_type: str = "decision",
     tags: list[str] | None = None,
 ) -> tuple[bool, str]:
-    """Saves or updates an OKF Markdown memory file inside <workspace>/.agent/memory/."""
+    """Atomically saves or updates an OKF Markdown memory file inside <workspace>/.agent/memory/."""
     if not title or not title.strip():
         return False, "Memory title cannot be empty."
     if not content or not content.strip():
@@ -137,8 +142,9 @@ def save_memory_file(
     try:
         os.makedirs(mem_dir, exist_ok=True)
         filepath = os.path.join(mem_dir, f"{safe_slug}.md")
+        tmp_path = f"{filepath}.tmp"
 
-        tags_line = f"tags: {', '.join(tags)}\n" if tags else ""
+        tags_line = f"tags: [{', '.join(tags)}]\n" if tags else ""
         date_str = time.strftime("%Y-%m-%d")
 
         raw_text = (
@@ -151,10 +157,16 @@ def save_memory_file(
             f"{content.strip()}\n"
         )
 
-        with open(filepath, "w", encoding="utf-8") as f:
+        with open(tmp_path, "w", encoding="utf-8") as f:
             f.write(raw_text)
+        os.replace(tmp_path, filepath)
         return True, filepath
     except OSError as e:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
         return False, f"Failed to write memory file: {e}"
 
 

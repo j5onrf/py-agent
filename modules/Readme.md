@@ -2,9 +2,9 @@
 
 Built to be lightweight, auditable by a single developer, and private by design.
 
-* **Zero-Trust Gates:** Out-of-bounds file access and shell execution require explicit interactive confirmation.
-* **Isolated Secrets:** Credentials exist solely in `~/.config/py-agent/.env` and are never logged or exported.
-* **Zero Telemetry:** Pure local orchestration with zero tracking daemons or background data collection.
+* **Zero-Trust Containment:** Out-of-bounds workspace access, mutating system actions (`systemctl`), and package managers (`sudo`, `pacman`, `pip`) always require interactive `[Y/n]` confirmation.
+* **Isolated Secrets:** Credentials exist solely in `~/.config/py-agent/.env` and are never logged, exported, or leaked in prompts.
+* **Zero Telemetry & Daemons:** 100% standard library Python orchestration with zero background background embedding servers, zero tracking daemons.
 
 ---
 
@@ -32,8 +32,8 @@ Built to be lightweight, auditable by a single developer, and private by design.
    ▼          ▼              ▼              ▼                  ▼
 ┌───────────┐ ┌──────────┐ ┌───────────┐ ┌─────────────┐ ┌───────────────────────┐
 │ Adapters  │ │ Sandbox  │ │ Skills    │ │ SQLite DBs  │ │ Sub-Agent IPC Hub     │
-│ (Sub-27B/ │ │ Kernel   │ │ & Context │ │ (Sessions/  │ │ (agent_tui_async.py   │
-│ DSML/XML) │ │ (IPython)│ │           │ │  Memories)  │ │  /tmp/*.sock)         │
+│ (/adp for │ │ Kernel   │ │ & Context │ │ (Sessions & │ │ (agent_tui_async.py   │
+│ Sub-27B)  │ │ (/py)    │ │           │ │  FTS5 Graph)│ │  /tmp/*.sock)         │
 └───────────┘ └──────────┘ └───────────┘ └─────────────┘ └───────────────────────┘
 ```
 
@@ -43,63 +43,34 @@ Built to be lightweight, auditable by a single developer, and private by design.
 
 ```console
 1. Shell & Entry Tier
-   ├── ai-hook.sh               - Auto-teleportation, directory tracking, command-not-found handler
-   └── ai-agent.py              - CLI entrypoint, interactive REPL, direct query routing
+   ├── ai-hook.sh               - Zero-lag shell hook, auto-teleportation, and command-not-found intent handler
+   └── ai-agent.py              - CLI entrypoint, single-pass config resolution, REPL loop & direct query router
 
 2. Execution & Streaming Engine
-   ├── agent_core.py            - SSE parser, token calculation, fallback cascade, tool turn loop
-   ├── agent_adapters.py        - Universal Sub-27B tool adapters (Hermes XML, DSML, Mistral, AST calls) & JSON healer
-   └── speed_test.py            - Real-time token generation velocity & TPS metrics
+   ├── agent_core.py            - SSE parser, token calculation, fallback cascade, unclosed-think sanitization
+   ├── agent_adapters.py        - Universal Sub-27B tool adapters (/adp), AST extractors & self-healing JSON parser
+   └── speed_test.py            - High-resolution monotonic timer (time.perf_counter) for phase TPS metrics
 
 3. Sandboxing, Tools & Safety
-   ├── agent_tools.py           - 11-tool suite, 3-stage resilient replace (_resilient_replace), AST guards
-   ├── agent_ipython.py         - Stateful NOOA kernel, in-memory object previews, sub-agent delegate()
-   └── agent_skills.py          - Skill loader, dynamic frontmatter parser, on-demand persona injector
+   ├── agent_tools.py           - 12-tool suite, container self-healing, 3-stage resilient replace, AST syntax guards
+   ├── agent_ipython.py         - Prime Agent & NOOA stateful kernel, bounded previews, in-kernel delegate() sub-agents
+   └── agent_skills.py          - O(1) skill candidate resolver, dynamic YAML frontmatter parser, on-demand injector
 
 4. Concurrency, UI & IPC
-   ├── agent_tui.py             - Textual full-screen reactive async workspace (Plan vs Build)
-   ├── agent_tui_async.py       - uvloop event loop, /tmp/*.sock sub-agent socket hub, file watcher
-   └── agent_ui.py              - Terminal renderers, spinners, box themes, interactive selectors
+   ├── agent_tui.py             - Textual full-screen reactive workspace with live tools and self-healing /adp support
+   ├── agent_tui_async.py       - uvloop event loop, /tmp/*.sock sub-agent socket hub, live OKF memory directory watcher
+   └── agent_ui.py              - Terminal renderers, InlineSpinner, box themes, interactive profile selector (a: Adp)
 
-5. Memory, Indexing & Storage
-   ├── agent_context.py         - Jaccard semantic intent router (ai-context.md)
-   ├── agent_sessions.py        - SQLite session logger, checkpoints (-save / -load)
-   └── agent_memories.py        - Temporal Personality Memory (TPM) background compiler
-```
+5. Memory, Knowledge & Storage
+   ├── agent_memories.py        - Git-native Open Knowledge Format (OKF) Markdown memory manager (.agent/memory/*.md)
+   ├── agent_sessions.py        - SQLite session checkpoints (-save / -load), turn logger, projects/.database/ isolation
+   ├── agent_context.py         - Jaccard semantic intent router for instant terminal shortcuts (ai-context.md)
+   └── agent_usage.py           - Zero-overhead token spend ledger with 0ms fast-path bypass for local models
 
----
-
-# Model Select TUI
-
-<div align="center">
-  <p><i>Click to view high-resolution version</i></p>
-  <a href="https://github.com/user-attachments/assets/cf01e342-810c-4a2b-ace5-157aecf04bd7">
-    <img alt="Model Select TUI Thumbnail" src="https://github.com/user-attachments/assets/cf01e342-810c-4a2b-ace5-157aecf04bd7" width="250" />
-  </a>
-</div>
-
----
-
-# Interactive TUI
-
-<div align="center">
-  <p><i>Click to view high-resolution version</i></p>
-  <a href="https://github.com/user-attachments/assets/d7bccb82-5b98-46fc-be65-928ee5ab7f32">
-    <img alt="Interactive TUI Thumbnail" src="https://github.com/user-attachments/assets/d7bccb82-5b98-46fc-be65-928ee5ab7f32" width="250" />
-  </a>
-</div>
-
----
-
-# Voice to Text
-
-- **Toggle:** Type `/v` or `/voice` in session to start/stop server (or `/v auto` for instant dispatch).
-- **Connect:** Open `https://[PC-IP]:9999` on tablet or phone.
-- **Speak:** Hold button to talk; speech auto-types directly into your active PyCode composer, browser, or terminal prompt via native Wayland virtual typing (`wtype`).
-
-### Setup (`~/.config/py-agent/.env`)
-
-```env
-GEM_VOICE="AIzaSyYourGeminiKeyHere"
-GEM_MODEL="gemini-3.5-flash-lite"
+6. Cloud Providers & Auxiliary Services
+   ├── agent_cloud.py           - Single-pass top-down .env cascade engine (Custom HF, Gemini, OpenRouter, DeepSeek)
+   ├── model-select.py          - Streamlined interactive TUI model selector & .env key synchronizer
+   ├── agent_voice.py           - Low-latency HTTPS voice bridge (:9999) with Wayland virtual typing (wtype --)
+   ├── agent_tts.py             - Zero-lag neural Kokoro text-to-speech module (OMP-tuned pw-play + koko execution)
+   └── chat                     - Standalone analytical recommendation engine for /f, /t, /b, and /a directives
 ```

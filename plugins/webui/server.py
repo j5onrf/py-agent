@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Py-Agent Official WebUI Gateway [j5onrf]
-Streams official llama.cpp WebUI with dynamic CLI-state sync (Reasoning on/off, Vision, Grounding).
+"""Py-Agent Official WebUI Gateway [Production Ready]
+Streams official llama.cpp WebUI with dynamic CLI-state sync (Reasoning, Vision, Grounding, OKF Memory, Adapters).
 """
 
 import gzip
 import http.server
 import json
 import os
+import re
 import socketserver
 import sys
-import threading
 import urllib.parse
 
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
@@ -19,7 +19,10 @@ SKILLS_DIR = os.path.join(CFG_DIR, "skills")
 if MODULES_DIR not in sys.path:
     sys.path.insert(0, MODULES_DIR)
 
+import agent_adapters as adapters
 import agent_core as core
+import agent_ipython as ipython
+import agent_memories as memories
 import agent_sessions as sessions
 import agent_skills as skills
 import agent_tools as tools
@@ -32,6 +35,7 @@ LLAMA_SERVER_URL = f"{LLAMA_BASE_URL}/v1/chat/completions"
 
 BASE_PROMPT_CHAT = "Active, natural conversational assistant."
 BASE_PROMPT_AGENT = "Active local workspace developer agent."
+RE_THINK_BLOCK = re.compile(r"<think(?:ing)?>[\s\S]*?(?:</think(?:ing)?>|$)|<thought>[\s\S]*?(?:</thought>|$)", re.DOTALL | re.IGNORECASE)
 
 
 def detect_workspace_mode(workspace: str) -> tuple[bool, str, bool]:
@@ -64,7 +68,7 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
         skill_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
         prompt = skill_content or BASE_PROMPT_CHAT
         if use_gnd:
-            prompt += "\n\nCRITICAL GROUNDING DIRECTIVE: You have access to live Google Search via the 'web_search' tool. Always call web_search for real-time facts, current dates, market prices, or recent software releases. When tool results are returned, you MUST base your final answer strictly on the verified live tool data and disregard any outdated pre-training knowledge."
+            prompt += "\n\nCRITICAL GROUNDING DIRECTIVE: You have access to live Google Search via the 'web_search' tool. Always call web_search for real-time facts, current dates, or documentation. Base your answer strictly on verified live tool data."
         return prompt
 
     clean_name = profile_name if profile_name != "init" else "pi/pro"
@@ -80,8 +84,8 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
         f"### ACTIVE DEVELOPER AGENT MODE:\n"
         f"Workspace Root: {workspace}\n"
         f"CRITICAL DIRECTIVES:\n"
-        f"1. Immediately execute actions using available tools (read_file, edit_file, write_file, list_dir, run_command, read_symbol, web_search).\n"
-        f"2. Use relative paths from Workspace Root. Avoid repeating identical tool queries.\n\n"
+        f"1. Immediately execute actions using available tools.\n"
+        f"2. Use relative paths from Workspace Root. Avoid repeating identical queries.\n\n"
     )
 
     sys_prompt = tools_header + (profile_content or BASE_PROMPT_AGENT)
@@ -101,19 +105,23 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
         for f in os.listdir(agent_dir):
             if f.startswith("index-map-") and f.endswith(".txt"):
                 try:
-                    with open(
-                        os.path.join(agent_dir, f),
-                        "r",
-                        encoding="utf-8",
-                        errors="ignore",
-                    ) as mf:
+                    with open(os.path.join(agent_dir, f), "r", encoding="utf-8", errors="ignore") as mf:
                         sys_prompt += f"### CODESPACE MAP:\n{mf.read().strip()}\n\n"
                         break
                 except OSError:
                     pass
 
+    # Open Knowledge Format (OKF) Git-native memory injection
+    if core.get_state("memory_active", False):
+        try:
+            mem_ctx = memories.get_memory_context(workspace)
+            if mem_ctx:
+                sys_prompt += f"\n{mem_ctx}\n"
+        except Exception:
+            pass
+
     if use_gnd:
-        sys_prompt += "\n\nCRITICAL GROUNDING DIRECTIVE: When tool results from 'web_search' are returned, you MUST base your final answer strictly on the verified live tool data and disregard any outdated pre-training knowledge."
+        sys_prompt += "\n\nCRITICAL GROUNDING DIRECTIVE: When tool results from 'web_search' are returned, you MUST base your final answer strictly on the verified live tool data."
 
     return sys_prompt
 
@@ -140,8 +148,6 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                     data["modalities"] = {"vision": True, "audio": False}
                     data["chat_template_kwargs"] = data.get("chat_template_kwargs", {})
                     data["chat_template_kwargs"]["supports_vision"] = True
-                    
-                    # Dynamically mirror CLI reasoning state into WebUI props
                     data["chat_template_kwargs"]["enable_thinking"] = core.get_state("reasoning_active", False)
                     body = json.dumps(data).encode("utf-8")
                 except Exception:
@@ -162,9 +168,7 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
         except Exception:
-            self.send_error(
-                502, f"Could not connect to llama-server at {LLAMA_BASE_URL}."
-            )
+            self.send_error(502, f"Could not connect to llama-server at {LLAMA_BASE_URL}.")
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -183,11 +187,7 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                 resp = requests.post(
                     target_url,
                     data=post_data,
-                    headers={
-                        "Content-Type": self.headers.get(
-                            "Content-Type", "application/json"
-                        )
-                    },
+                    headers={"Content-Type": self.headers.get("Content-Type", "application/json")},
                     timeout=30,
                 )
                 body = resp.content
@@ -198,12 +198,7 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                         pass
                 self.send_response(resp.status_code)
                 for k, v in resp.headers.items():
-                    if k.lower() not in (
-                        "transfer-encoding",
-                        "content-encoding",
-                        "connection",
-                        "content-length",
-                    ):
+                    if k.lower() not in ("transfer-encoding", "content-encoding", "connection", "content-length"):
                         self.send_header(k, v)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
@@ -222,8 +217,10 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
 
         workspace = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
         is_agent, profile_name, _ = detect_workspace_mode(workspace)
-        use_gnd = core.get_state("grounding_active", False)
-        reasoning_active = core.get_state("reasoning_active", False)
+        st = core.get_state()
+        use_gnd = st.get("grounding_active", False)
+        adapters_on = st.get("adapters_active", False)
+        reasoning_active = st.get("reasoning_active", False)
         messages = body.get("messages", [])
 
         # Preprocess multimodal image payloads via Gemini Flash Lite
@@ -245,10 +242,7 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
 
         session = requests.Session()
         safe_name = core.workspace_safe_name(workspace)
-        user_text = next(
-            (m.get("content") for m in reversed(messages) if m.get("role") == "user"),
-            "",
-        )
+        user_text = next((m.get("content") for m in reversed(messages) if m.get("role") == "user"), "")
         accumulated_ans = ""
         os.environ["AI_CONFIRM_GATES"] = "0"
 
@@ -258,12 +252,12 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                 if "stream_options" not in req_body:
                     req_body["stream_options"] = {"include_usage": True}
 
-                # Dynamically set thinking mode on every request
                 req_body.setdefault("chat_template_kwargs", {})["enable_thinking"] = reasoning_active
 
                 active_tools = []
                 if is_agent:
-                    active_tools = list(tools.EDIT_TOOLS)
+                    is_py = "-py" in profile_name.lower() or "py-" in profile_name.lower() or st.get("ipython_mode", False)
+                    active_tools = list(ipython.IPYTHON_TOOL) if (is_py and ipython) else list(tools.EDIT_TOOLS)
                 if use_gnd and hasattr(tools, "WEB_TOOL"):
                     active_tools.append(tools.WEB_TOOL)
 
@@ -280,15 +274,7 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                     stream=True,
                 )
                 if res.status_code != 200:
-                    err_chunk = {
-                        "choices": [
-                            {
-                                "delta": {
-                                    "content": f"\n[error] LLM Server HTTP {res.status_code}\n"
-                                }
-                            }
-                        ]
-                    }
+                    err_chunk = {"choices": [{"delta": {"content": f"\n[error] LLM Server HTTP {res.status_code}\n"}}]}
                     self.wfile.write(f"data: {json.dumps(err_chunk)}\n\n".encode())
                     self.wfile.flush()
                     break
@@ -335,38 +321,24 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                                     call_id = tc.get("id") or f"call_{_round}_{idx}"
                                     tc_entry = tool_calls_map.setdefault(
                                         idx,
-                                        {
-                                            "id": call_id,
-                                            "type": "function",
-                                            "function": {
-                                                "name": tc.get("function", {}).get(
-                                                    "name", ""
-                                                ),
-                                                "arguments": "",
-                                            },
-                                        },
+                                        {"id": call_id, "type": "function", "function": {"name": tc.get("function", {}).get("name", ""), "arguments": ""}}
                                     )
                                     if tc.get("id"):
                                         tc_entry["id"] = tc["id"]
                                     if tc.get("function", {}).get("name"):
-                                        tc_entry["function"]["name"] = tc["function"][
-                                            "name"
-                                        ]
-                                    tc_entry["function"]["arguments"] += tc.get(
-                                        "function", {}
-                                    ).get("arguments", "")
+                                        tc_entry["function"]["name"] = tc["function"]["name"]
+                                    tc_entry["function"]["arguments"] += tc.get("function", {}).get("arguments", "")
                     except Exception:
                         pass
 
-                calls = (
-                    [val for _, val in sorted(tool_calls_map.items())]
-                    if tool_calls_map
-                    else None
-                )
+                calls = [val for _, val in sorted(tool_calls_map.items())] if tool_calls_map else None
                 ans_text = "".join(acc_content)
-                has_web_call = use_gnd and any(
-                    c.get("function", {}).get("name") == "web_search" for c in (calls or [])
-                )
+
+                # Self-healing fallback tool extraction for small models in WebUI
+                if not calls and ans_text and is_agent and adapters_on:
+                    calls = adapters.extract_fallback_tool_calls(ans_text) or None
+
+                has_web_call = use_gnd and any(c.get("function", {}).get("name") == "web_search" for c in (calls or []))
 
                 if not calls or (not is_agent and not has_web_call):
                     accumulated_ans = ans_text
@@ -376,96 +348,64 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                     if not tc.get("id"):
                         tc["id"] = f"call_{_round}_{idx}"
 
-                messages.append(
-                    {
-                        "role": "assistant",
-                        "content": ans_text or None,
-                        "tool_calls": calls,
-                    }
-                )
+                messages.append({"role": "assistant", "content": ans_text or None, "tool_calls": calls})
 
                 for tc in calls:
                     fname = tc.get("function", {}).get("name", "")
                     raw_args = tc.get("function", {}).get("arguments", "")
-                    args = core._heal_tool_args(raw_args)
                     cid = tc.get("id") or f"call_{_round}_0"
+
+                    if adapters_on:
+                        fname, args = adapters.heal_tool_call(fname, raw_args)
+                    else:
+                        try:
+                            args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+                        except Exception:
+                            args = {}
 
                     if fname == "web_search":
                         query_term = str(args.get("query", "")).strip()
                         start_msg = f"\n\n> 🔍 **Searching Google** • `{query_term}`...\n"
-                        self.wfile.write(
-                            f"data: {json.dumps({'choices': [{'delta': {'content': start_msg}}]})}\n\n".encode()
-                        )
+                        self.wfile.write(f"data: {json.dumps({'choices': [{'delta': {'content': start_msg}}]})}\n\n".encode())
                         self.wfile.flush()
                         try:
-                            result = (
-                                tools.search_web_gemini(query_term)
-                                if hasattr(tools, "search_web_gemini")
-                                else tools.run_tool(fname, args, workspace)
-                            )
+                            result = tools.run_tool(fname, args, workspace)
                         except Exception as e:
                             result = f"[tool error] {e}"
                     else:
                         verb = tools.TOOL_VERBS.get(fname, "working")
                         start_msg = f"\n\n> ⚙️ **{verb.title()}** • `{fname}`...\n"
-                        self.wfile.write(
-                            f"data: {json.dumps({'choices': [{'delta': {'content': start_msg}}]})}\n\n".encode()
-                        )
+                        self.wfile.write(f"data: {json.dumps({'choices': [{'delta': {'content': start_msg}}]})}\n\n".encode())
                         self.wfile.flush()
                         try:
-                            result = tools.run_tool(
-                                fname, args, workspace, confirm_gate_fn=lambda r: True
-                            )
+                            result = tools.run_tool(fname, args, workspace, confirm_gate_fn=lambda r: True)
                         except Exception as e:
                             result = f"[tool error] {e}"
 
-                    pruned = (
-                        result
-                        if len(result) <= 2000
-                        else result[:1500]
-                        + f"\n... [Snipped {len(result) - 1500} chars]"
-                    )
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": cid,
-                            "name": fname,
-                            "content": pruned,
-                        }
-                    )
+                    pruned = result if len(result) <= 2000 else result[:1500] + f"\n... [Snipped {len(result) - 1500} chars]"
+                    messages.append({"role": "tool", "tool_call_id": cid, "name": fname, "content": pruned})
 
             self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
 
-            if is_agent and user_text and accumulated_ans:
+            clean_final_ans = RE_THINK_BLOCK.sub("", accumulated_ans).strip()
+
+            if is_agent and user_text and clean_final_ans:
                 try:
-                    sessions.log_turn(safe_name, str(user_text), accumulated_ans)
-                    if core.get_state("memory_active", False):
-                        threading.Thread(
-                            target=core.background_tpm_update,
-                            args=(
-                                str(user_text),
-                                accumulated_ans,
-                                safe_name,
-                                workspace,
-                            ),
-                            daemon=True,
-                        ).start()
+                    sessions.log_turn(safe_name, str(user_text), clean_final_ans)
                 except Exception:
                     pass
 
-            if tts.is_tts_enabled() and accumulated_ans:
+            if tts.is_tts_enabled() and clean_final_ans:
                 try:
-                    tts.speak_response(accumulated_ans)
+                    tts.speak_response(clean_final_ans)
                 except Exception:
                     pass
 
         except Exception as e:
             err_msg = f"\n\n[Gateway error: {e}]\n"
             try:
-                self.wfile.write(
-                    f"data: {json.dumps({'choices': [{'delta': {'content': err_msg}}]})}\n\n".encode()
-                )
+                self.wfile.write(f"data: {json.dumps({'choices': [{'delta': {'content': err_msg}}]})}\n\n".encode())
                 self.wfile.flush()
             except Exception:
                 pass
@@ -484,9 +424,7 @@ class ThreadedProxyServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 if __name__ == "__main__":
     socketserver.TCPServer.allow_reuse_address = True
     ws = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
-    print(
-        f"\033[1;32m[py-agent] Official llama.cpp WebUI Gateway active at http://127.0.0.1:{PORT}\033[0m"
-    )
+    print(f"\033[1;32m[py-agent] Official llama.cpp WebUI Gateway active at http://127.0.0.1:{PORT}\033[0m")
     server = ThreadedProxyServer(("127.0.0.1", PORT), OfficialWebUIProxyHandler)
     try:
         server.serve_forever()

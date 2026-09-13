@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local-AI Standalone IPython Kernel & RLM Harness Module"""
+"""Local-AI Standalone IPython Kernel & RLM Harness Module [Production Ready]"""
 
 import ast
 import builtins
@@ -163,7 +163,8 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
     ws_real = os.path.realpath(workspace)
 
     try:
-        os.chdir(ws_real)
+        if os.path.realpath(os.getcwd()) != ws_real:
+            os.chdir(ws_real)
     except OSError:
         pass
 
@@ -195,7 +196,8 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
         return _orig_open(file, mode, *args, **kwargs)
 
     def safe_listdir(path="."):
-        if not _check_boundary(str(path), "LIST DIR"):
+        # Crucial guard: Only enforce sandbox boundary checks during active cell execution
+        if _is_executing_cell and not _check_boundary(str(path), "LIST DIR"):
             raise PermissionError(f"[denied] Out-of-bounds list_dir blocked: {path}")
         full = os.path.realpath(str(path) if os.path.isabs(str(path)) else os.path.join(ws_real, str(path)))
         return _orig_listdir(full)
@@ -240,7 +242,7 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
         if tools and hasattr(tools, "_check_command_security"):
             if sec_reason := tools._check_command_security(cmd, ws_real):
                 gate_msg = f"OUT-OF-BOUNDS KERNEL EXECUTION: $ {cmd} ({sec_reason})"
-                if _confirm_gate_fn and not _confirm_gate_fn(gate_msg) or ui and not ui.confirm_tool(gate_msg):
+                if (_confirm_gate_fn and not _confirm_gate_fn(gate_msg)) or (ui and not ui.confirm_tool(gate_msg)):
                     return f"[denied] Execution halted: {sec_reason}"
         res = subprocess.run(cmd, shell=True, cwd=ws_real, capture_output=True, text=True, timeout=120)
         return ((res.stdout or "") + ("\n" + res.stderr if res.stderr else "")).strip()
@@ -289,7 +291,7 @@ def inspect_ast_safety(code: str, workspace: str, confirm_gate_fn: Callable[[str
         tree = ast.parse(code)
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
-                # Direct standalone calls: exec(), eval(), system()
+                # Standalone dangerous calls: exec(), eval(), system()
                 if isinstance(node.func, ast.Name) and node.func.id in ("exec", "eval", "system"):
                     if confirm_gate_fn and not confirm_gate_fn(f"PYTHON DANGEROUS OP: {node.func.id}() cell execution"):
                         return "[denied] Dangerous operation rejected by user gate."
@@ -321,8 +323,11 @@ def run_cell(code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] |
     has_alarm = hasattr(signal, "SIGALRM")
     old_handler = None
     if has_alarm:
-        old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
-        signal.alarm(30)
+        try:
+            old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+            signal.alarm(30)
+        except (ValueError, OSError):
+            has_alarm = False
 
     try:
         if _shell_instance and capture_output:
@@ -370,9 +375,12 @@ def run_cell(code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] |
         return f"[error] Cell execution failed: {err_msg}"
     finally:
         if has_alarm:
-            signal.alarm(0)
-            if old_handler is not None:
-                signal.signal(signal.SIGALRM, old_handler)
+            try:
+                signal.alarm(0)
+                if old_handler is not None:
+                    signal.signal(signal.SIGALRM, old_handler)
+            except (ValueError, OSError):
+                pass
         _is_executing_cell = False
 
 

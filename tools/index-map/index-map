@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Graph-Enabled Index-Map Workspace Intelligence Engine [Zero-Config FTS5 Edition]"""
+"""Graph-Enabled Index-Map Workspace Intelligence Engine FTS5 [Production Ready]"""
 
 import ast
 import fnmatch
@@ -53,7 +53,7 @@ def should_ignore(rel_path: str, is_dir: bool, gitignore_patterns: list[str]) ->
     if any(p in DEFAULT_IGNORED for p in parts):
         return True
     fn = parts[-1]
-    if (fn in ('history.md', 'tpm.md', '.state.json', '.ds_store', 'thumbs.db') or
+    if (fn in ('history.md', 'tpm.md', 'task_log.md', 'session.jsonl', '.spend_ledger.json', '.state.json', '.ds_store', 'thumbs.db') or
             fn.startswith('index-map-') or
             any(fn.endswith(ext) for ext in ('.db', '.db-wal', '.db-shm', '.sqlite', '.sqlite3', '.log', '.tmp'))):
         return True
@@ -82,11 +82,14 @@ def is_binary(filepath: str) -> bool:
 
 
 def get_file_summary(filepath: str, limit: int = 10) -> str:
+    """Streams first N lines to extract high-signal file headers with O(1) memory."""
     if not os.path.isfile(filepath) or is_binary(filepath):
         return ""
     try:
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-            for line in f.readlines()[:limit]:
+            for idx, line in enumerate(f):
+                if idx >= limit:
+                    break
                 s = line.strip()
                 if s and not line.startswith("#!") and not s.lower().startswith(("file:", "path:", "description:", "author:", "license:")):
                     return s.strip('#"\'/ \t')[:100].strip()
@@ -111,7 +114,12 @@ class PythonGraphVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_ClassDef(self, node):
-        bases = [b.id for b in node.bases if isinstance(b, ast.Name)] or [b.attr for b in node.bases if isinstance(b, ast.Attribute)]
+        bases = []
+        for b in node.bases:
+            if isinstance(b, ast.Name):
+                bases.append(b.id)
+            elif isinstance(b, ast.Attribute):
+                bases.append(f"{getattr(b.value, 'id', '')}.{b.attr}")
         doc = ast.get_docstring(node) or ""
         self.classes.append((node.name, node.lineno, getattr(node, 'end_lineno', node.lineno), bases, doc))
         self.generic_visit(node)
@@ -286,7 +294,6 @@ def run_indexing(target_dir: str, force: bool = False, is_agent: bool = False, n
         target_dir = os.path.dirname(target_dir)
     proj_name = os.path.basename(target_dir)
 
-    # Strictly place inside .agent/ for agent mode, or avoid db unless requested in CLI
     if is_agent:
         out_dir = os.path.join(target_dir, ".agent")
     else:
@@ -318,7 +325,9 @@ def run_indexing(target_dir: str, force: bool = False, is_agent: bool = False, n
             if not ext and not is_binary(fp):
                 try:
                     with open(fp, 'r', encoding='utf-8', errors='ignore') as f:
-                        if f.readline().startswith("#!") and "python" in f.readline():
+                        first_line = f.readline()
+                        second_line = f.readline()
+                        if first_line.startswith("#!") and ("python" in first_line or "python" in second_line):
                             is_py_shebang = True
                 except Exception:
                     pass

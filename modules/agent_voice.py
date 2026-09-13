@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local-AI Standalone Voice to Text Module"""
+"""Local-AI Standalone Voice to Text Module [Production Ready]"""
 
 import base64
 import http.server
@@ -15,7 +15,6 @@ import urllib.request as urlreq
 
 PORT = 9999
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
-PENDING_FILE = os.path.join(CFG_DIR, ".voice_pending.txt")
 
 RE_CLEAN_TRANSCRIPTION: re.Pattern = re.compile(r"[^a-zA-Z0-9\s?.,!\'-]")
 RE_NUMERIC_DIGITS: re.Pattern = re.compile(r"^\d{1,4}$")
@@ -109,7 +108,7 @@ HTML_CONTENT = """<!DOCTYPE html>
             if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
             if (mediaRecorder && mediaRecorder.state === "inactive") {
                 audioChunks = [];
-                mediaRecorder.start(); // Collects everything into a single buffer until release
+                mediaRecorder.start();
                 status.innerText = "Listening...";
                 btn.classList.add('recording');
                 updateVisualizer();
@@ -159,9 +158,7 @@ def load_voice_env() -> None:
                     if (s := line.strip()) and not s.startswith("#") and "=" in s:
                         k, v = s.replace("export ", "", 1).split("=", 1)
                         if k := k.strip():
-                            os.environ[k] = (
-                                v.split(" #")[0].strip().strip('"').strip("'")
-                            )
+                            os.environ[k] = v.split(" #")[0].strip().strip('"').strip("'")
         except OSError:
             pass
 
@@ -169,13 +166,9 @@ def load_voice_env() -> None:
 def transcribe_gemini(audio_data: bytes, mime_type: str = "audio/webm") -> str:
     load_voice_env()
     gkey = os.environ.get("GEM_VOICE") or os.environ.get("GEMINI_API_KEY")
-    model = os.environ.get("GEM_MODEL") or os.environ.get(
-        "GEMINI_MODEL", "gemini-3.7-flash"
-    )
+    model = os.environ.get("GEM_MODEL") or os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
     if not gkey:
-        sys.stderr.write(
-            "[error] GEM_VOICE key is not set in ~/.config/py-agent/.env\n"
-        )
+        sys.stderr.write("[error] GEM_VOICE key is not set in ~/.config/py-agent/.env\n")
         sys.stderr.flush()
         return ""
 
@@ -202,9 +195,7 @@ def transcribe_gemini(audio_data: bytes, mime_type: str = "audio/webm") -> str:
         )
         with urlreq.urlopen(req, timeout=10) as resp:
             try:
-                with open(
-                    os.path.join(CFG_DIR, ".request_log"), "a", encoding="utf-8"
-                ) as lf:
+                with open(os.path.join(CFG_DIR, ".request_log"), "a", encoding="utf-8") as lf:
                     lf.write(f"{int(time.time())}|gemini\n")
             except OSError:
                 pass
@@ -244,18 +235,14 @@ class VoiceHandler(http.server.SimpleHTTPRequestHandler):
                 length = int(self.headers.get("Content-Length", 0))
                 mime_type = self.headers.get("Content-Type", "audio/webm").split(";")[0]
                 audio_data = self.rfile.read(length)
-                query = (
-                    transcribe_gemini(audio_data, mime_type=mime_type)
-                    if audio_data
-                    else ""
-                )
+                query = transcribe_gemini(audio_data, mime_type=mime_type) if audio_data else ""
                 if query:
                     sys.stderr.write(f"[sys] Transcribed: {query}\n")
                     sys.stderr.flush()
 
-                    # Universal Wayland / Hyprland virtual typing into active window
+                    # Universal Wayland / Hyprland virtual typing with flag protection (--)
                     try:
-                        subprocess.run(["wtype", query], check=False)
+                        subprocess.run(["wtype", "--", query], check=False)
                         if _auto_submit:
                             time.sleep(0.05)
                             subprocess.run(["wtype", "-k", "Return"], check=False)
@@ -301,7 +288,6 @@ def run_server() -> None:
             stderr=subprocess.DEVNULL,
         )
 
-    # ThreadingHTTPServer ensures multiple requests / streaming uploads don't block the visualizer UI
     with http.server.ThreadingHTTPServer(("", PORT), VoiceHandler) as httpd:
         if os.path.exists(cert_path):
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -334,7 +320,7 @@ def toggle_voice_bridge(auto_toggle: bool = False) -> tuple[bool, bool]:
                 _voice_proc.terminate()
             except OSError:
                 pass
-        subprocess.run(["pkill", "-f", "agent_voice.py"], stderr=subprocess.DEVNULL)
+        subprocess.run(["pkill", "-f", "agent_voice.py --server"], stderr=subprocess.DEVNULL)
         _voice_proc = None
         return False, _auto_submit
     else:

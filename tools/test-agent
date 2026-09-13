@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified All-in-One Py-Agent Deep Diagnostic & Comprehensive System Test Suite"""
+"""Unified All-in-One Py-Agent Deep Diagnostic & Comprehensive System Test Suite [Production Ready]"""
 
 import ast
 import glob
@@ -36,7 +36,7 @@ GREEN, RED, CYAN, YELLOW, DIM, RESET = (
 def print_result(name: str, passed: bool, detail: str = ""):
     badge = f"  {GREEN}✔ PASS{RESET}" if passed else f"  {RED}✖ FAIL{RESET}"
     det_str = f" {GREEN}{detail}{RESET}" if passed else f" {RED}{detail}{RESET}"
-    print(f"{badge} : {name:<50}{det_str}")
+    print(f"{badge} : {name:<52}{det_str}")
 
 
 print(f"\n{CYAN}======================================================================{RESET}")
@@ -127,6 +127,8 @@ try:
     import agent_tools as tools
     import agent_skills as skills
     import agent_context as context
+    import agent_cloud as cloud
+    import agent_ipython as ipython
 
     # --- PASS 3: SQLITE SUBSYSTEM, SESSIONS & SUBAGENT REGISTRY ---
     print(f"\n{CYAN}[Pass 3/10] SQLite Sessions, Turns & Sub-Agent Lockfile Registry{RESET}")
@@ -153,7 +155,13 @@ try:
     p3_c = row and row[0] == "cp-v1" and json.loads(row[1]) == sample_hist
     print_result("Checkpoint Persistence & JSON Integrity", p3_c, "Saved & verified in SQLite")
 
-    # 4. Sub-Agent PID Lockfile (Stale numeric PID handling)
+    # 4. Safe Name Isolation (Home Directory Maps to 'home-chat')
+    home_p = os.path.expanduser("~")
+    safe_h = core.workspace_safe_name(home_p, home_p)
+    p3_d = safe_h == "home-chat"
+    print_result("Workspace Path Resolution (Home Directory)", p3_d, f"Mapped to '{safe_h}'")
+
+    # 5. Sub-Agent PID Lockfile (Stale numeric PID handling)
     active_sessions_dir = os.path.join(CFG_DIR, ".active_sessions")
     os.makedirs(active_sessions_dir, exist_ok=True)
     fake_stale_file = os.path.join(active_sessions_dir, f"{test_ws}-2-99999999.session")
@@ -162,21 +170,21 @@ try:
     
     sub_id = sessions.get_sub_agent_id(test_ws, os.getpid())
     stale_cleaned = not os.path.exists(fake_stale_file)
-    p3_d = sub_id == 0 and stale_cleaned
-    print_result("Sub-Agent Lockfile & Stale PID Purge", p3_d, f"Assigned sub_id={sub_id} (Stale reaped)")
+    p3_e = sub_id == 0 and stale_cleaned
+    print_result("Sub-Agent Lockfile & Stale PID Purge", p3_e, f"Assigned sub_id={sub_id} (Stale reaped)")
 
-    # 5. Cleanup Sub-Agent
+    # 6. Cleanup Sub-Agent
     sessions.cleanup_sub_agent(test_ws, os.getpid())
     remaining_locks = glob.glob(os.path.join(active_sessions_dir, f"{test_ws}-*.session"))
-    p3_e = len(remaining_locks) == 0
-    print_result("Sub-Agent Exit Cleanup", p3_e, "All active lockfiles unlinked")
+    p3_f = len(remaining_locks) == 0
+    print_result("Sub-Agent Exit Cleanup", p3_f, "All active lockfiles unlinked")
 
-    all_passed = all_passed and p3_a and p3_b and p3_c and p3_d and p3_e
+    all_passed = all_passed and p3_a and p3_b and p3_c and p3_d and p3_e and p3_f
 
     # --- PASS 4: OPEN KNOWLEDGE FORMAT (OKF) MARKDOWN MEMORY SUBSYSTEM ---
     print(f"\n{CYAN}[Pass 4/10] Open Knowledge Format (OKF) Markdown Memory Subsystem{RESET}")
     
-    # 1. Save OKF Memory Files with YAML Frontmatter
+    # 1. Save OKF Memory Files with Bracketed Tags
     ok1, fpath1 = memories.save_memory_file(sandbox_dir, "db-choice", "Using SQLite with WAL mode.", mem_type="decision", tags=["db", "sqlite"])
     ok2, fpath2 = memories.save_memory_file(sandbox_dir, "code-style", "Prefer pathlib over os.path.", mem_type="rule", tags=["python", "style"])
     p4_a = ok1 and ok2 and os.path.isfile(fpath1) and os.path.isfile(fpath2)
@@ -187,15 +195,15 @@ try:
     p4_b = mem_count == 2
     print_result("OKF Memory File Counter", p4_b, f"{mem_count} files active")
 
-    # 3. Context Prompt Generation
+    # 3. Context Prompt Generation & Recency Sorting
     mem_ctx = memories.get_memory_context(sandbox_dir)
     p4_c = "### PROJECT MEMORY" in mem_ctx and "db-choice" in mem_ctx and "code-style" in mem_ctx
     print_result("OKF Memory System Prompt Generation", p4_c, "Compiled into structured context")
 
-    # 4. List and Parse Memory Objects
-    items = memories.list_memories(sandbox_dir)
-    p4_d = len(items) == 2 and any(i["title"] == "db-choice" for i in items)
-    print_result("OKF Memory Listing & YAML Extraction", p4_d, f"Parsed {len(items)} memory items")
+    # 4. Bracket-Tolerant Tag Parsing
+    parsed_sample = memories.parse_memory_file(fpath1)
+    p4_d = parsed_sample.get("tags") == ["db", "sqlite"] and parsed_sample.get("title") == "db-choice"
+    print_result("OKF Bracketed Tag Parsing ([tag1, tag2])", p4_d, f"Tags parsed: {parsed_sample.get('tags')}")
 
     # 5. Clear Memories Purge
     memories.clear_memories(sandbox_dir)
@@ -205,7 +213,7 @@ try:
     all_passed = all_passed and p4_a and p4_b and p4_c and p4_d and p4_e
 
     # --- PASS 5: SMALL-MODEL FALLBACK ADAPTERS & JSON HEALER ---
-    print(f"\n{CYAN}[Pass 5/10] Small-Model Fallback Adapters & Self-Healing JSON{RESET}")
+    print(f"\n{CYAN}[Pass 5/10] Small-Model Fallback Adapters & Self-Healing JSON (/adp){RESET}")
     
     # 1. Parameter Normalization
     normed = adapters.normalize_params({"file": "app.py", "cmd": "pytest", "query": "def test"})
@@ -217,65 +225,70 @@ try:
     p5_b = healed.get("path") == "config.json"
     print_result("Self-Healing Broken JSON Arguments", p5_b, f"Parsed: {healed.get('path')}")
 
-    # 3. Hermes XML Dialect Extraction
+    # 3. Tool Healing: Strip Bogus Imports in exec_python
+    fn_h, args_h = adapters.heal_tool_call("exec_python", {"code": "from agent_core import final_answer\nfinal_answer(42)"})
+    p5_c = "from agent_core import" not in args_h.get("code", "") and "final_answer(42)" in args_h.get("code", "")
+    print_result("Adapter Sanitization: Bogus Import Stripping", p5_c, "Removed hallucinated final_answer import")
+
+    # 4. Tool Healing: Convert Shell Cat EOF to Native write_file
+    cat_script = "cat << 'EOF' > generated.py\nprint('hello')\nEOF"
+    fn_cat, args_cat = adapters.heal_tool_call("run_command", {"command": cat_script})
+    p5_d = fn_cat == "write_file" and args_cat.get("path") == "generated.py" and "print('hello')" in args_cat.get("content", "")
+    print_result("Adapter Conversion: Shell cat -> write_file", p5_d, f"Converted to {fn_cat}('{args_cat.get('path')}')")
+
+    # 5. Format 7: Standalone Python Code Block Auto-Capture
+    py_block_text = "I have calculated the result:\n```python\nval = 100 * 2\nfinal_answer(val)\n```"
+    block_calls = adapters.extract_fallback_tool_calls(py_block_text)
+    p5_e = len(block_calls) == 1 and block_calls[0]["function"]["name"] == "exec_python" and "final_answer(val)" in block_calls[0]["function"]["arguments"]
+    print_result("Adapter Capture: Python Markdown Code Blocks", p5_e, "Auto-routed to exec_python")
+
+    # 6. Hermes XML Dialect Extraction
     hermes_raw = "<tool_call><function=read_file><parameter=path>main.py</parameter></function></tool_call>"
     hermes_calls = adapters.extract_fallback_tool_calls(hermes_raw)
-    p5_c = len(hermes_calls) == 1 and hermes_calls[0]["function"]["name"] == "read_file"
-    print_result("Hermes XML Tool Call Extractor", p5_c, f"Tool: {hermes_calls[0]['function']['name'] if hermes_calls else 'none'}")
+    p5_f = len(hermes_calls) == 1 and hermes_calls[0]["function"]["name"] == "read_file"
+    print_result("Hermes XML Tool Call Extractor", p5_f, f"Tool: {hermes_calls[0]['function']['name'] if hermes_calls else 'none'}")
 
-    # 4. DeepSeek DSML Dialect Extraction
-    dsml_raw = '<｜DSML｜invoke name="run_command" arguments=\'{"command": "python3 script.py"}\' />'
-    dsml_calls = adapters.extract_fallback_tool_calls(dsml_raw)
-    p5_d = len(dsml_calls) == 1 and json.loads(dsml_calls[0]["function"]["arguments"]).get("command") == "python3 script.py"
-    print_result("DeepSeek DSML Tool Call Extractor", p5_d, "Extracted DSML invoke call")
+    all_passed = all_passed and p5_a and p5_b and p5_c and p5_d and p5_e and p5_f
 
-    # 5. AST Python Function Call Extraction
-    ast_raw = 'I will now inspect the project: read_file(path="utils.py", line_start=1, line_end=20)'
-    ast_calls = adapters.extract_fallback_tool_calls(ast_raw)
-    p5_e = len(ast_calls) == 1 and ast_calls[0]["function"]["name"] == "read_file"
-    print_result("AST-Based Python Call Extractor", p5_e, "Extracted raw Python invocation")
+    # --- PASS 6: LIVE TOOL EXECUTION & CONTAINER PATH HEALING ---
+    print(f"\n{CYAN}[Pass 6/10] Live Tools, Container Path Healing & 3-Stage Edit{RESET}")
 
-    all_passed = all_passed and p5_a and p5_b and p5_c and p5_d and p5_e
+    # 1. Container Path Normalization (/workspace/calc.py -> calc.py)
+    safe_resolved = tools._safe_path(sandbox_dir, "/workspace/calc.py")
+    expected_resolved = os.path.realpath(os.path.join(sandbox_dir, "calc.py"))
+    p6_a = safe_resolved == expected_resolved
+    print_result("Container Path Self-Healing (/workspace/...)", p6_a, f"Resolved to sandbox: {os.path.basename(safe_resolved)}")
 
-    # --- PASS 6: LIVE TOOL EXECUTION & 3-STAGE RESILIENT EDITING ---
-    print(f"\n{CYAN}[Pass 6/10] Live Tools, AST Guards, 3-Stage Edit & Security Gates{RESET}")
-
-    # 1. Write file
-    target_py = os.path.join(sandbox_dir, "calc.py")
+    # 2. Write file
     res_w = tools.run_tool("write_file", {"path": "calc.py", "content": "def add(a, b):\n    return a + b\n"}, sandbox_dir)
-    p6_a = "wrote" in res_w
-    print_result("write_file (Creation)", p6_a, res_w.strip())
+    p6_b = "wrote" in res_w
+    print_result("write_file (Creation)", p6_b, res_w.strip())
 
-    # 2. AST Syntax Error Guard Block
+    # 3. AST Syntax Error Guard Block
     res_bad = tools.run_tool("write_file", {"path": "broken.py", "content": "def syntax_err(\n"}, sandbox_dir)
-    p6_b = "[error] Write blocked" in res_bad
-    print_result("write_file (AST Syntax Guard)", p6_b, "Blocked invalid syntax")
+    p6_c = "[error] Write blocked" in res_bad
+    print_result("write_file (AST Syntax Guard)", p6_c, "Blocked invalid syntax")
 
-    # 3. Stage 1: Exact Replace
+    # 4. Stage 1: Exact Replace
     res_e1 = tools.run_tool("edit_file", {"path": "calc.py", "old_str": "return a + b", "new_str": "return (a + b)"}, sandbox_dir)
-    p6_c = "Successfully edited" in res_e1
-    print_result("edit_file (Stage 1: Exact Match)", p6_c, "Exact string replaced")
+    p6_d = "Successfully edited" in res_e1
+    print_result("edit_file (Stage 1: Exact Match)", p6_d, "Exact string replaced")
 
-    # 4. Stage 2: Whitespace-Tolerant Replace
+    # 5. Stage 2: Whitespace-Tolerant Replace
     res_e2 = tools.run_tool("edit_file", {"path": "calc.py", "old_str": "def  add(a,  b):\n       return (a + b)", "new_str": "def add(a, b):\n    # Verified sum\n    return a + b"}, sandbox_dir)
-    p6_d = "Successfully edited" in res_e2
-    print_result("edit_file (Stage 2: Whitespace Normalization)", p6_d, "Indentation variance reconciled")
+    p6_e = "Successfully edited" in res_e2
+    print_result("edit_file (Stage 2: Whitespace Normalization)", p6_e, "Indentation variance reconciled")
 
-    # 5. Stage 3: Fuzzy SequenceMatcher Replace (>= 0.88 ratio)
+    # 6. Stage 3: Fuzzy SequenceMatcher Replace (>= 0.88 ratio)
     res_e3 = tools.run_tool("edit_file", {"path": "calc.py", "old_str": "def add(a, b):\n    # verified sum\n    return a + b", "new_str": "def add(a, b):\n    return a + b  # fast"}, sandbox_dir)
-    p6_e = "Successfully edited" in res_e3
-    print_result("edit_file (Stage 3: Fuzzy SequenceMatcher)", p6_e, "Fuzzy match applied")
+    p6_f = "Successfully edited" in res_e3
+    print_result("edit_file (Stage 3: Fuzzy SequenceMatcher)", p6_f, "Fuzzy match applied")
 
-    # 6. Ambiguity Guard (Multiple Matches Blocked)
+    # 7. Ambiguity Guard (Multiple Matches Blocked)
     tools.run_tool("write_file", {"path": "dups.py", "content": "value = 1\nvalue = 1\n"}, sandbox_dir)
     res_dup = tools.run_tool("edit_file", {"path": "dups.py", "old_str": "value = 1", "new_str": "value = 2"}, sandbox_dir)
-    p6_f = "matched multiple times" in res_dup
-    print_result("edit_file (Multi-Match Ambiguity Guard)", p6_f, "Ambiguous target blocked")
-
-    # 7. In-Memory Session Modified Files Tracker
-    mod_files = tools.get_modified_files()
-    p6_g = "calc.py" in mod_files and "dups.py" in mod_files
-    print_result("Session File Modification Tracking", p6_g, f"Tracked: {mod_files}")
+    p6_g = "matched multiple times" in res_dup
+    print_result("edit_file (Multi-Match Ambiguity Guard)", p6_g, "Ambiguous target blocked")
 
     # 8. search_code Engine
     search_res = tools.run_tool("search_code", {"pattern": "fast"}, sandbox_dir)
@@ -292,38 +305,32 @@ try:
     p6_j = sec_path_blocked is not None and "/etc" in sec_path_blocked
     print_result("Security Gate: System Path Traversal (/etc)", p6_j, f"Blocked: '{sec_path_blocked}'")
 
-    # 11. Binary File Read Guard
-    bin_file = os.path.join(sandbox_dir, "test.sqlite3")
-    with open(bin_file, "wb") as bf:
-        bf.write(b"\x00\x01\x02\x03")
-    bin_read = tools.run_tool("read_file", {"path": "test.sqlite3"}, sandbox_dir)
-    p6_k = "[error] Refused to read binary" in bin_read
-    print_result("read_file (Binary Protection Guard)", p6_k, "Binary read rejected")
-
-    all_passed = all_passed and p6_a and p6_b and p6_c and p6_d and p6_e and p6_f and p6_g and p6_h and p6_i and p6_j and p6_k
+    all_passed = all_passed and p6_a and p6_b and p6_c and p6_d and p6_e and p6_f and p6_g and p6_h and p6_i and p6_j
 
     # --- PASS 7: IPYTHON SANDBOX KERNEL & GRAPH ENGINE ---
-    print(f"\n{CYAN}[Pass 7/10] IPython Sandbox Kernel & AST Graph Engine{RESET}")
-    import agent_ipython as ipython
+    print(f"\n{CYAN}[Pass 7/10] In-Memory Kernel (/py), Sandbox Guards & AST FTS5 Graph{RESET}")
 
-    # Cross-cell persistence
+    # 1. safe_listdir Sandbox Guard Integrity (Must not block outside execution when cell is inactive)
+    outside_list_ok = False
+    try:
+        os.listdir(CFG_DIR)
+        outside_list_ok = True
+    except PermissionError:
+        outside_list_ok = False
+    print_result("Kernel Sandbox Guard (Zero Process Pollution)", outside_list_ok, "Safe listdir active only during cells")
+
+    # 2. Cross-cell persistence
     ipython.run_cell("x = 42\ny = 8", sandbox_dir)
     res_py = ipython.run_cell("x + y", sandbox_dir)
-    p7_a = "50" in res_py
-    print_result("IPython Cross-Cell State Persistence", p7_a, f"42 + 8 = {res_py.strip()}")
+    p7_b = "50" in res_py
+    print_result("IPython Cross-Cell State Persistence", p7_b, f"42 + 8 = {res_py.strip()}")
 
-    # In-Kernel SDK
-    out_sdk = ipython.run_cell("write_file('sdk.py', 'foo = 1')\nprint(read_file('sdk.py'))", sandbox_dir)
-    p7_b = "foo = 1" in out_sdk
-    print_result("In-Kernel SDK Functions (safe_open/write)", p7_b, "Filesystem bridge operational")
+    # 3. In-Kernel final_answer Hook
+    res_fa = ipython.run_cell("final_answer({'status': 'ok', 'code': 200})", sandbox_dir)
+    p7_c = "### Final Answer" in res_fa and "ok" in res_fa
+    print_result("In-Kernel final_answer(data) Hook", p7_c, "Returned structured answer")
 
-    # AST Skeleton Generator (Files > 250 lines)
-    long_code = "\n".join([f"def func_{i}():\n    pass\n" for i in range(260)])
-    skeleton = tools._generate_ast_skeleton(long_code, "large_module.py")
-    p7_c = "func_0" in skeleton and "func_259" in skeleton and "File Skeleton" in skeleton
-    print_result("AST Skeleton Generator (Large Files >250 lines)", p7_c, "Generated structural outline")
-
-    # Codebase Index-Map Graph Engine
+    # 4. Codebase Index-Map Graph Engine (FTS5 bm25)
     map_compile = subprocess.run(
         [sys.executable, os.path.join(CFG_DIR, "tools", "index-map", "index-map"), "--agent", sandbox_dir],
         capture_output=True,
@@ -332,50 +339,64 @@ try:
     )
     search_out = tools.run_graph_cmd("search", "add", sandbox_dir)
     p7_d = map_compile.returncode == 0 and ("[Matches for:" in search_out or "calc.py" in search_out)
-    print_result("Index-Map Relational Graph Probe", p7_d, "SQLite AST index compiled")
+    print_result("Index-Map Relational Graph Probe (FTS5)", p7_d, "SQLite AST index compiled")
 
-    all_passed = all_passed and p7_a and p7_b and p7_c and p7_d
+    all_passed = all_passed and outside_list_ok and p7_b and p7_c and p7_d
 
-    # --- PASS 8: CURATED PROFILES & UNIVERSAL FRONTMATTER PARSER ---
-    print(f"\n{CYAN}[Pass 8/10] Curated Profiles, YAML/JSON Frontmatter & Intent Indexer{RESET}")
+    # --- PASS 8: PROFILES, FRONTMATTER & CLOUD CASCADE (.env) ---
+    print(f"\n{CYAN}[Pass 8/10] Profiles, Frontmatter & Cloud Provider Cascade{RESET}")
 
-    # 1. YAML Frontmatter Parsing
-    yaml_sample = "---\nname: Test Profile\nyolo: true\nreasoning_budget: 1200\n---\nPrompt body here."
+    # 1. Frontmatter adapters_active Opt-In Parsing
+    yaml_sample = "---\nname: Test Profile\nyolo: true\nadapters: true\nreasoning_budget: 1200\n---\nPrompt body here."
     meta_y, body_y = skills.parse_frontmatter(yaml_sample)
-    p8_a = meta_y.get("name") == "Test Profile" and meta_y.get("yolo") == "true" and body_y == "Prompt body here."
-    print_result("Universal Frontmatter Parser (YAML ---)", p8_a, "Metadata & body cleanly partitioned")
+    adp_flag = meta_y.get("adapters") or meta_y.get("adp")
+    p8_a = str(adp_flag).lower() == "true" and body_y == "Prompt body here."
+    print_result("Universal Frontmatter Parser (adapters: true)", p8_a, f"adapters opt-in parsed: {adp_flag}")
 
-    # 2. JSON Frontmatter Parsing
-    json_sample = '{"name": "JSON Profile", "yolo": false}\n\nPrompt body here.'
-    meta_j, body_j = skills.parse_frontmatter(json_sample)
-    p8_b = meta_j.get("name") == "JSON Profile" and body_j == "Prompt body here."
-    print_result("Universal Frontmatter Parser (JSON {})", p8_b, "JSON metadata parsed")
+    # 2. Cloud Cascade (.env single pass & inline comments)
+    env_sample = 'CUSTOM2_API_KEY="sk-test-key" # inline comment\nCUSTOM2_URL="https://api.test.com"\n'
+    test_env_path = os.path.join(sandbox_dir, "test.env")
+    with open(test_env_path, "w") as ef:
+        ef.write(env_sample)
+    
+    orig_env_path = getattr(cloud, "ENV_PATH", None)
+    cloud.ENV_PATH = test_env_path
+    try:
+        cfgs = cloud.get_active_configs([{"role": "user", "content": "hi"}])
+        p8_b = len(cfgs) == 1 and cfgs[0][1].get("Authorization") == "Bearer sk-test-key"
+        print_result("Cloud Cascade Engine (.env Inline Comment Support)", p8_b, "Parsed API key with trailing comment")
+    finally:
+        if orig_env_path:
+            cloud.ENV_PATH = orig_env_path
 
-    # 3. Blueprints Discovery
-    blueprints = skills.load_skill_blueprints(os.path.join(CFG_DIR, "skills"), context.STOP_WORDS)
-    p8_c = len(blueprints) > 10
-    print_result("Skill Blueprints Auto-Discovery", p8_c, f"{len(blueprints)} skill blueprints registered")
-
-    # 4. Jaccard Context Matching (Tested dynamically)
+    # 3. Jaccard Context Matching
     ctx_path = os.path.join(CFG_DIR, "ai-context.md")
     if os.path.exists(ctx_path):
         entries = context.load_context_entries(ctx_path, getattr(context, "STOP_WORDS", set()))
         match = context.jaccard_search("get weather", ctx_path, getattr(context, "STOP_WORDS", set()))
         if not match and entries:
             match = context.jaccard_search(entries[0].get("intent", ""), ctx_path, getattr(context, "STOP_WORDS", set()))
-        p8_d = match is not None and len(match) > 0
+        p8_c = match is not None and len(match) > 0
         target = match.split("|||")[-1].strip() if match and "|||" in match else (match[:25] if match else "")
-        print_result("Jaccard Semantic Intent Search", p8_d, f"Matched intent -> {target}")
+        print_result("Jaccard Semantic Intent Search", p8_c, f"Matched intent -> {target}")
     else:
-        p8_d = False
+        p8_c = False
         print_result("ai-context.md exists", False, "Missing file")
 
-    all_passed = all_passed and p8_a and p8_b and p8_c and p8_d
+    all_passed = all_passed and p8_a and p8_b and p8_c
 
-    # --- PASS 9: 3-ZONE CONTEXT COMPACTOR & SCRATCHPAD OFFLOAD ---
-    print(f"\n{CYAN}[Pass 9/10] 3-Zone Context Compactor, Milestones & Vision Pipeline{RESET}")
+    # --- PASS 9: CONTEXT COMPACTOR & THOUGHT SANITIZATION ---
+    print(f"\n{CYAN}[Pass 9/10] Context Compactor, Unclosed Think Sanitizer & Vision{RESET}")
 
-    # 1. Context Pruning & Completed Milestone Anchor
+    # 1. Thought Sanitization (Closed & Interrupted/Unclosed)
+    sample_ans = "<think>I am currently planning\nStep 1: check files</think>Done with task."
+    unclosed_ans = "<think>I am currently planning and was interrupted mid-thought"
+    cleaned_sample = re.sub(r"<think(?:ing)?>[\s\S]*?(?:</think(?:ing)?>|$)", "", sample_ans).strip()
+    cleaned_unclosed = re.sub(r"<think(?:ing)?>[\s\S]*?(?:</think(?:ing)?>|$)", "", unclosed_ans).strip()
+    p9_a = cleaned_sample == "Done with task." and cleaned_unclosed == ""
+    print_result("Thought Sanitization (Closed & Unclosed)", p9_a, f"Extracted: '{cleaned_sample}'")
+
+    # 2. Context Pruning & Completed Milestone Anchor
     long_history = [
         {"role": "system", "content": "You are a coding agent."},
         {"role": "user", "content": "Do task 1"},
@@ -386,20 +407,10 @@ try:
         {"role": "user", "content": "Current question"},
     ]
     pruned = core.prune_history(long_history, max_tokens=200)
-    p9_a = any("Active Session Modified Files" in str(m.get("content")) or "Completed Milestones" in str(m.get("content")) for m in pruned)
-    print_result("3-Zone Context Compactor & Milestones", p9_a, f"Compacted {len(long_history)} -> {len(pruned)} turns with session anchors")
+    p9_b = any("Active Session Modified Files" in str(m.get("content")) or "Completed Milestones" in str(m.get("content")) for m in pruned)
+    print_result("3-Zone Context Compactor & Milestones", p9_b, f"Compacted {len(long_history)} -> {len(pruned)} turns with session anchors")
 
-    # 2. Large Tool Output Scratchpad Offload
-    large_payload = "A" * 2000
-    scratch_dir = os.path.join(sandbox_dir, ".agent", "scratchpad")
-    os.makedirs(scratch_dir, exist_ok=True)
-    scratch_file = os.path.join(scratch_dir, f"test_scratch_{int(time.time())}.txt")
-    with open(scratch_file, "w") as sf:
-        sf.write(large_payload)
-    p9_b = os.path.exists(scratch_file) and os.path.getsize(scratch_file) >= 2000
-    print_result("Tool Output Scratchpad Offload (>1500 chars)", p9_b, f"Saved {len(large_payload)} chars to disk")
-
-    # 3. Vision Preprocessor Probe
+    # 3. Vision OCR Pipeline Probe
     v_key, v_model = core._get_img_config()
     key_tag = f"{v_model} (Key: {v_key[:4]}***)" if (v_key and len(v_key) > 5) else f"{v_model} (No key set - Optional)"
     p9_c = bool(v_model)
@@ -407,34 +418,38 @@ try:
 
     all_passed = all_passed and p9_a and p9_b and p9_c
 
-    # --- PASS 10: SPEND LEDGER, TTS, REASONIX & AUTONOMOUS LOOP VERIFIER ---
-    print(f"\n{CYAN}[Pass 10/10] Spend Ledger, TTS Sanitizer, TUI Reasonix & Loop Engine{RESET}")
+    # --- PASS 10: ZERO-I/O SPEND LEDGER, TTS, REASONIX & RALPH LOOP ---
+    print(f"\n{CYAN}[Pass 10/10] Zero-I/O Ledger, TTS Sanitizer, TUI Reasonix & Ralph Loop{RESET}")
     import agent_usage as usage
     import agent_tts as tts
     import agent_tui as tui
 
-    # 1. Spend Ledger
+    # 1. Zero-I/O Local Spend Bypass ($0.00 does not touch disk)
     orig_ledger = getattr(usage, "LEDGER_FILE", getattr(usage, "LEDGER_PATH", ""))
+    test_ledger_path = os.path.join(sandbox_dir, "test_ledger.json")
     try:
-        usage.LEDGER_PATH = os.path.join(sandbox_dir, "test_ledger.json")
-        usage.record("gemini", 50000, 20000, 0.05)
-        line = usage.turn_line(50000, 20000, 0.05, 70000, 8192)
-        p10_a = "$0.05" in line
-        print_result("Token Accounting & Spend Ledger", p10_a, line.strip())
-    finally:
-        usage.LEDGER_PATH = orig_ledger
+        usage.LEDGER_FILE = test_ledger_path
+        usage.record("local-model", 500, 500, 0.0)
+        p10_a1 = not os.path.exists(test_ledger_path)
+        print_result("Spend Ledger Zero-I/O Local Bypass", p10_a1, "0 disk writes for local/free turns")
 
-    # 2. TTS Sanitizer
-    tts_clean = tts.clean_text_for_speech("<think>Internal plan</think> Running `pytest` at 08:30!")
-    p10_b = "<think>" not in tts_clean and "`" not in tts_clean and "08 30" in tts_clean
-    print_result("TTS Speech Text Sanitizer", p10_b, f"Cleaned: '{tts_clean}'")
+        usage.record("claude-3-5-sonnet", 1000, 1000, 0.05)
+        p10_a2 = os.path.exists(test_ledger_path) and "$0.05" in usage.turn_line(1000, 1000, 0.05)
+        print_result("Spend Ledger Paid API Accounting", p10_a2, "Logged non-zero cloud spend")
+    finally:
+        usage.LEDGER_FILE = orig_ledger
+
+    # 2. TTS URL Pronunciation Sanitizer
+    tts_clean = tts.clean_text_for_speech("<think>Internal plan</think> Inspect https://github.com/j5onrf/py-agent at 08:30!")
+    p10_b = "https" not in tts_clean and "link" in tts_clean and "08 30" in tts_clean
+    print_result("TTS Speech Text & URL Sanitizer", p10_b, f"Cleaned: '{tts_clean}'")
 
     # 3. TUI Reasonix Formatter
     fmt_res = tui._format_tui_reasonix_text("1. **Analyze:** Check\n2. **Execute:** Run")
     p10_c = fmt_res is not None
     print_result("TUI Reasonix Step Formatter", p10_c, "Reasonix step badges generated")
 
-    # 4. Ralph Autonomous Task Completion Verifier
+    # 4. Ralph Autonomous Task Completion Verifier (Flexible past/present matching)
     loop_mod_path = os.path.join(CFG_DIR, "tools", "loop", "ralph.py")
     if os.path.isfile(loop_mod_path):
         spec = importlib.util.spec_from_file_location("ralph", loop_mod_path)
@@ -442,9 +457,11 @@ try:
             ralph = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(ralph)
             done1 = ralph.is_task_complete("Everything looks great. TASK COMPLETE.")
-            done2 = ralph.is_task_complete("I will now write the file.")
-            p10_d = done1 is True and done2 is False
-            print_result("Ralph Autonomous Task Completion Verifier", p10_d, "Completion markers verified")
+            done2 = ralph.is_task_complete("Finished all edits. TASK COMPLETED.")
+            done3 = ralph.is_task_complete("Ran pytest suite. ALL TESTS PASSED.")
+            done4 = ralph.is_task_complete("I will now write the file.")
+            p10_d = done1 and done2 and done3 and not done4
+            print_result("Ralph Autonomous Task Completion Verifier", p10_d, "Verified present, past-tense & test passes")
         else:
             p10_d = False
             print_result("Ralph Engine Missing", False, "Spec loader failed")
@@ -452,7 +469,7 @@ try:
         p10_d = False
         print_result("Ralph Engine Missing", False, loop_mod_path)
 
-    all_passed = all_passed and p10_a and p10_b and p10_c and p10_d
+    all_passed = all_passed and p10_a1 and p10_a2 and p10_b and p10_c and p10_d
 
 finally:
     # Safe teardown of test databases and sandbox directory

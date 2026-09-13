@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Autonomous Task Loop Engine [Production Edition]"""
+"""Autonomous Task Loop Engine [Production Ready]"""
 
 import argparse
 import os
@@ -8,7 +8,8 @@ import sys
 import time
 
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
-sys.path.append(os.path.join(CFG_DIR, "modules"))
+if (mod_dir := os.path.join(CFG_DIR, "modules")) not in sys.path:
+    sys.path.append(mod_dir)
 
 try:
     import agent_core as core
@@ -17,10 +18,12 @@ except ImportError as e:
     sys.stderr.write(f"\033[1;31m[Loop Engine] Module import error: {e}\033[0m\n")
     sys.exit(1)
 
+# Resilient completion patterns handling past-tense, punctuation, and report headers
 COMPLETION_PATTERNS = [
-    re.compile(r"\bTASK COMPLETE\b", re.IGNORECASE),
-    re.compile(r"\bGOAL COMPLETE\b", re.IGNORECASE),
+    re.compile(r"\bTASK COMPLET(?:E|ED)\b", re.IGNORECASE),
+    re.compile(r"\bGOAL COMPLET(?:E|ED)\b", re.IGNORECASE),
     re.compile(r"\bTASK FINISHED\b", re.IGNORECASE),
+    re.compile(r"\bALL TESTS PASS(?:ED)?\b", re.IGNORECASE),
     re.compile(r"### Task Report\s*\n.*?(?:passed|verified|completed)", re.IGNORECASE | re.DOTALL),
 ]
 
@@ -68,7 +71,7 @@ def run_task_loop(
     spec_file: str | None = None,
     no_log: bool = False,
 ) -> bool:
-    """Executes the autonomous loop with failure decomposition and completion verification."""
+    """Executes autonomous loop with failure decomposition, completion verification, and reasoning synchronization."""
     os.environ["AI_CONFIRM_GATES"] = "0"
 
     spec_content = _read_spec_file(workspace, spec_file) if spec_file else _read_spec_file(workspace, "TASK.md")
@@ -100,6 +103,10 @@ def run_task_loop(
 
     consecutive_failures = 0
 
+    # Dynamically align reasoning budget from workspace state
+    st = core.get_state() if hasattr(core, "get_state") else {}
+    thinking_budget = int(os.environ.get("AI_REASONING_BUDGET", st.get("reasoning_budget", 0) if st.get("reasoning_active", False) else 0))
+
     for turn in range(1, max_turns + 1):
         ui._console.print(f"[bold bright_blue]─── Task Turn {turn}/{max_turns} ─────────────────────────────[/bold bright_blue]")
 
@@ -114,7 +121,7 @@ def run_task_loop(
             history.append({"role": "system", "content": decomp_directive})
             consecutive_failures = 0
 
-        ans = core.stream_response(history, prefix="Agent:", show_stats=True, thinking_budget=0, is_agent=True)
+        ans = core.stream_response(history, prefix="Agent:", show_stats=True, thinking_budget=thinking_budget, is_agent=True)
 
         if not ans:
             ui._console.print("[yellow][Loop Engine] Turn yielded empty response. Retrying with state reminder...[/yellow]")
@@ -124,7 +131,8 @@ def run_task_loop(
 
         history.append({"role": "assistant", "content": ans})
 
-        if any(err_tag in ans for err_tag in ("[error]", "[tool error]", "SyntaxError", "FAILED")):
+        # Track failure triggers including syntax errors, test fails, and user denials
+        if any(err_tag in ans for err_tag in ("[error]", "[tool error]", "SyntaxError", "FAILED", "[denied]", "Traceback (most recent call last)")):
             consecutive_failures += 1
         else:
             consecutive_failures = 0

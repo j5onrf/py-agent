@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Streamlined TUI Model Selector driven by Local/HF, Generic Custom 2, Google Gemini & OpenRouter"""
+"""Streamlined TUI Model Selector driven by Local/HF, Generic Custom 2, Google Gemini & OpenRouter [Production Ready]"""
 
 import asyncio
 import atexit
@@ -12,6 +12,7 @@ import sys
 import termios
 import time
 import tty
+import urllib.error
 import urllib.request as urlreq
 
 ENV_PATH = os.path.expanduser("~/.config/py-agent/.env")
@@ -259,7 +260,7 @@ def toggle_single_provider(key_name: str, model_var: str, default_model: str) ->
 
 
 def toggle_independent_key(key_name: str) -> bool:
-    """Toggles an auxiliary service key (GND_KEY, GEM_VOICE, IMG_VOICE) without disturbing primary chat models."""
+    """Toggles auxiliary service key (GND_KEY, GEM_VOICE, IMG_VOICE) without disturbing primary chat models."""
     if not os.path.exists(ENV_PATH):
         return False
     try:
@@ -348,7 +349,7 @@ async def async_fetch_remote(env_vars: dict, spaces: dict):
                             if "generateContent" in m.get("supportedGenerationMethods", []) and not any(x in mid for x in ("embedding", "aqa", "imagen", "tts")):
                                 gem_models.append(mid)
                         gem_models.sort(key=lambda x: [int(c) if c.isdigit() else c for c in re.split(r'(\d+)', x)], reverse=True)
-            except Exception:
+            except (urlreq.URLError, json.JSONDecodeError, OSError):
                 pass
 
         try:
@@ -380,7 +381,7 @@ async def async_fetch_remote(env_vars: dict, spaces: dict):
                                 free_c.append(m_id)
                         else:
                             paid_c.append(m_id)
-        except Exception:
+        except (urlreq.URLError, json.JSONDecodeError, OSError):
             pass
 
         free_c.sort(key=lambda s: s.lower())
@@ -395,7 +396,7 @@ async def async_fetch_remote(env_vars: dict, spaces: dict):
                             hf_res.append(m_id)
                             if len(hf_res) >= 25:
                                 break
-        except Exception:
+        except (urlreq.URLError, json.JSONDecodeError, OSError):
             pass
 
         return {
@@ -515,7 +516,7 @@ async def async_main():
             remote_data = await async_fetch_remote(env, spaces)
             cache.update(remote_data)
             save_json(CACHE_PATH, cache)
-        except Exception:
+        except (urlreq.URLError, json.JSONDecodeError, OSError):
             pass
 
     free_list = cache.get("free", DEFAULTS["free"])
@@ -580,7 +581,9 @@ async def async_main():
         is_free_active = is_or_active and ("free" in or_model_val or not or_model_val)
         is_paid_active = is_or_active and not is_free_active
 
-        fmt = lambda curr, k: f"{GREEN}{curr}{RESET}" if k in active_keys else f"{RED}DISABLED{RESET}"
+        def fmt(curr: str, k: str, ak: set[str] = active_keys) -> str:
+            return f"{GREEN}{curr}{RESET}" if k in ak else f"{RED}DISABLED{RESET}"
+
         fmt_or_free = f"{GREEN}{env.get('OPENROUTER_MODEL', 'openrouter/free')}{RESET}" if is_free_active else f"{RED}DISABLED{RESET}"
         fmt_or_paid = f"{GREEN}{env.get('OPENROUTER_MODEL', 'anthropic/claude-3.7-sonnet')}{RESET}" if is_paid_active else f"{RED}DISABLED{RESET}"
         status_all = f"{GREEN}ENABLED{RESET}" if any(k in active_keys for k in PROVIDER_KEYS) else f"{RED}DISABLED{RESET}"

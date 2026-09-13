@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Core Module - Streaming SSE, dynamic tool execution, & Rich rendering"""
+"""Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [Production Ready]"""
 
 import base64
 import json
@@ -37,11 +37,9 @@ def _get_console(stderr: bool = False) -> Console:
 
 _console, _console_err, _session = _get_console(False), _get_console(True), requests.Session()
 
-ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 RE_THINKING_TITLE = re.compile(r"^\s*Thinking Process:\s*", re.IGNORECASE)
 RE_FINAL_ANSWER = re.compile(r"^\s*Final Answer:\s*", re.IGNORECASE)
 RE_MULTIPLE_NEWLINES = re.compile(r"\n{2,}")
-RE_JSON_OBJECT = re.compile(r"\{[\s\S]*\}")
 RE_TOOL_CALL_BLOCK = re.compile(r"<\|tool_call_start\|>.*?<\|tool_call_end\|>", re.DOTALL)
 RE_ATTACHED_IMAGE = re.compile(r'\[(?:Attached\s+)?(?:image|file)[^\]]*?saved\s+at:\s*([^\]]+)\]', re.IGNORECASE)
 
@@ -187,7 +185,7 @@ def preprocess_multimodal_messages(messages: list[dict[str, Any]]) -> list[dict[
 
 def _heal_tool_args(raw: str) -> dict[str, Any]:
     """Heals malformed JSON tool arguments via modular adapter if active."""
-    if get_state("adapters_active", True):
+    if get_state("adapters_active", False):
         return adapters.heal_json_args(raw)
     try:
         return json.loads(raw) if isinstance(raw, str) else (raw or {})
@@ -369,7 +367,7 @@ class RichStreamer:
                 pass
 
 
-def _log_turn_usage(model: str, in_tok: int, out_tok: int, cost: float, show_stats: bool, ctx_used: int | None = None, user_msg: str = "", assistant_msg: str = "") -> None:
+def _log_turn_usage(model: str, in_tok: int, out_tok: int, cost: float, show_stats: bool, ctx_used: int | None = None, *args: Any, **kwargs: Any) -> None:
     if not usage_log:
         return
     try:
@@ -475,7 +473,6 @@ def agentic_turn(
         use_gnd = st.get("grounding_active", False)
 
         if is_agent:
-            active_skill = os.environ.get("AI_ACTIVE_SKILL", "").lower()
             is_py_mode = st.get("ipython_mode", False)
             use_map = st.get("use_map", False) or os.environ.get("AI_USE_MAP", "0") == "1"
 
@@ -614,7 +611,7 @@ def agentic_turn(
                 speed_test.end(actual_out_tokens=out_tok, is_local=is_local, resolved_model=final_model, active_model=body.get("model"))
 
             calls = [val for _, val in sorted(tool_calls_map.items())] if tool_calls_map else None
-            adapters_on = get_state("adapters_active", True)
+            adapters_on = get_state("adapters_active", False)
 
             if not calls and ans_text and is_agent and adapters_on:
                 calls = adapters.extract_fallback_tool_calls(ans_text) or None
@@ -626,8 +623,7 @@ def agentic_turn(
                 final_out = max(out_tok, tool_toks)
                 if spinner:
                     spinner.stop()
-                user_msg = next((m.get("content", "") or "" for m in reversed(messages) if m.get("role") == "user"), "")
-                _log_turn_usage(final_model, in_tok, final_out, 0.0, show_stats, in_tok + final_out, user_msg=user_msg, assistant_msg=ans_text)
+                _log_turn_usage(final_model, in_tok, final_out, 0.0, show_stats, in_tok + final_out)
                 return ans_text if ans_text else "(No response generated)"
 
             healed_calls = []
@@ -659,7 +655,7 @@ def agentic_turn(
                     "extra_content": {"google": {"thought_signature": sig}}
                 })
 
-            clean_ans_text = re.sub(r"<think>[\s\S]*?</think>", "", ans_text).strip()
+            clean_ans_text = re.sub(r"<think>[\s\S]*?(?:</think>|$)", "", ans_text).strip()
             messages.append({"role": "assistant", "content": clean_ans_text or "", "tool_calls": healed_calls})
 
             for tc in healed_calls:
@@ -733,7 +729,19 @@ def agentic_turn(
                     pass
             raise
         except Exception as e:
-            sys.stderr.write(f"\033[90m[sys] API response error: {e}\033[0m\r\n")
+            if spinner:
+                try:
+                    spinner.stop()
+                except Exception:
+                    pass
+            err_msg = str(e)
+            if "Failed to establish a new connection" in err_msg or "Connection refused" in err_msg:
+                if "8080" in url or "localhost" in url or "127.0.0.1" in url:
+                    sys.stderr.write("\r\033[1;31m[error] Local model not loaded (server offline at localhost:8080).\033[0m\r\n")
+                else:
+                    sys.stderr.write(f"\r\033[1;31m[error] Connection refused to {url}.\033[0m\r\n")
+            else:
+                sys.stderr.write(f"\r\033[90m[sys] API response error: {err_msg}\033[0m\r\n")
             return None
         finally:
             if res is not None:
@@ -860,7 +868,7 @@ def prune_history(history: list[dict[str, Any]], max_tokens: int | None = None) 
             compacted_middle.append({"role": "assistant", "content": summary})
         elif role == "assistant":
             clean_msg = {k: v for k, v in msg.items() if k != "tool_calls"}
-            clean_c = re.sub(r"<think>[\s\S]*?</think>", "", str(clean_msg.get("content") or "")).strip()
+            clean_c = re.sub(r"<think>[\s\S]*?(?:</think>|$)", "", str(clean_msg.get("content") or "")).strip()
             if clean_c:
                 compacted_middle.append({**clean_msg, "content": clean_c})
         else:

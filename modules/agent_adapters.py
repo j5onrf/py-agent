@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tool Format Adapters & Self-Healing Parser for Small-Models"""
+"""Tool Format Adapters & Self-Healing Parser for Small-Models [Production Ready]"""
 
 import ast
 import json
@@ -14,18 +14,17 @@ RE_HERMES_XML = re.compile(
     re.DOTALL,
 )
 RE_HERMES_PARAM = re.compile(
-    r"<parameter=(?P<key>[^>]+)>\s*(?P<val>[\s\S]*?)\s*</parameter>", re.DOTALL
+    r"<parameter(?:=|\s+name=[\"']?)(?P<key>[^>\"'\s]+)[\"']?>\s*(?P<val>[\s\S]*?)\s*</parameter>",
+    re.DOTALL,
 )
 RE_DSML = re.compile(
     r"<｜DSML｜invoke\s+name=[\"'](?P<name>[^\"']+)[\"']\s+arguments=[\"'](?P<args>[\s\S]*?)[\"']\s*/>",
     re.DOTALL,
 )
 RE_MISTRAL = re.compile(r"\[TOOL_CALLS\]\s*(?P<calls>\[[\s\S]*?\])", re.DOTALL)
-RE_XML_JSON = re.compile(
-    r"<tool_call>\s*\{?[\s\S]*?\"name\":\s*\"(?P<name>[^\"]+)\"[\s\S]*?\"arguments\":\s*(?P<args>\{[\s\S]*?\})\s*\}?\s*</tool_call>",
-    re.DOTALL,
-)
+RE_XML_TOOL_CALL = re.compile(r"<tool_call>\s*(?P<payload>[\s\S]*?)\s*</tool_call>", re.DOTALL)
 RE_MD_JSON_WRAPPER = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.DOTALL)
+RE_MD_PY_WRAPPER = re.compile(r"```(?:python|py)?\s*([\s\S]*?)\s*```", re.DOTALL)
 RE_XML_TOOL_TAGS = re.compile(
     r"<\|?[a-zA-Z_]+_call_?(?:start|end)?\|?>|</?tool_call>|</?function[^>]*>|</?parameter[^>]*>|<｜/?DSML｜(?:function_calls)?>",
     re.DOTALL,
@@ -33,12 +32,27 @@ RE_XML_TOOL_TAGS = re.compile(
 RE_PATH_EXTRACT = re.compile(
     r"([a-zA-Z0-9_\-\./]+\.(?:py|json|md|txt|sh|html|css|js|ts|cpp|c|h|rs|go))"
 )
+RE_ROOT_SANDBOX = re.compile(
+    r"^[\"']?(?:/home/(?:user|developer|runner|admin)|/workspace|/app)(?:/(.*))?$",
+    re.IGNORECASE,
+)
+RE_CD_COMMAND = re.compile(
+    r"^\s*cd\s+[\"']?(?:/[^;&|\n]*|\~[^;&|\n]*|\.)[\"']?\s*(?:&&|;)\s*",
+    re.IGNORECASE,
+)
+RE_PYTHON_C = re.compile(r"^(python3?\s+-c\s+)([\"']?)([\s\S]*)$")
+RE_CAT_EOF = re.compile(r"^cat\s*<<\s*['\"]?(\w+)['\"]?\s*>\s*(\S+)\s*\n([\s\S]*?)\n\1\s*$", re.DOTALL)
+RE_ECHO_REDIRECT = re.compile(r"^echo\s+['\"]([\s\S]*?)['\"]\s*>\s*(\S+)$", re.DOTALL)
+RE_BOGUS_IMPORTS = re.compile(
+    r"^\s*(?:from\s+[\w\.]+\s+import\s+(?:final_answer|exec_python)|import\s+(?:final_answer|exec_python))\s*;?\s*",
+    re.MULTILINE,
+)
 
 
 # ── 2. Parameter Aliases & String Normalization ───────────────────────────────
 
 def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
-    """Auto-heals parameter alias discrepancies, wrapped quotes, and escaped command syntax from small models."""
+    """Auto-heals parameter alias discrepancies, wrapped quotes, and escaped command syntax."""
     if not isinstance(args, dict):
         return {}
 
@@ -46,7 +60,7 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
     for k, v in args.items():
         if isinstance(v, str):
             clean_v = v.strip()
-            # Only strip outer wrapping quotes if the ENTIRE parameter was enclosed in matching quotes
+            # Strip outer wrapping quotes if the ENTIRE parameter was enclosed
             if len(clean_v) >= 2:
                 if (clean_v.startswith('"') and clean_v.endswith('"')) or (clean_v.startswith("'") and clean_v.endswith("'")):
                     if clean_v.count(clean_v[0]) == 2:
@@ -58,6 +72,7 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
         else:
             cleaned[k] = v
 
+    # 1. Path Aliases
     if "path" not in cleaned:
         for alt in ("file", "filename", "filepath", "target", "file_path", "target_file"):
             if alt in cleaned:
@@ -72,13 +87,11 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
         else:
             cleaned["path"] = raw_p.strip('\'"`\\\n\r\t ').strip()
 
-        # Auto-heal hallucinated sandbox root prefixes (e.g. /home/user/script.py -> script.py)
-        cleaned["path"] = re.sub(
-            r"^[\"']?(?:/home/(?:user|developer|runner|admin)|/workspace|/app)/(.*)$",
-            r"\1",
-            cleaned["path"],
-        ).strip('\'"')
+        # Heal hallucinated sandbox root prefixes
+        if m := RE_ROOT_SANDBOX.match(cleaned["path"]):
+            cleaned["path"] = (m.group(1) or ".").strip('\'"')
 
+    # 2. Command Aliases
     if "command" not in cleaned:
         for alt in ("cmd", "exec", "shell_command", "script", "bash"):
             if alt in cleaned:
@@ -87,26 +100,18 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
 
     if "command" in cleaned and isinstance(cleaned["command"], str):
         c = cleaned["command"].strip()
+        # Heal redundant directory navigation (e.g. "cd /project && pytest" -> "pytest")
+        c = RE_CD_COMMAND.sub("", c).strip()
 
-        # Auto-heal hallucinated directory navigation (e.g. "cd /home/user && python foo.py" -> "python foo.py")
-        c = re.sub(
-            r"^\s*cd\s+[\"']?(?:/home/(?:user|developer|runner|admin)|/workspace|/root|/app|\.|\~)(?:/[^;&|\n]*)?[\"']?\s*(?:&&|;)\s*",
-            "",
-            c,
-        ).strip()
-
-       # Auto-heal broken python3 -c quoting (handles missing trailing quotes & nested escapes)
-        if py_m := re.match(r"^(python3?\s+-c\s+)([\"']?)([\s\S]*)$", c):
+        # Heal broken python3 -c quotes and escapes
+        if py_m := RE_PYTHON_C.match(c):
             cmd_prefix, quote_char, py_code = py_m.groups()
             if quote_char and py_code.endswith(quote_char):
                 py_code = py_code[:-1]
-            # Strip rogue escaped backslashes emitted by small models (e.g., \' -> ')
             clean_code = py_code.replace(r"\'", "'").replace(r'\"', '"')
-            # Safely escape single quotes for Bash (' -> '\'')
             escaped_code = clean_code.replace("'", "'\\''")
             c = f"{cmd_prefix}'{escaped_code}'"
         else:
-            # Auto-heal unbalanced inline quotes (when small models collapse \"\" into \")
             if c.count('"') % 2 != 0:
                 c += '"'
             elif c.count("'") % 2 != 0:
@@ -114,27 +119,30 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
 
         cleaned["command"] = c
 
+    # 3. Search Pattern Aliases
     if "pattern" not in cleaned:
         for alt in ("query", "regex", "search_term", "find", "match"):
             if alt in cleaned:
                 cleaned["pattern"] = cleaned.pop(alt)
                 break
 
+    # 4. Content / Code Aliases
     if "content" not in cleaned:
         for alt in ("text", "body", "data", "source"):
             if alt in cleaned:
                 cleaned["content"] = cleaned.pop(alt)
                 break
         if "content" not in cleaned and "code" in cleaned:
-            cleaned["content"] = cleaned["code"]  # Alias without deleting "code"
+            cleaned["content"] = cleaned["code"]
 
+    # 5. Symbol Aliases
     if "symbol" not in cleaned:
         for alt in ("func", "function", "method", "class_name", "target_symbol"):
             if alt in cleaned:
                 cleaned["symbol"] = cleaned.pop(alt)
                 break
 
-    # Auto-heal small-model overwrite aliases & string booleans ("true", "yes", "force", "replace")
+    # 6. Overwrite Aliases & Booleans
     for alt in ("force", "replace", "overwrite_file", "clobber"):
         if alt in cleaned:
             cleaned["overwrite"] = True
@@ -143,10 +151,7 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
 
     if "overwrite" in cleaned:
         ov = cleaned["overwrite"]
-        if isinstance(ov, str):
-            cleaned["overwrite"] = ov.lower() in ("true", "1", "yes", "on")
-        else:
-            cleaned["overwrite"] = bool(ov)
+        cleaned["overwrite"] = ov.lower() in ("true", "1", "yes", "on") if isinstance(ov, str) else bool(ov)
 
     return cleaned
 
@@ -154,17 +159,13 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
 # ── 3. Balanced JSON Object Extractor ─────────────────────────────────────────
 
 def _extract_balanced_json(text: str) -> list[dict[str, Any]]:
-    """Extracts top-level JSON objects safely by balancing braces and ignoring braces inside strings."""
+    """Extracts top-level JSON objects safely by balancing braces and ignoring string contents."""
     results = []
-    i = 0
-    n = len(text)
+    i, n = 0, len(text)
     while i < n:
         if text[i] == "{":
             start = i
-            depth = 0
-            in_str = False
-            esc = False
-            valid = False
+            depth, in_str, esc, valid = 0, False, False, False
             for j in range(i, n):
                 ch = text[j]
                 if in_str:
@@ -185,7 +186,7 @@ def _extract_balanced_json(text: str) -> list[dict[str, Any]]:
                             raw_chunk = text[start : j + 1]
                             try:
                                 parsed = json.loads(raw_chunk, strict=False)
-                                if isinstance(parsed, dict) and ("name" in parsed or "commands" in parsed):
+                                if isinstance(parsed, dict) and ("name" in parsed or "commands" in parsed or "function" in parsed):
                                     results.append(parsed)
                                     valid = True
                             except Exception:
@@ -196,9 +197,7 @@ def _extract_balanced_json(text: str) -> list[dict[str, Any]]:
                 i += 1
         elif text[i] == "[":
             start = i
-            depth = 0
-            in_str = False
-            esc = False
+            depth, in_str, esc = 0, False, False
             for j in range(i, n):
                 ch = text[j]
                 if in_str:
@@ -236,40 +235,36 @@ def _extract_balanced_json(text: str) -> list[dict[str, Any]]:
 # ── 4. Self-Healing JSON Argument Parser ──────────────────────────────────────
 
 def heal_tool_call(fname: str, raw_args: str | dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    """Universal tool adapter for small models: heals parameters, aliases, and misdirected inline shell calls."""
+    """Universal tool adapter for small models: heals parameters, aliases, and misdirected shell calls."""
     healed_dict = heal_json_args(raw_args)
 
-    # 1. Clean hallucinated final_answer imports in exec_python
+    # 1. Clean hallucinated imports in exec_python
     if fname == "exec_python" and "code" in healed_dict:
-        code_str = str(healed_dict["code"])
-        code_str = re.sub(r"^\s*from\s+[\w\.]+\s+import\s+final_answer\s*;?\s*", "", code_str, flags=re.MULTILINE)
-        code_str = re.sub(r"^\s*import\s+final_answer\s*;?\s*", "", code_str, flags=re.MULTILINE)
-        healed_dict["code"] = code_str.strip()
+        code_str = RE_BOGUS_IMPORTS.sub("", str(healed_dict["code"])).strip()
+        healed_dict["code"] = code_str
 
-    # 2. Auto-adapt inline shell commands
+    # 2. Auto-adapt shell commands
     if fname == "run_command" and "command" in healed_dict:
         cmd_raw = str(healed_dict["command"]).strip()
 
-        # Adapt inline python -c -> exec_python
+        # Inline python -c -> exec_python
         if cmd_raw.startswith(("python3 -c", "python -c")):
             py_code = re.sub(r"^python3?\s+-c\s+", "", cmd_raw).strip()
             py_code = re.sub(r"\s*(2>&1|\|\|.*|&&.*)$", "", py_code).strip()
             if (py_code.startswith("'") and py_code.endswith("'")) or (py_code.startswith('"') and py_code.endswith('"')):
                 py_code = py_code[1:-1]
             py_code = py_code.replace(r"'\''", "'").replace(r'\"', '"').strip()
-            py_code = re.sub(r"from\s+[\w\.]+\s+import\s+(?:exec_python|final_answer)\s*;?\s*", "", py_code).strip()
+            py_code = RE_BOGUS_IMPORTS.sub("", py_code).strip()
             if py_code:
                 return "exec_python", {"code": py_code}
 
-        # Adapt shell cat << 'EOF' > file -> write_file
-        cat_m = re.match(r"^cat\s*<<\s*['\"]?(\w+)['\"]?\s*>\s*(\S+)\s*\n([\s\S]*?)\n\1\s*$", cmd_raw)
-        if cat_m:
+        # Shell cat << 'EOF' > file -> write_file
+        if cat_m := RE_CAT_EOF.match(cmd_raw):
             _, target_path, file_content = cat_m.groups()
             return "write_file", {"path": target_path.strip(), "content": file_content, "overwrite": True}
 
-        # Adapt echo "..." > file -> write_file
-        echo_m = re.match(r"^echo\s+['\"]([\s\S]*?)['\"]\s*>\s*(\S+)$", cmd_raw)
-        if echo_m:
+        # Shell echo "..." > file -> write_file
+        if echo_m := RE_ECHO_REDIRECT.match(cmd_raw):
             file_content, target_path = echo_m.groups()
             return "write_file", {"path": target_path.strip(), "content": file_content + "\n", "overwrite": True}
 
@@ -288,7 +283,7 @@ def heal_json_args(raw: str | dict[str, Any]) -> dict[str, Any]:
         cleaned = m.group(1).strip()
     cleaned = RE_XML_TOOL_TAGS.sub("", cleaned).strip()
 
-    # Pass 1: Strict False standard parse (handles unescaped literal newlines in strings)
+    # Pass 1: Standard non-strict JSON parse
     try:
         parsed = json.loads(cleaned, strict=False)
         if isinstance(parsed, dict):
@@ -299,11 +294,7 @@ def heal_json_args(raw: str | dict[str, Any]) -> dict[str, Any]:
     # Pass 2: Heuristic bracket closure
     ob, cb = cleaned.count("{"), cleaned.count("}")
     ok, ck = cleaned.count("["), cleaned.count("]")
-    healed = cleaned
-    if ok > ck:
-        healed += "]" * (ok - ck)
-    if ob > cb:
-        healed += "}" * (ob - cb)
+    healed = cleaned + ("]" * max(0, ok - ck)) + ("}" * max(0, ob - cb))
 
     try:
         parsed = json.loads(healed, strict=False)
@@ -312,7 +303,15 @@ def heal_json_args(raw: str | dict[str, Any]) -> dict[str, Any]:
     except Exception:
         pass
 
-    # Pass 3: Multi-line string fallback extractor (handles unescaped quotes inside code/content)
+    # Pass 3: Python ast.literal_eval fallback (rescues single-quoted dicts)
+    try:
+        parsed = ast.literal_eval(cleaned)
+        if isinstance(parsed, dict):
+            return normalize_params(parsed)
+    except Exception:
+        pass
+
+    # Pass 4: Multi-line regex field extractor
     extracted: dict[str, Any] = {}
     for match in re.finditer(r'"(?P<key>[a-zA-Z_][a-zA-Z0-9_]*)"\s*:\s*"(?P<val>[\s\S]*?)(?="\s*,\s*"[a-zA-Z_]|\s*"$|\s*\}\s*$)', cleaned):
         extracted[match.group("key")] = match.group("val")
@@ -359,8 +358,15 @@ def _extract_ast_python_calls(text: str) -> list[dict[str, Any]]:
         for i in range(m.end() - 1, len(text)):
             ch = text[i]
             if in_quote:
-                if ch == in_quote and (i == 0 or text[i - 1] != "\\"):
-                    in_quote = None
+                if ch == in_quote:
+                    # Count preceding backslashes to handle escaped quotes accurately
+                    bs_count = 0
+                    k = i - 1
+                    while k >= start_idx and text[k] == "\\":
+                        bs_count += 1
+                        k -= 1
+                    if bs_count % 2 == 0:
+                        in_quote = None
             elif ch in ('"', "'"):
                 in_quote = ch
             elif ch == "(":
@@ -387,7 +393,6 @@ def _extract_ast_python_calls(text: str) -> list[dict[str, Any]]:
                             args_dict[kw.arg] = kw.value.value
 
                     if fn == "final_answer":
-                        # Route bare final_answer(...) call directly to in-memory exec_python
                         raw_call = ast.unparse(node) if hasattr(ast, "unparse") else f"final_answer({ast.dump(node.args[0]) if node.args else ''})"
                         calls.append({
                             "id": f"call_ast_{len(calls)}_{int(time.time())}",
@@ -407,9 +412,13 @@ def _extract_ast_python_calls(text: str) -> list[dict[str, Any]]:
                                 ["command"]
                                 if fn == "run_command"
                                 else (
-                                    ["pattern", "path"]
-                                    if fn in ("search_code", "find_symbol")
-                                    else (["code"] if fn == "exec_python" else ["path", "content"])
+                                    ["path", "content", "overwrite"]
+                                    if fn == "write_file"
+                                    else (
+                                        ["pattern", "path"]
+                                        if fn in ("search_code", "find_symbol")
+                                        else (["code"] if fn == "exec_python" else ["path", "content"])
+                                    )
                                 )
                             )
                         )
@@ -498,23 +507,22 @@ def extract_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
 
     # Format 4: Standard XML/JSON Format (<tool_call>{...}</tool_call>)
     if not calls:
-        for i, m in enumerate(RE_XML_JSON.finditer(text)):
-            calls.append(
-                {
-                    "id": f"call_xml_{i}_{int(time.time())}",
-                    "type": "function",
-                    "function": {
-                        "name": m.group("name"),
-                        "arguments": json.dumps(heal_json_args(m.group("args"))),
-                    },
-                }
-            )
+        for i, m in enumerate(RE_XML_TOOL_CALL.finditer(text)):
+            payload = m.group("payload").strip()
+            if obj_list := _extract_balanced_json(payload):
+                for obj in obj_list:
+                    if "name" in obj:
+                        raw_args = obj.get("arguments") or obj.get("parameters") or {}
+                        calls.append({
+                            "id": f"call_xml_{i}_{int(time.time())}",
+                            "type": "function",
+                            "function": {"name": obj["name"], "arguments": json.dumps(heal_json_args(raw_args))},
+                        })
 
-    # Format 5: Balanced Naked JSON Objects or Lists ({"name": ..., "arguments": ...})
+    # Format 5: Balanced Naked JSON Objects ({"name": ..., "arguments": ...})
     if not calls:
         balanced_objs = _extract_balanced_json(text)
         for i, obj in enumerate(balanced_objs):
-            # Guard: Must have an arguments/parameters payload and a valid function identifier (no spaces)
             has_args = any(k in obj for k in ("arguments", "parameters", "args", "input"))
             fname = obj.get("name", "")
             is_valid_fn = isinstance(fname, str) and bool(re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", fname))
@@ -555,13 +563,12 @@ def extract_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
         calls = _extract_ast_python_calls(text)
 
     # Format 7: Standalone Python Markdown Code Block Auto-Execution
-    if not calls and "```python" in text:
-        py_blocks = re.findall(r"```python\s*([\s\S]*?)\s*```", text)
+    if not calls and ("```python" in text or "```py" in text):
+        py_blocks = RE_MD_PY_WRAPPER.findall(text)
         for i, code_block in enumerate(py_blocks):
             clean_block = code_block.strip()
-            # Capture blocks executing final_answer or in-memory batch loops
-            if any(k in clean_block for k in ("final_answer(", "open(", "read_file(", "os.listdir(", "glob.")):
-                clean_block = re.sub(r"^\s*from\s+[\w\.]+\s+import\s+final_answer\s*;?\s*", "", clean_block, flags=re.MULTILINE)
+            if any(k in clean_block for k in ("final_answer(", "open(", "read_file(", "os.listdir(", "glob.", "edit_file(", "write_file(")):
+                clean_block = RE_BOGUS_IMPORTS.sub("", clean_block).strip()
                 calls.append({
                     "id": f"call_py_block_{i}_{int(time.time())}",
                     "type": "function",

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""UI Module - Spinners, session boxes, and interactive menus"""
+"""UI Module - Spinners, session boxes, and interactive menus [Production Ready]"""
 
 import json
 import os
@@ -21,8 +21,9 @@ from rich.text import Text
 try:
     import termios
     import tty
+    _HAS_TERMIOS = True
 except ImportError:
-    pass
+    _HAS_TERMIOS = False
 
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
 _console, _console_err = Console(), Console(stderr=True)
@@ -56,22 +57,25 @@ RICH_TO_ANSI = {
     "white": "\033[1;37m",
 }
 
+_core_module = None
+
 
 class InlineSpinner:
     def __init__(self, chars: tuple[str, ...] | list[str] | str = ("✦ [∿ · ·]", "✦ [· ∿ ·]", "✦ [· · ∿]", "✦ [· ∿ ·]")) -> None:
-        self.chars, self.active, self.thread, self.message, self.start_time = (
-            chars,
-            False,
-            None,
-            "Thinking...",
-            0.0,
-        )
+        self.chars = chars
+        self.active = False
+        self.thread = None
+        self.message = "Thinking..."
+        self.start_time = 0.0
         self._lock = threading.Lock()
 
     def _get_theme_color(self) -> str:
+        global _core_module
         try:
-            import agent_core as core
-            box = core.get_state("box_style", 1)
+            if _core_module is None:
+                import agent_core
+                _core_module = agent_core
+            box = _core_module.get_state("box_style", 1)
             border_col = "green" if box == 8 else STYLES.get(box, STYLES[1])[2]
             return RICH_TO_ANSI.get(border_col, "\033[1;32m")
         except Exception:
@@ -92,16 +96,14 @@ class InlineSpinner:
 
     def _spin(self) -> None:
         idx, char_len, tick = 0, len(self.chars), 0.0
+        color = self._get_theme_color()
         while self.active:
-            color = self._get_theme_color()
             try:
                 char, elapsed = self.chars[int(idx) % char_len], time.time() - self.start_time
                 with self._lock:
                     msg = self.message
                 glim_msg = self._glimmer(msg, tick, color)
-                sys.stderr.write(
-                    f"\r\x1b[K{color}{char}\033[0m {glim_msg} \033[2m{elapsed:.1f}s\033[0m"
-                )
+                sys.stderr.write(f"\r\x1b[K{color}{char}\033[0m {glim_msg} \033[2m{elapsed:.1f}s\033[0m")
                 sys.stderr.flush()
             except OSError:
                 pass
@@ -145,9 +147,7 @@ class InlineSpinner:
 
         try:
             if done_msg:
-                sys.stderr.write(
-                    f"\r\x1b[2K\033[1;32m✔\033[0m \033[1;36m{done_msg}\033[0m \033[2m({elapsed:.1f}s)\033[0m\n"
-                )
+                sys.stderr.write(f"\r\x1b[2K\033[1;32m✔\033[0m \033[1;36m{done_msg}\033[0m \033[2m({elapsed:.1f}s)\033[0m\n")
             else:
                 sys.stderr.write("\r\x1b[2K\r")
             sys.stderr.write("\033[?25h")
@@ -157,11 +157,16 @@ class InlineSpinner:
 
 
 def _read_fd(fd: int) -> str:
+    if not _HAS_TERMIOS:
+        return os.read(fd, 1).decode("utf-8", errors="ignore")
+
     old = termios.tcgetattr(fd)
     try:
         tty.setraw(fd)
         termios.tcflush(fd, termios.TCIFLUSH)
         char_bytes = os.read(fd, 1)
+        if not char_bytes:
+            return ""
         if char_bytes == b"\x03":
             raise KeyboardInterrupt
         if char_bytes == b"\x1b" and select.select([fd], [], [], 0.05)[0]:
@@ -199,7 +204,7 @@ def get_local_model_name() -> str:
         with urlreq.urlopen(req, timeout=0.5) as r:
             return os.path.basename(json.loads(r.read().decode("utf-8"))["data"][0]["id"])
     except Exception:
-        return "local-model"
+        return "model not loaded (offline :8080)"
 
 
 def draw_session_box(
@@ -223,9 +228,7 @@ def draw_session_box(
     try:
         import agent_cloud
         configs = agent_cloud.get_active_configs([])
-        model_name = (
-            configs[0][2].get("model", "local-model") if configs else get_local_model_name()
-        )
+        model_name = configs[0][2].get("model", "local-model") if configs else get_local_model_name()
     except Exception:
         model_name = get_local_model_name()
 
@@ -233,7 +236,8 @@ def draw_session_box(
     table.add_column("Key", style="dim cyan", justify="right")
     table.add_column("Value", style="green")
 
-    table.add_row("model:", model_name)
+    m_style = "bold red" if ("not loaded" in model_name or "offline" in model_name) else "green"
+    table.add_row("model:", Text(model_name, style=m_style))
     table.add_row("directory:", display_dir)
     table.add_row("profile:", clean_name or "chat")
 
@@ -294,9 +298,7 @@ def draw_session_box(
 
 def confirm_tool(tool: str) -> bool:
     target = getattr(sys, "__stderr__", None) or sys.stderr
-    target.write(
-        f"\r\x1b[K\033[1;33m▲ [sys] Authorize tool:\033[0m \033[36m{tool}\033[0m \033[1;33m? [Y/n]: \033[0m"
-    )
+    target.write(f"\r\x1b[K\033[1;33m▲ [sys] Authorize tool:\033[0m \033[36m{tool}\033[0m \033[1;33m? [Y/n]: \033[0m")
     target.flush()
     try:
         char = get_key()
@@ -486,9 +488,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                 pass
         profile_cache[k] = defaults
 
-    sys.stderr.write(
-        f"\n\033[1;36m[ai init]\033[0m Select default Agent Profile for workspace \033[1;33m{workspace_name}\033[0m:\n\n\033[?25l"
-    )
+    sys.stderr.write(f"\n\033[1;36m[ai init]\033[0m Select default Agent Profile for workspace \033[1;33m{workspace_name}\033[0m:\n\n\033[?25l")
     sys.stderr.flush()
 
     current_idx, num_opts = 0, len(options)
@@ -532,13 +532,9 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                     lines_count += 1
 
                 if idx == current_idx:
-                    sys.stderr.write(
-                        f"\r\x1b[K\033[1;32m  ❯ {sub_idx:2d}. {lbl:<20}\033[0m \033[1;36m({d})\033[0m\n"
-                    )
+                    sys.stderr.write(f"\r\x1b[K\033[1;32m  ❯ {sub_idx:2d}. {lbl:<20}\033[0m \033[1;36m({d})\033[0m\n")
                 else:
-                    sys.stderr.write(
-                        f"\r\x1b[K\033[37m    {sub_idx:2d}. {lbl:<20}\033[0m \033[2m({d})\033[0m\n"
-                    )
+                    sys.stderr.write(f"\r\x1b[K\033[37m    {sub_idx:2d}. {lbl:<20}\033[0m \033[2m({d})\033[0m\n")
                 lines_count += 1
                 sub_idx += 1
 
@@ -591,9 +587,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                 b_mem  = f" {badge_col}[Mem: ON]\033[0m" if is_mem else ""
                 b_py   = f" {badge_col}[Py: ON]\033[0m" if is_py else ""
                 b_adp  = f" {badge_col}[Adp: ON]\033[0m" if is_adp else ""
-                sys.stderr.write(
-                    f"\x1b[{last_rendered_lines + 3}A\r\x1b[J\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}{b_adp}\n\n"
-                )
+                sys.stderr.write(f"\x1b[{last_rendered_lines + 3}A\r\x1b[J\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}{b_adp}\n\n")
                 sys.stderr.flush()
                 return key, is_yolo, use_map, is_py, is_mem, is_adp
             elif char in ("\r", "\n", ""):
@@ -614,9 +608,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                 b_mem  = f" {badge_col}[Mem: ON]\033[0m" if is_mem else ""
                 b_py   = f" {badge_col}[Py: ON]\033[0m" if is_py else ""
                 b_adp  = f" {badge_col}[Adp: ON]\033[0m" if is_adp else ""
-                sys.stderr.write(
-                    f"\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}{b_adp}\n\n"
-                )
+                sys.stderr.write(f"\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}{b_adp}\n\n")
                 sys.stderr.flush()
                 return key, is_yolo, use_map, is_py, is_mem, is_adp
             elif char in ("\x1b[A", "\x1b[B"):

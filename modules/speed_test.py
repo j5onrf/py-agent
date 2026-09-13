@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Precise token generation & TPS speed test statistics tracker"""
+"""Precise token generation & TPS speed test statistics tracker [Production Ready]"""
 
 import sys
 import time
@@ -15,10 +15,10 @@ _state = {
 
 
 def start() -> None:
-    """Begins the timer and resets state."""
+    """Begins the high-resolution monotonic timer and resets state."""
     global _state
     _state = {
-        "start": time.time(),
+        "start": time.perf_counter(),
         "t_start": None,
         "t_end": None,
         "t_chars": 0,
@@ -31,14 +31,17 @@ def count_token(content: str, is_thinking: bool = False) -> None:
     """Accumulates content character counts for precise token estimation across generation phases."""
     if not content or _state["start"] is None:
         return
-    now = time.time()
+    now = time.perf_counter()
     if is_thinking:
         if not _state["in_think"]:
-            _state["in_think"], _state["t_start"] = True, _state["t_start"] or now
+            _state["in_think"] = True
+            if _state["t_start"] is None:
+                _state["t_start"] = now
         _state["t_chars"] += len(content)
     else:
         if _state["in_think"]:
-            _state["in_think"], _state["t_end"] = False, now
+            _state["in_think"] = False
+            _state["t_end"] = now
         _state["a_chars"] += len(content)
 
 
@@ -48,12 +51,15 @@ def end(
     resolved_model: str | None = None,
     active_model: str | None = None,
 ) -> None:
-    """Calculates and prints token statistics, then cleanly resets state."""
+    """Calculates and prints generation speed statistics, then cleanly resets state."""
     if _state["start"] is None:
         return
-    elapsed = max(0.001, time.time() - _state["start"])
+
+    now = time.perf_counter()
+    elapsed = max(0.0001, now - _state["start"])
+
     if _state["in_think"] and not _state["t_end"]:
-        _state["t_end"] = time.time()
+        _state["t_end"] = now
 
     tot_chars = _state["t_chars"] + _state["a_chars"]
     tot_toks = (
@@ -63,13 +69,13 @@ def end(
         if tot_chars > 0
         else 0
     )
+
     think_toks = (
         round((_state["t_chars"] / tot_chars) * tot_toks)
         if tot_chars > 0 and _state["t_chars"] > 0
         else 0
     )
     ans_toks = max(0, tot_toks - think_toks)
-
     tps = tot_toks / elapsed
 
     model_line = ""

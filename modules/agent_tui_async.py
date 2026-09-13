@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Asynchronous uvloop background services for Local-AI Agent TUI"""
+"""Asynchronous uvloop background services for Local-AI Agent TUI [Production Ready]"""
 
 import asyncio
 import json
@@ -22,29 +22,30 @@ async def run_async_cmd(cmd: list[str], cwd: str) -> str:
 
 
 async def watch_workspace_changes(app) -> None:
-    """Async background task watching workspace file changes via uvloop libuv event loop."""
-    tpm_file = os.path.join(app.workspace_path, ".agent", "tpm.md")
-    last_mtime = os.path.getmtime(tpm_file) if os.path.exists(tpm_file) else 0
+    """Async background task watching OKF memory directives via uvloop libuv event loop."""
+    mem_dir = os.path.join(app.workspace_path, ".agent", "memory")
+
+    def _get_dir_mtime() -> float:
+        if not os.path.isdir(mem_dir):
+            return 0.0
+        try:
+            mtimes = [os.path.getmtime(os.path.join(mem_dir, f)) for f in os.listdir(mem_dir) if f.endswith(".md")]
+            return max(mtimes) if mtimes else os.path.getmtime(mem_dir)
+        except OSError:
+            return 0.0
+
+    last_mtime = _get_dir_mtime()
 
     try:
         while True:
-            await asyncio.sleep(1.5)
-            if os.path.exists(tpm_file):
-                try:
-                    if (mtime := os.path.getmtime(tpm_file)) > last_mtime:
-                        last_mtime = mtime
-                        # Run synchronous SQLite query off-thread to keep TUI event loop smooth
-                        await asyncio.to_thread(app.refresh_db_counts)
-                        if hasattr(app, "lbl_database"):
-                            app.lbl_database.update(
-                                f"[dim]DB State[/dim]  {app.get_db_status_string()}"
-                            )
-                        app.notify(
-                            "[dim]Memory facts updated from disk.[/dim]",
-                            sys_prefix=False,
-                        )
-                except OSError:
-                    pass
+            await asyncio.sleep(2.0)
+            cur_mtime = _get_dir_mtime()
+            if cur_mtime > last_mtime:
+                last_mtime = cur_mtime
+                await asyncio.to_thread(app.refresh_db_counts)
+                if hasattr(app, "lbl_database"):
+                    app.lbl_database.update(f"[dim]DB State[/dim]  {app.get_db_status_string()}")
+                app.notify("[dim]Project memory directives updated from disk.[/dim]", sys_prefix=False)
     except (asyncio.CancelledError, GeneratorExit):
         pass
 
@@ -58,11 +59,8 @@ async def start_subagent_ipc_hub(app) -> None:
         except OSError:
             pass
 
-    async def handle_subagent_msg(
-        reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-    ) -> None:
+    async def handle_subagent_msg(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
-            # 64KB buffer prevents truncated JSON payloads on large metadata events
             if data := await reader.read(65536):
                 p = json.loads(data.decode("utf-8", errors="ignore"))
                 params = p.get("params", {}) if isinstance(p.get("params"), dict) else p

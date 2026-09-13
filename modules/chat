@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified Agentic Brainstorm, Thinking & Follow-up Recommendation Engine."""
+"""Unified Agentic Brainstorm, Thinking & Follow-up Recommendation Engine [Production Ready]"""
 
 import json
 import os
@@ -7,18 +7,28 @@ import re
 import sys
 import urllib.request as urlreq
 
+CFG_DIR = os.path.expanduser("~/.config/py-agent")
+if (mod_dir := os.path.join(CFG_DIR, "modules")) not in sys.path:
+    sys.path.append(mod_dir)
+
+try:
+    import agent_cloud
+except ImportError:
+    agent_cloud = None
+
 try:
     import agent_ui as ui
 except ImportError:
     ui = None
 
-CFG_DIR = os.path.expanduser("~/.config/py-agent")
 RE_QUESTION_SPLIT = re.compile(r"(?<=\?)\s+")
+RE_THINK_BLOCK = re.compile(r"<think(?:ing)?>[\s\S]*?(?:</think(?:ing)?>|$)|<thought>[\s\S]*?(?:</thought>|$)", re.DOTALL | re.IGNORECASE)
+RE_CLEAN_BULLETS = re.compile(r"^(?:\d+[\.\)]|\*|-|\+|\[\d+\])\s*")
 
 try:
     history = json.loads(sys.stdin.read())
 except (OSError, json.JSONDecodeError):
-    sys.stderr.write("Error: No valid chat history passed to brainstorm tool.\n")
+    sys.stderr.write("Error: No valid chat history passed to recommendation engine.\n")
     sys.exit(1)
 
 q_str = " ".join(sys.argv[1:]).lower().strip()
@@ -48,9 +58,7 @@ if cmd == "a":
             try:
                 with open(p, "r", encoding="utf-8") as f:
                     txt = f.read().strip()
-                prompts[hdr] = (
-                    txt.split("Template:")[0].strip() if "Template:" in txt else txt
-                )
+                prompts[hdr] = txt.split("Template:")[0].strip() if "Template:" in txt else txt
             except (OSError, UnicodeDecodeError):
                 pass
     prompt = (
@@ -82,51 +90,42 @@ else:
     if not prompt:
         prompt = f"Analyze history and output exactly {count} next-step {fallback_term} items.\nEach option must be strictly 6 to 10 words long.\nNo conversational filler. Output exactly this format:\n\n{output_hdr}\n[Option 1]\n[Option 2]\n[Option 3]"
 
-history.append(
-    {
-        "role": "user",
-        "content": f"[COMMAND: Do not continue the conversation. Do not reply to the last message. Execute this analytical directive immediately without preambles.]\n\n{prompt}",
-    }
-)
+history.append({
+    "role": "user",
+    "content": f"[COMMAND: Do not continue the conversation. Do not reply to the last message. Execute this analytical directive immediately without preambles.]\n\n{prompt}",
+})
 
+# Dynamic Cloud Provider Cascade with Local Server Fallback
 configs = []
-if gkey := os.environ.get("GEMINI_API_KEY"):
-    configs.append(
-        (
+if agent_cloud:
+    for url, headers, body, timeout in agent_cloud.get_active_configs(history):
+        c_body = {**body, "max_tokens": 450, "chat_template_kwargs": {"enable_thinking": False}}
+        configs.append((url, headers, c_body, min(timeout, 30)))
+
+if not configs:
+    if gkey := os.environ.get("GEMINI_API_KEY"):
+        configs.append((
             "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
             {"Authorization": f"Bearer {gkey}"},
-            os.environ.get("CLOUD_MODEL", "gemini-3.7-flash"),
-            {},
-            10,
-        )
-    )
-if okey := os.environ.get("OPENROUTER_API_KEY"):
-    configs.append(
-        (
+            {"model": os.environ.get("GEMINI_MODEL", "gemini-3.8-flash"), "messages": history, "max_tokens": 450, "stream": True},
+            15,
+        ))
+    if okey := os.environ.get("OPENROUTER_API_KEY"):
+        configs.append((
             "https://openrouter.ai/api/v1/chat/completions",
-            {
-                "Authorization": f"Bearer {okey}",
-                "HTTP-Referer": "https://github.com/j5onrf/local-ai",
-            },
-            os.environ.get("OPENROUTER_MODEL", "openrouter/free"),
-            {},
-            10,
-        )
-    )
-configs.append(
-    (
-        "http://localhost:8080/v1/chat/completions",
-        {},
-        "local-model",
-        {"chat_template_kwargs": {"enable_thinking": False}},
-        180,
-    )
-)
+            {"Authorization": f"Bearer {okey}", "HTTP-Referer": "https://github.com/j5onrf/py-agent"},
+            {"model": os.environ.get("OPENROUTER_MODEL", "openrouter/free"), "messages": history, "max_tokens": 450, "stream": True},
+            15,
+        ))
 
-for url, headers, model, extra, timeout in configs:
-    body = {"messages": history, "stream": True, **extra}
-    if model:
-        body["model"] = model
+configs.append((
+    "http://localhost:8080/v1/chat/completions",
+    {},
+    {"model": "local-model", "messages": history, "max_tokens": 450, "stream": True, "chat_template_kwargs": {"enable_thinking": False}},
+    180,
+))
+
+for url, headers, body, timeout in configs:
     req = urlreq.Request(
         url,
         data=json.dumps(body).encode(),
@@ -140,22 +139,15 @@ for url, headers, model, extra, timeout in configs:
         with urlreq.urlopen(req, timeout=timeout) as resp:
             first, chunks = True, []
             for line in resp:
-                if (
-                    dec := line.decode("utf-8", errors="ignore").strip()
-                ) and dec != "[DONE]":
+                if (dec := line.decode("utf-8", errors="ignore").strip()) and dec != "[DONE]":
                     if dec.startswith("data:"):
                         dec = dec[5:].strip()
                     try:
                         data = json.loads(dec)
                         content = (
-                            data.get("choices", [{}])[0]
-                            .get("delta", {})
-                            .get("content", "")
+                            data.get("choices", [{}])[0].get("delta", {}).get("content", "")
                             if "choices" in data
-                            else data.get("candidates", [{}])[0]
-                            .get("content", {})
-                            .get("parts", [{}])[0]
-                            .get("text", "")
+                            else data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
                         )
                         if content:
                             if first:
@@ -166,58 +158,31 @@ for url, headers, model, extra, timeout in configs:
                                     continue
                                 first = False
                             chunks.append(content)
-                    except (
-                        json.JSONDecodeError,
-                        KeyError,
-                        IndexError,
-                        TypeError,
-                        ValueError,
-                    ):
+                    except (json.JSONDecodeError, KeyError, IndexError, TypeError, ValueError):
                         pass
+
             if spinner:
                 spinner.stop()
                 spinner = None
 
-            if lines := [
-                l.strip()
-                for l in "".join(chunks).strip().splitlines()
-                if l.strip()
-            ]:
+            raw_text = RE_THINK_BLOCK.sub("", "".join(chunks)).strip()
+            if lines := [l.strip() for l in raw_text.splitlines() if l.strip()]:
                 hdr_map = {
                     k: v
                     for keys, v in [
-                        (
-                            ("follow-up", "follow-ups", "followup", "followups"),
-                            "Follow-up",
-                        ),
-                        (
-                            ("thinking", "think", "thought", "thoughts"),
-                            "Thinking",
-                        ),
-                        (
-                            ("brainstorm", "brainstorming", "brainstorms"),
-                            "Brainstorm",
-                        ),
+                        (("follow-up", "follow-ups", "followup", "followups"), "Follow-up"),
+                        (("thinking", "think", "thought", "thoughts"), "Thinking"),
+                        (("brainstorm", "brainstorming", "brainstorms"), "Brainstorm"),
                     ]
                     for k in keys
                 }
 
                 sys.stdout.write("\n")
                 start_idx = 0
-                if lines[0].strip("*#: \t").lower().rstrip("s:") not in hdr_map:
-                    start_idx = next(
-                        (
-                            i
-                            for i, l in enumerate(lines)
-                            if l.strip("*#: \t").lower().rstrip("s:") in hdr_map
-                        ),
-                        0,
-                    )
-                    if (
-                        start_idx == 0
-                        and lines[0].strip("*#: \t").lower().rstrip("s:")
-                        not in hdr_map
-                    ):
+                first_clean = lines[0].strip("*#: \t").lower().rstrip("s:")
+                if first_clean not in hdr_map:
+                    start_idx = next((i for i, l in enumerate(lines) if l.strip("*#: \t").lower().rstrip("s:") in hdr_map), 0)
+                    if start_idx == 0 and first_clean not in hdr_map:
                         sys.stdout.write(f"\033[1;32mAI:\033[0m {output_hdr}\n")
 
                 for l in lines[start_idx:]:
@@ -225,12 +190,11 @@ for url, headers, model, extra, timeout in configs:
                     if clean in hdr_map:
                         sys.stdout.write(f"\033[1;32mAI:\033[0m {hdr_map[clean]}\n")
                     else:
-                        for q in [
-                            x.strip()
-                            for x in RE_QUESTION_SPLIT.split(l)
-                            if x.strip()
-                        ]:
-                            sys.stdout.write(f"{q}\n")
+                        for q in [x.strip() for x in RE_QUESTION_SPLIT.split(l) if x.strip()]:
+                            # Clean leading numbers or markdown bullets from recommendations
+                            clean_q = RE_CLEAN_BULLETS.sub("", q).strip()
+                            if clean_q:
+                                sys.stdout.write(f"{clean_q}\n")
                 sys.stdout.flush()
                 sys.exit(0)
     except KeyboardInterrupt:
@@ -242,5 +206,5 @@ for url, headers, model, extra, timeout in configs:
         if spinner:
             spinner.stop()
 
-sys.stderr.write("Error: All brainstorm service fallbacks are offline.\n")
+sys.stderr.write("Error: All recommendation service fallbacks are offline.\n")
 sys.exit(1)

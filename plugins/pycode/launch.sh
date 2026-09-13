@@ -9,6 +9,12 @@ PLUGIN_DIR="$HOME/.config/py-agent/plugins/pycode"
 PYCODE_DIR="$HOME/.config/pycode"
 BRIDGE_PY="$PLUGIN_DIR/bridge.py"
 
+# Auto-bootstrap if PyCode has not been built yet
+if [[ ! -d "$PYCODE_DIR" || ! -f "$PYCODE_DIR/apps/server/dist/bin.mjs" ]]; then
+    echo -e "\033[1;36m[pycode]\033[0m PyCode installation not found or not built. Running setup..."
+    bash "$PLUGIN_DIR/setup.sh"
+fi
+
 # Resolve absolute target workspace
 TARGET_WORKSPACE="${AI_WORKSPACE_PATH:-$(pwd)}"
 TARGET_WORKSPACE=$(cd "$TARGET_WORKSPACE" 2>/dev/null && pwd -P || echo "$TARGET_WORKSPACE")
