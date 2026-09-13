@@ -65,7 +65,7 @@ Built to be lightweight, auditable by a single developer, and private by design.
    ├── agent_memories.py        - Git-native Open Knowledge Format (OKF) Markdown memory manager (.agent/memory/*.md)
    ├── agent_sessions.py        - SQLite session checkpoints (-save / -load), turn logger, projects/.database/ isolation
    ├── agent_context.py         - Jaccard semantic intent router for instant terminal shortcuts (ai-context.md)
-   └── agent_usage.py           - Zero-overhead token spend ledger with 0ms fast-path bypass for local models
+   └── agent_usage.py           - Zero-overhead token spend ledger with 0ms fast-path bypass for cloud models
 
 6. Cloud Providers & Auxiliary Services
    ├── agent_cloud.py           - Single-pass top-down .env cascade engine (Custom HF, Gemini, OpenRouter, DeepSeek)

@@ -3,7 +3,7 @@
 </div>
 <br>
 <div align="center">
-**New in v0.9.9.25:** Replaced legacy TPM with **Open Knowledge Format (OKF)** persistent memory (`.agent/memory/*.md`). Features Git-native Markdown directives with YAML frontmatter, instant `/mem save` & `/mem list` commands, 0ms post-turn background overhead, and complete `/m` (Map), `/mem` (Memory), and `/adp` (Adapters) toggle independence.
+**New in v0.9.9.25:** Replaced legacy TPM with **Open Knowledge Format (OKF)** persistent memory (`.agent/memory/*.md`). Features Git-native Markdown directives with YAML frontmatter, instant `/mem save` & `/mem list` commands, 0ms post-turn background overhead, and complete `/m` (Map), `/mem` (Memory), toggle independence.
 </div>
 <br>
 
@@ -288,7 +288,6 @@ AI_MAX_TOKENS="8192"
 
 <h2 align="center">Release Notes</h2>
 
-<br>
 <div align="center">
 **New in v0.9.9.24:** Added first-class support for **InclusionAI Ling-3.0-tiny** (7.9B MoE with 1.3B active compute). Achieved a perfect **7/7 (100%)** on the expanded `eval-stack` agentic benchmark. Includes the optimized `custom/lingtiny` profile and on-demand self-healing tool parser (`/adp`).
 </div>
@@ -307,4 +306,3 @@ AI_MAX_TOKENS="8192"
 
 * **License**: Licensed under the permissive [MODIFIED MIT LICENSE](LICENSE).
 * **Community:** Contributions are always welcome!
-```
