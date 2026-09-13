@@ -1,9 +1,9 @@
 <div align="center">
-**New in v0.9.9.25:** Replaced legacy TPM with **Open Knowledge Format (OKF)** persistent memory (`.agent/memory/*.md`). Features Git-native Markdown directives with YAML frontmatter, instant `/mem save` & `/mem list` commands, 0ms post-turn background overhead, and complete `/m` (Map) & `/mem` (Memory) toggle independence.
+**New in v0.9.9.27:** Production-hardened **`/adp`** small-model adapter architecture (sub-27B opt-in), 7-challenge `eval-stack` benchmark suite with turn-efficiency tracking, zero-I/O local spend bypass, and clean `projects/.database/` session isolation.
 </div>
 <br>
 <div align="center">
-**New in v0.9.9.24:** Added first-class support for **InclusionAI Ling-3.0-tiny** (7.9B MoE with 1.3B active compute). Achieved a perfect **5/5 (100%)** on the `eval-stack` agentic benchmark with ultra-fast execution speed. Includes the optimized `custom/lingtiny` profile and on-demand self-healing tool parser (`/adp`).
+**New in v0.9.9.25:** Replaced legacy TPM with **Open Knowledge Format (OKF)** persistent memory (`.agent/memory/*.md`). Features Git-native Markdown directives with YAML frontmatter, instant `/mem save` & `/mem list` commands, 0ms post-turn background overhead, and complete `/m` (Map), `/mem` (Memory), and `/adp` (Adapters) toggle independence.
 </div>
 <br>
 
@@ -29,16 +29,33 @@
 
 <h2 align="center">Overview & Execution Modes</h2>
 
-Lightweight Python orchestration (`rich` + `requests`) controlling a C++ backend `llama-server`. Optimized for fine-tuned quantized local models (`Qwen3.5-2B` / `MiniCPM5-2B` / `LFM2.5-8B` / `Ling-3.0-tiny` for chat & fast single-task tool execution, `Qwen3.6-35B` / `Qwen3.8-27B` for full autonomous agents) and cloud providers, supporting native JSON tool calling, and IPython kernel (`/py`).
+<p align="center">
+  <b>Lightweight Python orchestration (<code>rich</code> + <code>requests</code>) driving a high-throughput C++ <code>llama-server</code> backend.</b><br>
+  Engineered for stateful in-memory Python batching (<code>/py</code>), self-healing tool adapters (<code>/adp</code>), and sub-millisecond local execution.
+</p>
 
-🟢 **Active:** Official `Hugging Face` Router endpoints ([`Qwen/Qwen3.8-27B`](https://huggingface.co/Qwen/Qwen3.8-27B), [`moonshotai/Kimi-K3`](https://huggingface.co/moonshotai/Kimi-K3), [`zai-org/GLM-5.3-Flash`](https://huggingface.co/zai-org/GLM-5.3-Flash), [`deepseek-ai/DeepSeek-V4.1-Flash`](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash), [`Qwen/Qwen3.8-2.4T-A95B`](https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B)).
-> 💡 *Use `model select` to auto-configure free community HF Spaces.*
+<div align="center">
 
-- **Direct Shell (`<plugins>`):** Sub-millisecond intent routing for shortcuts and diagnostic tools in [`ai-context.md`](ai-context.md).
-- **Single-Turn Query (`ai <query>`):** Instant response piped directly back to the active shell prompt.
-- **Multi-Turn Chat (`ai`):** Interactive terminal session with persistent memory context.
-- **Workspace Agent (`ai init <path>`):** Full codebase graph indexing, surgical AST file editing, and sub-agent concurrency.
-- **llama.cpp WebAgent (`/webui`):** Autonomous tool-enabled web gateway on official `llama-server` UI (`:3000`) with Gemini search grounding and vision image-processing for text-only local models.
+| Model Tier | Target Architectures | Primary Use Case |
+| :--- | :--- | :--- |
+| **Sub-27B Compact (SLM)** | `Ling-3.0-tiny*` · `LFM2.5-8B` · `MiniCPM5-2B` · `Qwen3.5-2B+` | Ultra-fast tool calling, shell triage & single-turn code edits |
+| **27B+ Autonomous (LLM)** | `Qwen3.8-27B` · `Qwen3.6-35B*` · `Qwen3.8-Flash-Next` · `DeepSeek-V4.1` | Deep reasoning, multi-file refactoring & recursive sub-agents |
+
+</div>
+
+> [!TIP]
+> **Cloud & Community Spaces:** Pre-configured for official **Hugging Face Router** endpoints across multimodal agents ([`DeepSeek-V4.1-Flash`](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash), [`GLM-5.3-Flash`](https://huggingface.co/zai-org/GLM-5.3-Flash), [`Ling-3.0-flash-VL`](https://huggingface.co/inclusionAI/Ling-3.0-flash-VL), and ultra-scale flagships ([`Kimi-K3`](https://huggingface.co/moonshotai/Kimi-K3)). Run **`model select`** in your terminal to switch between free community endpoints and local GGUF weights.
+
+### Execution Surfaces
+
+| Mode | Command | Operational Scope & Capabilities |
+| :--- | :--- | :--- |
+| ⚡ **Direct Shell** | `<shortcut>` | Sub-millisecond intent matching for shortcuts, diagnostics, and queries in [`ai-context.md`](ai-context.md). |
+| 💬 **Single Query** | `ai "<query>"` | Zero-overhead response streamed directly to stdout without launching a chat session. |
+| 🧠 **Multi-Turn Chat** | `ai` | Interactive terminal session with persistent memory context, streaming tokens, and hotkeys. |
+| 🛠️ **Workspace Agent** | `ai init [path]` | Full AST codebase graph indexing, surgical 3-stage file editing (`edit_file`), and recursive task loops. |
+| 🌐 **llama.cpp WebAgent** | `/webui` | Autonomous tool-enabled web gateway on official `llama-server` UI (`:3000`) with Gemini vision and web grounding. |
+
 ---
 
 <h2 align="center">Key Systems & Integrations</h2>
@@ -48,10 +65,10 @@ Lightweight Python orchestration (`rich` + `requests`) controlling a C++ backend
 | **Memory (OKF)** | Git-native Open Knowledge Format ([OKF](https://github.com/okf-memory/okf-agent-memory)) persistent Markdown rules, architectural decisions & project directives. | `.agent/memory/` |
 | **Codebase Graph & Index-Map** | Structural codebase maps ([Graphify](https://github.com/Graphify-Labs/graphify)) + relational queries ([codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)) + standard library SQLite FTS5 symbol graph. | `index-map <dir>` |
 | **Autonomous Task Loop** | Self-directed iteration loop ([Ralph Wiggum](https://github.com/ghuntley/how-to-ralph-wiggum)) executing tasks against project specs (`TASK.md`) with failure decomposition. | `/task [goal]` |
-| **NOOA IPython Kernel Harness** | NVIDIA Object-Oriented Agent ([NOOA](https://github.com/NVIDIA-NeMo/labs-OO-Agents) + [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent)) stateful Python kernel with bounded previews (`preview()`), model-callable `memory`/`graph` APIs, and in-kernel `delegate()` sub-agents. | `/py` |
+| **Prime & NOOA Kernel Harness** | Prime Agent ([Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent)) + NVIDIA NOOA ([NOOA](https://github.com/NVIDIA-NeMo/labs-OO-Agents)) stateful Python kernel with bounded previews (`preview()`), model-callable `memory`/`graph` APIs, and in-kernel `delegate()` sub-agents. | `/py` |
 | **Surgical Edits** | Whitespace-tolerant replacements (`edit_file`) + AST skeleton guards (>250 lines) + overwrite protection (`write_file`) inspired by [SmallCoder](https://github.com/Doorman11991/smallcode). | `edit_file <path>` |
 | **3-Zone Context Compactor** | Token preservation compactor inspired by [Pi Coding Agent](https://pi.dev)—condenses older tool outputs while preserving completed task progress anchors. | `/compact` (or `/com`) |
-| **DeepSeek Session Audit & IPC** | Structured JSONL session event logs + JSON-RPC 2.0 socket IPC + YAML skill frontmatter overlays inspired by [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). | `.agent/session.jsonl` |
+| **Audit & IPC** | Unified Markdown conversation logs (`.agent/history.md`) + JSON-RPC 2.0 socket IPC + YAML skill frontmatter overlays. | `.agent/history.md` |
 | **Reasonix Cognitive** | Real-time reasoning trace step extraction ([Reasonix](https://github.com/esengine/deepseek-reasonix)) + cognitive phase formatting inside thinking stream. | `/t [N\|show\|hide]` |
 | **System Admin & Diagnostics** | Live health monitoring, AUR/security audits, system optimization, status routing, and git commit hooks. | [`tools/agentic/system/`](tools/agentic/system) |
 | **Model Select TUI** | Real-time **[Cloud Connection](modules/Readme.md)** TUI, key toggles, and endpoint selector. | `model select` |
@@ -74,7 +91,7 @@ Lightweight Python orchestration (`rich` + `requests`) controlling a C++ backend
 | **Resilience** | **Self-Healing Tools** | Unsloth-inspired JSON argument healer re-serializing valid schemas to prevent server `HTTP 500` errors. |
 | **Optimization** | **Token-Slasher** | Custom [`tools/`](tools/) and [`skills/`](skills/) integration built for minimal token consumption. |
 | **Grounding** | **Web Search Engine** | Real-time factual search retrieval (`/gnd`) with Gemini Grounding and DuckDuckGo safety fallback in CLI, TUI & WEB/PYC. |
-| **Voice-to-Text** | **Tablet/Phone Bridge** | Zero-latency HTTPS voice bridge with Gemini cloud transcription and native Wayland virtual typing (`wtype`) directly into PyCode IDE and CLI (`/v [auto]`). |
+| **Voice-to-Text** | **Tablet/Phone Bridge** | Zero-latency HTTPS voice bridge with Gemini cloud transcription and native Wayland virtual typing (`wtype --`) directly into PyCode IDE and CLI (`/v [auto]`). |
 | **Text-to-Speech** | **Neural Kokoro TTS** | Local PipeWire audio reader (`/tts`) using `koko` with silent code/thinking filtering and concise status announcements. |
 
 ---
@@ -254,18 +271,27 @@ AI_MAX_TOKENS="8192"
 - [x] **Ralph Autonomous Task Loop:** Self-directed iteration engine (`/task`, `TASK.md`) with failure-state decomposition.
 - [x] **Voice to Text:** Low-latency HTTPS voice bridge, Gemini transcription, and non-blocking stdin injection loop (`/v [auto]`).
 - [x] **Kokoro Neural Text-to-Speech:** Real-time local neural voice reader (`/tts`), PipeWire audio integration, and automatic thinking/code block filtering.
-- [x] **NOOA & Smolagents IPython Kernel Harness:** Single-tool Python kernel execution engine (`/py`) combining NVIDIA NOOA bounded previews (`preview()`) with Hugging Face `smolagents` code-first batching (`final_answer()`, `search_code()`), 30s `SIGALRM` loop breakers, model-callable `memory`/`graph` APIs, and in-kernel `delegate()` sub-agents.
-- [x] **DeepSeek Session Audit & IPC:** Real-time JSONL event logging (`.agent/session.jsonl`), JSON-RPC 2.0 socket IPC, and YAML skill profile frontmatter headers.
-- [x] **Modular Sub-27B Adapters & Self-Healing Parser:** Dedicated `agent_adapters.py` handling Hermes XML, DSML, Mistral, and raw function call extraction for small quantized models.
+- [x] **Prime & NOOA IPython Kernel Harness:** Single-tool Python kernel execution engine (`/py`) combining Prime Agent stateful REPL, NVIDIA NOOA bounded previews (`preview()`), Hugging Face `smolagents` code-first batching (`final_answer()`, `search_code()`), 30s `SIGALRM` loop breakers, model-callable `memory`/`graph` APIs, and in-kernel `delegate()` sub-agents.
+- [x] **Session Audit & IPC:** Unified Markdown conversation logging (`.agent/history.md`), JSON-RPC 2.0 socket IPC, and YAML skill profile frontmatter headers.
+- [x] **Modular Sub-27B Adapters & Self-Healing Parser:** Dedicated `agent_adapters.py` handling Hermes XML, DSML, Mistral, and raw function call extraction (`/adp`) for small quantized models.
 - [x] **SmallCoder Surgical Edits & AST Skeleton:** Whitespace/indentation tolerance in `edit_file`, overwrite protection on `write_file`, and AST outline reading for large files (>250 lines).
 - [x] **3-Zone Context Compactor with Progress Anchor:** Pi-inspired context compaction (`/com`) preserving completed milestone summaries across context purges.
 - [x] **PyCode Cross-Platform GUI (T3 Fork):** Local-first React desktop and WebUI workspace connected via ACP stdio JSON-RPC bridge (`/pyc`, `/pyc web`).
 - [x] **llama.cpp WebAgent Gateway:** Real-time tool execution, Gemini vision pre-processing, and streaming proxy for the official `llama.cpp` WebUI (`/webui`).
 - [x] **Google Search Grounding (/gnd):** Live web grounding via Gemini Search tool with automatic DuckDuckGo keyless fallback across CLI, TUI, WebUI, and PyCode.
 - [x] **Zero-Trust Hardened Containment:** Non-bypassable interactive `[Y/n]` fallback gate for out-of-bounds access and package management tools (`pip`, `pacman`, `sudo`).
-- [ ] **PyBot Integration ([OpenBot](https://github.com/opencoredev/akeru-bot) Plugin):** Embedded web assistant & customizable agent widget plugin.
+- [x] **Full-Stack Agentic Benchmark Suite:** 7-test `eval-stack` measuring tool accuracy, AST resilience, and turn efficiency (Par).
+- [ ] **PyBot Integration ([AkeruBot](https://github.com/opencoredev/akeru-bot) Plugin):** Embedded web assistant & customizable agent widget plugin.
 - [ ] **v1.0.0 Production Release Tag!**
 
+---
+
+<h2 align="center">Release Notes</h2>
+
+<br>
+<div align="center">
+**New in v0.9.9.24:** Added first-class support for **InclusionAI Ling-3.0-tiny** (7.9B MoE with 1.3B active compute). Achieved a perfect **7/7 (100%)** on the expanded `eval-stack` agentic benchmark. Includes the optimized `custom/lingtiny` profile and on-demand self-healing tool parser (`/adp`).
+</div>
 <br>
 <div align="center">
 **New in v0.9.9.20:** Added first-class support for **MiniCPM5-2B** powered by the dedicated **DSpark speculative decoding engine** (`draft-dspark`). Includes an optimized sub-27B agent profile (`custom/minicpm`), automated sandbox command self-healing in `agent_adapters`.
@@ -281,3 +307,4 @@ AI_MAX_TOKENS="8192"
 
 * **License**: Licensed under the permissive [MODIFIED MIT LICENSE](LICENSE).
 * **Community:** Contributions are always welcome!
+```
