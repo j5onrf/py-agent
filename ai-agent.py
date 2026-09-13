@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.27] - Main CLI Runtime, Workspace Agent & Command Dispatcher"""
+"""Py Agent [j5onrf] [v0.9.9.28] - Main CLI Runtime, Workspace Agent & Command Dispatcher"""
 
 import json
 import os
@@ -117,6 +117,21 @@ def clean_exit(safe_name: str | None = None) -> None:
             sessions.cleanup_sub_agent(safe_name, os.getpid())
         except Exception:
             pass
+
+    # Sweep orphaned session locks whose processes are dead
+    sess_dir = os.path.join(CFG_DIR, ".active_sessions")
+    if os.path.isdir(sess_dir):
+        for f in os.listdir(sess_dir):
+            if f.endswith(".session"):
+                try:
+                    pid = int(f.rsplit("-", 1)[-1].replace(".session", ""))
+                    os.kill(pid, 0)
+                except OSError:
+                    try:
+                        os.remove(os.path.join(sess_dir, f))
+                    except OSError:
+                        pass
+
     ui._console.print("\n[yellow]Exiting conversation.[/yellow]")
     sys.exit(0)
 
@@ -201,6 +216,8 @@ def run_interactive_chat(args: list[str]) -> None:
                     is_py = bool(d.get("py", False))
                     memory_active = bool(d.get("memory", False))
                     adapters_active = bool(d.get("adapters", d.get("adp", False)))
+                    if "calm" in d:
+                        core.save_state("calm_mode", bool(d["calm"]))
             except (OSError, json.JSONDecodeError):
                 pass
 
@@ -301,6 +318,20 @@ def run_interactive_chat(args: list[str]) -> None:
         os.environ["AI_CONFIRM_GATES"] = "0"
 
     db_turns, mem_count = workspace_db_counts(safe_name, workspace_path) if is_agent else (0, 0)
+
+    # Sweep dead session locks left behind by Hyprland (SUPER+Q) exits
+    sess_dir = os.path.join(CFG_DIR, ".active_sessions")
+    if os.path.isdir(sess_dir):
+        for f in os.listdir(sess_dir):
+            if f.endswith(".session"):
+                try:
+                    os.kill(int(f.rsplit("-", 1)[-1].replace(".session", "")), 0)
+                except OSError:
+                    try:
+                        os.remove(os.path.join(sess_dir, f))
+                    except OSError:
+                        pass
+
     sub_id = sessions.get_sub_agent_id(safe_name, os.getpid()) if is_agent else None
 
     ui.draw_session_box(workspace_path, home_dir, is_agent, db_turns, mem_count, memory_active, active_system_prompt, clean_name, sub_id=sub_id, box_style=st.get("box_style", 2))
@@ -505,6 +536,14 @@ def run_interactive_chat(args: list[str]) -> None:
                     val = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() and 1 <= int(parts[1]) <= 8 else (st.get("box_style", 2) % 8) + 1
                     core.save_state("box_style", val)
                     ui._console.print(f"[green][sys] Switched box style to #{val}.[/green]\n")
+                    continue
+
+                if cmd in ("/calm", "/zen"):
+                    cur_calm = core.get_state("calm_mode", False)
+                    new_calm = not cur_calm
+                    core.save_state("calm_mode", new_calm)
+                    _update_workspace_config(cfg_file, {"calm": new_calm})
+                    ui._console.print(f"[cyan][sys] Calm mode {'enabled (silent tools & boat animation active)' if new_calm else 'disabled (verbose output restored)'}.[/cyan]\n")
                     continue
 
                 if cmd in ("/md"):

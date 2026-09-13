@@ -17,6 +17,19 @@ High-speed local developer agent, episodic memory, SQLite checkpoints, NOOA-enha
 ╰───────────────────────────────────────── Ctrl+C to exit ─╯
  Startup context: 467 tokens
 
+❯ /zen
+ Calm mode enabled (silent tools & boat animation active).
+
+❯ list files in directory
+                |>
+-~~~-~~~-~~~-~\___/⚓-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~ [ 916/8,192t (11.2%) • ✔ 7.7s ]
+
+Agent: ✔ Task complete: Listed 19 files in the workspace directory.
+❯ calculate the sum of all prime numbers between 10 and 50 in-memory using python and print the result.
+                  |>
+-~~~-~~~-~~~-~~~\___/⚓~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~ [ 1,022/8,192t (12.5%) • ✔ 7.6s ]
+
+Agent: ✔ Task complete: Sum of all prime numbers between 10 and 50 is 311.
 ❯ █
 ```
 
@@ -60,19 +73,21 @@ All auto-created agent metadata files are strictly isolated inside `project/.age
 Running `ai init <path>` initializes a workspace and opens the interactive profile selector with instant RAM frontmatter pre-caching and single-letter hotkeys.
 
 ```console
-[ai init] Select default Agent Profile for workspace project:
+[ai init] Select default Agent Profile for workspace ling-tiny:
 
   ─── Custom ────────────────────────
-     1. Custom Base          (~200t)
-     2. Custom Lfm2          (~200t)
-     3. Custom lingtiny      (~200t)
-     4. Custom Q2B           (~200t)
-     5. Custom Sysadmin      (~200t)
+     1. Custom Base          (~435t)
+     2. Custom Gemini        (~553t)
+     3. Custom Lfm2          (~463t)
+  ❯  4. Custom Lingtiny      (~688t)
+     5. Custom Minicpm       (~724t)
+     6. Custom Q2B           (~385t)
+     7. Custom Sysadmin      (~1.3kt)
 
   ─── Agents ────────────────────────
-     1. Pi Pro               (~180t)
-     2. Claude Pro           (~190t)
-  ❯  3. Hermes Pro           (~180t)
+     1. Pi Pro               (~506t)
+     2. Claude Pro           (~659t)
+     3. Hermes Pro           (~648t)
 
   :: ↵ select    ↑/↓ navigate    Esc: default
      Tab: YOLO [ON]    m: Map [OFF]    d: Mem [OFF]    p: Py [ON]    a: Adp [ON]
@@ -101,6 +116,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 │   /pyc, /pyc web         - PyCode IDE (Desktop / WebUI)             │
 │   /webui, /web           - WebUI gateway (llama.cpp)                │
 │   /tui                   - Terminal UI (PyTUI)                      │
+│   /calm, /zen            - Toggle Calm mode (anchored boat & timer) │
 │   /v [auto], /voice      - Voice to text                            │
 │   /tts                   - Text to speech (Kokoro)                  │
 │                                                                     │

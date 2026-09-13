@@ -5,6 +5,7 @@ import json
 import os
 import re
 import select
+import shutil
 import sys
 import threading
 import time
@@ -154,6 +155,173 @@ class InlineSpinner:
             sys.stderr.flush()
         except OSError:
             pass
+
+
+class CalmBoatSpinner:
+    """Functional Calm Boat Engine:
+    - Maps the terminal width to total context capacity (0 -> max_tokens).
+    - Tracks active execution time live.
+    - While running: Cruises the ocean with dynamic ripple and HUD stats.
+    - When settled: Drops anchor (\\___/⚓) at the exact context percentage consumed
+      and stays on screen as a clean turn divider.
+    """
+    _last_x: int = 0
+    _last_dir: int = 1
+
+    def __init__(self, tokens_used: int = 0, max_tokens: int = 8192) -> None:
+        self.active = False
+        self.thread = None
+        self.tokens_used = max(1, tokens_used)
+        self.max_tokens = max(1, max_tokens)
+        self.start_time = 0.0
+        self.end_time = 0.0
+        self._lock = threading.Lock()
+
+    def update_context(self, tokens_used: int, max_tokens: int | None = None) -> None:
+        with self._lock:
+            self.tokens_used = max(1, tokens_used)
+            if max_tokens:
+                self.max_tokens = max(1, max_tokens)
+
+    def update(self, message: str = "") -> None:
+        pass
+
+    def _sail(self) -> None:
+        x = CalmBoatSpinner._last_x
+        direction = CalmBoatSpinner._last_dir
+        w_offset = 0
+        step_timer = time.time()
+        step_interval = 0.88
+
+        try:
+            sys.stderr.write("\n\n\033[2A")
+            sys.stderr.flush()
+        except OSError:
+            pass
+
+        while self.active:
+            now = time.time()
+            elapsed = now - self.start_time
+
+            with self._lock:
+                tokens = self.tokens_used
+                max_tok = self.max_tokens
+
+            pct = min(100.0, (tokens / max_tok) * 100.0)
+            cols = max(55, shutil.get_terminal_size((80, 24)).columns - 2)
+            hud = f" [ {pct:4.1f}% ctx • ⏱ {elapsed:4.1f}s ]"
+            hud_len = len(hud)
+
+            ocean_width = max(20, cols - hud_len - 2)
+            max_x = max(1, ocean_width - 7)
+
+            if x > max_x:
+                x = max_x
+                direction = -1
+
+            if now - step_timer >= step_interval:
+                x += direction
+                if x >= max_x:
+                    x = max_x
+                    direction = -1
+                elif x <= 0:
+                    x = 0
+                    direction = 1
+                CalmBoatSpinner._last_x = x
+                CalmBoatSpinner._last_dir = direction
+                step_timer = now
+
+            sail = "<|" if direction == 1 else "|>"
+            sail_line = (" " * (x + 2)) + f"\033[1;33m{sail}\033[0m"
+
+            water_pattern = ("-~~~" * ((ocean_width // 4) + 4))[w_offset : w_offset + ocean_width]
+            left_water = water_pattern[:x]
+            right_water = water_pattern[x + 5 : ocean_width]
+            hull = r"\___/"
+
+            # Blue water normally, yellow/amber if context > 70%, red if > 88%
+            w_col = "\033[34m" if pct < 70 else ("\033[33m" if pct < 88 else "\033[31m")
+
+            water_line = (
+                f"{w_col}{left_water}\033[0m"
+                f"\033[1;33m{hull}\033[0m"
+                f"{w_col}{right_water}\033[0m"
+                f"\033[2m [\033[0m \033[1;36m{pct:.1f}%\033[0m \033[2mctx •\033[0m \033[1;33m⏱ {elapsed:.1f}s\033[0m\033[2m ]\033[0m"
+            )
+
+            try:
+                sys.stderr.write(f"\r\x1b[2K{sail_line}\n\r\x1b[2K{water_line}\033[1A")
+                sys.stderr.flush()
+            except OSError:
+                pass
+
+            w_offset = (w_offset + 1) % 4
+            time.sleep(0.12)
+
+    def start(self, message: str = "") -> None:
+        with self._lock:
+            if not self.active:
+                self.active = True
+                self.start_time = time.time()
+                try:
+                    sys.stderr.write("\033[?25l")
+                    sys.stderr.flush()
+                except OSError:
+                    pass
+                self.thread = threading.Thread(target=self._sail, daemon=True)
+                self.thread.start()
+
+    def stop(self, leave_on_screen: bool = True, *args: Any, **kwargs: Any) -> None:
+        with self._lock:
+            if not self.active:
+                return
+            self.active = False
+            self.end_time = time.time()
+            elapsed = max(0.1, self.end_time - self.start_time)
+            tokens = self.tokens_used
+            max_tok = self.max_tokens
+
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=0.25)
+            self.thread = None
+
+        cols = max(55, shutil.get_terminal_size((80, 24)).columns - 2)
+        pct = min(100.0, (tokens / max_tok) * 100.0)
+
+        if leave_on_screen:
+            hud = f" [ {tokens:,}/{max_tok:,}t ({pct:.1f}%) • {elapsed:.1f}s ]"
+            ocean_width = max(20, cols - len(hud) - 4)
+            dock_x = min(ocean_width - 7, max(0, int((pct / 100.0) * (ocean_width - 7))))
+
+            sail_line = (" " * (dock_x + 2)) + "\033[1;33m|>\033[0m"
+            water_pattern = ("-~~~" * ((ocean_width // 4) + 4))[:ocean_width]
+            left_water = water_pattern[:dock_x]
+            right_water = water_pattern[dock_x + 6 : ocean_width]
+            hull_anchored = r"\___/⚓"
+
+            w_col = "\033[34m" if pct < 70 else ("\033[33m" if pct < 88 else "\033[31m")
+
+            docked_line = (
+                f"{w_col}{left_water}\033[0m"
+                f"\033[1;33m{hull_anchored}\033[0m"
+                f"{w_col}{right_water}\033[0m"
+                f"\033[2m [\033[0m \033[1;36m{tokens:,}/{max_tok:,}t\033[0m "
+                f"\033[2m({pct:.1f}%) •\033[0m \033[1;32m✔ {elapsed:.1f}s\033[0m\033[2m ]\033[0m"
+            )
+
+            try:
+                sys.stderr.write(f"\r\x1b[2K{sail_line}\n\r\x1b[2K{docked_line}\n\n")
+                sys.stderr.write("\033[?25h")
+                sys.stderr.flush()
+            except OSError:
+                pass
+        else:
+            try:
+                sys.stderr.write("\r\x1b[2K\n\r\x1b[2K\033[1A\r")
+                sys.stderr.write("\033[?25h")
+                sys.stderr.flush()
+            except OSError:
+                pass
 
 
 def _read_fd(fd: int) -> str:
@@ -403,6 +571,7 @@ def show_help() -> None:
         ("/pyc, /pyc web", "PyCode IDE (Desktop / Web)"),
         ("/webui, /web", "WebUI gateway (llama.cpp)"),
         ("/tui", "Terminal UI (PyTUI)"),
+        ("/calm, /zen", "Toggle silent Calm mode (anchored boat & timer)"),
         ("/v \\[auto], /voice", "Voice to text"),
         ("/tts", "Text to speech (Kokoro)"),
         ("/adp", "Toggle self-healing adapters"),
@@ -472,13 +641,18 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
     options = custom_opts + standard_agents
 
     profile_cache = {}
-    for k, _, _, _ in options:
+    resolved_options = []
+    for k, lbl, fallback_d, cat in options:
         sf = skills.find_skill_file(os.path.join(CFG_DIR, "skills"), k)
         defaults = {"yolo": False, "map": False, "py": False, "mem": False, "adp": False}
+        tok_lbl = fallback_d
         if sf and os.path.isfile(sf):
             try:
                 with open(sf, "r", encoding="utf-8") as f:
-                    meta, _ = skills.parse_frontmatter(f.read())
+                    raw_content = f.read()
+                meta, body = skills.parse_frontmatter(raw_content)
+                tok_count = max(1, (len(body or raw_content) * 10) // 36)
+                tok_lbl = f"~{tok_count / 1000:.1f}kt" if tok_count >= 1000 else f"~{tok_count}t"
                 defaults["yolo"] = str(meta.get("yolo", "")).lower() in ("true", "1", "yes", "on")
                 defaults["map"] = str(meta.get("map", meta.get("use_map", ""))).lower() in ("true", "1", "yes", "on")
                 defaults["py"] = str(meta.get("ipython", meta.get("py", ""))).lower() in ("true", "1", "yes", "on")
@@ -487,6 +661,8 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
             except Exception:
                 pass
         profile_cache[k] = defaults
+        resolved_options.append((k, lbl, tok_lbl, cat))
+    options = resolved_options
 
     sys.stderr.write(f"\n\033[1;36m[ai init]\033[0m Select default Agent Profile for workspace \033[1;33m{workspace_name}\033[0m:\n\n\033[?25l")
     sys.stderr.flush()

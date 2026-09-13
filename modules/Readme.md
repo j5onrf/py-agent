@@ -4,7 +4,7 @@ Built to be lightweight, auditable by a single developer, and private by design.
 
 * **Zero-Trust Containment:** Out-of-bounds workspace access, mutating system actions (`systemctl`), and package managers (`sudo`, `pacman`, `pip`) always require interactive `[Y/n]` confirmation.
 * **Isolated Secrets:** Credentials exist solely in `~/.config/py-agent/.env` and are never logged, exported, or leaked in prompts.
-* **Zero Telemetry & Daemons:** 100% standard library Python orchestration with zero background background embedding servers, zero tracking daemons.
+* **Zero Telemetry & Daemons:** 100% standard library Python orchestration with zero background embedding servers, zero tracking daemons.
 
 ---
 

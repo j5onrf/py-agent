@@ -5,6 +5,9 @@
 _AI_DIR="$HOME/.config/py-agent"
 _AI_PY="${_AI_PY:-$(command -v python3 || command -v python)}"
 
+# Clean up own PID file if terminal window or tab is closed
+trap 'rm -f "$_AI_DIR/.active_cd.$$" 2>/dev/null' EXIT HUP
+
 _ai_teleport() {
     local f="$_AI_DIR/.active_cd.$$"
     # FAST-PATH: Do zero work on normal prompt redraws
@@ -75,7 +78,7 @@ ai() {
             [[ -f "$map" ]] && map_arg=("$(<"$map")")
         fi
 
-        AI_ACTIVE_SKILL="${skills[*]}" AI_WORKSPACE_PATH="$path" "$_AI_PY" "$_AI_DIR/ai-agent.py" --talk-chat "${map_arg[@]}"
+        AI_ACTIVE_SKILL="${skills[*]}" AI_WORKSPACE_PATH="$path" "$_AI_PY" "$_AI_DIR/ai-agent.py" --talk-chat "${map_arg[@]}" || true
         _ai_teleport
     else
         "$_AI_PY" "$_AI_DIR/ai-agent.py" --talk "$@"
