@@ -1,16 +1,27 @@
 #!/usr/bin/env bash
-# Production Py-Agent Shell Hook v0.9.9
+# Production Py-Agent Shell Hook v0.9.9.26 (Hardened & Zero-Lag)
 
 [[ $- == *i* && -f "$HOME/.config/py-agent/ai-agent.py" ]] || return
 _AI_DIR="$HOME/.config/py-agent"
-_AI_PY=$(command -v python3 || command -v python)
+_AI_PY="${_AI_PY:-$(command -v python3 || command -v python)}"
 
 _ai_teleport() {
     local f="$_AI_DIR/.active_cd.$$"
-    [[ -f "$f" ]] && { cd "$(<"$f")" 2>/dev/null; rm -f "$f"; }
-    for old in "$_AI_DIR"/.active_cd.*; do
-        [[ -f "$old" ]] && { kill -0 "${old##*.active_cd.}" 2>/dev/null || rm -f "$old"; }
-    done
+    # FAST-PATH: Do zero work on normal prompt redraws
+    if [[ -f "$f" ]]; then
+        local target
+        target=$(<"$f")
+        rm -f "$f"
+        [[ -d "$target" ]] && cd "$target" 2>/dev/null
+
+        # Sweep stale PID files ONLY when an actual teleport occurred
+        local old pid
+        for old in "$_AI_DIR"/.active_cd.*; do
+            [[ -e "$old" ]] || continue
+            pid="${old##*.active_cd.}"
+            kill -0 "$pid" 2>/dev/null || rm -f "$old"
+        done
+    fi
 }
 
 if [[ -n "$ZSH_VERSION" ]]; then
@@ -22,17 +33,33 @@ fi
 ai_handle_missing() {
     local cmd exp
     cmd=$([[ -n "$*" ]] && "$_AI_PY" "$_AI_DIR/ai-agent.py" --interactive "$*") || return 127
-    exp=$(echo "$cmd" | sed -E 's/\x1b\[[0-9;]*[a-zA-Z]|\r//g') && exp="${exp//\~/$HOME}"
-    [[ -d "$exp" ]] && ai init "$exp" || { [[ "$exp" == *.py ]] && "$_AI_PY" "$exp" || eval "$exp"; }
+    exp=$(printf '%s' "$cmd" | sed -E 's/\x1b\[[0-9;]*[a-zA-Z]|\r//g')
+    # Safe tilde expansion: only expand leading ~ in paths (preserves git HEAD~1, etc.)
+    [[ "$exp" == "~"* ]] && exp="${HOME}${exp#\~}"
+
+    if [[ -d "$exp" ]]; then
+        ai init "$exp"
+    elif [[ "$exp" == *.py && -f "$exp" ]]; then
+        "$_AI_PY" "$exp"
+    else
+        eval "$exp"
+    fi
 }
 command_not_found_handle() { [[ "$1" != --* ]] && ai_handle_missing "$*"; }
 command_not_found_handler() { command_not_found_handle "$@"; }
 
 ai() {
     if [[ "$1" == "init" ]]; then
+        shift
         local path skills=() name map db map_arg=()
         path=$(pwd)
-        [[ -n "${2:-}" && "${2:-}" != -* ]] && { path="$2"; skills=("${@:3}"); } || skills=("${@:2}")
+
+        if [[ -n "${1:-}" && "$1" != -* ]]; then
+            path="$1"
+            shift
+        fi
+        skills=("$@")
+
         mkdir -p "$path" && path=$(CDPATH= cd "$path" && pwd -P) || return 1
         echo "$path" > "$_AI_DIR/.active_cd.$$"
         name=$(basename "$path")
@@ -57,6 +84,7 @@ ai() {
 
 view() {
     local f="${1:-}"
+    # Piped input (e.g. echo "# Title" | view)
     if [[ -z "$f" && (! -t 0 || -p /dev/stdin) ]]; then
         FORCE_COLOR=1 "$_AI_PY" -c "import sys,rich.markdown,rich.console;rich.console.Console().print(rich.markdown.Markdown(sys.stdin.read()))"
     elif [[ -n "$f" && "$f" == *.md && -f "$f" ]]; then
@@ -64,6 +92,7 @@ view() {
     elif [[ -n "$f" ]]; then
         cat "$@"
     else
-        cat
+        echo "Usage: view <file.md> or <command> | view" >&2
+        return 1
     fi
 }
