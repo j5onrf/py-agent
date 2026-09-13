@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.26] - Main CLI Runtime, Workspace Agent & Command Dispatcher"""
+"""Py Agent [j5onrf] [v0.9.9.27] - Main CLI Runtime, Workspace Agent & Command Dispatcher"""
 
 import json
 import os
@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 from contextlib import closing
+from typing import Any
 
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
 CONTEXT_FILE: str = os.path.join(CFG_DIR, "ai-context.md")
@@ -21,7 +22,7 @@ BASE_PROMPT_AGENT: str = "Active local workspace developer agent."
 
 
 def load_env_file(path: str) -> None:
-    # Auto-publish .env from .env.example for fresh installs / new machines
+    """Auto-publishes .env from .env.example and loads variables into os.environ."""
     if not os.path.isfile(path):
         example_p = os.path.join(os.path.dirname(path), ".env.example")
         if os.path.isfile(example_p):
@@ -43,7 +44,8 @@ def load_env_file(path: str) -> None:
 
 
 load_env_file(os.path.join(CFG_DIR, ".env"))
-sys.path.append(os.path.join(CFG_DIR, "modules"))
+if (mod_dir := os.path.join(CFG_DIR, "modules")) not in sys.path:
+    sys.path.append(mod_dir)
 
 try:
     import readline
@@ -69,6 +71,7 @@ except ImportError as e:
 
 
 def workspace_db_counts(safe_name: str, workspace_path: str = "") -> tuple[int, int]:
+    """Retrieves SQLite turn counts and OKF memory counts without spawning empty databases."""
     db_path = os.path.join(SESSIONS_DIR, f"{safe_name}.db")
     t = 0
     if os.path.isfile(db_path):
@@ -86,6 +89,7 @@ def workspace_db_counts(safe_name: str, workspace_path: str = "") -> tuple[int, 
 
 
 def ensure_clean_agent_dir(workspace_path: str) -> None:
+    """Migrates any stray root artifacts cleanly into .agent/."""
     if not (ws_name := os.path.basename(workspace_path)):
         return
     agent_dir = os.path.join(workspace_path, ".agent")
@@ -107,6 +111,7 @@ def ensure_clean_agent_dir(workspace_path: str) -> None:
 
 
 def clean_exit(safe_name: str | None = None) -> None:
+    """Cleans active session locks and exits cleanly."""
     if safe_name:
         try:
             sessions.cleanup_sub_agent(safe_name, os.getpid())
@@ -117,6 +122,7 @@ def clean_exit(safe_name: str | None = None) -> None:
 
 
 def _launch_surface(script_path: str, is_agent: bool, ws_path: str, skill: str, history: list, args: list[str] | None = None) -> None:
+    """Launches secondary surfaces (TUI, PyCode, WebUI) with state continuity."""
     if not os.path.exists(script_path):
         ui._console.print(f"[red][sys] Launcher script not found: {script_path}[/red]\n")
         return
@@ -138,7 +144,25 @@ def _launch_surface(script_path: str, is_agent: bool, ws_path: str, skill: str, 
         ui._console.print(f"[red][sys] Launch failed: {e}[/red]\n")
 
 
+def _update_workspace_config(cfg_file: str, updates: dict[str, Any]) -> None:
+    """Atomically updates settings inside .agent/config.json."""
+    if not os.path.exists(cfg_file):
+        return
+    try:
+        data = {}
+        with open(cfg_file, "r", encoding="utf-8") as cf:
+            data = json.load(cf)
+        data.update(updates)
+        tmp = f"{cfg_file}.tmp"
+        with open(tmp, "w", encoding="utf-8") as cf:
+            json.dump(data, cf, indent=2)
+        os.replace(tmp, cfg_file)
+    except Exception:
+        pass
+
+
 def run_interactive_chat(args: list[str]) -> None:
+    """Primary interactive agent and chat engine."""
     is_agent = (args[0] == "--talk-chat")
     workspace_path = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
     home_dir = os.path.expanduser("~")
@@ -149,13 +173,22 @@ def run_interactive_chat(args: list[str]) -> None:
     selected_profile = "pi/pro" if is_agent else "chat"
     is_yolo, use_map, is_py, memory_active, adapters_active = False, False, False, False, False
 
+    # 1. Workspace Profile & Config Resolution (Single-Pass)
     if is_agent:
         if not os.path.exists(cfg_file):
             selected_profile, is_yolo, use_map, is_py, memory_active, adapters_active = ui.select_workspace_profile(os.path.basename(workspace_path))
             try:
                 os.makedirs(os.path.dirname(cfg_file), exist_ok=True)
                 with open(cfg_file, "w", encoding="utf-8") as cf:
-                    json.dump({"profile": selected_profile, "yolo": is_yolo, "map": use_map, "py": is_py, "memory": memory_active, "adapters": adapters_active, "created_at": time.strftime("%Y-%m-%d %H:%M")}, cf, indent=2)
+                    json.dump({
+                        "profile": selected_profile,
+                        "yolo": is_yolo,
+                        "map": use_map,
+                        "py": is_py,
+                        "memory": memory_active,
+                        "adapters": adapters_active,
+                        "created_at": time.strftime("%Y-%m-%d %H:%M")
+                    }, cf, indent=2)
             except OSError:
                 pass
         else:
@@ -163,21 +196,23 @@ def run_interactive_chat(args: list[str]) -> None:
                 with open(cfg_file, "r", encoding="utf-8") as cf:
                     d = json.load(cf)
                     selected_profile = d.get("profile", "pi/pro")
-                    is_yolo = d.get("yolo", False)
-                    use_map = d.get("map", False)
-                    is_py = d.get("py", False)
-                    memory_active = d.get("memory", False)
-                    adapters_active = d.get("adapters", False)
+                    is_yolo = bool(d.get("yolo", False))
+                    use_map = bool(d.get("map", False))
+                    is_py = bool(d.get("py", False))
+                    memory_active = bool(d.get("memory", False))
+                    adapters_active = bool(d.get("adapters", d.get("adp", False)))
             except (OSError, json.JSONDecodeError):
                 pass
 
         if is_py:
             core.save_state("ipython_mode", True)
 
+    # 2. CLI Profile Overrides
     for arg in args:
         if arg.startswith("-") and arg not in ("--talk", "--talk-chat"):
             selected_profile = arg.lstrip("-").lower()
 
+    # 3. Persona & Prompt Initialization
     if is_agent:
         clean_name = selected_profile if selected_profile != "init" else "pi/pro"
         profile_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
@@ -186,51 +221,36 @@ def run_interactive_chat(args: list[str]) -> None:
         active_system_prompt = profile_content or BASE_PROMPT_AGENT
         os.environ["AI_ACTIVE_SKILL"] = clean_name
 
-        # Baseline from profile frontmatter
         st_init = core.get_state()
         reasoning_budget = st_init.get("reasoning_budget", 500)
         reasoning_active = st_init.get("reasoning_active", reasoning_budget > 0)
 
-        # Workspace config.json strictly takes precedence over profile frontmatter
+        # Workspace config takes precedence for reasoning
         if os.path.isfile(cfg_file):
             try:
                 with open(cfg_file, "r", encoding="utf-8") as cf:
                     d = json.load(cf)
-                    if "map" in d:
-                        use_map = bool(d["map"])
-                    if "yolo" in d:
-                        is_yolo = bool(d["yolo"])
-                    if "py" in d:
-                        is_py = bool(d["py"])
-                    if "memory" in d:
-                        memory_active = bool(d["memory"])
                     if "reasoning" in d:
                         reasoning_active = bool(d["reasoning"])
                         core.save_state("reasoning_active", reasoning_active)
                     if "reasoning_budget" in d:
                         reasoning_budget = int(d["reasoning_budget"])
                         core.save_state("reasoning_budget", reasoning_budget)
-                    if "adapters" in d or "adp" in d:
-                        adapters_active = bool(d.get("adapters", d.get("adp", True)))
-                        core.save_state("adapters_active", adapters_active)
             except Exception:
                 pass
-        else:
-            st = core.get_state()
-            if "use_map" in st:
-                use_map = bool(st["use_map"])
 
         core.save_state("use_map", use_map)
         core.save_state("yolo_mode", is_yolo)
         core.save_state("ipython_mode", is_py)
         core.save_state("memory_active", memory_active)
         core.save_state("adapters_active", adapters_active)
+
         os.environ["AI_USE_MAP"] = "1" if use_map else "0"
         os.environ["AI_IPYTHON_MODE"] = "1" if is_py else "0"
         if is_yolo:
             os.environ["AI_CONFIRM_GATES"] = "0"
 
-        # Inject Codespace Map at startup if Map is ON (auto-compile if missing)
+        # Inject Codespace Map at startup if Map is ON
         if use_map:
             agent_dir = os.path.join(workspace_path, ".agent")
             ws_name = os.path.basename(workspace_path)
@@ -285,6 +305,7 @@ def run_interactive_chat(args: list[str]) -> None:
 
     ui.draw_session_box(workspace_path, home_dir, is_agent, db_turns, mem_count, memory_active, active_system_prompt, clean_name, sub_id=sub_id, box_style=st.get("box_style", 2))
 
+    # 4. Interactive Command & Query Loop
     try:
         while True:
             if pending_query:
@@ -321,17 +342,7 @@ def run_interactive_chat(args: list[str]) -> None:
                     use_map = not use_map
                     core.save_state("use_map", use_map)
                     os.environ["AI_USE_MAP"] = "1" if use_map else "0"
-
-                    if os.path.exists(cfg_file):
-                        try:
-                            with open(cfg_file, "r+", encoding="utf-8") as cf:
-                                data = json.load(cf)
-                                data["map"] = use_map
-                                cf.seek(0)
-                                json.dump(data, cf, indent=2)
-                                cf.truncate()
-                        except Exception:
-                            pass
+                    _update_workspace_config(cfg_file, {"map": use_map})
 
                     if use_map:
                         agent_dir = os.path.join(workspace_path, ".agent")
@@ -365,12 +376,7 @@ def run_interactive_chat(args: list[str]) -> None:
                             ui._console.print("[dim yellow][sys] Usage: /mem save <title>[: <content>]  (e.g. /mem save db: Use SQLite WAL mode)[/dim yellow]\n")
                             continue
                         raw_payload = sub_parts[2]
-                        if ":" in raw_payload:
-                            m_title, m_content = raw_payload.split(":", 1)
-                        elif "|" in raw_payload:
-                            m_title, m_content = raw_payload.split("|", 1)
-                        else:
-                            m_title, m_content = raw_payload, raw_payload
+                        m_title, m_content = raw_payload.split(":", 1) if ":" in raw_payload else (raw_payload.split("|", 1) if "|" in raw_payload else (raw_payload, raw_payload))
                         ok, res_path = memories.save_memory_file(workspace_path, m_title.strip(), m_content.strip())
                         if ok:
                             ui._console.print(f"[green][sys] Saved memory: [bold]{os.path.basename(res_path)}[/bold][/green]\n")
@@ -389,19 +395,9 @@ def run_interactive_chat(args: list[str]) -> None:
                             ui._console.print()
                         continue
 
-                    # Toggle ON/OFF
                     memory_active = not memory_active
                     core.save_state("memory_active", memory_active)
-                    if os.path.exists(cfg_file):
-                        try:
-                            with open(cfg_file, "r+", encoding="utf-8") as cf:
-                                data = json.load(cf)
-                                data["memory"] = memory_active
-                                cf.seek(0)
-                                json.dump(data, cf, indent=2)
-                                cf.truncate()
-                        except Exception:
-                            pass
+                    _update_workspace_config(cfg_file, {"memory": memory_active})
                     m_cnt = memories.get_memory_count(workspace_path)
                     ui._console.print(f"[green][sys] Project memory {'enabled (' + str(m_cnt) + ' files loaded)' if memory_active else 'disabled'}.[/green]\n")
                     continue
@@ -457,19 +453,10 @@ def run_interactive_chat(args: list[str]) -> None:
                     continue
 
                 if cmd in ("/adp", "/adapter", "/adapters"):
-                    cur_adp = core.get_state("adapters_active", True)
+                    cur_adp = core.get_state("adapters_active", False)
                     new_adp = not cur_adp
                     core.save_state("adapters_active", new_adp)
-                    if os.path.exists(cfg_file):
-                        try:
-                            with open(cfg_file, "r+", encoding="utf-8") as cf:
-                                data = json.load(cf)
-                                data["adapters"] = new_adp
-                                cf.seek(0)
-                                json.dump(data, cf, indent=2)
-                                cf.truncate()
-                        except Exception:
-                            pass
+                    _update_workspace_config(cfg_file, {"adapters": new_adp})
                     ui._console.print(f"[cyan][sys] Self-healing adapters {'enabled (small-model resilience active)' if new_adp else 'disabled (strict native schema mode)'}.[/cyan]\n")
                     continue
 
@@ -482,16 +469,7 @@ def run_interactive_chat(args: list[str]) -> None:
                     else:
                         active = ipython.toggle_ipython_mode()
                         os.environ["AI_IPYTHON_MODE"] = "1" if active else "0"
-                        if os.path.exists(cfg_file):
-                            try:
-                                with open(cfg_file, "r+", encoding="utf-8") as cf:
-                                    data = json.load(cf)
-                                    data["py"] = active
-                                    cf.seek(0)
-                                    json.dump(data, cf, indent=2)
-                                    cf.truncate()
-                            except Exception:
-                                pass
+                        _update_workspace_config(cfg_file, {"py": active})
                         ui._console.print(f"[cyan][sys] IPython harness {'enabled (exec_python single tool mode)' if active else 'disabled (classic JSON tools)'}.[/cyan]\n")
                         continue
 
@@ -543,16 +521,7 @@ def run_interactive_chat(args: list[str]) -> None:
                     new_yolo = not (os.environ.get("AI_CONFIRM_GATES", "1") == "0")
                     os.environ["AI_CONFIRM_GATES"] = "0" if new_yolo else "1"
                     core.save_state("yolo_mode", new_yolo)
-                    if os.path.exists(cfg_file):
-                        try:
-                            with open(cfg_file, "r+", encoding="utf-8") as cf:
-                                data = json.load(cf)
-                                data["yolo"] = new_yolo
-                                cf.seek(0)
-                                json.dump(data, cf, indent=2)
-                                cf.truncate()
-                        except Exception:
-                            pass
+                    _update_workspace_config(cfg_file, {"yolo": new_yolo})
                     ui._console.print(f"[yellow][sys] Confirmation gates {'disabled (Autonomous / YOLO mode active)' if new_yolo else 'enabled (y/n confirmation required per action)'}.[/yellow]\n")
                     continue
 
@@ -578,17 +547,7 @@ def run_interactive_chat(args: list[str]) -> None:
                         core.save_state("reasoning_active", reasoning_active)
                         ui._console.print(f"[yellow][sys] Deep reasoning {'enabled' if reasoning_active else 'disabled'} (budget: {reasoning_budget} tokens).[/yellow]\n")
 
-                    if os.path.exists(cfg_file):
-                        try:
-                            with open(cfg_file, "r+", encoding="utf-8") as cf:
-                                data = json.load(cf)
-                                data["reasoning"] = reasoning_active
-                                data["reasoning_budget"] = reasoning_budget
-                                cf.seek(0)
-                                json.dump(data, cf, indent=2)
-                                cf.truncate()
-                        except Exception:
-                            pass
+                    _update_workspace_config(cfg_file, {"reasoning": reasoning_active, "reasoning_budget": reasoning_budget})
                     continue
 
                 if cmd == "/stats":
@@ -607,9 +566,13 @@ def run_interactive_chat(args: list[str]) -> None:
                         try:
                             with open(txt_p, "r", encoding="utf-8") as mf:
                                 new_map = mf.read().strip()
+                            has_map = False
                             for msg in chat_history:
                                 if "### CODESPACE MAP:" in msg["content"]:
                                     msg["content"] = msg["content"].split("### CODESPACE MAP:")[0] + f"### CODESPACE MAP:\n{new_map}"
+                                    has_map = True
+                            if not has_map:
+                                chat_history[0]["content"] += f"\n\n### CODESPACE MAP:\n{new_map}"
                             ui._console.print("\r\x1b[2K[green][sys] Map synchronized.[/green]\n")
                         except Exception as e:
                             ui._console.print(f"\r\x1b[2K[red][sys] Sync failed: {e}[/red]\n")
@@ -707,7 +670,7 @@ def run_interactive_chat(args: list[str]) -> None:
                 pass
 
             if ans := core.stream_response(chat_history, prefix="Agent:" if is_agent else "AI:", show_stats=show_stats, thinking_budget=reasoning_budget if reasoning_active else 0, is_agent=is_agent):
-                clean_ans = re.sub(r"<think>[\s\S]*?</think>", "", ans).strip()
+                clean_ans = re.sub(r"<think>[\s\S]*?(?:</think>|$)", "", ans).strip()
                 chat_history.append({"role": "assistant", "content": clean_ans or ans})
                 tts.speak_response(clean_ans or ans)
                 if is_agent:
@@ -734,6 +697,7 @@ def run_interactive_chat(args: list[str]) -> None:
 
 
 def run_direct_query(args: list[str]) -> None:
+    """Executes instant single-turn CLI prompt without interactive session loop."""
     query_parts = args[1:]
     query = " ".join(query_parts).strip()
     if query.lower() in ("/help", "/h", "help", "--help", "-h"):
@@ -756,6 +720,7 @@ def run_direct_query(args: list[str]) -> None:
 
 
 def run_matching_search(args: list[str]) -> None:
+    """Sub-millisecond shell intent matcher for command not found hook."""
     user_input = re.sub(r"[`$]", "", " ".join(args)).strip()
     if not user_input or args[0].startswith("--"):
         sys.exit(0)
