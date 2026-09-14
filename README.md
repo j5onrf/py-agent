@@ -1,5 +1,5 @@
 <div align="center">
-**New in v0.9.9.28:** Introduced **`/calm`** mode with an animated sailboat progress indicator, context capacity ocean gauge, elapsed execution timer, and anchored completion marker (`\___/⚓`) with muted tool diffs; dynamic in-memory profile token weight calculation in `ai init` (`~380t` to `~1.2kt`); conversational greeting guards for small models; and automatic startup pruning for orphaned session locks across window manager exits.
+**New in v0.9.9.28:** Updated **CLI structure standard** with copy-safe 4-space indented tool outputs, introduced **`/calm`** mode with an animated sailboat progress indicator, context capacity ocean gauge, elapsed execution timer, and completion marker (`\___/`) with muted tool diffs; dynamic in-memory profile token weight calculation in `ai init` (`~380t` to `~1.2kt`); conversational greeting guards for small models; and automatic startup pruning for orphaned session locks across window manager exits.
 </div>
 <br>
 <div align="center">

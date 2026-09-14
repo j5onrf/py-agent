@@ -264,7 +264,7 @@ class CalmBoatSpinner:
                 self.thread = threading.Thread(target=self._sail, daemon=True)
                 self.thread.start()
 
-    def stop(self, leave_on_screen: bool = True, *args: Any, **kwargs: Any) -> None:
+    def stop(self, leave_on_screen: bool = False, *args: Any, **kwargs: Any) -> None:
         with self._lock:
             if not self.active:
                 return

@@ -106,7 +106,7 @@ def run_task_loop(
     thinking_budget = int(os.environ.get("AI_REASONING_BUDGET", st.get("reasoning_budget", 0) if st.get("reasoning_active", False) else 0))
 
     for turn in range(1, max_turns + 1):
-        ui._console.print(f"[bold bright_blue]─── Task Turn {turn}/{max_turns} ─────────────────────────────[/bold bright_blue]")
+        ui._console.print(f"[bold bright_blue]─── Task Turn {turn}/{max_turns} ───[/bold bright_blue]")
 
         if consecutive_failures >= 2:
             decomp_directive = (

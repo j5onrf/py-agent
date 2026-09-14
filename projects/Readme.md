@@ -3,7 +3,7 @@
 High-speed local developer agent, episodic memory, SQLite checkpoints, NOOA-enhanced IPython kernel harness, and codebase index graph.
 
 ```console
-~ ✗ ling
+~ ❯ ling
 [01/02] ❯ [ling-tiny] ai init ~/ling-tiny
 :: ↵ run  Esc: 
 ✓ Profile set to: Custom Lingtiny [Yolo: ON] [Map: ON] [Mem: ON] [Py: ON] [Adp: ON]
@@ -15,21 +15,18 @@ High-speed local developer agent, episodic memory, SQLite checkpoints, NOOA-enha
 │   profile:  custom/lingtiny                              │
 │  database:  active (map + mem: 3m/5t)                    │
 ╰───────────────────────────────────────── Ctrl+C to exit ─╯
- Startup context: 467 tokens
+ Startup context: 620 tokens
 
 ❯ /calm
  Calm mode enabled (silent tools & boat animation active).
 
-❯ list files in directory
-      |>
--~~~\___/~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~- 7.7s ]
-
-Agent: ✔ Task complete: Listed 19 files in the workspace directory.
 ❯ calculate the sum of all prime numbers between 10 and 50 in-memory using python and print the result.
             |>
--~~~-~~~-~\___/~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~- 7.6s ]
+-~~~-~~~-~\___/~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-
 
 Agent: ✔ Task complete: Sum of all prime numbers between 10 and 50 is 311.
+ [ think: 56 | ans: 18 | 74 tokens | 0.61s @ 121.31 t/s ]
+[ 767 in | 53 out | ctx: 10.0% ]
 ❯ █
 ```
 

@@ -424,11 +424,14 @@ def _print_tool_output(spinner: Any, text: str) -> None:
         return
     if sys.stdout.isatty() and text.strip():
         if spinner:
-            spinner.stop("Done")
-        if any(k in text for k in ("#", "|", "```")):
-            _console_err.print(Markdown(text, code_theme="ansi_dark"))
-        else:
-            _console_err.print(text)
+            spinner.stop()
+        # Copy-safe 4-space indent (no unicode pipes to corrupt pasted code)
+        clean_lines = text.strip().splitlines()
+        preview = clean_lines[:15]
+        for line in preview:
+            _console_err.print(f"    {line}")
+        if len(clean_lines) > 15:
+            _console_err.print(f"    [dim]... ({len(clean_lines) - 15} more lines)[/dim]")
 
 
 def _run_edit_tool(name: str, args: dict[str, Any], workspace: str, spinner: Any = None) -> str:
@@ -690,15 +693,28 @@ def agentic_turn(
                 brief = str(args.get("code") or args.get("symbol") or args.get("path") or args.get("command") or args.get("pattern") or args.get("goal") or "")[:100].replace("\n", " ")
                 verb = TOOL_VERBS.get(fname, "working")
 
+                # Cleanly clear spinner before printing tool action header (verbose mode only)
+                if not is_calm and spinner and getattr(spinner, "active", False):
+                    spinner.stop()
+
                 if not is_calm:
-                    _console_err.print(f"[dim]∗ {verb} • [cyan]{fname}[/cyan] [italic]{brief}[/italic][/dim]")
+                    _console_err.print(f"\n  [dim]∗ {verb} •[/dim] [cyan]{fname}[/cyan] [dim italic]{brief}[/dim italic]")
                 if spinner and fname != "delegate_task" and not getattr(spinner, "active", False):
                     spinner.start(f"{verb.capitalize()}...")
 
+                t_start = time.time()
                 try:
                     result = _run_edit_tool(fname, args, workspace, spinner)
                 except Exception as e:
                     result = f"[tool error] {e}"
+
+                # Stop spinner after tool finishes (verbose mode only)
+                if not is_calm and spinner and getattr(spinner, "active", False):
+                    spinner.stop()
+
+                if not is_calm:
+                    elapsed = max(0.01, time.time() - t_start)
+                    _console_err.print(f"  [green]✔[/green] [dim]Done ({elapsed:.1f}s)[/dim]")
 
                 if len(result) > 8000:
                     scratch_dir = os.path.join(workspace, ".agent", "scratchpad")
