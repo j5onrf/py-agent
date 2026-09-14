@@ -1,9 +1,9 @@
 <div align="center">
-**New in v0.9.9.28:** Updated **CLI structure standard** with copy-safe 4-space indented tool outputs, introduced **`/calm`** mode with an animated sailboat progress indicator, context capacity ocean gauge, elapsed execution timer, and completion marker (`\___/⚓`) with muted tool diffs; dynamic in-memory profile token weight calculation in `ai init` (`~380t` to `~1.2kt`); conversational greeting guards for small models; and automatic startup pruning for orphaned session locks across window manager exits.
+**New in v0.9.9.29:** Introduced **Adaptive Context Scaling** with dynamic line ceilings (250 to 4,000 lines) and proportional scratchpad offloading across 8k–128k context windows; added interactive **Context Budget Presets** (`AI_MAX_TOKENS`) in `model select`; consolidated `agent_usage.py` with unified speed tracking (removed `speed_test.py`); hardened `ai-hook.sh` with portable `sed` and safe tilde expansion; and optimized `ai-agent.py` with read-only SQLite URIs and precompiled regexes.
 </div>
 <br>
 <div align="center">
-**New in v0.9.9.27:** Production-hardened **`/adp`** small-model adapter architecture (sub-27B opt-in), 7-challenge `eval-stack` benchmark suite with turn-efficiency tracking, zero-I/O local spend bypass, and clean `projects/.database/` session isolation.
+**New in v0.9.9.28:** Updated **CLI structure standard** with copy-safe 4-space indented tool outputs, introduced **`/calm`** mode with an animated sailboat progress indicator, context capacity ocean gauge, elapsed execution timer, and completion marker (`\___/⚓`) with muted tool diffs; dynamic in-memory profile token weight calculation in `ai init` (`~380t` to `~1.2kt`); conversational greeting guards for small models; and automatic startup pruning for orphaned session locks across window manager exits.
 </div>
 <br>
 
@@ -11,7 +11,7 @@
   <img alt="py-agent" src="logo.svg" height="130" />
 </div>
 
-<h1 align="center">py-agent <img src="https://shieldcn.dev/badge/version-v0.9.9.28.svg?variant=secondary" alt="Version"><a href="https://github.com/j5onrf/py-agent"></a></h1>
+<h1 align="center">py-agent <img src="https://shieldcn.dev/badge/version-v0.9.9.29.svg?variant=secondary" alt="Version"><a href="https://github.com/j5onrf/py-agent"></a></h1>
 
 <p align="center">
   <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/github/last-commit/j5onrf/py-agent.svg?color=emerald&variant=secondary" alt="Last Commit"></a>
@@ -288,6 +288,10 @@ AI_MAX_TOKENS="8192"
 
 <h2 align="center">Release Notes</h2>
 
+<div align="center">
+**New in v0.9.9.27:** Production-hardened **`/adp`** small-model adapter architecture (sub-27B opt-in), 7-challenge `eval-stack` benchmark suite with turn-efficiency tracking, zero-I/O local spend bypass, and clean `projects/.database/` session isolation.
+</div>
+<br>
 <div align="center">
 **New in v0.9.9.25:** Replaced legacy TPM with **Open Knowledge Format (OKF)** persistent memory (`.agent/memory/*.md`). Features Git-native Markdown directives with YAML frontmatter, instant `/mem save` & `/mem list` commands, 0ms post-turn background overhead, and complete `/m` (Map), `/mem` (Memory), toggle independence.
 </div>

@@ -4,7 +4,7 @@ Built to be lightweight, auditable by a single developer, and private by design.
 
 * **Zero-Trust Containment:** Out-of-bounds workspace access, mutating system actions (`systemctl`), and package managers (`sudo`, `pacman`, `pip`) always require interactive `[Y/n]` confirmation.
 * **Isolated Secrets:** Credentials exist solely in `~/.config/py-agent/.env` and are never logged, exported, or leaked in prompts.
-* **Zero Telemetry & Daemons:** 100% standard library Python orchestration with zero background embedding servers, zero tracking daemons.
+* **Standalone Architecture:** 100% standard library Python orchestration with zero background embedding servers, zero tracking services.
 
 ---
 
@@ -48,8 +48,7 @@ Built to be lightweight, auditable by a single developer, and private by design.
 
 2. Execution & Streaming Engine
    ├── agent_core.py            - SSE parser, token calculation, fallback cascade, unclosed-think sanitization
-   ├── agent_adapters.py        - Universal Sub-27B tool adapters (/adp), AST extractors & self-healing JSON parser
-   └── speed_test.py            - High-resolution monotonic timer (time.perf_counter) for phase TPS metrics
+   └── agent_adapters.py        - Universal Sub-27B tool adapters (/adp), AST extractors & self-healing JSON parser
 
 3. Sandboxing, Tools & Safety
    ├── agent_tools.py           - 12-tool suite, container self-healing, 3-stage resilient replace, AST syntax guards
@@ -65,11 +64,11 @@ Built to be lightweight, auditable by a single developer, and private by design.
    ├── agent_memories.py        - Git-native Open Knowledge Format (OKF) Markdown memory manager (.agent/memory/*.md)
    ├── agent_sessions.py        - SQLite session checkpoints (-save / -load), turn logger, projects/.database/ isolation
    ├── agent_context.py         - Jaccard semantic intent router for instant terminal shortcuts (ai-context.md)
-   └── agent_usage.py           - Zero-overhead token spend ledger with 0ms fast-path bypass for cloud models
+   └── agent_usage.py           - Unified spend ledger, high-resolution generation timer & speed tracker
 
 6. Cloud Providers & Auxiliary Services
    ├── agent_cloud.py           - Single-pass top-down .env cascade engine (Custom HF, Gemini, OpenRouter, DeepSeek)
-   ├── model-select.py          - Streamlined interactive TUI model selector & .env key synchronizer
+   ├── model-select.py          - Streamlined interactive TUI model selector, context budget manager & .env key synchronizer
    ├── agent_voice.py           - Low-latency HTTPS voice bridge (:9999) with Wayland virtual typing (wtype --)
    ├── agent_tts.py             - Zero-lag neural Kokoro text-to-speech module (OMP-tuned pw-play + koko execution)
    └── chat                     - Standalone analytical recommendation engine for /f, /t, /b, and /a directives

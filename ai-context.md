@@ -42,7 +42,7 @@
 
 ```properties
 # --- Workspaces ---
-ai init ~/.config/py-agent/projects/deepseekv4-1 ---> deepseekv4-1, deepseekv4 1
+ai init ~/.config/py-agent/projects/deepseek ---> deepseek-v4
 ai init ~/.config/py-agent/projects/gemini ---> gemini
 ai init ~/.config/py-agent/projects/ling-tiny ---> ling-tiny
 ai init ~/.config/py-agent/projects/omarchyv4 ---> omarchyv4
