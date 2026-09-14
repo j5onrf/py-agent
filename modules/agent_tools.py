@@ -226,6 +226,15 @@ WEB_TOOL: dict[str, Any] = {
 }
 
 
+def _is_calm() -> bool:
+    """Checks if Calm Mode is active in the CLI."""
+    try:
+        import agent_core
+        return agent_core.is_calm_cli() if hasattr(agent_core, "is_calm_cli") else bool(agent_core.get_state("calm_mode", False))
+    except Exception:
+        return False
+
+
 def _safe_path(workspace: str, p: str) -> str:
     """Resolves and normalizes workspace paths with container prefix self-healing."""
     if not p:
@@ -744,7 +753,7 @@ def run_tool(
                 except (json.JSONDecodeError, TypeError, ValueError) as e:
                     return f"[error] Edit blocked. Resulting JSON syntax error: {e}."
 
-            if sys.stdout.isatty():
+            if sys.stdout.isatty() and not _is_calm():
                 if diff := "\n".join(
                     difflib.unified_diff(
                         original.splitlines(),
@@ -795,7 +804,7 @@ def run_tool(
             except (json.JSONDecodeError, TypeError, ValueError) as e:
                 return f"[error] Write blocked. JSON syntax error: {e}."
 
-        if sys.stdout.isatty() and os.path.exists(full):
+        if sys.stdout.isatty() and not _is_calm() and os.path.exists(full):
             try:
                 with open(full, "r", encoding="utf-8", errors="replace") as f:
                     old = f.read()

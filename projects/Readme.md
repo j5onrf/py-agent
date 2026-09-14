@@ -17,17 +17,17 @@ High-speed local developer agent, episodic memory, SQLite checkpoints, NOOA-enha
 ╰───────────────────────────────────────── Ctrl+C to exit ─╯
  Startup context: 467 tokens
 
-❯ /zen
+❯ /calm
  Calm mode enabled (silent tools & boat animation active).
 
 ❯ list files in directory
-                |>
--~~~-~~~-~~~-~\___/⚓-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~ [ 916/8,192t (11.2%) • ✔ 7.7s ]
+      |>
+-~~~\___/~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~- 7.7s ]
 
 Agent: ✔ Task complete: Listed 19 files in the workspace directory.
 ❯ calculate the sum of all prime numbers between 10 and 50 in-memory using python and print the result.
-                  |>
--~~~-~~~-~~~-~~~\___/⚓~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~ [ 1,022/8,192t (12.5%) • ✔ 7.6s ]
+            |>
+-~~~-~~~-~\___/~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~- 7.6s ]
 
 Agent: ✔ Task complete: Sum of all prime numbers between 10 and 50 is 311.
 ❯ █

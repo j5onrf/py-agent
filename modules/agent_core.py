@@ -229,6 +229,15 @@ def workspace_safe_name(workspace_path: str, home_dir: str = "") -> str:
     return "home-chat" if ws == home else (ws.replace("/", "-").strip("-.") or "home-chat")
 
 
+def is_calm_cli() -> bool:
+    """Strict gate: Calm mode only runs in interactive CLI terminals (never in TUI, WebUI, PyCode, or subagents)."""
+    if os.environ.get("AI_SURFACE") == "1" or os.environ.get("TEXTUAL") or int(os.environ.get("AI_SUBAGENT_DEPTH", "0")) >= 1:
+        return False
+    if not (sys.stdout.isatty() and sys.stderr.isatty()):
+        return False
+    return bool(get_state("calm_mode", False))
+
+
 def run_mod(module_name: str, *args: str) -> str:
     for base in (os.path.join(CFG_DIR, "modules"), os.path.join(CFG_DIR, "tools"), CFG_DIR):
         target = os.path.join(base, module_name)
@@ -411,7 +420,7 @@ def _confirm_gate(reason: str, spinner: Any) -> bool:
 
 
 def _print_tool_output(spinner: Any, text: str) -> None:
-    if get_state("calm_mode", False):
+    if is_calm_cli():
         return
     if sys.stdout.isatty() and text.strip():
         if spinner:
@@ -443,7 +452,7 @@ def agentic_turn(
     is_local = "localhost" in url or "127.0.0.1" in url or body.get("model") == "local-model"
     resolved_model, streamer, res = None, None, None
     max_ctx = int(os.environ.get("AI_MAX_TOKENS", 8192))
-    is_calm = bool(get_state("calm_mode", False))
+    is_calm = is_calm_cli()
 
     consecutive_tool_failures = 0
 
@@ -566,21 +575,23 @@ def agentic_turn(
 
                     if chunk_to_stream:
                         acc_content.append(chunk_to_stream)
+
                         if first_chunk:
                             first_chunk = False
                             if not is_calm:
                                 streamer = RichStreamer(prefix="Agent:" if is_agent else "AI:", spinner=spinner)
                                 streamer.start()
-                            if speed_test and show_stats and not is_calm:
+                            if speed_test and show_stats:
                                 speed_test.start()
 
                         if streamer and not is_calm:
                             streamer.update(chunk_to_stream)
-                        if speed_test and show_stats and not is_calm:
+
+                        if speed_test and show_stats:
                             speed_test.count_token(chunk_to_stream, is_thinking=is_thinking)
-                    elif ("<tool_call" in content or "<function=" in content) and not is_calm:
+                    elif "<tool_call" in content or "<function=" in content:
                         acc_content.append(content)
-                        if spinner and not spinner.active:
+                        if not is_calm and spinner and not spinner.active:
                             spinner.start("Drafting tool action...")
 
                     for tc in delta.get("tool_calls", []):
@@ -611,9 +622,6 @@ def agentic_turn(
             in_tok, out_tok = _calc_turn_tokens(ans_text, messages, captured_usage, is_local)
             final_model = resolved_model or body.get("model") or "local-model"
 
-            if speed_test and show_stats and not first_chunk and not is_calm:
-                speed_test.end(actual_out_tokens=out_tok, is_local=is_local, resolved_model=final_model, active_model=body.get("model"))
-
             calls = [val for _, val in sorted(tool_calls_map.items())] if tool_calls_map else None
             adapters_on = get_state("adapters_active", False)
 
@@ -622,7 +630,7 @@ def agentic_turn(
 
             has_web_call = use_gnd and any(c.get("function", {}).get("name") == "web_search" for c in (calls or []))
 
-            # Concluded - no more tool calls
+            # Turn completed - dock boat ONCE and print final response
             if not calls or (not is_agent and not has_web_call):
                 tool_toks = sum(get_accurate_token_count(m.get("content") or "") for m in messages if m.get("role") in ("assistant", "tool"))
                 final_out = max(out_tok, tool_toks)
@@ -633,9 +641,15 @@ def agentic_turn(
 
                 if is_calm and ans_text:
                     p_prefix = "Agent: " if is_agent else "AI: "
-                    _console.print(f"[bold green]{p_prefix}[/bold green]{ans_text}")
+                    clean_reply = re.sub(r"<think>[\s\S]*?(?:</think>|$)", "", ans_text).strip()
+                    if clean_reply:
+                        _console.print(f"[bold green]{p_prefix}[/bold green]{clean_reply}")
 
-                _log_turn_usage(final_model, in_tok, final_out, 0.0, show_stats and not is_calm, in_tok + final_out)
+                # Output stats cleanly together ONLY at the end of the full turn
+                if speed_test and show_stats and not first_chunk:
+                    speed_test.end(actual_out_tokens=out_tok, is_local=is_local, resolved_model=final_model, active_model=body.get("model"))
+
+                _log_turn_usage(final_model, in_tok, final_out, 0.0, show_stats, in_tok + final_out)
                 return ans_text if ans_text else "(No response generated)"
 
             healed_calls = []
@@ -671,8 +685,6 @@ def agentic_turn(
             messages.append({"role": "assistant", "content": clean_ans_text or "", "tool_calls": healed_calls})
 
             for tc in healed_calls:
-                if spinner and not is_calm:
-                    spinner.stop()
                 fname = tc.get("function", {}).get("name", "")
                 args = json.loads(tc.get("function", {}).get("arguments", "{}"))
                 brief = str(args.get("code") or args.get("symbol") or args.get("path") or args.get("command") or args.get("pattern") or args.get("goal") or "")[:100].replace("\n", " ")
@@ -687,9 +699,6 @@ def agentic_turn(
                     result = _run_edit_tool(fname, args, workspace, spinner)
                 except Exception as e:
                     result = f"[tool error] {e}"
-                finally:
-                    if spinner and not is_calm:
-                        spinner.stop()
 
                 if len(result) > 8000:
                     scratch_dir = os.path.join(workspace, ".agent", "scratchpad")
@@ -762,8 +771,9 @@ def agentic_turn(
                     res.close()
                 except Exception:
                     pass
-            if spinner and not is_calm:
-                spinner.stop()
+
+    if spinner:
+        spinner.stop(leave_on_screen=False)
     return None
 
 
@@ -779,7 +789,7 @@ def stream_response(
         show_stats = bool(get_state("show_stats", True))
 
     is_sub = int(os.environ.get("AI_SUBAGENT_DEPTH", "0")) >= 1
-    is_calm = bool(get_state("calm_mode", False))
+    is_calm = is_calm_cli()
     max_ctx = int(os.environ.get("AI_MAX_TOKENS", 8192))
     initial_toks = sum(get_accurate_token_count(m.get("content") or "") for m in messages)
 
@@ -810,8 +820,8 @@ def stream_response(
             body = {**body, "max_tokens": 2048, **think_kwargs}
 
         ans = agentic_turn(messages, url, headers, body, timeout, spinner, show_stats, is_agent=is_agent)
-        if spinner and not is_calm:
-            spinner.stop()
+        if spinner:
+            spinner.stop(leave_on_screen=False)
         return ans
     except KeyboardInterrupt:
         if spinner:

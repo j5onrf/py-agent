@@ -18,7 +18,6 @@ except ImportError as e:
     sys.stderr.write(f"\033[1;31m[Loop Engine] Module import error: {e}\033[0m\n")
     sys.exit(1)
 
-# Resilient completion patterns handling past-tense, punctuation, and report headers
 COMPLETION_PATTERNS = [
     re.compile(r"\bTASK COMPLET(?:E|ED)\b", re.IGNORECASE),
     re.compile(r"\bGOAL COMPLET(?:E|ED)\b", re.IGNORECASE),
@@ -103,7 +102,6 @@ def run_task_loop(
 
     consecutive_failures = 0
 
-    # Dynamically align reasoning budget from workspace state
     st = core.get_state() if hasattr(core, "get_state") else {}
     thinking_budget = int(os.environ.get("AI_REASONING_BUDGET", st.get("reasoning_budget", 0) if st.get("reasoning_active", False) else 0))
 
@@ -131,7 +129,6 @@ def run_task_loop(
 
         history.append({"role": "assistant", "content": ans})
 
-        # Track failure triggers including syntax errors, test fails, and user denials
         if any(err_tag in ans for err_tag in ("[error]", "[tool error]", "SyntaxError", "FAILED", "[denied]", "Traceback (most recent call last)")):
             consecutive_failures += 1
         else:
@@ -140,8 +137,15 @@ def run_task_loop(
         if not no_log:
             _log_task_turn(workspace, turn, history[-2].get("content", ""), ans)
 
+        tool_count = sum(1 for m in history if m.get("role") == "tool")
         if is_task_complete(ans):
-            ui._console.print(f"\n[bold green]✔ [Loop Engine] Task completed successfully in {turn} turns![/bold green]\n")
+            # Guard against small models hallucinating completion without running tools
+            if tool_count == 0 and any(k in effective_goal.lower() for k in ("create", "write", "run", "test", "edit", "verify")):
+                ui._console.print("[yellow][Loop Engine] Model declared completion without tool execution. Enforcing verification...[/yellow]")
+                history.append({"role": "user", "content": "You declared TASK COMPLETE without executing tools. You must use write_file to create the file and run_command to verify it. Execute the tools now."})
+                continue
+
+            ui._console.print(f"\n[bold green]✔ [Loop Engine] Task completed in {turn} loop cycle(s) ({tool_count} tool actions executed)![/bold green]\n")
             if not no_log:
                 _log_task_turn(workspace, turn, "Final Verification", ans, status="COMPLETED")
             return True
