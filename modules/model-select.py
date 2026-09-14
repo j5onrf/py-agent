@@ -12,7 +12,6 @@ import sys
 import termios
 import time
 import tty
-import urllib.error
 import urllib.request as urlreq
 
 ENV_PATH = os.path.expanduser("~/.config/py-agent/.env")

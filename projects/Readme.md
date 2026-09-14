@@ -160,8 +160,6 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
   1. *Exact match* replacement.
   2. *Whitespace-normalized* indentation matching (handles 2- vs 4-space discrepancies).
   3. *SequenceMatcher fuzzy fallback* (replaces target blocks with $>88\%$ similarity without syntax corruption).
-* **Adaptive AST Skeleton Guards:** Files exceeding the context threshold (250 lines on $\le$16k; 1,000 lines on $\ge$32k) return top-level imports, class structures, and function line spans rather than a raw context dump.
-* **Context-Proportional Scratchpad Offload:** Emergency overflow valve that offloads massive tool outputs exceeding ~35% of the active context window (`AI_MAX_TOKENS`) to `.agent/scratchpad/<tool>_<timestamp>.txt`. Allows standard source files (up to ~1,200 lines) to load cleanly into memory while preventing runaway log dumps from flooding context.
 
 ---
 
