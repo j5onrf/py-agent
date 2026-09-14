@@ -707,9 +707,18 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
             map_badge  = b_on if use_map  else b_off
             mem_badge  = b_on if is_mem   else b_off
             py_badge   = b_on if is_py    else b_off
-            adp_badge  = b_on if is_adp   else b_off
+            adp_active = is_adp if "is_adp" in locals() else (adapters_active if "adapters_active" in locals() else False)
+            adp_badge  = b_on if adp_active else b_off
 
-            sys.stderr.write(
+            if is_py:
+                tools_desc = "\033[1;36mipython (1 tool)\033[0m       \033[33m(~80t)\033[0m"
+            elif use_map:
+                tools_desc = "\033[1;36mindex-map (12 tools)\033[0m    \033[33m(~1.2kt)\033[0m"
+            else:
+                tools_desc = "\033[1;36mnative json (7 tools)\033[0m   \033[33m(~780t)\033[0m"
+
+            bottom_text = (
+                f"\r\x1b[K\n\r\x1b[K    \033[2mTools:\033[0m {tools_desc}\n"
                 f"\r\x1b[K\n\r\x1b[K  \033[2m::\033[0m "
                 f"\033[1;37m↵\033[0m \033[37mselect\033[0m    "
                 f"\033[1;37m↑/↓\033[0m \033[37mnavigate\033[0m    "
@@ -721,7 +730,8 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                 f"\033[37mp: Py\033[0m {py_badge}    "
                 f"\033[37ma: Adp\033[0m {adp_badge}"
             )
-            lines_count += 2
+            sys.stderr.write(bottom_text)
+            lines_count += bottom_text.count("\n")
             sys.stderr.flush()
 
             last_rendered_lines = lines_count

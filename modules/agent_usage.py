@@ -180,9 +180,14 @@ def turn_line(
     cost: float = 0.0,
     ctx_used: int | None = None,
     ctx_max: int | None = None,
+    cached_tok: int = 0,
 ) -> str:
-    """Renders context and spend in the exact same muted style and bracket alignment as speed stats."""
+    """Renders context and spend in the exact same style and bracket alignment as speed stats."""
     parts = [f"{in_tok:,} in", f"{out_tok:,} out"]
+
+    if cached_tok > 0 and in_tok > 0:
+        cache_pct = int((cached_tok / in_tok) * 100)
+        parts.append(f"cch: {cache_pct}%")
 
     if ctx_used is not None and ctx_max and ctx_max > 0:
         pct = (ctx_used / ctx_max) * 100.0
@@ -192,5 +197,4 @@ def turn_line(
         parts.append(f"${cost:.4f}")
 
     body = " | ".join(parts)
-    # Exact same leading space, bracket padding, and \033[90m color as speed_test
     return f"\033[90m [ {body} ]\033[0m"

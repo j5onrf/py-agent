@@ -67,7 +67,7 @@ _state_mtime: float = 0.0
 def _get_img_config() -> tuple[str, str]:
     """Retrieves vision model and API key from environment or .env files."""
     k = os.environ.get("IMG_VOICE", "") or os.environ.get("IMG_KEY", "") or os.environ.get("GEM_VOICE", "")
-    m = os.environ.get("IMG_MODEL", "") or os.environ.get("GEM_MODEL", "") or "gemini-3.8-flash"
+    m = os.environ.get("IMG_MODEL", "") or os.environ.get("GEM_MODEL", "") or "gemini-3.5-flash-lite"
     if not k:
         for p in (os.path.join(CFG_DIR, ".env"), os.path.expanduser("~/.config/local-ai/.env"), ".env"):
             if os.path.isfile(p):
@@ -81,7 +81,7 @@ def _get_img_config() -> tuple[str, str]:
                                     m = s.split("=", 1)[1].strip().strip("'\"")
                 except Exception:
                     pass
-    return k.strip(), m.strip() or "gemini-3.8-flash"
+    return k.strip(), m.strip() or "gemini-3.5-flash-lite"
 
 
 def describe_image_gemini(target: Any) -> str:
@@ -374,14 +374,14 @@ class RichStreamer:
                 pass
 
 
-def _log_turn_usage(model: str, in_tok: int, out_tok: int, cost: float, show_stats: bool, ctx_used: int | None = None, *args: Any, **kwargs: Any) -> None:
+def _log_turn_usage(model: str, in_tok: int, out_tok: int, cost: float, show_stats: bool, ctx_used: int | None = None, cached_tok: int = 0, *args: Any, **kwargs: Any) -> None:
     if not usage_log:
         return
     try:
         usage_log.record(model, in_tok, out_tok, cost)
         if show_stats and sys.stdout.isatty():
             ctx_max = int(os.environ.get("AI_MAX_TOKENS", 8192)) if ctx_used is not None else None
-            print(usage_log.turn_line(in_tok, out_tok, cost, ctx_used, ctx_max))
+            print(usage_log.turn_line(in_tok, out_tok, cost, ctx_used, ctx_max, cached_tok=cached_tok))
     except Exception:
         pass
 
@@ -494,11 +494,8 @@ def agentic_turn(
             use_map = st.get("use_map", False) or os.environ.get("AI_USE_MAP", "0") == "1"
 
             if is_py_mode and ipython:
-                active_tools = list(ipython.IPYTHON_TOOL) + [
-                    t for t in getattr(tools, "LEAN_TOOLS", tools.EDIT_TOOLS) if t["function"]["name"] != "exec_python"
-                ]
-                if use_map:
-                    active_tools += [t for t in tools.EDIT_TOOLS if t not in active_tools]
+                # True Single-Tool Mode ~65 tokens instead of ~880)
+                active_tools = list(ipython.IPYTHON_TOOL)
             elif use_map:
                 active_tools = list(tools.EDIT_TOOLS)
             else:
@@ -608,15 +605,10 @@ def agentic_turn(
                             tc_entry["function"]["arguments"] += arg_chunk
                             if speed_test and show_stats and not is_calm:
                                 speed_test.count_token(arg_chunk, is_thinking=False)
-
-                    if finish_reason in ("stop", "length") and not tool_calls_map:
-                        break
                 except Exception:
                     pass
 
             if streamer and not is_calm:
-                streamer.stop()
-            elif not first_chunk and not is_calm:
                 print()
 
             ans_text = "".join(acc_content)
@@ -650,7 +642,21 @@ def agentic_turn(
                 if speed_test and show_stats and not first_chunk:
                     speed_test.end(actual_out_tokens=out_tok, is_local=is_local, resolved_model=final_model, active_model=body.get("model"))
 
-                _log_turn_usage(final_model, in_tok, final_out, 0.0, show_stats, in_tok + final_out)
+                cached_tok = 0
+                if captured_usage and isinstance(captured_usage, dict):
+                    details = captured_usage.get("prompt_tokens_details") or {}
+                    cached_tok = (
+                        details.get("cached_tokens", 0)
+                        or captured_usage.get("prompt_cache_hit_tokens", 0)
+                        or captured_usage.get("cached_tokens", 0)
+                        or captured_usage.get("cache_read_input_tokens", 0)
+                        or captured_usage.get("usageMetadata", {}).get("cachedContentTokenCount", 0)
+                        or 0
+                    )
+                if not cached_tok and captured_timings and isinstance(captured_timings, dict):
+                    cached_tok = captured_timings.get("cache_n", 0) or 0
+
+                _log_turn_usage(final_model, in_tok, final_out, 0.0, show_stats, in_tok + final_out, cached_tok=cached_tok)
                 return ans_text if ans_text else "(No response generated)"
 
             healed_calls = []
