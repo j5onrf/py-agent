@@ -55,11 +55,9 @@ DEFAULTS = {
 
 try:
     import agent_usage as usage_log
+    speed_test = usage_log
 except ImportError:
     usage_log = None
-try:
-    import speed_test
-except ImportError:
     speed_test = None
 
 _state_cache: dict[str, Any] = {}
@@ -716,7 +714,11 @@ def agentic_turn(
                     elapsed = max(0.01, time.time() - t_start)
                     _console_err.print(f"  [green]✔[/green] [dim]Done ({elapsed:.1f}s)[/dim]")
 
-                if len(result) > 8000:
+                # Adaptive scratchpad threshold: uses ~35% of total context budget before offloading
+                # (~12k chars on 8k ctx; ~40k chars on 32k ctx)
+                scratch_threshold = max(12000, int(max_ctx * 3.5 * 0.35))
+
+                if len(result) > scratch_threshold:
                     scratch_dir = os.path.join(workspace, ".agent", "scratchpad")
                     os.makedirs(scratch_dir, exist_ok=True)
                     scratch_file = os.path.join(scratch_dir, f"{fname}_{int(time.time())}.txt")
@@ -724,8 +726,9 @@ def agentic_turn(
                         with open(scratch_file, "w", encoding="utf-8") as sf:
                             sf.write(result)
                         rel_scratch = os.path.relpath(scratch_file, workspace)
+                        preview_len = int(scratch_threshold * 0.75)
                         pruned_result = (
-                            result[:6000]
+                            result[:preview_len]
                             + f"\n... [Output truncated: Full {len(result):,} chars saved to '{rel_scratch}'. "
                             + f"Use read_file('{rel_scratch}', line_start, line_end) to inspect specific blocks.]"
                         )

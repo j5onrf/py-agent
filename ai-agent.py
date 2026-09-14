@@ -20,6 +20,12 @@ SESSIONS_DIR: str = os.path.join(CFG_DIR, "projects", ".database")
 BASE_PROMPT_CHAT: str = "Active, natural conversational assistant."
 BASE_PROMPT_AGENT: str = "Active local workspace developer agent."
 
+# Precompiled hot-path regular expressions
+RE_THINK_TAGS: re.Pattern = re.compile(r"<think>[\s\S]*?(?:</think>|$)", re.DOTALL)
+RE_AUTO_RUN: re.Pattern = re.compile(r"Run:\s*((?:trace symbol|blast radius|read function|find symbol)\s+\S+|architecture overview)")
+RE_THINK_BIN: re.Pattern = re.compile(r"^/?([ftba])(?:\s+(\d+))?$", re.IGNORECASE)
+RE_SHELL_META: re.Pattern = re.compile(r"[\[\]{}()='\",;|#<>]")
+
 
 def load_env_file(path: str) -> None:
     """Auto-publishes .env from .env.example and loads variables into os.environ."""
@@ -76,11 +82,10 @@ def workspace_db_counts(safe_name: str, workspace_path: str = "") -> tuple[int, 
     t = 0
     if os.path.isfile(db_path):
         try:
-            with closing(sqlite3.connect(db_path, timeout=1.5)) as conn:
-                cur = conn.cursor()
+            with closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=1.5)) as conn:
                 try:
-                    t = cur.execute("SELECT COUNT(*) FROM turns WHERE workspace = ?", (safe_name,)).fetchone()[0]
-                except sqlite3.Error:
+                    t = conn.execute("SELECT COUNT(*) FROM turns WHERE workspace = ?", (safe_name,)).fetchone()[0]
+                except (sqlite3.Error, TypeError, IndexError):
                     t = 0
         except sqlite3.Error:
             t = 0
@@ -110,6 +115,26 @@ def ensure_clean_agent_dir(workspace_path: str) -> None:
                 pass
 
 
+def _sweep_dead_session_locks() -> None:
+    """Removes .session lockfiles whose owning process is dead. Catches ValueError on malformed files."""
+    sess_dir = os.path.join(CFG_DIR, ".active_sessions")
+    if not os.path.isdir(sess_dir):
+        return
+    for f in os.listdir(sess_dir):
+        if not f.endswith(".session"):
+            continue
+        try:
+            pid = int(f.rsplit("-", 1)[-1].replace(".session", ""))
+            if pid <= 0:
+                continue
+            os.kill(pid, 0)
+        except (OSError, ValueError):
+            try:
+                os.remove(os.path.join(sess_dir, f))
+            except OSError:
+                pass
+
+
 def clean_exit(safe_name: str | None = None) -> None:
     """Cleans active session locks and exits cleanly."""
     if safe_name:
@@ -117,21 +142,7 @@ def clean_exit(safe_name: str | None = None) -> None:
             sessions.cleanup_sub_agent(safe_name, os.getpid())
         except Exception:
             pass
-
-    # Sweep orphaned session locks whose processes are dead
-    sess_dir = os.path.join(CFG_DIR, ".active_sessions")
-    if os.path.isdir(sess_dir):
-        for f in os.listdir(sess_dir):
-            if f.endswith(".session"):
-                try:
-                    pid = int(f.rsplit("-", 1)[-1].replace(".session", ""))
-                    os.kill(pid, 0)
-                except OSError:
-                    try:
-                        os.remove(os.path.join(sess_dir, f))
-                    except OSError:
-                        pass
-
+    _sweep_dead_session_locks()
     ui._console.print("\n[yellow]Exiting conversation.[/yellow]")
     sys.exit(0)
 
@@ -220,9 +231,6 @@ def run_interactive_chat(args: list[str]) -> None:
                         core.save_state("calm_mode", bool(d["calm"]))
             except (OSError, json.JSONDecodeError):
                 pass
-
-        if is_py:
-            core.save_state("ipython_mode", True)
 
     # 2. CLI Profile Overrides
     for arg in args:
@@ -318,20 +326,7 @@ def run_interactive_chat(args: list[str]) -> None:
         os.environ["AI_CONFIRM_GATES"] = "0"
 
     db_turns, mem_count = workspace_db_counts(safe_name, workspace_path) if is_agent else (0, 0)
-
-    # Sweep dead session locks left behind by Hyprland (SUPER+Q) exits
-    sess_dir = os.path.join(CFG_DIR, ".active_sessions")
-    if os.path.isdir(sess_dir):
-        for f in os.listdir(sess_dir):
-            if f.endswith(".session"):
-                try:
-                    os.kill(int(f.rsplit("-", 1)[-1].replace(".session", "")), 0)
-                except OSError:
-                    try:
-                        os.remove(os.path.join(sess_dir, f))
-                    except OSError:
-                        pass
-
+    _sweep_dead_session_locks()
     sub_id = sessions.get_sub_agent_id(safe_name, os.getpid()) if is_agent else None
 
     ui.draw_session_box(workspace_path, home_dir, is_agent, db_turns, mem_count, memory_active, active_system_prompt, clean_name, sub_id=sub_id, box_style=st.get("box_style", 2))
@@ -684,7 +679,7 @@ def run_interactive_chat(args: list[str]) -> None:
 
             memory_ctx = memories.get_memory_context(workspace_path) if (is_agent and memory_active) else ""
 
-            if re.match(r"^/?([ftba])(?:\s+(\d+))?$", query.lower()):
+            if RE_THINK_BIN.match(query):
                 think_bin = f"{CFG_DIR}/modules/chat"
                 if os.path.exists(think_bin):
                     try:
@@ -709,12 +704,12 @@ def run_interactive_chat(args: list[str]) -> None:
                 pass
 
             if ans := core.stream_response(chat_history, prefix="Agent:" if is_agent else "AI:", show_stats=show_stats, thinking_budget=reasoning_budget if reasoning_active else 0, is_agent=is_agent):
-                clean_ans = re.sub(r"<think>[\s\S]*?(?:</think>|$)", "", ans).strip()
+                clean_ans = RE_THINK_TAGS.sub("", ans).strip()
                 chat_history.append({"role": "assistant", "content": clean_ans or ans})
                 tts.speak_response(clean_ans or ans)
                 if is_agent:
                     sessions.log_turn(safe_name, query, ans)
-                    if match := re.search(r"Run:\s*((?:trace symbol|blast radius|read function|find symbol)\s+\S+|architecture overview)", ans):
+                    if match := RE_AUTO_RUN.search(ans):
                         try:
                             readline.set_startup_hook(lambda: readline.insert_text(match.group(1).strip()))
                         except Exception:
@@ -769,7 +764,7 @@ def run_matching_search(args: list[str]) -> None:
 
     shell_name = os.path.basename(os.environ.get("SHELL", "/bin/bash"))
     err_msg = f"{'zsh' if 'zsh' in shell_name else 'bash'}: {f'command not found: {user_input}' if 'zsh' in shell_name else f'{user_input}: command not found'}\n"
-    if re.search(r"[\[\]{}()='\",;|#<>]", user_input):
+    if RE_SHELL_META.search(user_input):
         sys.stderr.write(err_msg)
         sys.exit(127)
 

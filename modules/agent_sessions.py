@@ -100,8 +100,44 @@ def connect_db(db_path: str) -> sqlite3.Connection:
     return conn
 
 
+def cleanup_all_stale_locks() -> None:
+    """Universal reaper: cleans orphaned .session and .active_cd.* files for dead processes."""
+    # 1. Clean dead session lockfiles across all workspaces
+    session_dir = os.path.join(CFG_DIR, ".active_sessions")
+    if os.path.isdir(session_dir):
+        for fpath in glob.glob(os.path.join(session_dir, "*.session")):
+            try:
+                fname = os.path.basename(fpath).replace(".session", "")
+                if m := re.search(r"(\d+)$", fname):
+                    pid = int(m.group(1))
+                    os.kill(pid, 0)
+                else:
+                    os.remove(fpath)
+            except ProcessLookupError:
+                try:
+                    os.remove(fpath)
+                except OSError:
+                    pass
+            except (ValueError, OSError):
+                pass
+
+    # 2. Clean dead shell teleport files (.active_cd.<PID>)
+    for fpath in glob.glob(os.path.join(CFG_DIR, ".active_cd.*")):
+        try:
+            pid = int(fpath.rsplit(".", 1)[-1])
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            try:
+                os.remove(fpath)
+            except OSError:
+                pass
+        except (ValueError, OSError):
+            pass
+
+
 def get_sub_agent_id(workspace: str, target_pid: int | None = None) -> int:
     """Calculates active sub-agent index (0 = primary agent, 1+ = sub-agent) and manages lockfiles."""
+    cleanup_all_stale_locks()
     session_dir = os.path.join(CFG_DIR, ".active_sessions")
     os.makedirs(session_dir, exist_ok=True)
     current_pid = target_pid or os.getpid()

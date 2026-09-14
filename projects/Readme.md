@@ -1,6 +1,6 @@
 # Py-Agent Workspace & Session Manual
 
-High-speed local developer agent, episodic memory, SQLite checkpoints, NOOA-enhanced IPython kernel harness, and codebase index graph.
+High-speed local developer agent, episodic memory, SQLite checkpoints, NOOA-enhanced IPython kernel harness, and codebase index-map.
 
 ```console
 ~ ❯ ling
@@ -24,7 +24,7 @@ High-speed local developer agent, episodic memory, SQLite checkpoints, NOOA-enha
             |>
 -~~~-~~~-~\___/~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-
 
-Agent: ✔ Task complete: Sum of all prime numbers between 10 and 50 is 311.
+Agent: ✓ Task complete: Sum of all prime numbers between 10 and 50 is 311.
  [ think: 56 | ans: 18 | 74 tokens | 0.61s @ 121.31 t/s ]
 [ 767 in | 53 out | ctx: 10.0% ]
 ❯ █
@@ -38,11 +38,11 @@ Switch CLI box styles using `/box [1-8]` (or type `/box` to cycle). Selection pe
 
 * **Style #1:** Codex Rounded (Default)
 * **Style #2:** Double Border
-* **Style #3:** Crisp Square
+* **Style #3:** Crisp Square*
 * **Style #4:** Heavy Square
 * **Style #5:** Minimalist Line
 * **Style #6:** Diamond Nodes
-* **Style #7:** Dashed / Cyberpunk
+* **Style #7:** Dashed / Synthwave
 * **Style #8:** Dual-Chamber Inset
 
 ---
@@ -113,7 +113,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 │   /pyc, /pyc web         - PyCode IDE (Desktop / WebUI)             │
 │   /webui, /web           - WebUI gateway (llama.cpp)                │
 │   /tui                   - Terminal UI (PyTUI)                      │
-│   /calm, /zen            - Toggle Calm mode (anchored boat & timer) │
+│   /calm, /zen            - Toggle Calm mode (boat anime)            │
 │   /v [auto], /voice      - Voice to text                            │
 │   /tts                   - Text to speech (Kokoro)                  │
 │                                                                     │
@@ -160,8 +160,45 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
   1. *Exact match* replacement.
   2. *Whitespace-normalized* indentation matching (handles 2- vs 4-space discrepancies).
   3. *SequenceMatcher fuzzy fallback* (replaces target blocks with $>88\%$ similarity without syntax corruption).
-* **AST Skeleton Read Guards:** Calling `read_file` on files > 250 lines returns top-level imports, class structures, and function line spans instead of a raw dump.
-* **Large Output Scratchpad Offload:** Tool results $> 1,500$ characters are automatically flushed to `.agent/scratchpad/<tool>_<timestamp>.txt`, injecting a concise 1,200-character preview with a pointer to preserve context.
+* **Adaptive AST Skeleton Guards:** Files exceeding the context threshold (250 lines on $\le$16k; 1,000 lines on $\ge$32k) return top-level imports, class structures, and function line spans rather than a raw context dump.
+* **Context-Proportional Scratchpad Offload:** Emergency overflow valve that offloads massive tool outputs exceeding ~35% of the active context window (`AI_MAX_TOKENS`) to `.agent/scratchpad/<tool>_<timestamp>.txt`. Allows standard source files (up to ~1,200 lines) to load cleanly into memory while preventing runaway log dumps from flooding context.
+
+---
+
+### 4.1 Adaptive Context Protection & File Inspection (`read_file`)
+
+`py-agent` automatically scales file-reading ceilings and scratchpad thresholds based on your active context budget (`AI_MAX_TOKENS`):
+
+| Context Budget (`AI_MAX_TOKENS`) | Target Environment | Auto Line Ceiling | Single-Call Character Cap |
+| :--- | :--- | :---: | :---: |
+| **≤ 16k** (8,192 – 16,384) | Local Models (2B–8B) | **250 lines** | ~20,000 chars |
+| **32k** (32,768) | Cloud / 24GB GPU | **1,000 lines** | ~45,000 chars |
+| **64k** (65,536) | DeepSeek / Claude / GPT | **2,000 lines** | ~90,000 chars |
+| **≥ 128k** (131,072) | High-Capacity Cloud | **4,000 lines** | ~180,000 chars |
+
+#### Configuring `AI_MAX_TOKENS`:
+* **Model Selector TUI:** Run `model select` (or `cloud`), select `🧠 Context Budget`, and choose a preset (4k to 128k) or enter a custom limit.
+* **Persistent Config (`.env`):** Edit `~/.config/py-agent/.env`:
+  ```env
+  AI_MAX_TOKENS="32768"
+  ```
+* **CLI Session Override:** Export in your shell or prepend to your launch command:
+  ```bash
+  export AI_MAX_TOKENS=32768
+  # or single command:
+  AI_MAX_TOKENS=65536 ai init ~/my-project
+  ```
+
+* **AST Skeleton Guard:** Unparameterized reads exceeding the line ceiling return structural line spans (imports, classes, functions) to prevent context flooding.
+* **Targeted Chunk Reads:** Supplying line numbers bypasses the skeleton guard to inspect specific sections:
+  ```python
+  read_file(path="ai-agent.py", line_start=1, line_end=250)
+  ```
+* **Full-File Single Reads:** Pass an explicit range to ingest files beyond the automatic ceiling in one call:
+  ```python
+  read_file(path="ai-agent.py", line_start=1, line_end=2500)
+  ```
+* **Scratchpad Offload:** Automatically offloads to `.agent/scratchpad/` only when tool output exceeds ~35% of the active context window.
 
 ---
 

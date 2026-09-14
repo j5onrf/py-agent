@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Production Py-Agent Shell Hook v0.9.9.26 (Hardened & Zero-Lag)
+# Production Py-Agent Shell Hook v0.9.9.28 (Hardened & Production Ready)
 
 [[ $- == *i* && -f "$HOME/.config/py-agent/ai-agent.py" ]] || return
 _AI_DIR="$HOME/.config/py-agent"
 _AI_PY="${_AI_PY:-$(command -v python3 || command -v python)}"
 
 # Clean up own PID file if terminal window or tab is closed
-trap 'rm -f "$_AI_DIR/.active_cd.$$" 2>/dev/null' EXIT HUP
+trap 'rm -f "$_AI_DIR/.active_cd.$$" 2>/dev/null' EXIT HUP TERM INT
 
 _ai_teleport() {
     local f="$_AI_DIR/.active_cd.$$"
@@ -16,14 +16,6 @@ _ai_teleport() {
         target=$(<"$f")
         rm -f "$f"
         [[ -d "$target" ]] && cd "$target" 2>/dev/null
-
-        # Sweep stale PID files ONLY when an actual teleport occurred
-        local old pid
-        for old in "$_AI_DIR"/.active_cd.*; do
-            [[ -e "$old" ]] || continue
-            pid="${old##*.active_cd.}"
-            kill -0 "$pid" 2>/dev/null || rm -f "$old"
-        done
     fi
 }
 
@@ -34,11 +26,16 @@ elif [[ "$PROMPT_COMMAND" != *_ai_teleport* ]]; then
 fi
 
 ai_handle_missing() {
-    local cmd exp
+    local cmd exp esc
     cmd=$([[ -n "$*" ]] && "$_AI_PY" "$_AI_DIR/ai-agent.py" --interactive "$*") || return 127
-    exp=$(printf '%s' "$cmd" | sed -E 's/\x1b\[[0-9;]*[a-zA-Z]|\r//g')
-    # Safe tilde expansion: only expand leading ~ in paths (preserves git HEAD~1, etc.)
-    [[ "$exp" == "~"* ]] && exp="${HOME}${exp#\~}"
+    esc=$(printf '\033')
+    exp=$(printf '%s' "$cmd" | sed -E "s/${esc}\[[0-9;]*[a-zA-Z]|\r//g")
+    # Safe tilde expansion: only expand ~ and ~/ (preserves ~user, git HEAD~1, etc.)
+    if [[ "$exp" == "~" ]]; then
+        exp="$HOME"
+    elif [[ "$exp" == "~/"* ]]; then
+        exp="${HOME}/${exp#\~/}"
+    fi
 
     if [[ -d "$exp" ]]; then
         ai init "$exp"
@@ -52,6 +49,14 @@ command_not_found_handle() { [[ "$1" != --* ]] && ai_handle_missing "$*"; }
 command_not_found_handler() { command_not_found_handle "$@"; }
 
 ai() {
+    # Lightweight sweep: clean stale teleport files only when ai is invoked
+    local old pid
+    for old in "$_AI_DIR"/.active_cd.*; do
+        [[ -e "$old" ]] || continue
+        pid="${old##*.active_cd.}"
+        kill -0 "$pid" 2>/dev/null || rm -f "$old"
+    done
+
     if [[ "$1" == "init" ]]; then
         shift
         local path skills=() name map db map_arg=()
@@ -80,6 +85,7 @@ ai() {
 
         AI_ACTIVE_SKILL="${skills[*]}" AI_WORKSPACE_PATH="$path" "$_AI_PY" "$_AI_DIR/ai-agent.py" --talk-chat "${map_arg[@]}" || true
         _ai_teleport
+        rm -f "$_AI_DIR/.active_cd.$$" 2>/dev/null
     else
         "$_AI_PY" "$_AI_DIR/ai-agent.py" --talk "$@"
     fi
@@ -87,7 +93,6 @@ ai() {
 
 view() {
     local f="${1:-}"
-    # Piped input (e.g. echo "# Title" | view)
     if [[ -z "$f" && (! -t 0 || -p /dev/stdin) ]]; then
         FORCE_COLOR=1 "$_AI_PY" -c "import sys,rich.markdown,rich.console;rich.console.Console().print(rich.markdown.Markdown(sys.stdin.read()))"
     elif [[ -n "$f" && "$f" == *.md && -f "$f" ]]; then

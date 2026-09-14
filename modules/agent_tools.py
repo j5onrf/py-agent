@@ -708,10 +708,24 @@ def run_tool(
                 content = "".join(sliced)
                 prefix = f"### File: {raw_path} (Lines {start_idx + 1}-{end_idx} of {total_lines})\n"
                 res_out = prefix + content
-            elif total_lines > 250:
-                res_out = _generate_ast_skeleton("".join(lines), raw_path)
             else:
-                res_out = "".join(lines)[:15000]
+                max_ctx = int(os.environ.get("AI_MAX_TOKENS", 8192))
+                # Proportional line ceiling: 250 (<=16k), 1,000 (32k), 2,000 (64k), 4,000 (128k)
+                if max_ctx <= 16384:
+                    skel_limit = 250
+                elif max_ctx <= 32768:
+                    skel_limit = 1000
+                elif max_ctx <= 65536:
+                    skel_limit = 2000
+                else:
+                    skel_limit = 4000
+
+                if total_lines > skel_limit:
+                    res_out = _generate_ast_skeleton("".join(lines), raw_path)
+                else:
+                    # Dynamically allow reading up to 40% of context window in a single call
+                    char_cap = max(20000, int(max_ctx * 3.5 * 0.40))
+                    res_out = "".join(lines)[:char_cap]
 
             if print_output_fn:
                 print_output_fn(res_out)

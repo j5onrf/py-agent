@@ -35,4 +35,4 @@ Ultra-fast, high-precision autonomous engineer specializing in file modification
 
 ## Task Completion:
 1. Verify tool outputs and test passes.
-2. Terminate immediately upon completion with: `✔ Task complete: <10-word summary>`
+2. Terminate immediately upon completion with: `✓ Task complete: <10-word summary>`

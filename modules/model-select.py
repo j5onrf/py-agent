@@ -591,6 +591,7 @@ async def async_main():
         gnd_curr = env.get("GND_MODEL", "gemini-2.5-flash")
         voice_curr = env.get("GEM_MODEL", "gemini-3.5-flash-lite")
         img_curr = env.get("IMG_MODEL", "gemini-3.5-flash-lite")
+        ctx_curr = env.get("AI_MAX_TOKENS", "8192")
 
         sys.stdout.write(f"\x1b[H\x1b[2J\n   {BOLD}  LOCAL-AI CONFIGURATION{RESET}\n   {DIM}{'─'*60}{RESET}\n\n")
         options = [
@@ -603,6 +604,7 @@ async def async_main():
             f"🔍  {'Search Grounding (/gnd)':<{col_w}} {fmt(gnd_curr, 'GND_KEY')}\n       {DIM}Live Google search retrieval for facts & documentation{RESET}",
             f"🎙️  {'Voice Transcription':<{col_w}} {fmt(voice_curr, 'GEM_VOICE')}\n       {DIM}Low-latency voice-to-text bridge (:9999){RESET}",
             f"👁️  {'Vision OCR Multimodal':<{col_w}} {fmt(img_curr, 'IMG_VOICE')}\n       {DIM}Gemini OCR pre-processor for text-only local models{RESET}",
+            f"🧠  {'Context Budget':<{col_w}} {GREEN}{ctx_curr} tokens{RESET}\n       {DIM}Context ceiling for compaction & tool output (AI_MAX_TOKENS){RESET}",
             f"↺  Refresh API Lists        {DIM}Sync live endpoints (Gemini, OpenRouter, HF){RESET}",
             "✕  Save & Close",
         ]
@@ -611,8 +613,10 @@ async def async_main():
             if i == 6:
                 sys.stdout.write(f"   {DIM}{'─'*19}  Auxiliary Services  {'─'*19}{RESET}\n\n")
             elif i == 9:
+                sys.stdout.write(f"   {DIM}{'─'*19}  Context Budget  {'─'*23}{RESET}\n\n")
+            elif i == 10:
                 sys.stdout.write(f"   {DIM}{'─'*60}{RESET}\n")
-            sys.stdout.write(f"{f'   {AMBER}❯{RESET}  {BOLD}' if i == menu_idx else '      '}{opt}{RESET}\n{'\n' if (1 <= i <= 5 or 6 <= i <= 8) else ''}")
+            sys.stdout.write(f"{f'   {AMBER}❯{RESET}  {BOLD}' if i == menu_idx else '      '}{opt}{RESET}\n{'\n' if (1 <= i <= 5 or 6 <= i <= 9) else ''}")
         sys.stdout.write(f"\n   {DIM}{'─'*60}{RESET}\n   {message or f'{DIM}▲/▼: Navigate | Space: Toggle | Enter: Select | Q: Quit{RESET}'}\n")
         sys.stdout.flush()
         message = ""
@@ -754,13 +758,42 @@ async def async_main():
                         toggle_independent_key(a_key)
                     message = f"✓ {a_title} model set: {res}"
             elif menu_idx == 9:
+                ctx_presets = [
+                    "4096 (4k - Low RAM / CPU)",
+                    "8192 (8k - Default Local)",
+                    "16384 (16k - Mid Local GPU)",
+                    "32768 (32k - Cloud / 24GB GPU)",
+                    "65536 (64k - DeepSeek / Claude)",
+                    "131072 (128k - Maximum Cloud)",
+                ]
+                cur_preset = next((p for p in ctx_presets if p.startswith(ctx_curr)), ctx_curr)
+                res = await run_interactive_menu(
+                    "Context Window Budget",
+                    ctx_presets,
+                    cur_preset,
+                    True,
+                    ["✏️  [Custom Token Limit]"]
+                )
+                if not res:
+                    continue
+                if res == "✏️  [Custom Token Limit]":
+                    if t_in := prompt_user_input(f"Enter token limit (current: {ctx_curr})"):
+                        clean_tok = "".join(c for c in t_in if c.isdigit())
+                        if clean_tok and int(clean_tok) > 0:
+                            update_env_multiple({"AI_MAX_TOKENS": clean_tok})
+                            message = f"✓ Context window budget set to {clean_tok} tokens."
+                else:
+                    tok_val = res.split()[0]
+                    update_env_multiple({"AI_MAX_TOKENS": tok_val})
+                    message = f"✓ Context window budget set to {tok_val} tokens."
+            elif menu_idx == 10:
                 message = f"{AMBER}↺ Querying live models...{RESET}"
                 remote_data = await async_fetch_remote(env, spaces)
                 cache.update(remote_data)
                 save_json(CACHE_PATH, cache)
                 custom_list = list(spaces.keys()) + [x for x in cache.get("custom", []) if x not in spaces]
                 message = "✓ Synchronized endpoints live."
-            elif menu_idx == 10:
+            elif menu_idx == 11:
                 break
 
     cleanup_terminal()

@@ -65,7 +65,6 @@ files_to_compile = [
     "modules/agent_sessions.py",
     "modules/agent_memories.py",
     "modules/model-select.py",
-    "modules/speed_test.py",
     "modules/chat",
     "tools/index-map/index-map",
     "tools/loop/ralph.py",
@@ -104,7 +103,6 @@ modules_to_import = [
     "agent_tts",
     "agent_sessions",
     "agent_memories",
-    "speed_test",
 ]
 
 p2 = True

@@ -23,7 +23,7 @@ We actively provide security updates for the following versions:
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability, path traversal flaw, or command injection issue in `Local-Ai Agent`, **please do not open a public GitHub issue.**
+If you discover a security vulnerability, path traversal flaw, or command injection issue in `py-agent`, **please do not open a public GitHub issue.**
 
 Please report the vulnerability privately via email:
 

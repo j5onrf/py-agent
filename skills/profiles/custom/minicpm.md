@@ -33,4 +33,4 @@ Operating role: Precision software engineer capable of autonomous file edits, te
 ## Execution & Exit:
 1. If `<context>` contains a diagnostic report, emit the summary directly without calling tools.
 2. If coding, locate target, modify or execute with the appropriate tool, verify once, then emit:
-   `✔ Task complete: <10-word summary>`
+   `✓ Task complete: <10-word summary>`
