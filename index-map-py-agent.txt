@@ -1,19 +1,20 @@
-# CODEBASE INDEX MAP | Generated: 2026-09-14 10:52 | Workspace: py-agent | Path: ~/.config/py-agent
+# CODEBASE INDEX MAP | Generated: 2026-09-15 16:46 | Workspace: py-agent | Path: ~/.config/py-agent
 # Active symbols and structural connections mapped in the local index.
 # -----------------------------------------------------------------------------------------
 # Codebase Modules & Active Architecture:
 #   ├── .env                     - ~/.config/py-agent/.env
 #   ├── .env.example             - ==============================================================================
 #   ├── .gitignore               - Secrets & Credentials
-#   ├── .last_cloud_key.txt      - CUSTOM2_API_KEY
+#   ├── .last_cloud_key.txt      - GEMINI_API_KEY
 #   ├── .openrouter_cache_v2.json - {
 #   ├── .request_log
 #   ├── .state.json              - {
 #   ├── CONTRIBUTING.md          - Contributing to Py-Agent
 #   ├── LICENSE                  - MODIFIED MIT LICENSE (NON-COMMERCIAL / NO BUSINESS USE)
+#   ├── README (Copy).md         - <div align="center">
 #   ├── README.md                - <div align="center">
 #   ├── SECURITY.md              - Security Policy
-#   ├── ai-agent.py              - Py Agent [j5onrf] [v0.9.9.29] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production R
+#   ├── ai-agent.py              - Py Agent [j5onrf] [v0.9.9.30] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production R
 #   ├── ai-context.md            - Py-Agent Config
 #   ├── ai-hook.sh               - Production Py-Agent Shell Hook v0.9.9.28 (Hardened & Production Ready)
 #   ├── logo.svg                 - <svg xmlns="http://www.w3.org/2000/svg" viewBox="121 101 270 310">
@@ -41,18 +42,19 @@
 [file:.gitignore] sum:Secrets & Credentials
 [markdown:CONTRIBUTING.md] title:Contributing to Py-Agent
 [file:LICENSE] sum:MODIFIED MIT LICENSE (NON-COMMERCIAL / NO BUSINESS USE)
+[markdown:README (Copy).md] title:1. Install system dependencies & clone | links:Readme.md,ai-context.md
 [markdown:README.md] title:1. Install system dependencies & clone | links:Readme.md,ai-context.md
 [markdown:SECURITY.md] title:Security Policy
 [python:ai-agent.py] imp:agent_context,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tts,agent_ui,agent_voice,contextlib,json,os,re,readline,shutil,sqlite3,subprocess,sys,time,typing | fn:load_env_file,workspace_db_counts,ensure_clean_agent_dir,_sweep_dead_session_locks,clean_exit,_launch_surface,_update_workspace_config,run_interactive_chat,run_direct_query,run_matching_search,main
-[markdown:ai-context.md] title:Py-Agent Config | links:-d "$d",-f "$f",-z "$q"
+[markdown:ai-context.md] title:Py-Agent Config
 [shell:ai-hook.sh] sum:Production Py-Agent Shell Hook v0.9.9.28 (Hardened & Production Ready)
 [image/svg:logo.svg] dim:x | size:1.4KB
 [markdown:modules/Readme.md] title:Privacy-First
-[python:modules/agent_adapters.py] imp:ast,json,re,time,typing | fn:normalize_params,_extract_balanced_json,heal_tool_call,heal_json_args,_extract_ast_python_calls,extract_fallback_tool_calls
+[python:modules/agent_adapters.py] imp:ast,json,os,re,time,typing | fn:normalize_params,_extract_balanced_json,heal_tool_call,heal_json_args,_extract_ast_python_calls,extract_fallback_tool_calls
 [python:modules/agent_cloud.py] imp:os,re,typing | fn:_is_valid_key,get_active_configs
 [python:modules/agent_context.py] imp:os,re,sys,typing | fn:tokenize,load_context_entries,jaccard_search,clean_tool_prefix
 [python:modules/agent_core.py] imp:agent_adapters,agent_cloud,agent_ipython,agent_tools,agent_ui,agent_usage,base64,json,os,re,requests,rich,shutil,subprocess,sys,time,typing,urllib | cls:RichStreamer | fn:_get_console,_get_img_config,describe_image_gemini,preprocess_multimodal_messages,_heal_tool_args,get_state,save_state,workspace_safe_name,is_calm_cli,run_mod,__init__,_stop_spinner,start,update,stop,_log_turn_usage,_process_stream_chunk,_calc_turn_tokens,_confirm_gate,_print_tool_output,_run_edit_tool,agentic_turn,_calc_msg_tokens,stream_response,get_accurate_token_count,show_memory_status,prune_history
-[python:modules/agent_ipython.py] imp:IPython,agent_core,agent_memories,agent_tools,agent_ui,ast,builtins,collections,contextlib,io,os,signal,subprocess,sys,traceback,typing | cls:CellTimeoutError,MemorySDK,GraphSDK | fn:_timeout_handler,is_ipython_enabled,toggle_ipython_mode,bounded_repr,__init__,search,get_facts,add_fact,__init__,snippet,trace,blast_radius,search,architecture,delegate,_final_answer,_init_kernel_sdk,_is_outside,_check_boundary,safe_open,safe_listdir,_invalidate_module_cache,_read_file,_edit_file,_write_file,_list_dir,_search_code,_run_command,inspect_ast_safety,run_cell,get_active_tools
+[python:modules/agent_ipython.py] imp:IPython,agent_core,agent_memories,agent_tools,agent_ui,ast,builtins,collections,contextlib,io,os,signal,subprocess,sys,traceback,typing | cls:CellTimeoutError,MemorySDK,GraphSDK | fn:_timeout_handler,is_ipython_enabled,toggle_ipython_mode,bounded_repr,__init__,search,get_facts,add_fact,__init__,snippet,trace,blast_radius,search,architecture,delegate,_final_answer,_init_kernel_sdk,_is_outside,_check_boundary,safe_open,safe_listdir,_invalidate_module_cache,_read_file,_edit_file,_write_file,_list_dir,_search_code,_run_command,_save_memory_fn,inspect_ast_safety,run_cell,get_active_tools
 [python:modules/agent_memories.py] imp:os,re,shutil,time,typing | fn:_get_memory_dir,parse_memory_file,get_memory_count,list_memories,get_memory_context,save_memory_file,clear_memories,add_fact,get_facts
 [python:modules/agent_sessions.py] imp:agent_context,contextlib,glob,json,os,re,select,sqlite3,sys,termios,time,tty,typing | fn:tokenize,get_key,connect_db,cleanup_all_stale_locks,get_sub_agent_id,cleanup_sub_agent,init_db,save_checkpoint,rollback_checkpoint,log_turn,get_turns_count,clear_turns
 [python:modules/agent_skills.py] imp:agent_context,agent_core,agent_ui,json,os,re,shutil,subprocess,sys,typing | fn:ensure_mysys_exists,parse_frontmatter,find_skill_file,load_skill_content,_exec_tool_cmd,run_local_tool,run_interactive_tool,get_system_context,load_skill_blueprints,run_skill_selector
@@ -68,7 +70,7 @@
 [markdown:plugins/Readme.md] title:Custom Plugins & Tools: `plugins/`
 [markdown:plugins/audio/Readme.md] title:Kokoro Neural Text-to-Speech & Selection Speaker Plugin
 [shell:plugins/audio/koko-speak.sh] sum:High-Performance Kokoro Selection Speaker (RAM-disk execution)
-[python:plugins/pycode/bridge.py] imp:agent_adapters,agent_cloud,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tools,agent_tts,json,os,requests,sys,threading,time,typing,uuid | fn:send_rpc_response,send_acp_chunk,detect_workspace_mode,assemble_system_prompt,handle_acp_prompt,main
+[python:plugins/pycode/bridge.py] imp:agent_adapters,agent_cloud,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tools,agent_tts,json,os,requests,sys,threading,typing,uuid | fn:send_rpc_response,send_acp_chunk,detect_workspace_mode,assemble_system_prompt,handle_acp_prompt,main
 [shell:plugins/pycode/launch.sh] sum:==============================================================================
 [shell:plugins/pycode/setup.sh] sum:==============================================================================
 [shell:plugins/webui/launch.sh] sum:==============================================================================
@@ -81,12 +83,12 @@
 [shell:setup/q2bu.sh] sum:==========================================
 [shell:setup/q35b.sh] sum:==========================================
 [markdown:skills/Readme.md] title:Py-Agent Skills
+[markdown:skills/hindsight.md] title:[SKILL] hindsight ---> hindsight, lesson, learn, retrospective, postmortem, memory review, remember
 [markdown:skills/meta/brainstorm.md] title:[SKILL] brainstorm ---> brainstorm, lateral, creative, perspective, future, trends, macro
 [markdown:skills/meta/follow-up.md] title:[SKILL] follow-up ---> follow-up, followup, question, mechanics, practical, compare
 [markdown:skills/meta/thinking.md] title:[SKILL] thinking ---> thinking, think, analyze, next-steps, details, critique, risk
 [markdown:skills/on-demand/caveman.md] title:[SKILL] Caveman Mode ---> caveman, talk like caveman, caveman-mode, less tokens, be brief
-[markdown:skills/on-demand/chat/chat.md] title:[SKILL] chat ---> chat, convo, talk, friendly, chatty, assistant, speak, general
-[markdown:skills/on-demand/hindsight.md] title:[SKILL] hindsight ---> hindsight, lesson, learn, retrospective, postmortem, memory review, remember
+[markdown:skills/on-demand/chat/chat.md] title:chat
 [markdown:skills/on-demand/i-have-adhd.md] title:ADHD Output Mode
 [markdown:skills/on-demand/omarchy/capture.md] title:Screen Capture & Sharing Directives
 [markdown:skills/on-demand/omarchy/contributing.md] title:Bug Reporting & Upstream Directives
@@ -101,17 +103,17 @@
 [markdown:skills/on-demand/ponytail-py.md] title:[SKILL] Ponytail-Py ---> ponytail-py, senior python dev, yagni, minimal python, pythonic simplicity
 [markdown:skills/on-demand/ponytail.md] title:[SKILL] Ponytail ---> ponytail, lazy senior dev, yagni, minimal code, simplify code
 [markdown:skills/on-demand/pysmol.md] title:[SKILL] PySmol ---> pysmol, smol, smolagents, codeagent, python-loop, batch-code, in-memory-python, code-first
-[markdown:skills/profiles/claude/pro.md] title:Official Claude Code 27B+ Lead Systems & Python Engineer
-[markdown:skills/profiles/custom/base.md] title:Universal Base Developer Agent (Dual-Mode Template)
-[markdown:skills/profiles/custom/deepseek.md] title:DeepSeek V4.1 Flash Systems & Python Specialist
-[markdown:skills/profiles/custom/gemini.md] title:Gemini Flash-Lite Systems & Python Engineer
-[markdown:skills/profiles/custom/lfm2.md] title:Liquid Systems & Python Engineer (8B High-Speed Dev)
-[markdown:skills/profiles/custom/lingtiny.md] title:Ling 3.0 Autonomous Software Engineer & Tool Agent
-[markdown:skills/profiles/custom/minicpm.md] title:MiniCPM Systems & Python Engineer (2B Lite Dev)
-[markdown:skills/profiles/custom/q2b.md] title:Qwen Systems & Python Engineer (2B Lite Dev)
-[markdown:skills/profiles/custom/sysadmin.md] title:IDENTITY & ROLE: SENIOR LINUX SYSTEMS ADMINISTRATOR
-[markdown:skills/profiles/hermes/pro.md] title:Nous Hermes 27B+ Autonomous Lead Systems & Software Engineer
-[markdown:skills/profiles/pi/pro.md] title:Official Pi 27B+ Autonomous Coding & Python Specialist
+[markdown:skills/profiles/claude/pro.md] title:pro
+[markdown:skills/profiles/custom/base.md] title:base
+[markdown:skills/profiles/custom/deepseek.md] title:deepseek
+[markdown:skills/profiles/custom/gemini.md] title:gemini
+[markdown:skills/profiles/custom/lfm2.md] title:lfm2
+[markdown:skills/profiles/custom/lingtiny.md] title:lingtiny
+[markdown:skills/profiles/custom/minicpm.md] title:minicpm
+[markdown:skills/profiles/custom/q2b.md] title:q2b
+[markdown:skills/profiles/custom/sysadmin.md] title:sysadmin
+[markdown:skills/profiles/hermes/pro.md] title:pro
+[markdown:skills/profiles/pi/pro.md] title:pro
 [markdown:skills/system/aur-audit.md] title:AUR PRE-INSTALL SECURITY AUDIT SKILL
 [markdown:skills/system/mysys.md] title:SYSTEM ARCHITECTURE BLUEPRINT
 [markdown:skills/system/security-audit.md] title:SYSTEM SECURITY AUDIT DIRECTIVES

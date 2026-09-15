@@ -102,8 +102,9 @@ def _safe_read(path: str) -> str:
 AGENTIC_BENCHMARKS = [
     {
         "id": "AG-01",
-        "name": "In-Memory Math & Exit",
+        "name": "In-Memory Math & Exit [IPython]",
         "tools_tested": "exec_python, final_answer",
+        "requires_ipython": True,
         "par_turns": 1,
         "prompt": "Calculate the sum of all multiples of 3 or 5 below 100 in-memory using exec_python. Call final_answer with the integer result and finish.",
         "verify_fn": lambda ws, out: "2318" in str(out) or "2318" in str(getattr(ipython, "_final_answer_val", ""))
@@ -172,8 +173,9 @@ AGENTIC_BENCHMARKS = [
     },
     {
         "id": "AG-07",
-        "name": "In-Memory Batch Loop",
+        "name": "In-Memory Batch Loop [IPython]",
         "tools_tested": "exec_python, final_answer",
+        "requires_ipython": True,
         "par_turns": 1,
         "setup_fn": lambda ws: (
             open(os.path.join(ws, "a.txt"), "w").write("10\n"),
@@ -187,7 +189,6 @@ AGENTIC_BENCHMARKS = [
 
 
 def list_available_profiles() -> list[tuple[str, str]]:
-    """Discovers all available agent profiles in skills/profiles/."""
     skills_dir = os.path.join(CFG_DIR, "skills")
     profiles_dir = os.path.join(skills_dir, "profiles")
     found = []
@@ -208,7 +209,6 @@ def list_available_profiles() -> list[tuple[str, str]]:
 
 
 def select_profile_interactive(profiles: list[tuple[str, str]], default_key: str = "custom/base") -> str:
-    """Raw terminal arrow-key, vi-key, and number selector for profiles."""
     current_idx = 0
     for i, (k, _) in enumerate(profiles):
         if k == default_key or k in ("custom/minicpm", "custom/pysmol", "custom/lingtiny"):
@@ -297,10 +297,8 @@ def select_profile_interactive(profiles: list[tuple[str, str]], default_key: str
 
 
 def resolve_dynamic_profile(cli_profile_arg: str | None = None) -> tuple[str, str]:
-    """Dynamically detects active profile, opens interactive menu, or accepts CLI override."""
     skills_dir = os.path.join(CFG_DIR, "skills")
 
-    # 1. Direct CLI argument
     if cli_profile_arg and not cli_profile_arg.startswith("-"):
         clean_arg = cli_profile_arg.lstrip("-")
         content = skills.load_skill_content(clean_arg, skills_dir, CFG_DIR)
@@ -311,7 +309,6 @@ def resolve_dynamic_profile(cli_profile_arg: str | None = None) -> tuple[str, st
             if content:
                 return f"custom/{clean_arg}", content
 
-    # 2. Check active environment or workspace config
     active_env = os.environ.get("AI_ACTIVE_SKILL")
     if active_env:
         first_skill = active_env.split()[0]
@@ -332,7 +329,6 @@ def resolve_dynamic_profile(cli_profile_arg: str | None = None) -> tuple[str, st
         except Exception:
             pass
 
-    # 3. Interactive Arrow-Key Menu
     if not os.environ.get("AI_CONTEXT_RUN"):
         profiles = list_available_profiles()
         if profiles:
@@ -341,7 +337,6 @@ def resolve_dynamic_profile(cli_profile_arg: str | None = None) -> tuple[str, st
             if content:
                 return chosen_key, content
 
-    # Universal Default
     default_prof = "custom/base"
     content = skills.load_skill_content(default_prof, skills_dir, CFG_DIR) or "You are an autonomous AI software engineer."
     return default_prof, content
@@ -425,19 +420,31 @@ def main():
     ))
 
     model_name, endpoint = get_current_model_info()
+    is_py_enabled = bool(core.get_state("ipython_mode", False))
 
+    mode_label = "[bold cyan]Dual (Python + Native)[/bold cyan]" if is_py_enabled else "[bold green]Native 6-Tool[/bold green]"
     console.print(f"• [bold green]Target Model[/bold green]: [bold]{model_name}[/bold]")
     console.print(f"• [dim]Target Endpoint[/dim]: {endpoint}")
-    console.print(f"• [dim]Harness Profile[/dim]: [cyan]{prof_name}[/cyan]\n")
+    console.print(f"• [dim]Harness Profile[/dim]: [cyan]{prof_name}[/cyan] ({mode_label})\n")
 
     results = []
     passed_count = 0
     total_time = 0.0
     total_tokens = 0
+    evaluated_count = 0
     spinner = MinimalSpinner()
 
     try:
         for idx, bench in enumerate(AGENTIC_BENCHMARKS, start=1):
+            if bench.get("requires_ipython") and not is_py_enabled:
+                status_str = "[bold yellow]SKIP[/bold yellow]"
+                turn_metrics = "ipython: OFF"
+                tps_str = "- t/s"
+                results.append((bench["id"], bench["name"], bench["tools_tested"], status_str, turn_metrics, tps_str))
+                console.print(f"  [yellow]⊘[/yellow] {status_str} : [bold]{bench['id']}[/bold] {bench['name']:<35} [dim](Skipped: /py disabled in profile)[/dim]")
+                continue
+
+            evaluated_count += 1
             spinner.start(f"[{idx}/{len(AGENTIC_BENCHMARKS)}] Running \033[1;36m{bench['id']}\033[0m ({bench['name']})...")
             passed, elapsed, turns, toks, detail = run_single_agentic_test(bench, model_name, profile_content)
             spinner.stop()
@@ -454,11 +461,11 @@ def main():
             par_val = bench.get("par_turns", "-")
             turn_metrics = f"{turns}t (Par {par_val})" if passed else "FAILED"
             results.append((bench["id"], bench["name"], bench["tools_tested"], status_str, turn_metrics, f"{tps:.1f} t/s"))
-            console.print(f"  {'✔' if passed else '✖'} {status_str} : [bold]{bench['id']}[/bold] {bench['name']:<25} {detail:<24} @ [cyan]{tps:.1f} t/s[/cyan]")
+            console.print(f"  {'✔' if passed else '✖'} {status_str} : [bold]{bench['id']}[/bold] {bench['name']:<35} {detail:<24} @ [cyan]{tps:.1f} t/s[/cyan]")
     finally:
         spinner.stop()
 
-    accuracy = (passed_count / len(AGENTIC_BENCHMARKS)) * 100
+    accuracy = (passed_count / evaluated_count * 100) if evaluated_count > 0 else 0
     avg_tps = (total_tokens / total_time) if total_time > 0 else 0
 
     table = Table(title=f"\nAgentic Stack Benchmark: {model_name} [{prof_name}]", border_style="bright_black")
@@ -474,7 +481,8 @@ def main():
 
     console.print(table)
     score_col = "green" if accuracy >= 80 else "yellow" if accuracy >= 50 else "red"
-    console.print(f"\n[bold]Full-Stack Scorecard:[/bold] [{score_col}]{passed_count}/{len(AGENTIC_BENCHMARKS)} Succeeded ({accuracy:.1f}%)[/{score_col}] | Avg Speed: [bold cyan]{avg_tps:.1f} t/s[/bold cyan] | Total Elapsed: [dim]{total_time:.2f}s[/dim]\n")
+    skipped_str = f" [{len(AGENTIC_BENCHMARKS) - evaluated_count} Skipped: ipython OFF]" if evaluated_count < len(AGENTIC_BENCHMARKS) else ""
+    console.print(f"\n[bold]Full-Stack Scorecard:[/bold] [{score_col}]{passed_count}/{evaluated_count} Succeeded ({accuracy:.1f}%){skipped_str}[/{score_col}] | Avg Speed: [bold cyan]{avg_tps:.1f} t/s[/bold cyan] | Total Elapsed: [dim]{total_time:.2f}s[/dim]\n")
 
 
 if __name__ == "__main__":
