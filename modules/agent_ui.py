@@ -656,6 +656,37 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
 
     current_idx, num_opts = 0, len(options)
     user_overrides = set()
+
+    # Pre-calculate actual workspace Map & Memory token weights
+    ws_path = os.environ.get("AI_WORKSPACE_PATH", os.path.join(CFG_DIR, "projects", workspace_name))
+    if not os.path.isdir(ws_path):
+        ws_path = os.getcwd()
+
+    map_toks = 350
+    for cand in [
+        os.path.join(ws_path, ".agent", f"index-map-{workspace_name}.txt"),
+        os.path.join(ws_path, f"index-map-{workspace_name}.txt"),
+    ]:
+        if os.path.isfile(cand):
+            try:
+                map_toks = max(50, os.path.getsize(cand) // 4)
+                break
+            except OSError:
+                pass
+
+    mem_toks = 0
+    mem_dir = os.path.join(ws_path, ".agent", "memory")
+    if os.path.isdir(mem_dir):
+        try:
+            mem_toks = sum(
+                os.path.getsize(os.path.join(mem_dir, f)) // 4
+                for f in os.listdir(mem_dir)
+                if f.endswith(".md")
+            )
+        except OSError:
+            pass
+    if mem_toks == 0:
+        mem_toks = 40
     init_meta = profile_cache.get(options[0][0], {})
     is_yolo = init_meta.get("yolo", False)
     use_map = init_meta.get("map", False)
@@ -711,11 +742,25 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
             adp_badge  = b_on if adp_active else b_off
 
             if is_py:
-                tools_desc = "\033[1;36mipython (1 tool)\033[0m       \033[33m(~80t)\033[0m"
+                tool_tok_str = "~80t"
+                tool_label = "ipython (1 tool, ~80t)"
             elif use_map:
-                tools_desc = "\033[1;36mindex-map (12 tools)\033[0m    \033[33m(~1.2kt)\033[0m"
+                tool_tok_str = "~1.2kt"
+                tool_label = "index-map (12 tools, ~1.2kt)"
             else:
-                tools_desc = "\033[1;36mnative json (7 tools)\033[0m   \033[33m(~780t)\033[0m"
+                tool_tok_str = "~780t"
+                tool_label = "native json (7 tools, ~780t)"
+
+            addons = []
+            if use_map:
+                m_str = f"~{map_toks}t" if map_toks < 1000 else f"~{map_toks/1000:.1f}kt"
+                addons.append(f"+Map: {m_str}")
+            if is_mem:
+                mem_str = f"~{mem_toks}t" if mem_toks < 1000 else f"~{mem_toks/1000:.1f}kt"
+                addons.append(f"+Mem: {mem_str}")
+
+            addon_info = f"  \033[90m[{' | '.join(addons)}]\033[0m" if addons else ""
+            tools_desc = f"\033[1;36m{tool_label:<29}\033[0m{addon_info}"
 
             bottom_text = (
                 f"\r\x1b[K\n\r\x1b[K    \033[2mTools:\033[0m {tools_desc}\n"
