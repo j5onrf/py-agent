@@ -73,21 +73,21 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 [ai init] Select default Agent Profile for workspace ling-tiny:
 
   ─── Custom ────────────────────────
-     1. Custom Base          (~360t)
-     2. Custom Deepseek      (~441t)
-     3. Custom Gemini        (~410t)
-     4. Custom Lfm2          (~360t)
-  ❯  5. Custom Lingtiny      (~426t)
-     6. Custom Minicpm       (~456t)
-     7. Custom Q2B           (~349t)
-     8. Custom Sysadmin      (~480t)
+     1. Custom Base          (~370t)
+     2. Custom Deepseek      (~431t)
+     3. Custom Gemini        (~398t)
+     4. Custom Lfm2          (~361t)
+  ❯  5. Custom Lingtiny      (~395t)
+     6. Custom Minicpm       (~431t)
+     7. Custom Q2B           (~365t)
+     8. Custom Sysadmin      (~442t)
 
   ─── Agents ────────────────────────
-     1. Pi Pro               (~367t)
-     2. Claude Pro           (~391t)
-     3. Hermes Pro           (~403t)
+     1. Pi Pro               (~378t)
+     2. Claude Pro           (~425t)
+     3. Hermes Pro           (~423t)
 
-    Tools: ipython (1 tool, ~80t)         [+Map: ~350t | +Mem: ~40t]
+    Tools: python + native (7 tools, ~760t)
 
   :: ↵ select    ↑/↓ navigate    Esc: default
      Tab: YOLO [ON]    m: Map [OFF]    d: Mem [OFF]    p: Py [ON]    a: Adp [ON]
@@ -154,17 +154,18 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 
 ---
 
-## 4. Tooling & Safety Architecture
+## 4. Tooling & Safety
 
-* **Dual Knowledge Layers:**
-  * **Codebase AST Graph (Layer 1):** `.agent/index-map-memory-<ws>.db` SQLite FTS5 database storing AST structural connections, symbols, and line spans. Toggled via **`/m`**.
-  * **Project Memory & Turn Log (Layer 2):** `<workspace>/.agent/memory/*.md` (OKF persistent directives) and `~/.config/py-agent/projects/.database/<ws>.db` (SQLite session turn checkpoints). Toggled via **`/mem`**.
-* **Zero-Trust Mandatory Fallback:** Out-of-bounds workspace paths, mutating system actions (`systemctl start/stop/restart/mask`), and package modifications (`sudo`, `pacman -S/-R`, `pip`) **always trigger an interactive `[Y/n]` confirmation**, even in Autonomous YOLO mode. Safe read-only inspection commands (`pacman -Q*`, `systemctl status/list-units`, `journalctl`) run autonomously without prompts.
-* **Prime Agent, NOOA & Smolagents In-Memory Kernel (`/py`):** Stateful Python REPL combining Prime Agent stateful execution with in-kernel `delegate("goal")` sub-agents and model-callable `memory`/`graph` APIs, NVIDIA NOOA bounded previews (`preview()`), and Hugging Face `smolagents` code-first batch loops with `final_answer(data)` completion hooks, guarded by a 30-second `SIGALRM` runaway loop breaker.
-* **3-Stage Resilient File Editing (`edit_file`):**
-  1. *Exact match* replacement.
-  2. *Whitespace-normalized* indentation matching (handles 2- vs 4-space discrepancies).
-  3. *SequenceMatcher fuzzy fallback* (replaces target blocks with $>88\%$ similarity without syntax corruption).
+### 4.1 Operational Tiers & Token Footprint
+* **Pure Chat (`ai`):** **211 tokens** (ultra-minimal, zero tools).
+* **Native Mode (`Py: OFF`):** **6 tools (`SMOL_TOOLS`)**, ~680t schema.
+* **Dual Mode (`Py: ON`):** **7 tools (`python + native`)**, ~760t schema with ~95% KV cache hits.
+* **OKF Memory:** `.agent/memory/*.md` with 1-shot `/hs` retrospective audits.
+
+### 4.2 Guardrails & Execution
+* **Zero-Trust Safety Gate:** System mutations (`sudo`, `pacman`, `systemctl`) and out-of-bounds file access always require explicit `[y/N]` confirmation—even in YOLO mode.
+* **Surgical File Edits (`edit_file`):** 3-stage replacement (Exact $\to$ Whitespace-tolerant $\to$ 88% Fuzzy match).
+* **Adaptive Reads (`read_file`):** Automatically switches to an AST structural outline when files exceed your active context ceiling (250 to 4,000 lines).
 
 ---
 
@@ -252,3 +253,31 @@ Empirical results across small quantized models (Sub-27B):
 | **Full Suite Pass Rate** | Fragile / Retries | **100% (7/7)** | **Zero unhandled syntax or format failures** |
 
 * **Why it matters:** Sub-27B models often emit malformed JSON, markdown code blocks, or broken import syntax. `/adp` heals these out-of-band, preventing wasted multi-turn recovery cycles and preserving active context window space on any hardware.
+
+---
+
+## 9. Technical Reference: Lineage, Foundations & Extended Capabilities
+
+A comprehensive map of all upstream foundations, architectural roots, and secondary services integrated into `py-agent`:
+
+### 9.1 Architectural Foundations & Upstream Roots
+
+| System | Upstream Roots & Inspiration | Purpose & Architecture |
+| :--- | :--- | :--- |
+| **Codebase Graph** | [Graphify](https://github.com/Graphify-Labs/graphify) + [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) | Standard-library Python AST parsing (`ast.NodeVisitor`) coupled with SQLite `fts5` virtual table indexing for sub-millisecond symbol queries (`index-map`). |
+| **Task Loop Engine** | [Ralph Wiggum](https://github.com/ghuntley/how-to-ralph-wiggum) | Self-directed task loop (`ralph.py`) that reads specifications (`TASK.md`), decomposes execution steps, and retries on failure states until pass verification. |
+| **Kernel Harness** | [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent) + [NVIDIA NOOA](https://github.com/NVIDIA-NeMo/labs-OO-Agents) | Stateful in-memory IPython REPL with bounded object representations (`preview()`), 30s `SIGALRM` execution alarm, and model-callable `memory`/`graph` APIs (`/py`). |
+| **Code-First Batching** | [Hugging Face smolagents](https://github.com/huggingface/smolagents) | Enables models to execute multi-file batch loops in Python RAM and conclude with a clean `final_answer(data)` completion signal. |
+| **Surgical File Edits** | [SmallCoder](https://github.com/Doorman11991/smallcode) | 3-stage resilient replacement (`edit_file`) tolerant of whitespace/indentation variances, with overwrite protection on `write_file`. |
+| **Context Compaction** | [Pi Coding Agent](https://pi.dev) | 3-zone context compactor (`prune_history`) that condenses middle turns while preserving completed milestone anchors and modified file tracking. |
+| **Cognitive Stepping** | [Reasonix](https://github.com/esengine/deepseek-reasonix) | Real-time cognitive transition extraction and streaming step badges inside thinking traces (`/t`). |
+| **Multi-Agent State** | [Vercel Eve](https://github.com/vercel/eve) + [herdr](https://github.com/ogulcancelik/herdr) | Process-isolated sub-agent PID lockfile tracking with checkpoint rollback (`-save` / `-load`) and in-kernel `delegate()` sandboxing. |
+| **Adapter Healing** | [Unsloth AI](https://github.com/unslothai/unsloth) | Self-healing tool format adapters (`agent_adapters.py`) resolving Hermes XML, DSML, Mistral, and raw planning JSON out-of-band for ≤27B models (`/adp`). |
+
+### 9.2 Auxiliary Subsystems & Services
+
+* **Live Web Grounding (`/gnd`):** Dual-mode factual web search using the official Gemini Grounding Search tool with automatic keyless DuckDuckGo fallback across CLI, TUI, and Web surfaces.
+* **Multimodal Vision OCR (`describe_image_gemini`):** Cloud pre-processor utilizing Gemini Flash Lite vision to transcribe images, diagrams, error screenshots, and UI mockups into structured text descriptions for text-only local models.
+* **Low-Latency Voice Bridge (`/v [auto]`):** Standalone HTTPS server on port `9999` with Gemini speech-to-text and Wayland virtual typing (`wtype --`) directly into the CLI or PyCode editor.
+* **Local Kokoro Audio (`/tts`):** Zero-lag neural text-to-speech reader using local `koko` via PipeWire (`pw-play`), automatically filtering code blocks and thinking traces.
+* **System Administration Suite:** Integrated diagnostics in `tools/agentic/system/` including real-time hardware inspection (`system-health`), automated log triage (`log-checker`), AUR package auditing (`aur-audit`), and dynamic security auditing (`security-audit`).

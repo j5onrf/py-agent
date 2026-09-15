@@ -58,29 +58,6 @@
 
 ---
 
-<h2 align="center">Efficiency Benchmark: Py-Agent & DeepSeek (dsh)</h2>
-
-<div align="center">
-
-| Operational Tier | Py-Agent | DeepSeek (`dsh`) | Efficiency |
-| :--- | :---: | :---: | :--- |
-| **Chat vs. Minimal** | **211 tokens** (`ai`) | ~632 tokens (`minimal`) | **3x less baseline** |
-| **Standard Core Tools** | **~680 tokens** (`SMOL_TOOLS`) | ~1,200 tokens (`standard`) | **45% fewer tokens**; native file tools prevent small-model looping. |
-| **Dual Python + Native** | **~760 tokens** (`python + native`) | ~1,400+ tokens (plugins) | In-memory testing + deterministic file edits with **~95% cache hits**. |
-| **Full Tools (Index-Map)** | **~1,100 tokens** (11 tools + AST graph) | 2,500–4,000+ tokens (full suite) | Full relational SQLite symbol graph |
-| **Idle Resource Footprint** | **0% CPU / 0 MB RAM** | Node.js Runtime Active | Standard Python standard-library execution |
-
-</div>
-
-### Operational Tiers
-* **Pure Chat (`ai`):** **217 tokens** — instant conversational responses with zero tool schemas.
-* **Native Mode (`Py: OFF`):** **6 tools (`SMOL_TOOLS`, ~680t)** — deterministic single-turn file operations good for Sub-27B SLMs.
-* **Dual Mode (`Py: ON`):** **7 tools (`python + native`, ~760t)** — in-memory testing + native file tools with ~95% hardware cache reuse.
-* **Index-Map Mode (`Map: ON`):** **11 tools (~1,100t)** — complete codebase AST relational graph (`fts5`).
-* **OKF Memory:** Git-native `.agent/memory/*.md` directives with 1-shot `/hs` retrospective audits.
-
----
-
 <h2 align="center">Key Systems & Integrations</h2>
 
 | Feature System | Foundation & Architectural Roots | Interface Command / Link |
@@ -130,10 +107,10 @@
 ╭─  ∿ Py Agent  ────────────────────╮
 │     model:  Qwen3.6-35B-A3B.gguf  │
 │ directory:  ~                     │
-│   profile:  chat                  │
+│     skill:  chat                  │
 │  database:  stateless             │
 ╰────────────────── Ctrl+C to exit ─╯
- Startup context: 217 tokens
+ Startup context: 103 tokens
 ❯ █
 ```
 
@@ -341,10 +318,7 @@ AI_MAX_TOKENS="8192"
 
 ---
 
-<h2 align="center">Documentation & License</h2>
+<h2 align="center">License</h2>
 
-* **<a href="projects/Readme.md">Workspace & Session Manual</a>**
-* **<a href="modules/Readme.md">System Architecture</a>**
 * **License**: Licensed under the permissive [MODIFIED MIT LICENSE](LICENSE).
 * **Community:** Contributions are always welcome!
-

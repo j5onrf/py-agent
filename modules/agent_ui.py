@@ -445,15 +445,18 @@ def draw_session_box(
     try:
         import agent_core as core
         p_toks = core.get_accurate_token_count(active_system_prompt)
-        is_py = bool(core.get_state("ipython_mode", False))
-        use_map = bool(core.get_state("use_map", False)) or os.environ.get("AI_USE_MAP") == "1"
-
-        if is_py:
-            t_toks = 80
-        elif use_map:
-            t_toks = 1100
+        
+        if is_agent:
+            is_py = bool(core.get_state("ipython_mode", False))
+            use_map = bool(core.get_state("use_map", False)) or os.environ.get("AI_USE_MAP") == "1"
+            if is_py:
+                t_toks = 80
+            elif use_map:
+                t_toks = 1100
+            else:
+                t_toks = 680
         else:
-            t_toks = 680
+            t_toks = 0  # Pure chat mode has 0 tools
 
         tot = p_toks + t_toks
     except Exception:

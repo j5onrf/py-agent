@@ -494,7 +494,6 @@ def agentic_turn(
             use_map = st.get("use_map", False) or os.environ.get("AI_USE_MAP", "0") == "1"
 
             if is_py_mode and ipython:
-                # Dual-Mode: exec_python for in-memory logic + SMOL_TOOLS for native file operations
                 active_tools = list(ipython.IPYTHON_TOOL) + [
                     t for t in tools.SMOL_TOOLS if t["function"]["name"] != "exec_python"
                 ]
