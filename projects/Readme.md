@@ -236,15 +236,10 @@ reasoning_budget: 500
 
 ---
 
-## 8. Sub-27B Lite Model Directives
+## 8. Sub-27B Model Tips (Ling, Qwen-2B, MiniCPM)
 
-Models under ~27B (`Ling-3.0-tiny`, `LFM2.5-8B`, `MiniCPM5-2B`, `Qwen3.5-2B`) operate as **single-task execution engines** with constrained tool loops.
-
-* **Single-Task Horizon:** Scope prompts to single-file, 1–2 turn tasks. Avoid chaining multi-file refactors in one prompt.
-* **`write_file` for Small Files:** Use `write_file(path, content, overwrite=true)` on files < 50 lines to prevent multi-line `old_str` diff matching errors.
-* **1-Line Terminal Exit:** Require an explicit halt pattern (`✓ Task complete: <summary>`) upon test pass (`OK`) to prevent post-verification looping.
-* **Self-Healing Adapters (`agent_adapters.py`):** Automatically heals Hermes XML, DSML, Mistral, and naked JSON into executable tools without deleting parameter names like `"code"`.
-* **Historical `<think>` Stripping:** Previous turns are stripped of reasoning before appending to context, preventing small models from compounding or repeating previous thoughts.
+* **Scope to Single Tasks:** Keep prompts focused on 1 file or 1 objective per turn for maximum accuracy.
+* **Use Native Tools (`Py: OFF`):** Small models are fastest and most reliable with the 6 native tools (`SMOL_TOOLS`), avoiding raw Python scripting loops.
 
 ### 8.1 Adapter Performance Impact (`eval-stack`)
 
