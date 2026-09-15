@@ -94,10 +94,10 @@ def workspace_db_counts(safe_name: str, workspace_path: str = "") -> tuple[int, 
 
 
 def ensure_clean_agent_dir(workspace_path: str) -> None:
-    """Migrates any stray root artifacts cleanly into .agent/."""
     if not (ws_name := os.path.basename(workspace_path)):
         return
     agent_dir = os.path.join(workspace_path, ".agent")
+    os.makedirs(os.path.join(agent_dir, "memory"), exist_ok=True)
     targets = [
         f"index-map-{ws_name}.txt",
         f"index-map-memory-{ws_name}.db",
@@ -108,7 +108,6 @@ def ensure_clean_agent_dir(workspace_path: str) -> None:
     for fname in targets:
         src = os.path.join(workspace_path, fname)
         if os.path.exists(src):
-            os.makedirs(agent_dir, exist_ok=True)
             try:
                 os.replace(src, os.path.join(agent_dir, fname))
             except OSError:
@@ -505,6 +504,33 @@ def run_interactive_chat(args: list[str]) -> None:
                     if not os.path.exists(loop_script):
                         loop_script = os.path.join(CFG_DIR, "tools", "loop", "ralph.py")
                     subprocess.run([sys.executable, loop_script, task_text], cwd=workspace_path, env={**os.environ, "AI_WORKSPACE_PATH": workspace_path})
+                    continue
+
+                if cmd in ("/hindsight", "/hs"):
+                    user_turns = [m for m in chat_history if m.get("role") == "user" and not m.get("content", "").startswith("[System Directive - Hindsight")]
+                    if not user_turns:
+                        ui._console.print("[dim yellow][sys] No conversation turns to audit yet.[/dim yellow]\n")
+                        continue
+
+                    ui._console.print("[cyan][sys] Running Hindsight retrospective audit...[/cyan]\n")
+                    hs_skill = skills.load_skill_content("hindsight", SKILLS_DIR, CFG_DIR)
+                    audit_prompt = (
+                        "[System Directive - Hindsight Retrospective]: Review the conversation history above. "
+                        "Identify any durable technical rules, tool quirks, command fixes, or project decisions settled in this session. "
+                        "For each durable lesson, call save_memory(title='<short-slug>', content='<actionable rule>') immediately. "
+                        "If no new durable lessons occurred, reply with: '✓ Hindsight: No durable lessons required; session was nominal.'"
+                    )
+                    temp_history = list(chat_history)
+                    if hs_skill:
+                        temp_history[0] = {"role": "system", "content": temp_history[0]["content"] + "\n\n" + hs_skill}
+                    temp_history.append({"role": "user", "content": audit_prompt})
+
+                    ans = core.stream_response(temp_history, prefix="Agent:", show_stats=show_stats, thinking_budget=reasoning_budget if reasoning_active else 0, is_agent=is_agent)
+                    if ans:
+                        clean_ans = re.sub(r"<think>[\s\S]*?</think>", "", ans).strip()
+                        chat_history.append({"role": "assistant", "content": clean_ans or ans})
+                        m_cnt = memories.get_memory_count(workspace_path)
+                        ui._console.print(f"\n[green][sys] Hindsight complete. Active memories: {m_cnt} files.[/green]\n")
                     continue
 
                 if cmd in ("/help", "/h"):

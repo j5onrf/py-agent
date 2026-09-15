@@ -76,7 +76,6 @@ ai init ~/.config/py-agent/projects/session-test ---> session test, projects ses
 [TOOL] cat $1 ---> view file, read file, show file, vf
 
 # --- Memories & Hindsight (OKF) ---
-[TOOL] cat ~/.config/py-agent/skills/on-demand/hindsight.md --s ---> hindsight
 [TOOL] d=".agent/memory"; [[ -d "$d" ]] && (for f in "$d"/*.md; do [[ -f "$f" ]] && { echo -e "\033[1;36m=== $(basename "$f") ===\033[0m"; cat "$f"; echo ""; }; done | less -R) || echo "No memory files found in .agent/memory/." ---> show memories, mem
 [TOOL] q="$1"; [[ -z "$q" ]] && read -p "Search Memories: " q; d=".agent/memory"; [[ -d "$d" ]] && grep --color=always -H -n -A 4 -B 1 -i "$q" "$d"/*.md 2>/dev/null || echo "No matches found in .agent/memory/." ---> search memories, ms
 

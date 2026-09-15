@@ -189,9 +189,9 @@ EDIT_TOOLS: list[dict[str, Any]] = [
     ]
 ]
 
-# Lean 7-Tool Set for Compact Models (2B, 7B, 8B, 14B)
-LEAN_TOOLS: list[dict[str, Any]] = [
-    t for t in EDIT_TOOLS if t["function"]["name"] in ("read_file", "search_code", "edit_file", "write_file", "list_dir", "run_command", "delegate_task")
+# Smol 6-Tool Set for Compact Models (2B, 7B, 8B, 14B)
+SMOL_TOOLS: list[dict[str, Any]] = [
+    t for t in EDIT_TOOLS if t["function"]["name"] in ("read_file", "search_code", "edit_file", "write_file", "list_dir", "run_command")
 ]
 
 TOOL_VERBS = {

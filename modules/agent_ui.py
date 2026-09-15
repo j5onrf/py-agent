@@ -565,6 +565,7 @@ def show_help() -> None:
         ("/py \\[code]", "IPython kernel execution"),
         ("/m, /map", "Toggle Codebase index-map"),
         ("/mem \\[save|list]", "Toggle & manage OKF memory files"),
+        ("/hs, /hindsight", "Retrospective session memory audit"),
         ("/box \\[1-8]", "Box style preset"),
         ("/task \\[goal]", "Autonomous task loop"),
         ("/t \\[N|show|hide]", "Reasoning budget & display"),
@@ -748,8 +749,8 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                 tool_tok_str = "~1.2kt"
                 tool_label = "index-map (12 tools, ~1.2kt)"
             else:
-                tool_tok_str = "~780t"
-                tool_label = "native json (7 tools, ~780t)"
+                tool_tok_str = "~680t"
+                tool_label = "native json (6 tools, ~680t)"
 
             addons = []
             if use_map:

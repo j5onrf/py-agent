@@ -499,7 +499,7 @@ def agentic_turn(
             elif use_map:
                 active_tools = list(tools.EDIT_TOOLS)
             else:
-                active_tools = list(getattr(tools, "LEAN_TOOLS", tools.EDIT_TOOLS))
+                active_tools = list(tools.SMOL_TOOLS)
 
             if int(os.environ.get("AI_SUBAGENT_DEPTH", "0")) >= 1:
                 active_tools = [t for t in active_tools if t.get("function", {}).get("name") != "delegate_task"]

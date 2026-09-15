@@ -251,6 +251,12 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
     mem_sdk = MemorySDK(ws_real, safe_name)
     graph_sdk = GraphSDK(ws_real)
 
+    def _save_memory_fn(title: str, content: str, mem_type: str = "note") -> str:
+        if memories:
+            ok, p = memories.save_memory_file(ws_real, title, content, mem_type=mem_type)
+            return f"Saved memory to {os.path.basename(p)}" if ok else f"Error: {p}"
+        return "Memory module unavailable."
+
     sdk = {
         "open": safe_open,
         "read_file": _read_file,
@@ -260,6 +266,7 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
         "search_code": _search_code,
         "run_command": _run_command,
         "final_answer": _final_answer,
+        "save_memory": _save_memory_fn,
         "read_symbol": graph_sdk.snippet,
         "trace_symbol": graph_sdk.trace,
         "blast_radius": graph_sdk.blast_radius,

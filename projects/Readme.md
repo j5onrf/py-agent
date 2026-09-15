@@ -26,7 +26,7 @@ High-speed local developer agent, episodic memory, SQLite checkpoints, NOOA-enha
 
 Agent: ✓ Task complete: Sum of all prime numbers between 10 and 50 is 311.
  [ think: 56 | ans: 18 | 74 tokens | 0.61s @ 121.31 t/s ]
-[ 767 in | 53 out | ctx: 10.0% ]
+ [ 767 in | 53 out | cch: 93% | ctx: 10.0% ]
 ❯ █
 ```
 
@@ -73,18 +73,21 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 [ai init] Select default Agent Profile for workspace ling-tiny:
 
   ─── Custom ────────────────────────
-     1. Custom Base          (~435t)
-     2. Custom Gemini        (~553t)
-     3. Custom Lfm2          (~463t)
-  ❯  4. Custom Lingtiny      (~688t)
-     5. Custom Minicpm       (~724t)
-     6. Custom Q2B           (~385t)
-     7. Custom Sysadmin      (~1.3kt)
+     1. Custom Base          (~360t)
+     2. Custom Deepseek      (~441t)
+     3. Custom Gemini        (~410t)
+     4. Custom Lfm2          (~360t)
+  ❯  5. Custom Lingtiny      (~426t)
+     6. Custom Minicpm       (~456t)
+     7. Custom Q2B           (~349t)
+     8. Custom Sysadmin      (~480t)
 
   ─── Agents ────────────────────────
-     1. Pi Pro               (~506t)
-     2. Claude Pro           (~659t)
-     3. Hermes Pro           (~648t)
+     1. Pi Pro               (~367t)
+     2. Claude Pro           (~391t)
+     3. Hermes Pro           (~403t)
+
+    Tools: ipython (1 tool, ~80t)         [+Map: ~350t | +Mem: ~40t]
 
   :: ↵ select    ↑/↓ navigate    Esc: default
      Tab: YOLO [ON]    m: Map [OFF]    d: Mem [OFF]    p: Py [ON]    a: Adp [ON]
@@ -92,11 +95,12 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 
 * **Customize Profiles:** Modify or create profile `.md` files in `~/.config/py-agent/skills/profiles/`.
 * **Instant Frontmatter Auto-Sync:** As you navigate `↑` / `↓` across profiles, the 5 toggles on Line 2 **automatically flip to reflect each author's recommended defaults.**
+* **Real-Time Tools Inspector:** The `Tools:` line dynamically recalculates active tool schema cost (`ipython`, `native json`, or `index-map`) alongside prompt context add-ons (`[+Map | +Mem]`).
 * **Single-Letter Overrides:**
   * **`Tab`** ➔ Toggle Autonomous YOLO mode (`[ON]` disables confirmation gates).
   * **`m`** ➔ Toggle Codebase Index-Map (11 tools + AST graph intelligence).
   * **`d`** ➔ Toggle Database Session Memory & OKF Memory Directives.
-  * **`p`** ➔ Toggle In-Memory IPython Kernel Harness (`exec_python`).
+  * **`p`** ➔ Toggle In-Memory IPython Kernel Harness (`exec_python` single-tool mode).
   * **`a`** ➔ Toggle Self-Healing Adapters (`agent_adapters.py` for ≤27B models).
 * **Hierarchy of Precedence:** Manual button presses take precedence over frontmatter defaults and are saved permanently to `<workspace>/.agent/config.json`.
 * **Auto-Compiling Index-Map:** When Map is `[ON]`, `ai init` automatically builds missing or stale index maps on startup and injects them directly into turn 0.
@@ -130,6 +134,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 │   Memory & Workspace                                                │
 │   /m, /map               - Toggle Codebase index-map                │
 │   /mem [save|list]       - Toggle & manage OKF memory files         │
+│   /hs, /hindsight        - Retrospective session memory audit       │
 │   /com, /compact         - 3-Zone context compaction                │
 │   /tok                   - Context token usage status               │
 │   /sync                  - Sync codebase index-map AST graph        │
@@ -186,46 +191,22 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
   # or single command:
   AI_MAX_TOKENS=65536 ai init ~/my-project
   ```
-
-* **AST Skeleton Guard:** Unparameterized reads exceeding the line ceiling return structural line spans (imports, classes, functions) to prevent context flooding.
-* **Targeted Chunk Reads:** Supplying line numbers bypasses the skeleton guard to inspect specific sections:
-  ```python
-  read_file(path="ai-agent.py", line_start=1, line_end=250)
-  ```
-* **Full-File Single Reads:** Pass an explicit range to ingest files beyond the automatic ceiling in one call:
-  ```python
-  read_file(path="ai-agent.py", line_start=1, line_end=2500)
-  ```
 * **Scratchpad Offload:** Automatically offloads to `.agent/scratchpad/` only when tool output exceeds ~35% of the active context window.
 
 ---
 
-## 5. Open Knowledge Format (OKF) Project Memory
+## 5. Project Memory (OKF)
 
-Git-native, human-editable Markdown memory stored in `<workspace>/.agent/memory/*.md`.
+Persistent directives stored in `.agent/memory/*.md` that load automatically into prompt context when Memory is ON (`/mem` or `d` in selector).
 
-### Commands:
-* **`/mem`** ➔ Toggle memory injection ON / OFF.
-* **`/mem save <title>: <content>`** ➔ Create or update a memory directive.
-* **`/mem list`** (or `/mem ls`) ➔ List active memory files.
-* **`/s hindsight`** ➔ Retrospective audit that extracts durable lessons into `.agent/memory/`.
+### Quick Commands:
+* `/mem save <topic>: <rule>` ➔ Save a new rule or preference (e.g. `/mem save os: User runs Arch Linux`).
+* `/mem list` (or `/mem ls`) ➔ List active memory files and token weights.
+* `/mem` ➔ Toggle memory injection ON / OFF.
+* `/hs` (or `/hindsight`) ➔ Audit entire session history and extract durable engineering rules directly into `.agent/memory/`.
 
 ### Manual Editing:
-Create or edit `.agent/memory/<slug>.md` directly in any editor:
-
-```yaml
----
-title: Database Strategy
-type: decision
-tags: [sqlite, wal]
-date: 2026-09-11
----
-Use SQLite with WAL mode and busy_timeout = 30000 for zero-daemon concurrency.
-```
-
-### Execution Flow:
-* **Memory ON (`/mem` / `d`):** Preloads all active rules and decisions into `<context>` (~50–200 tokens total).
-* **Memory OFF:** 0 tokens injected.
+Create or edit any `.md` file directly in `<workspace>/.agent/memory/` using any text editor (`nvim`, `nano`, `code`). Files are loaded in `< 0.1ms` on turn startup with zero background daemon processes.
 
 ---
 
@@ -253,16 +234,6 @@ reasoning_budget: 500
 ---
 ```
 
-| Frontmatter Key | Type | Description |
-| :--- | :---: | :--- |
-| `description` | String | Profile summary displayed in the `ai init` selector menu. |
-| `yolo` | Boolean | Sets default Autonomous YOLO mode (`true` turns off confirmation gates). |
-| `map` | Boolean | Enables Codebase Index-Map (11 tools + AST graph context). |
-| `memory` (or `mem`) | Boolean | Enables persistent session turn logging and OKF project memory pre-loading. |
-| `ipython` (or `py`) | Boolean | Enables live persistent in-memory Python kernel harness (`exec_python`). |
-| `adapters` (or `adp`) | Boolean | Enables self-healing tool parser (`agent_adapters.py`) for ≤27B models. |
-| `reasoning_budget` | Integer | Deep reasoning token budget (e.g. `350`, `500`, or `0` to disable). |
-
 ---
 
 ## 8. Sub-27B Lite Model Directives
@@ -271,7 +242,7 @@ Models under ~27B (`Ling-3.0-tiny`, `LFM2.5-8B`, `MiniCPM5-2B`, `Qwen3.5-2B`) op
 
 * **Single-Task Horizon:** Scope prompts to single-file, 1–2 turn tasks. Avoid chaining multi-file refactors in one prompt.
 * **`write_file` for Small Files:** Use `write_file(path, content, overwrite=true)` on files < 50 lines to prevent multi-line `old_str` diff matching errors.
-* **1-Line Terminal Exit:** Require an explicit halt pattern (`✔ Task complete: <summary>`) upon test pass (`OK`) to prevent post-verification looping.
+* **1-Line Terminal Exit:** Require an explicit halt pattern (`✓ Task complete: <summary>`) upon test pass (`OK`) to prevent post-verification looping.
 * **Self-Healing Adapters (`agent_adapters.py`):** Automatically heals Hermes XML, DSML, Mistral, and naked JSON into executable tools without deleting parameter names like `"code"`.
 * **Historical `<think>` Stripping:** Previous turns are stripped of reasoning before appending to context, preventing small models from compounding or repeating previous thoughts.
 
