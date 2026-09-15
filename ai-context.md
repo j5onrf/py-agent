@@ -44,6 +44,7 @@
 
 ```properties
 # --- Workspaces ---
+ai init ~/.config/py-agent/projects/qwen2b ---> qwen2b
 ai init ~/.config/py-agent/projects/deepseek ---> deepseek-v4
 ai init ~/.config/py-agent/projects/gemini ---> gemini
 ai init ~/.config/py-agent/projects/ling-tiny ---> ling-tiny
