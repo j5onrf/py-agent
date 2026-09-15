@@ -206,7 +206,7 @@ Persistent directives stored in `.agent/memory/*.md` that load automatically int
 * `/hs` (or `/hindsight`) ➔ Audit entire session history and extract durable engineering rules directly into `.agent/memory/`.
 
 ### Manual Editing:
-Create or edit any `.md` file directly in `<workspace>/.agent/memory/` using any text editor (`nvim`, `nano`, `code`). Files are loaded in `< 0.1ms` on turn startup with zero background daemon processes.
+Create or edit any `.md` file directly in `<workspace>/.agent/memory/` using any text editor (`nvim`, `nano`, `code`). Files are loaded in `< 0.1ms` on turn startup with zero background processes.
 
 ---
 

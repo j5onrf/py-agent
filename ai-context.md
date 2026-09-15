@@ -14,7 +14,7 @@
 
 ---
 
-## 0. Start Agent
+## 1. Start Agent
 
 ```properties
 # --- Agent Diagnostic ---
@@ -31,14 +31,16 @@
 ~/.config/py-agent/tools/evals/eval-stack --->  eval stack, eval-stack
 ```
 
-## 1. Plugins
+## 2. Plugins
 
 ```properties
+# --- Index Map ---
+[TOOL] ~/.config/py-agent/tools/index-map/index-map --cat ---> index map, imap
 # --- PyCode Setup & Build ---
 ~/.config/py-agent/plugins/pycode/setup.sh ---> install-pycode, setup-pycode, setup pycode
 ```
 
-## 2. Projects
+## 3. Projects
 
 ```properties
 # --- Workspaces ---
@@ -50,41 +52,7 @@ ai init ~/.config/py-agent/projects/minicpm ---> minicpm
 ai init ~/.config/py-agent/projects/session-test ---> session test, projects session
 ```
 
-## 3. Codebase Map
-
-```properties
-# --- Index Map ---
-[TOOL] ~/.config/py-agent/tools/index-map/index-map --cat ---> index map, imap
-```
-
-## 4. Voice & TTS
-
-```properties
-# --- Voice to Text ---
-~/.config/py-agent/modules/agent_voice.py ---> voice to text, v2t
-# --- Text to Speech (TTS) ---
-# killall -9 pw-play koko 2>/dev/null || true --s ---> stop speech, stop talking, kill tts
-```
-
-## 5. Web & Files
-
-```properties
-# --- Web Reader ---
-[TOOL] ~/.config/py-agent/tools/agentic/web/web-reader web $1 ---> web reader, webr
-[TOOL] ~/.config/py-agent/tools/agentic/web/web-reader youtube $1 ---> web reader yt, webr
-# --- File Reader ---
-[TOOL] cat $1 ---> view file, read file, show file, vf
-
-# --- Memories & Hindsight (OKF) ---
-[TOOL] d=".agent/memory"; [[ -d "$d" ]] && (for f in "$d"/*.md; do [[ -f "$f" ]] && { echo -e "\033[1;36m=== $(basename "$f") ===\033[0m"; cat "$f"; echo ""; }; done | less -R) || echo "No memory files found in .agent/memory/." ---> show memories, mem
-[TOOL] q="$1"; [[ -z "$q" ]] && read -p "Search Memories: " q; d=".agent/memory"; [[ -d "$d" ]] && grep --color=always -H -n -A 4 -B 1 -i "$q" "$d"/*.md 2>/dev/null || echo "No matches found in .agent/memory/." ---> search memories, ms
-
-# --- History & Transcript Search ---
-[TOOL] f=".agent/history.md"; [[ -f "$f" ]] || f="history.md"; [[ -f "$f" ]] && view "$f" | less -R || echo "No history recorded yet." ---> show history, hist, history
-[TOOL] q="$1"; [[ -z "$q" ]] && read -p "Search Page: " q; f=".agent/history.md"; [[ -f "$f" ]] || f="history.md"; [[ -f "$f" ]] && grep --color=always -A 15 -B 2 -i "$q" "$f" || echo "No history found." ---> search page, hs
-```
-
-## 6. System & Health
+## 4 System & Health
 
 ```properties
 # --- System Profile ---
@@ -107,7 +75,7 @@ ai init ~/.config/py-agent/projects/session-test ---> session test, projects ses
 [TOOL] ~/.config/py-agent/tools/agentic/system/system-health --s && ~/.config/py-agent/tools/agentic/system/log-checker --s && ~/.config/py-agent/tools/agentic/system/update-inspector --s ---> triage, full check, syscheck
 ```
 
-## 7. TUI Apps
+## 5. TUI Apps
 
 ```properties
 # --- Email TUI ---
@@ -117,7 +85,7 @@ ai init ~/.config/py-agent/projects/session-test ---> session test, projects ses
 ~/.config/py-agent/tools/subsec/hyprstate/gitcom ---> hyprstate gitcom, gitcom
 ```
 
-## 8. Tools & Utilities
+## 5. Tools & Utilities
 
 ```properties
 # --- eval-agent (HumanEval Benchmark) ---

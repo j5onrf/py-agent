@@ -174,11 +174,16 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
     if _has_ipython and _shell_instance is None:
         _shell_instance = InteractiveShell.instance()
 
-    def _is_outside(path_str: str) -> bool:
-        full = os.path.realpath(path_str if os.path.isabs(path_str) else os.path.join(ws_real, path_str))
-        return full != ws_real and not full.startswith(ws_real + os.sep)
+    SYSTEM_DEVICES = frozenset({"/dev/tty", "/dev/null", "/dev/urandom", "/dev/zero", "/dev/random"})
+
+    def _is_outside(full_path: str) -> bool:
+        if full_path in SYSTEM_DEVICES or full_path.startswith("/dev/pts/"):
+            return False
+        return full_path != ws_real and not full_path.startswith(ws_real + os.sep)
 
     def _check_boundary(path_str: str, op_name: str) -> bool:
+        if path_str in SYSTEM_DEVICES or path_str.startswith("/dev/pts/"):
+            return True
         full = os.path.realpath(path_str if os.path.isabs(path_str) else os.path.join(ws_real, path_str))
         if _is_outside(full):
             gate_msg = f"OUT-OF-BOUNDS KERNEL {op_name}: {full}"

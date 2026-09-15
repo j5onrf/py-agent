@@ -442,8 +442,25 @@ def draw_session_box(
             subtitle_align="right",
         )
 
+    try:
+        import agent_core as core
+        p_toks = core.get_accurate_token_count(active_system_prompt)
+        is_py = bool(core.get_state("ipython_mode", False))
+        use_map = bool(core.get_state("use_map", False)) or os.environ.get("AI_USE_MAP") == "1"
+
+        if is_py:
+            t_toks = 80
+        elif use_map:
+            t_toks = 1100
+        else:
+            t_toks = 680
+
+        tot = p_toks + t_toks
+    except Exception:
+        tot = (len(active_system_prompt) * 10) // 36 if active_system_prompt else 0
+
     _console.print(panel)
-    _console.print(f"[dim][sys] Startup context: {len(active_system_prompt) // 4:,} tokens[/dim]\n")
+    _console.print(f"[dim][sys] Startup context: {tot:,} tokens[/dim]\n")
     try:
         sys.stderr.write("\033[?25h")
         sys.stderr.flush()
@@ -453,6 +470,18 @@ def draw_session_box(
 
 def confirm_tool(tool: str) -> bool:
     target = getattr(sys, "__stderr__", None) or sys.stderr
+    # Cleanly erase any running boat animation line before displaying prompt
+    target.write(f"\r\x1b[2K\r\033[1;33m▲ [sys] Authorize tool:\033[0m \033[36m{tool}\033[0m \033[1;33m? [y/N]: \033[0m")
+    target.flush()
+    try:
+        char = get_key()
+    except Exception:
+        char = ""
+    # Explicit confirmation only (empty/whitespace defaults to safe No)
+    is_yes = char.strip().lower() in ("y", "yes")
+    target.write("y\n" if is_yes else "n\n")
+    target.flush()
+    return is_yes
     target.write(f"\r\x1b[K\033[1;33m▲ [sys] Authorize tool:\033[0m \033[36m{tool}\033[0m \033[1;33m? [Y/n]: \033[0m")
     target.flush()
     try:
@@ -670,7 +699,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
     ]:
         if os.path.isfile(cand):
             try:
-                map_toks = max(50, os.path.getsize(cand) // 4)
+                map_toks = max(50, (os.path.getsize(cand) * 10) // 36)
                 break
             except OSError:
                 pass
@@ -680,7 +709,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
     if os.path.isdir(mem_dir):
         try:
             mem_toks = sum(
-                os.path.getsize(os.path.join(mem_dir, f)) // 4
+                (os.path.getsize(os.path.join(mem_dir, f)) * 10) // 36
                 for f in os.listdir(mem_dir)
                 if f.endswith(".md")
             )
@@ -743,13 +772,10 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
             adp_badge  = b_on if adp_active else b_off
 
             if is_py:
-                tool_tok_str = "~80t"
-                tool_label = "ipython (1 tool, ~80t)"
+                tool_label = "python + native (7 tools, ~760t)"
             elif use_map:
-                tool_tok_str = "~1.2kt"
-                tool_label = "index-map (12 tools, ~1.2kt)"
+                tool_label = "index-map (11 tools, ~1.1kt)"
             else:
-                tool_tok_str = "~680t"
                 tool_label = "native json (6 tools, ~680t)"
 
             addons = []
@@ -813,9 +839,21 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                 key, label = options[current_idx][0], options[current_idx][1]
                 sys.stderr.write(f"\x1b[{last_rendered_lines + 3}A\r\x1b[J")
                 if not is_yolo:
-                    sys.stderr.write(f"\033[1;36mEnable Autonomous YOLO mode for {label}? [y/N]: \033[0m")
+                    sys.stderr.write(f"\033[1;36mEnable Autonomous YOLO mode for {label}? [y/N] \033[2m(Esc/←: back)\033[0m: \033[0m")
                     sys.stderr.flush()
-                    c = get_key().lower()
+                    raw_c = get_key()
+                    c = raw_c.lower()
+
+                    # Cancel confirmation and return cleanly to profile menu
+                    if raw_c in ("\x1b", "\x1b[D", "\x7f", "\x08", "\x1b[A", "\x1b[B") or c in ("b", "back"):
+                        sys.stderr.write("\r\x1b[2K")
+                        sys.stderr.write(
+                            f"\n\033[1;36m[ai init]\033[0m Select default Agent Profile for workspace \033[1;33m{workspace_name}\033[0m:\n\n"
+                        )
+                        sys.stderr.flush()
+                        last_rendered_lines = 0
+                        continue
+
                     sys.stderr.write("y\n" if c == "y" else "n\n")
                     sys.stderr.flush()
                     if c == "y":
