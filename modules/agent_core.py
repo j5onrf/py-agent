@@ -868,9 +868,17 @@ def get_accurate_token_count(text: Any, server_url: str = "http://localhost:8080
 
 
 def show_memory_status(messages: list[dict[str, Any]], max_context: int = 8192, server_url: str = "http://localhost:8080") -> None:
-    total_toks = sum(get_accurate_token_count(m.get("content") or "", server_url) for m in messages)
+    # 1. Grab true server context ceiling (e.g. 16384 on Nex, 8192 on Hermes)
+    try:
+        with urlreq.urlopen(f"{server_url.rstrip('/')}/props", timeout=0.15) as r:
+            max_context = json.loads(r.read()).get("default_generation_settings", {}).get("n_ctx", max_context)
+    except Exception:
+        max_context = int(os.environ.get("AI_MAX_TOKENS", max_context))
+
+    # 2. Add the ~760 active tool schema tokens to message content
+    total_toks = sum(get_accurate_token_count(m.get("content") or "", server_url) for m in messages) + 760
     pct = (total_toks / max_context) * 100
-    bar = "█" * int(pct / 5) + "░" * (20 - int(pct / 5))
+    bar = "█" * int(min(20, pct / 5)) + "░" * (20 - int(min(20, pct / 5)))
     color = "green" if pct < 70 else "yellow" if pct < 90 else "red"
 
     _console.print(Panel(

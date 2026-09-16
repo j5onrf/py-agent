@@ -34,13 +34,13 @@ BOX_DIAMOND = Box("◈─┬◈\n│ ││\n├─┼┤\n│ ││\n├─┼
 BOX_DASHED = Box("┌┄┬┐\n┆ ┆┆\n├┄┼┤\n┆ ┆┆\n├┄┼┤\n├┄┼┤\n┆ ┆┆\n└┄┴┘\n")
 
 STYLES = {
-    1: ("\u223f Py Agent", ROUNDED, "green", "bold bright_green"),
-    2: ("\u223f Py Agent", DOUBLE, "bright_blue", "bold bright_blue"),
-    3: ("\u223f Py Agent", SQUARE, "bright_yellow", "bold bright_yellow"),
-    4: ("\u223f Py Agent", HEAVY, "bright_cyan", "bold bright_white"),
+    1: ("Py Agent", ROUNDED, "green", "bold bright_green"),
+    2: ("Py Agent", DOUBLE, "bright_blue", "bold bright_blue"),
+    3: ("Py Agent", SQUARE, "bright_yellow", "bold bright_yellow"),
+    4: ("Py Agent", HEAVY, "bright_cyan", "bold bright_white"),
     5: ("Py Agent", HORIZONTALS, "dim white", "bold cyan"),
-    6: ("\u223f Py Agent", BOX_DIAMOND, "bright_cyan", "bold bright_white"),
-    7: ("\u223f Py Agent", BOX_DASHED, "bright_magenta", "bold bright_magenta"),
+    6: ("Py Agent", BOX_DIAMOND, "bright_cyan", "bold bright_white"),
+    7: ("Py Agent", BOX_DASHED, "bright_magenta", "bold bright_magenta"),
 }
 
 RICH_TO_ANSI = {
@@ -148,7 +148,7 @@ class InlineSpinner:
 
         try:
             if done_msg:
-                sys.stderr.write(f"\r\x1b[2K\033[1;32m✔\033[0m \033[1;36m{done_msg}\033[0m \033[2m({elapsed:.1f}s)\033[0m\n")
+                sys.stderr.write(f"\r\x1b[2K\033[1;32mOK\033[0m \033[1;36m{done_msg}\033[0m \033[2m({elapsed:.1f}s)\033[0m\n")
             else:
                 sys.stderr.write("\r\x1b[2K\r")
             sys.stderr.write("\033[?25h")
@@ -158,13 +158,6 @@ class InlineSpinner:
 
 
 class CalmBoatSpinner:
-    """Minimal 57-character sailing boat progress indicator for Calm Mode.
-    - Fixed 57-char width matching thinking block outlines (╰────────────────────────────────────────────────────────).
-    - Directional mainsail: <| when travelling right, |> when travelling left.
-    - 880ms step cadence with independent wave ripple cadence.
-    - Preserves boat column and travel direction across turns.
-    - Docked frame rests at the context percentage position cleanly without extra stats.
-    """
     _last_x: int = 0
     _last_dir: int = 1
 
@@ -417,7 +410,7 @@ def draw_session_box(
     table.add_row("database:", db_status)
 
     if box_style == 8:
-        title_str = f"  \u223f Py Agent [sub-agent #{sub_id}]" if sub_id else "  \u223f Py Agent"
+        title_str = f"  Py Agent [sub-agent #{sub_id}]" if sub_id else "  Py Agent"
         max_val_len = max(len(model_name), len(display_dir), len(clean_name or "chat"), len(db_status), 16)
         sep_str = " " + "─" * (10 + 2 + max_val_len)
         panel = Panel(
@@ -442,28 +435,8 @@ def draw_session_box(
             subtitle_align="right",
         )
 
-    try:
-        import agent_core as core
-        p_toks = core.get_accurate_token_count(active_system_prompt)
-        
-        if is_agent:
-            is_py = bool(core.get_state("ipython_mode", False))
-            use_map = bool(core.get_state("use_map", False)) or os.environ.get("AI_USE_MAP") == "1"
-            if is_py:
-                t_toks = 80
-            elif use_map:
-                t_toks = 1100
-            else:
-                t_toks = 680
-        else:
-            t_toks = 0  # Pure chat mode has 0 tools
-
-        tot = p_toks + t_toks
-    except Exception:
-        tot = (len(active_system_prompt) * 10) // 36 if active_system_prompt else 0
-
     _console.print(panel)
-    _console.print(f"[dim][sys] Startup context: {tot:,} tokens[/dim]\n")
+    _console.print()
     try:
         sys.stderr.write("\033[?25h")
         sys.stderr.flush()
@@ -473,25 +446,13 @@ def draw_session_box(
 
 def confirm_tool(tool: str) -> bool:
     target = getattr(sys, "__stderr__", None) or sys.stderr
-    # Cleanly erase any running boat animation line before displaying prompt
-    target.write(f"\r\x1b[2K\r\033[1;33m▲ [sys] Authorize tool:\033[0m \033[36m{tool}\033[0m \033[1;33m? [y/N]: \033[0m")
+    target.write(f"\r\x1b[2K\r\033[1;33m[sys] Authorize tool:\033[0m \033[36m{tool}\033[0m \033[1;33m? [y/N]: \033[0m")
     target.flush()
     try:
         char = get_key()
     except Exception:
         char = ""
-    # Explicit confirmation only (empty/whitespace defaults to safe No)
     is_yes = char.strip().lower() in ("y", "yes")
-    target.write("y\n" if is_yes else "n\n")
-    target.flush()
-    return is_yes
-    target.write(f"\r\x1b[K\033[1;33m▲ [sys] Authorize tool:\033[0m \033[36m{tool}\033[0m \033[1;33m? [Y/n]: \033[0m")
-    target.flush()
-    try:
-        char = get_key()
-    except Exception:
-        char = ""
-    is_yes = char.lower() == "y" or char in ("\r", "\n", "")
     target.write("y\n" if is_yes else "n\n")
     target.flush()
     return is_yes
@@ -527,9 +488,9 @@ def run_interactive_selection(
 
             idx_str = f"{current_idx + 1:02d}/{num_opts:02d}"
             prompt = (
-                f"\r\x1b[2K\033[1;31m▲ WARNING: Destructive payload detected\033[0m\n\r\x1b[2K\033[1;31m[{idx_str}]\033[0m ❯ \x1b[1;36m[{current_intent}]\x1b[0m {display_cmd}\n\r\x1b[2K\033[2m::\033[0m execute payload? [y/N]: "
+                f"\r\x1b[2K\033[1;31mWARNING: Destructive payload detected\033[0m\n\r\x1b[2K\033[1;31m[{idx_str}]\033[0m > \x1b[1;36m[{current_intent}]\x1b[0m {display_cmd}\n\r\x1b[2K\033[2m::\033[0m execute payload? [y/N]: "
                 if is_danger
-                else f"\r\x1b[2K\033[1;32m[{idx_str}]\033[0m ❯ \x1b[1;36m[{current_intent}]\x1b[0m {display_cmd}\n\r\x1b[2K\033[2m::\033[0m ↵ run  Esc: "
+                else f"\r\x1b[2K\033[1;32m[{idx_str}]\033[0m > \x1b[1;36m[{current_intent}]\x1b[0m {display_cmd}\n\r\x1b[2K\033[2m::\033[0m enter to run, Esc to cancel: "
             )
             sys.stderr.write(prompt)
             sys.stderr.flush()
@@ -574,9 +535,9 @@ def show_help() -> None:
     header = Text.assemble(
         ("  Shortcuts: ", "dim"),
         ("Esc", "bold yellow"),
-        (": bypass  •  ", "dim"),
+        (": bypass  |  ", "dim"),
         ("Ctrl+C", "bold yellow"),
-        (": cancel  •  ", "dim"),
+        (": cancel  |  ", "dim"),
         ("q / exit", "bold yellow"),
         (": quit", "dim"),
     )
@@ -690,7 +651,6 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
     current_idx, num_opts = 0, len(options)
     user_overrides = set()
 
-    # Pre-calculate actual workspace Map & Memory token weights
     ws_path = os.environ.get("AI_WORKSPACE_PATH", os.path.join(CFG_DIR, "projects", workspace_name))
     if not os.path.isdir(ws_path):
         ws_path = os.getcwd()
@@ -759,7 +719,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                     lines_count += 1
 
                 if idx == current_idx:
-                    sys.stderr.write(f"\r\x1b[K\033[1;32m  ❯ {sub_idx:2d}. {lbl:<20}\033[0m \033[1;36m({d})\033[0m\n")
+                    sys.stderr.write(f"\r\x1b[K\033[1;32m  > {sub_idx:2d}. {lbl:<20}\033[0m \033[1;36m({d})\033[0m\n")
                 else:
                     sys.stderr.write(f"\r\x1b[K\033[37m    {sub_idx:2d}. {lbl:<20}\033[0m \033[2m({d})\033[0m\n")
                 lines_count += 1
@@ -795,8 +755,8 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
             bottom_text = (
                 f"\r\x1b[K\n\r\x1b[K    \033[2mTools:\033[0m {tools_desc}\n"
                 f"\r\x1b[K\n\r\x1b[K  \033[2m::\033[0m "
-                f"\033[1;37m↵\033[0m \033[37mselect\033[0m    "
-                f"\033[1;37m↑/↓\033[0m \033[37mnavigate\033[0m    "
+                f"\033[1;37mEnter\033[0m \033[37mselect\033[0m    "
+                f"\033[1;37mUp/Down\033[0m \033[37mnavigate\033[0m    "
                 f"\033[1;37mEsc:\033[0m \033[37mdefault\033[0m\n"
                 f"\r\x1b[K     "
                 f"\033[37mTab: YOLO\033[0m {yolo_badge}    "
@@ -835,19 +795,18 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                 b_mem  = f" {badge_col}[Mem: ON]\033[0m" if is_mem else ""
                 b_py   = f" {badge_col}[Py: ON]\033[0m" if is_py else ""
                 b_adp  = f" {badge_col}[Adp: ON]\033[0m" if is_adp else ""
-                sys.stderr.write(f"\x1b[{last_rendered_lines + 3}A\r\x1b[J\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}{b_adp}\n\n")
+                sys.stderr.write(f"\x1b[{last_rendered_lines + 3}A\r\x1b[J\033[1;32mOK: Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}{b_adp}\n\n")
                 sys.stderr.flush()
                 return key, is_yolo, use_map, is_py, is_mem, is_adp
             elif char in ("\r", "\n", ""):
                 key, label = options[current_idx][0], options[current_idx][1]
                 sys.stderr.write(f"\x1b[{last_rendered_lines + 3}A\r\x1b[J")
                 if not is_yolo:
-                    sys.stderr.write(f"\033[1;36mEnable Autonomous YOLO mode for {label}? [y/N] \033[2m(Esc/←: back)\033[0m: \033[0m")
+                    sys.stderr.write(f"\033[1;36mEnable Autonomous YOLO mode for {label}? [y/N] \033[2m(Esc/Left: back)\033[0m: \033[0m")
                     sys.stderr.flush()
                     raw_c = get_key()
                     c = raw_c.lower()
 
-                    # Cancel confirmation and return cleanly to profile menu
                     if raw_c in ("\x1b", "\x1b[D", "\x7f", "\x08", "\x1b[A", "\x1b[B") or c in ("b", "back"):
                         sys.stderr.write("\r\x1b[2K")
                         sys.stderr.write(
@@ -868,7 +827,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                 b_mem  = f" {badge_col}[Mem: ON]\033[0m" if is_mem else ""
                 b_py   = f" {badge_col}[Py: ON]\033[0m" if is_py else ""
                 b_adp  = f" {badge_col}[Adp: ON]\033[0m" if is_adp else ""
-                sys.stderr.write(f"\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}{b_adp}\n\n")
+                sys.stderr.write(f"\033[1;32mOK: Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}{b_adp}\n\n")
                 sys.stderr.flush()
                 return key, is_yolo, use_map, is_py, is_mem, is_adp
             elif char in ("\x1b[A", "\x1b[B"):

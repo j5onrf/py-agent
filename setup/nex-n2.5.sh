@@ -73,7 +73,6 @@ SERVER_ARGS=(
   --load-mode mlock
   --warmup
   --no-ui
-  --context-shift
   
   # Agent Template & Adaptive Reasoning
   --jinja

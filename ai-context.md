@@ -44,6 +44,7 @@
 
 ```properties
 # --- Workspaces ---
+ai init ~/.config/py-agent/projects/nex-n2 ---> nex-n2, nex n2
 ai init ~/.config/py-agent/projects/qwen2b ---> qwen2b
 ai init ~/.config/py-agent/projects/deepseek ---> deepseek-v4
 ai init ~/.config/py-agent/projects/gemini ---> gemini
@@ -79,6 +80,10 @@ ai init ~/.config/py-agent/projects/session-test ---> session test, projects ses
 ## 5. TUI Apps
 
 ```properties
+# --- APPS Stopwatch ---
+~/.config/py-agent/tools/subsec/apps/stopwatch/stopwatch.py ---> stopwatch app
+# --- APPS Media ---
+~/.config/py-agent/tools/subsec/apps/media/media.py ---> tuiamp app
 # --- Email TUI ---
 ~/.config/py-agent/tools/email/email-agent ---> email agent
 # --- Hyprland State ---
