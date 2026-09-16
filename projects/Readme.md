@@ -19,7 +19,7 @@ OK: Profile set to: Custom Lingtiny [Yolo: ON] [Map: ON] [Mem: ON] [Py: ON] [Adp
 ❯ /calm
  Calm mode enabled (silent tools & boat animation active).
 
-❯ calculate the sum of all prime numbers between 10 and 50.
+❯ calculate the sum of all prime numbers between 10 and 50 and print the result.
             |>
 -~~~-~~~-~\___/~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-
 
@@ -241,4 +241,3 @@ Empirical results across small quantized models (Sub-27B):
 | **Full Suite Pass Rate** | Retries / Failures | **100% (7/7)** | **Zero unhandled syntax or format failures** |
 
 * **Why it matters:** Sub-27B models often emit malformed JSON, markdown code blocks, or broken import syntax. `/adp` heals these out-of-band, preventing wasted multi-turn recovery cycles and preserving active context window space on any hardware.
-```
