@@ -1,4 +1,4 @@
-# Privacy-First
+# Local & Private-First
 
 Built to be lightweight, auditable by a single developer, and private by design.
 
@@ -39,49 +39,49 @@ Built to be lightweight, auditable by a single developer, and private by design.
 
 ---
 
-## Dual-Track Execution Engine (SLM vs. Cloud / 27B+)
+## Dual-Track Execution Architecture
 
-Py-Agent enforces a strict architectural bifurcation recognizing that Sub-27B Small Language Models (SLMs) and 27B+ Large Language Models (LLMs) operate under fundamentally different cognitive constraints:
+Workspace capabilities (`/map`, `/mem`, `/yolo`, SQLite checkpoints) are universal across all models. The architecture bifurcates strictly on **tool execution style, reasoning depth, and opt-in adapter healing**:
 
 ```console
                         DUAL-TRACK EXECUTION ENGINE
                       ┌───────────────────────────────┐
-                      │    Model & Profile Selector   │
-                      │   (ai init / .agent/config)   │
+                      │   Stock Engine Core Router    │
+                      │  (Universal: /map, /mem, OKF) │
                       └───────────────┬───────────────┘
                                       │
               ┌───────────────────────┴───────────────────────┐
               ▼                                               ▼
-      TRACK 1: SLM Core                               TRACK 2: Cloud / 27B+ Core
- (Qwen-2B/3B, Ling-3.0-Tiny, MiniCPM)               (Qwen-35B, DeepSeek, Claude, Pi)
-  ──────────────────────────────────                 ──────────────────────────────────
-  • Schema: Strict 6 Native Tools (~680t)            • Schema: Full 11 Tools + Map (~1,100t–2,500t)
-  • /py Mode: OFF (Deterministic Files)              • /py Mode: ON (Stateful In-Memory REPL)
-  • Decision Budget: 1 Tool Per Action Type          • Multi-Tool Freedom: index-map AST graph
-  • Diffing: Handled by _resilient_replace           • Reasoning: Long-chain thought (1k–4k tokens)
-  • Exit Discipline: Token-1 Direct Action           • Architecture: Multi-file recursive sub-agents
-  • Healing: agent_adapters.py (/adp active)         • Schemas: Strict OpenAI / Anthropic format
+      TIER 1: Sub-27B SLM                            TIER 2: 27B+ Autonomous MoE
+      Flagship: Ling-3.0-tiny                        Flagship: Nex-N2.5-mini
+     ─────────────────────────                      ─────────────────────────────
+     • Profile: lingtiny.md                         • Profile: nexn25.md
+     • Execution: Native 6-Tools                    • Execution: Dual-Mode (/py + Native)
+     • /py: OFF (Avoids escaped code)               • /py: ON (In-Memory REPL & Testing)
+     • Adapters: Opt-In (/adp Active)               • Adapters: OFF (Not Used by Default)
+     • Reasoning: Direct Token-1 Action             • Reasoning: Adaptive 500t Deliberation
+     • Strength: Fast shell triage & diffs          • Strength: Deep reasoning & multi-file
 ```
 
 ### Technical Implementation
 
-1. **Profile Frontmatter Decoupling (`agent_skills.py`):**
-   - **Track 1 Profiles (`skills/profiles/custom/`):** Set `ipython: false`, `map: false`, and `adapters: true`. Limits schema prefill to ~680 tokens and locks the model into single-action deterministic tools.
-   - **Track 2 Profiles (`skills/profiles/{pi,claude,hermes}/`):** Set `ipython: true`, `map: true`, and `adapters: false`. Grants full AST graph access, unbounded sub-agent delegation (`delegate_task`), and Prime/NOOA kernel execution.
+1. **Universal Workspace Modularity (`agent_skills.py`):**
+   - Any model tier can enable or disable `/map` (Codebase Index-Map & AST graph) and `/mem` (Git-native OKF Markdown memory) independently in `ai init` or via CLI toggles.
+   - Frontmatter defaults define recommended baselines, but runtime hotkeys (`m`, `d`, `p`, `a`, `Tab`) always take precedence and persist to `<workspace>/.agent/config.json`.
 
-2. **Schema Slicing (`agent_core.py`):**
-   On every turn, `agentic_turn()` inspects `ipython_mode` and `use_map`:
-   - If `ipython_mode == False`: Emits `tools.SMOL_TOOLS` (exactly 6 discrete tools: `read_file`, `edit_file`, `write_file`, `search_code`, `list_dir`, `run_command`).
-   - If `ipython_mode == True`: Slices in `IPYTHON_TOOL` (`exec_python`) alongside native tools.
-   - If `use_map == True`: Slices in full `index-map` relational tools (`read_symbol`, `trace_symbol`, `blast_radius`, `find_symbol`, `architecture_overview`).
+2. **Dynamic Schema Slicing (`agent_core.py`):**
+   - `ipython_mode == False`: Restricts schema to `tools.SMOL_TOOLS` (6 discrete atomic tools: `read_file`, `edit_file`, `write_file`, `search_code`, `list_dir`, `run_command`).
+   - `ipython_mode == True`: Injects `IPYTHON_TOOL` (`exec_python`) alongside native tools.
+   - `use_map == True`: Slices in the AST symbol graph tools (`read_symbol`, `trace_symbol`, `blast_radius`, `find_symbol`, `architecture_overview`) regardless of model size.
 
-3. **Out-of-Band Self-Healing (`agent_adapters.py`):**
-   - Active only when `adapters: true` is set in the profile (Track 1).
-   - Normalizes non-standard outputs (Hermes XML, DSML, markdown code blocks, parameter aliases) without polluting the system prompt or confusing larger models.
+3. **Opt-In Out-of-Band Adapters (`agent_adapters.py`):**
+   - **Opt-in only:** Disabled by default across the runtime. Enabled explicitly per profile via `adapters: true` (recommended for Sub-27B SLMs) or toggled on-the-fly with `/adp`.
+   - Large models (27B+) do not use adapters by default, relying on native schema compliance.
+   - When active on small models, it normalizes parameter aliases (`file` -> `path`, `cmd` -> `command`), repairs unclosed JSON brackets, and rescues markdown-wrapped tool calls out-of-band without polluting base system prompts.
 
-4. **Deterministic Python Diffing (`agent_tools.py`):**
-   - Rather than expecting a 2B parameter model to emit line-perfect whitespace diffs, `_resilient_replace` executes a 3-stage resolution (Exact $\to$ Whitespace Normalized $\to$ 88% Fuzzy Match).
-   - File edits validate against `ast.parse` before committing to disk, catching syntax errors silently at the runtime level.
+4. **Deterministic Diffing (`agent_tools.py`):**
+   - `_resilient_replace` handles diff execution in 3 stages: Exact -> Whitespace-Normalized -> 88% Fuzzy Match.
+   - Validates changes with `ast.parse` prior to writing, catching syntax regressions at the runtime boundary.
 
 ---
 
