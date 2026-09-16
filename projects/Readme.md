@@ -26,7 +26,8 @@ OK: Profile set to: Custom Lingtiny [Yolo: ON] [Map: ON] [Mem: ON] [Py: ON] [Adp
 Agent: Task complete: Sum is 311.
  [ think: 56 | ans: 18 | 74 tokens | 0.61s @ 121.31 t/s ]
  [ 767 in | 53 out | cch: 93% | ctx: 10.0% ]
-❯ 
+ 
+❯ █
 ```
 
 ---
@@ -172,7 +173,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 
 | Context Budget (`AI_MAX_TOKENS`) | Target Environment | Auto Line Ceiling | Single-Call Character Cap |
 | :--- | :--- | :---: | :---: |
-| **<= 16k** (8,192 - 16,384) | Local Models (2B-8B, MoE) | **250 lines** | ~20,000 chars |
+| **<= 16k** (8,192 - 16,384) | Local Models (1B-8B, MoE) | **250 lines** | ~20,000 chars |
 | **32k** (32,768) | Cloud / 24GB GPU | **1,000 lines** | ~45,000 chars |
 | **64k** (65,536) | DeepSeek / Claude / GPT | **2,000 lines** | ~90,000 chars |
 | **>= 128k** (131,072) | High-Capacity Cloud | **4,000 lines** | ~180,000 chars |

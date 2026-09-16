@@ -382,6 +382,7 @@ def _log_turn_usage(model: str, in_tok: int, out_tok: int, cost: float, show_sta
         if show_stats and sys.stdout.isatty():
             ctx_max = int(os.environ.get("AI_MAX_TOKENS", 8192)) if ctx_used is not None else None
             print(usage_log.turn_line(in_tok, out_tok, cost, ctx_used, ctx_max, cached_tok=cached_tok))
+            print()
     except Exception:
         pass
 
