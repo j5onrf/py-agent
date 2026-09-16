@@ -1,6 +1,6 @@
 # Py-Agent Workspace & Session Manual
 
-Autonomous local developer agent with episodic memory, checkpoints, and AST indexing.
+Autonomous local developer agent with OKF memory, in-memory Python, and codebase indexing.
 
 ```console
 ~ ❯ ling
