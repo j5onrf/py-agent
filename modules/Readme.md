@@ -59,7 +59,7 @@ Workspace capabilities (`/map`, `/mem`, `/yolo`, SQLite checkpoints) are univers
      • Execution: Native 6-Tools                    • Execution: Dual-Mode (/py + Native)
      • /py: OFF (Avoids escaped code)               • /py: ON (In-Memory REPL & Testing)
      • Adapters: Opt-In (/adp Active)               • Adapters: OFF (Not Used by Default)
-     • Reasoning: Bounded 500t Scratchpad           • Reasoning: Adaptive 500t Deliberation
+     • Reasoning: Dynamic /t (500t Default)         • Reasoning: Dynamic /t (500t Default)
      • Strength: Fast shell triage & diffs          • Strength: Deep reasoning & multi-file
 ```
 
