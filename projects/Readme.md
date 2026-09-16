@@ -15,7 +15,6 @@ High-speed local developer agent, episodic memory, SQLite checkpoints, NOOA-enha
 │   profile:  custom/lingtiny                              │
 │  database:  active (map + mem: 3m/5t)                    │
 ╰───────────────────────────────────────── Ctrl+C to exit ─╯
- Startup context: 620 tokens
 
 ❯ /calm
  Calm mode enabled (silent tools & boat animation active).
@@ -24,7 +23,7 @@ High-speed local developer agent, episodic memory, SQLite checkpoints, NOOA-enha
             |>
 -~~~-~~~-~\___/~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-
 
-Agent: ✓ Task complete: Sum of all prime numbers between 10 and 50 is 311.
+Agent: ✓ Task complete: Sum is 311.
  [ think: 56 | ans: 18 | 74 tokens | 0.61s @ 121.31 t/s ]
  [ 767 in | 53 out | cch: 93% | ctx: 10.0% ]
 ❯ █
