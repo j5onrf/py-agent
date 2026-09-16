@@ -127,12 +127,12 @@
     
 ```console
 ~ ❯ ai
-╭─  Py Agent  ────────────────╮
-│     model:  Nex-N2.5-mini   │
-│ directory:  ~               │
-│   profile:  chat            │
-│  database:  stateless       │
-╰──────────── Ctrl+C to exit ─╯
+╭─  ∿ Py Agent  ────────────────────╮
+│     model:  Herm3.6-35B-A3B.gguf  │
+│ directory:  ~                     │
+│     skill:  chat                  │
+│  database:  stateless             │
+╰────────────────── Ctrl+C to exit ─╯
 
 ❯ █
 ```
