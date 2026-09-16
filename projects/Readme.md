@@ -19,7 +19,7 @@ OK: Profile set to: Custom Lingtiny [Yolo: ON] [Map: ON] [Mem: ON] [Py: ON] [Adp
 ❯ /calm
  Calm mode enabled (silent tools & boat animation active).
 
-❯ calculate the sum of all prime numbers between 10 and 50 in-memory using python and print the result.
+❯ calculate the sum of all prime numbers between 10 and 50.
             |>
 -~~~-~~~-~\___/~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-
 
