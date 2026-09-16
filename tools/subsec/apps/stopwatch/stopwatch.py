@@ -1,404 +1,699 @@
 #!/usr/bin/env python3
-# Universal Full-Screen Responsive Stopwatch TUI v1.4.1
+"""
+Universal Full-Screen Responsive Stopwatch TUI v2.0 [CHRONOAMP]
+Optimized asynchronous chronograph with unbuffered POSIX fd key reading,
+multi-palette theme engine, multi-mode visualizers, and lap telemetry.
+"""
 
-import math
-import re
+import sys
+import os
+import tty
+import termios
 import select
 import shutil
-import sys
-import termios
 import time
-import tty
+import math
+import re
+import unicodedata
+import signal
 
-# Regex pattern matching standard ANSI SGR escape sequences
-ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+# -----------------------------------------------------------------------------
+# Terminal & Text Utilities
+# -----------------------------------------------------------------------------
+ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
+def strip_ansi(text: str) -> str:
+    """Strips ANSI escape codes to compute visual plain-text width."""
+    return ANSI_ESCAPE.sub('', text)
 
-def strip_ansi(text):
-    """Returns the text with all colored ANSI codes stripped out."""
-    return ANSI_ESCAPE.sub("", text)
+def char_display_width(ch: str) -> int:
+    """Calculates terminal visual column width for Unicode/CJK characters."""
+    ea = unicodedata.east_asian_width(ch)
+    return 2 if ea in ('F', 'W') else 1
 
+def str_display_width(s: str) -> int:
+    """Returns visual terminal display width taking wide glyphs into account."""
+    clean = strip_ansi(s)
+    return sum(char_display_width(c) for c in clean)
 
-def get_key_non_blocking():
-    """Checks stdin for a keypress while terminal is in raw mode."""
-    rlist, _, _ = select.select([sys.stdin], [], [], 0.0)
-    if rlist:
-        ch = sys.stdin.read(1)
-        if ch == "\033":
-            rlist, _, _ = select.select([sys.stdin], [], [], 0.01)
-            if rlist:
-                ch += sys.stdin.read(2)
-        return ch
-    return None
+def truncate_str_display(s: str, max_width: int) -> str:
+    """Truncates text safely to a visual column width."""
+    cur_width = 0
+    res = []
+    for ch in s:
+        w = char_display_width(ch)
+        if cur_width + w > max_width:
+            break
+        res.append(ch)
+        cur_width += w
+    return "".join(res)
 
-
-def fmt_time_high_res(seconds):
-    """Formats raw seconds into a highly precise HH:MM:SS.hh string."""
+def fmt_time_high_res(seconds: float) -> str:
+    """Formats raw seconds into a precision HH:MM:SS.hh chronograph string."""
+    if seconds < 0:
+        seconds = 0.0
     h = int(seconds // 3600)
     m = int((seconds % 3600) // 60)
     s = int(seconds % 60)
     hundredths = int((seconds % 1) * 100)
     return f"{h:02d}:{m:02d}:{s:02d}.{hundredths:02d}"
 
+def fmt_delta(delta: float) -> str:
+    """Formats a signed lap difference (+00:01.23 or -00:00.45)."""
+    sign = "+" if delta >= 0 else "-"
+    delta = abs(delta)
+    m = int((delta % 3600) // 60)
+    s = int(delta % 60)
+    hundredths = int((delta % 1) * 100)
+    return f"{sign}{m:02d}:{s:02d}.{hundredths:02d}"
 
-def get_elapsed(is_running, start_time, elapsed_paused):
-    """Calculates true elapsed time accounting for active running state."""
-    if is_running:
-        return (time.time() - start_time) + elapsed_paused
-    return elapsed_paused
+# -----------------------------------------------------------------------------
+# Color Themes Palette Engine (Synced with TUIAMP)
+# -----------------------------------------------------------------------------
+THEMES = [
+    {
+        "name": "Cyberpunk Neon",
+        "border": "\033[38;5;238m",
+        "accent": "\033[1;38;5;226m",
+        "clock": "\033[1;38;5;51m",
+        "badge_run": "\033[1;38;5;226m",
+        "prog_fill": "\033[38;5;51m",
+        "prog_empty": "\033[38;5;236m",
+        "prog_knob": "\033[1;38;5;201m●\033[0m",
+        "viz_high": "\033[38;5;198m",
+        "viz_mid": "\033[38;5;226m",
+        "viz_low": "\033[38;5;51m",
+        "dim": "\033[38;5;242m",
+    },
+    {
+        "name": "Winamp Classic",
+        "border": "\033[38;5;238m",
+        "accent": "\033[1;38;5;46m",
+        "clock": "\033[1;38;5;228m",
+        "badge_run": "\033[1;38;5;46m",
+        "prog_fill": "\033[38;5;46m",
+        "prog_empty": "\033[38;5;236m",
+        "prog_knob": "\033[1;38;5;226m●\033[0m",
+        "viz_high": "\033[38;5;208m",
+        "viz_mid": "\033[38;5;226m",
+        "viz_low": "\033[38;5;46m",
+        "dim": "\033[38;5;242m",
+    },
+    {
+        "name": "Synthwave '84",
+        "border": "\033[38;5;60m",
+        "accent": "\033[1;38;5;207m",
+        "clock": "\033[1;38;5;87m",
+        "badge_run": "\033[1;38;5;87m",
+        "prog_fill": "\033[38;5;205m",
+        "prog_empty": "\033[38;5;237m",
+        "prog_knob": "\033[1;38;5;87m●\033[0m",
+        "viz_high": "\033[38;5;201m",
+        "viz_mid": "\033[38;5;171m",
+        "viz_low": "\033[38;5;45m",
+        "dim": "\033[38;5;103m",
+    },
+    {
+        "name": "Amber CRT",
+        "border": "\033[38;5;94m",
+        "accent": "\033[1;38;5;220m",
+        "clock": "\033[1;38;5;214m",
+        "badge_run": "\033[1;38;5;220m",
+        "prog_fill": "\033[38;5;214m",
+        "prog_empty": "\033[38;5;235m",
+        "prog_knob": "\033[1;38;5;229m●\033[0m",
+        "viz_high": "\033[38;5;220m",
+        "viz_mid": "\033[38;5;214m",
+        "viz_low": "\033[38;5;172m",
+        "dim": "\033[38;5;136m",
+    },
+    {
+        "name": "Dracula",
+        "border": "\033[38;5;60m",
+        "accent": "\033[1;38;5;141m",
+        "clock": "\033[1;38;5;117m",
+        "badge_run": "\033[1;38;5;84m",
+        "prog_fill": "\033[38;5;141m",
+        "prog_empty": "\033[38;5;236m",
+        "prog_knob": "\033[1;38;5;212m●\033[0m",
+        "viz_high": "\033[38;5;141m",
+        "viz_mid": "\033[38;5;117m",
+        "viz_low": "\033[38;5;84m",
+        "dim": "\033[38;5;103m",
+    },
+    {
+        "name": "Matrix Phosphor",
+        "border": "\033[38;5;22m",
+        "accent": "\033[1;38;5;120m",
+        "clock": "\033[1;38;5;46m",
+        "badge_run": "\033[1;38;5;154m",
+        "prog_fill": "\033[38;5;46m",
+        "prog_empty": "\033[38;5;234m",
+        "prog_knob": "\033[1;38;5;231m●\033[0m",
+        "viz_high": "\033[38;5;120m",
+        "viz_mid": "\033[38;5;46m",
+        "viz_low": "\033[38;5;28m",
+        "dim": "\033[38;5;29m",
+    },
+    {
+        "name": "Nord Frost",
+        "border": "\033[38;5;238m",
+        "accent": "\033[1;38;5;111m",
+        "clock": "\033[1;38;5;123m",
+        "badge_run": "\033[1;38;5;150m",
+        "prog_fill": "\033[38;5;111m",
+        "prog_empty": "\033[38;5;236m",
+        "prog_knob": "\033[1;38;5;231m●\033[0m",
+        "viz_high": "\033[38;5;111m",
+        "viz_mid": "\033[38;5;109m",
+        "viz_low": "\033[38;5;67m",
+        "dim": "\033[38;5;244m",
+    },
+    {
+        "name": "Tokyo Night",
+        "border": "\033[38;5;60m",
+        "accent": "\033[1;38;5;211m",
+        "clock": "\033[1;38;5;111m",
+        "badge_run": "\033[1;38;5;120m",
+        "prog_fill": "\033[38;5;111m",
+        "prog_empty": "\033[38;5;236m",
+        "prog_knob": "\033[1;38;5;211m●\033[0m",
+        "viz_high": "\033[38;5;176m",
+        "viz_mid": "\033[38;5;111m",
+        "viz_low": "\033[38;5;73m",
+        "dim": "\033[38;5;103m",
+    }
+]
 
+# -----------------------------------------------------------------------------
+# Chrono Visualizer Engines
+# -----------------------------------------------------------------------------
+VIZ_NAMES = [
+    "Analog Radar Sweep",
+    "Chrono Metronome",
+    "High-Res Braille Wave",
+    "Linear Expansion Pulse",
+    "Digital Matrix Stream"
+]
 
-def generate_visualizer(is_running, ticks, style_mode, current_elapsed, cols):
-    """Generates reactive chronograph visualizers scaled dynamically to terminal width."""
-    if cols < 10:
-        return ""
+def render_radar_sweep(is_running: bool, elapsed: float, cols: int, theme: dict) -> list:
+    """Multi-line analog radar dial sweep with trailing phosphor decay."""
+    lines = [[] for _ in range(3)]
+    if not is_running:
+        for r in range(3):
+            lines[r] = f"{theme['dim']}{'·' * cols}\033[0m"
+        return lines
 
-    # --- Mode 0: Linear Pulse (Default - Expanding Center Bar) ---
-    if style_mode == 0:
-        t = current_elapsed * 6.0 if is_running else 0.0
-        max_expand = cols - 12
-        width = int((math.sin(t) + 1.0) * 0.5 * (max_expand - 4)) + 5
-        side = (cols - width) // 2
-        bar_content = "━" * width
-        color = "\033[38;5;110m" if is_running else "\033[90m"
-        return f"{' ' * side}{color}{bar_content}\033[0m{' ' * (cols - width - side)}"
-
-    # --- Mode 1: Sweep Oscilloscope (Analog Sweep Hand) ---
-    elif style_mode == 1:
-        frac = current_elapsed % 1.0
-        sweep_pos = int(frac * cols)
-        line = []
+    frac = (elapsed % 1.0)
+    sweep_pos = int(frac * cols)
+    
+    trail_len = max(6, cols // 8)
+    for r in range(3):
+        row_chars = []
         for i in range(cols):
-            if i == sweep_pos:
-                line.append("\033[1;32m█\033[0m" if is_running else "\033[90m█\033[0m")
-            elif (sweep_pos - i) % cols < 6:
-                dist = (sweep_pos - i) % cols
-                greens = [
-                    "\033[38;5;46m",
-                    "\033[38;5;40m",
-                    "\033[38;5;34m",
-                    "\033[38;5;28m",
-                    "\033[38;5;22m",
-                ]
-                color = (
-                    greens[dist - 1]
-                    if is_running and (dist - 1) < len(greens)
-                    else "\033[90m"
-                )
-                char = "▰" if is_running else "⠂"
-                line.append(f"{color}{char}\033[0m")
+            dist = (sweep_pos - i) % cols
+            if dist == 0:
+                row_chars.append(f"{theme['accent']}█\033[0m")
+            elif dist < trail_len:
+                ratio = 1.0 - (dist / trail_len)
+                if ratio > 0.66:
+                    color = theme["viz_high"]
+                    char = "▰" if r == 1 else "━"
+                elif ratio > 0.33:
+                    color = theme["viz_mid"]
+                    char = "▱" if r == 1 else "─"
+                else:
+                    color = theme["viz_low"]
+                    char = "·"
+                row_chars.append(f"{color}{char}\033[0m")
             else:
-                line.append("\033[90m⠂\033[0m")
-        return "".join(line)
+                row_chars.append(f"{theme['dim']}·\033[0m")
+        lines[r] = "".join(row_chars)
+    return lines
 
-    # --- Mode 2: Chrono Pendulum (Clock Metronome) ---
-    elif style_mode == 2:
-        t = current_elapsed * math.pi
-        track_width = cols - 6
-        if track_width < 4:
-            return ""
-        pos = int((math.sin(t) + 1.0) * 0.5 * (track_width - 1))
-        pendulum = [" "] * cols
-        pendulum[1] = "["
-        pendulum[cols - 2] = "]"
-        for idx in range(3, cols - 3):
-            if idx == pos + 3:
-                pendulum[idx] = (
-                    "\033[1;38;5;209m●\033[0m" if is_running else "\033[90m●\033[0m"
-                )
+def render_chrono_pendulum(is_running: bool, elapsed: float, cols: int, theme: dict) -> list:
+    """Harmonic sine pendulum with bounce ticks and velocity vectors."""
+    lines = [[] for _ in range(3)]
+    track_width = max(10, cols - 8)
+    side_pad = (cols - track_width) // 2
+    rem_pad = cols - track_width - side_pad
+
+    t = elapsed * math.pi * 1.5 if is_running else 0.0
+    pos = int((math.sin(t) + 1.0) * 0.5 * (track_width - 1))
+
+    for r in range(3):
+        row = [" "] * track_width
+        if r == 0:
+            row[0], row[-1] = "┌", "┐"
+            for i in range(1, track_width - 1):
+                row[i] = "─" if i % 4 != 0 else "┬"
+            if is_running:
+                row[pos] = "▼"
+        elif r == 1:
+            row[0], row[-1] = "│", "│"
+            for i in range(1, track_width - 1):
+                row[i] = "·"
+            if is_running:
+                color = theme["viz_high"] if (pos <= 2 or pos >= track_width - 3) else theme["accent"]
+                row[pos] = f"{color}●\033[0m"
             else:
-                pendulum[idx] = "\033[90m·\033[0m"
-        return "".join(pendulum)
+                row[track_width // 2] = f"{theme['dim']}○\033[0m"
+        else:
+            row[0], row[-1] = "└", "┘"
+            for i in range(1, track_width - 1):
+                row[i] = "─" if i % 4 != 0 else "┴"
+            if is_running:
+                row[pos] = "▲"
 
-    # --- Mode 3: Sweep Radar (Bouncing Dot) ---
+        lines[r] = f"{' ' * side_pad}{''.join(row)}{' ' * rem_pad}"
+    return lines
+
+def render_braille_wave(is_running: bool, elapsed: float, cols: int, theme: dict) -> list:
+    """High-density 8-dot Braille time-wave reacting to hundredths-of-a-second."""
+    lines = [[] for _ in range(3)]
+    t = elapsed * 8.0 if is_running else 0.0
+
+    braille_levels = [" ", "⠤", "⠒", "⠉", "⠶", "⣶", "⣿"]
+
+    for r in range(3):
+        row_chars = []
+        for i in range(cols):
+            if is_running:
+                norm_x = i / max(1, cols)
+                wave1 = math.sin(t + i * 0.18) * 1.4
+                wave2 = math.cos(t * 0.7 - i * 0.09) * 0.8
+                total = 1.5 + wave1 + wave2
+
+                thresh = 2.0 - r
+                frac = total - thresh
+                if frac >= 1.0:
+                    char = "⣿"
+                    color = theme["viz_high"] if r == 0 else theme["viz_mid"]
+                elif frac > 0.6:
+                    char = "⣶"
+                    color = theme["viz_mid"]
+                elif frac > 0.3:
+                    char = "⠤"
+                    color = theme["viz_low"]
+                elif frac > 0.0:
+                    char = "⠂"
+                    color = theme["viz_low"]
+                else:
+                    char = " "
+                    color = theme["dim"]
+                row_chars.append(f"{color}{char}\033[0m")
+            else:
+                row_chars.append(f"{theme['dim']}·\033[0m" if r == 1 else " ")
+        lines[r] = "".join(row_chars)
+    return lines
+
+def render_linear_pulse(is_running: bool, elapsed: float, cols: int, theme: dict) -> list:
+    """Expanding harmonic center bar reacting to active run cadence."""
+    lines = [[] for _ in range(3)]
+    t = elapsed * 6.0 if is_running else 0.0
+    max_w = max(4, cols - 12)
+    w = int((math.sin(t) + 1.0) * 0.5 * (max_w - 4)) + 4 if is_running else cols // 3
+
+    left = (cols - w) // 2
+    right = cols - w - left
+
+    for r in range(3):
+        if r == 0:
+            char = "─"
+            color = theme["viz_low"]
+        elif r == 1:
+            char = "█" if is_running else "━"
+            color = theme["accent"] if is_running else theme["dim"]
+        else:
+            char = "─"
+            color = theme["viz_low"]
+
+        lines[r] = f"{' ' * left}{color}{char * w}\033[0m{' ' * right}"
+    return lines
+
+def render_matrix_stream(is_running: bool, elapsed: float, cols: int, theme: dict) -> list:
+    """Hex and digital chronograph stream with tick sweeps."""
+    matrix_glyphs = "0123456789ABCDEFSEC"
+    lines = [[] for _ in range(3)]
+    tick_int = int(elapsed * 25) if is_running else 0
+
+    for r in range(3):
+        row_chars = []
+        for i in range(cols):
+            if is_running:
+                idx = (tick_int + i * 3 + r * 7) % len(matrix_glyphs)
+                ch = matrix_glyphs[idx]
+                if (i + tick_int) % 11 == 0:
+                    row_chars.append(f"{theme['accent']}{ch}\033[0m")
+                elif (i + r) % 2 == 0:
+                    row_chars.append(f"{theme['viz_low']}{ch}\033[0m")
+                else:
+                    row_chars.append(f"{theme['dim']}{ch}\033[0m")
+            else:
+                row_chars.append(f"{theme['dim']}:" if (i % 4 == 0) else " ")
+        lines[r] = "".join(row_chars)
+    return lines
+
+def generate_visualizer_panel(mode: int, is_running: bool, elapsed: float, cols: int, theme: dict) -> list:
+    if mode == 0:
+        return render_radar_sweep(is_running, elapsed, cols, theme)
+    elif mode == 1:
+        return render_chrono_pendulum(is_running, elapsed, cols, theme)
+    elif mode == 2:
+        return render_braille_wave(is_running, elapsed, cols, theme)
+    elif mode == 3:
+        return render_linear_pulse(is_running, elapsed, cols, theme)
     else:
-        t = current_elapsed * 4.0
-        pos = int((math.sin(t) + 1.0) * 0.5 * (cols - 3))
-        bar = [" "] * cols
-        color = "\033[38;5;209m" if is_running else "\033[90m"
-        bar[pos] = "◀"
-        bar[pos + 1] = "█"
-        bar[pos + 2] = "▶"
-        return "".join(f"{color}{c}\033[0m" if c != " " else c for c in bar)
+        return render_matrix_stream(is_running, elapsed, cols, theme)
 
+# -----------------------------------------------------------------------------
+# Input Handling (Unbuffered POSIX File Descriptor Read)
+# -----------------------------------------------------------------------------
+def get_key_non_blocking() -> str:
+    """Reads unbuffered bytes directly from the OS file descriptor,
+    capturing entire Kitty/xterm escape packets atomically."""
+    fd = sys.stdin.fileno()
+    rlist, _, _ = select.select([fd], [], [], 0.0)
+    if not rlist:
+        return None
 
-def draw_row_raw(colored_text, width, align="center"):
-    """Pads and draws a single row cleanly encased within the vertical borders."""
-    plain_len = len(strip_ansi(colored_text))
-    pad = width - plain_len
-    pad = max(pad, 0)
+    try:
+        raw_bytes = os.read(fd, 64)
+    except OSError:
+        return None
+
+    if not raw_bytes:
+        return None
+
+    if raw_bytes[0] == 0x1B:
+        if len(raw_bytes) == 1:
+            rlist, _, _ = select.select([fd], [], [], 0.025)
+            if rlist:
+                try:
+                    raw_bytes += os.read(fd, 63)
+                except OSError:
+                    pass
+            else:
+                return "ESC"
+
+        try:
+            seq = raw_bytes.decode('latin1')
+        except Exception:
+            return None
+
+        if seq in ("\x1b[A", "\x1bOA") or (seq.startswith("\x1b[") and seq.endswith("A")):
+            return "UP"
+        if seq in ("\x1b[B", "\x1bOB") or (seq.startswith("\x1b[") and seq.endswith("B")):
+            return "DOWN"
+        if seq in ("\x1b[C", "\x1bOC") or (seq.startswith("\x1b[") and seq.endswith("C")):
+            return "RIGHT"
+        if seq in ("\x1b[D", "\x1bOD") or (seq.startswith("\x1b[") and seq.endswith("D")):
+            return "LEFT"
+
+        return seq
+
+    try:
+        return raw_bytes.decode('utf-8', errors='ignore')
+    except Exception:
+        return None
+
+def format_row(colored_text: str, width: int, align="center", border_color="\033[90m") -> str:
+    plain_len = str_display_width(colored_text)
+    pad = max(0, width - plain_len)
     if align == "center":
         left = pad // 2
-        right = pad - left
-        content = " " * left + colored_text + " " * right
+        content = " " * left + colored_text + " " * (pad - left)
     elif align == "left":
-        content = " " * 4 + colored_text + " " * (pad - 4)
-    else:  # right
-        content = " " * (pad - 4) + colored_text + " " * 4
-    sys.stdout.write(f"\033[90m│\033[0m{content}\033[90m│\033[0m\r\n")
+        left = min(3, pad)
+        content = " " * left + colored_text + " " * (pad - left)
+    else:
+        right = min(3, pad)
+        content = " " * (pad - right) + colored_text + " " * right
+    return f"{border_color}│\033[0m{content}{border_color}│\033[0m\r\n"
 
-
+# -----------------------------------------------------------------------------
+# Main Application Loop
+# -----------------------------------------------------------------------------
 def run_stopwatch_tui():
-    """Main TUI loop mapping dynamic grid sizing for full-screen centering."""
     fd = sys.stdin.fileno()
     old_settings = termios.tcgetattr(fd)
 
-    # Clean screen initialization
-    sys.stdout.write("\033[?25l\033[H\033[J")
+    # Alternate screen buffer and hide cursor
+    sys.stdout.write("\033[?1049h\033[?25l\033[H\033[J")
     sys.stdout.flush()
 
-    # Stopwatch variables
+    def cleanup(*_):
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        sys.stdout.write("\033[?1049l\033[?25h")
+        sys.stdout.flush()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, cleanup)
+    signal.signal(signal.SIGTERM, cleanup)
+
     is_running = False
     start_time = 0.0
     elapsed_paused = 0.0
     laps = []
 
-    # UI size cache
-    last_W, last_H = 0, 0
-    ticks = 0
-    visualizer_mode = 0
-    mode_names = {
-        0: "Linear Pulse",
-        1: "Sweep Oscilloscope",
-        2: "Chrono Pendulum",
-        3: "Sweep Radar",
-    }
+    theme_idx = 0
+    viz_mode = 0
+    last_w, last_h = 0, 0
 
     try:
         tty.setraw(fd)
 
         while True:
-            ticks += 1
-            current_elapsed = get_elapsed(is_running, start_time, elapsed_paused)
+            theme = THEMES[theme_idx]
 
-            # Query live terminal window dimensions
-            W, H = shutil.get_terminal_size()
-
-            # Dynamic Redraw Check: wipe screen if terminal has been resized
-            if W != last_W or H != last_H:
-                sys.stdout.write("\033[H\033[J")
-                last_W, last_H = W, H
+            # True continuous high-resolution timer
+            now = time.time()
+            if is_running:
+                current_elapsed = (now - start_time) + elapsed_paused
             else:
-                sys.stdout.write("\033[H")
+                current_elapsed = elapsed_paused
 
-            # Fallback block for tiny window sizes
-            if H < 18 or W < 50:
+            W, H = shutil.get_terminal_size()
+            if W != last_w or H != last_h:
                 sys.stdout.write("\033[H\033[J")
-                sys.stdout.write(
-                    " Terminal window too small for full-screen display.\r\n"
-                )
-                sys.stdout.write(" Please expand your terminal.\r\n")
+                last_w, last_h = W, H
+
+            if H < 21 or W < 54:
+                sys.stdout.write("\033[H\033[J")
+                sys.stdout.write(" Terminal window too small for CHRONOAMP display (min 54x21).\r\n")
+                sys.stdout.write(" Please expand your terminal window.\r\n")
                 sys.stdout.flush()
                 time.sleep(0.1)
                 continue
 
-            # Core UI Box dimensions (accounting for borders)
             box_width = W - 2
+            viz_width = W - 8
 
-            # -------------------------------------------------------------
-            # Build Core UI Content Array
-            # -------------------------------------------------------------
             content_rows = []
 
             # 1. Header Row
-            header_colored = f"\033[1;32mCHRONOGRAPH\033[0m  \033[90m│\033[0m  \033[1mTHEME:\033[0m {mode_names[visualizer_mode]}"
-            content_rows.append((header_colored, "center"))
-
-            # 2. Blank
+            header = (
+                f"{theme['accent']}▶ C H R O N O G R A P H\033[0m {theme['dim']}──\033[0m "
+                f"\033[1mTHEME:\033[0m {theme['name']} {theme['dim']}──\033[0m "
+                f"\033[1mVIZ:\033[0m {VIZ_NAMES[viz_mode]}"
+            )
+            content_rows.append((header, "center"))
             content_rows.append(("", "center"))
 
-            # 3. Status Badge Row
+            # 2. Status Badge
             if is_running:
-                status_badge = "\033[1;42;30m RUNNING \033[0m"
+                status_badge = f"{theme['badge_run']}▶ RUNNING\033[0m"
             elif current_elapsed > 0:
-                status_badge = "\033[1;43;30m PAUSED \033[0m"
+                status_badge = "\033[1;33m■ PAUSED\033[0m"
             else:
-                status_badge = "\033[1;90;37m IDLE \033[0m"
-            content_rows.append((f" {status_badge} ", "center"))
+                status_badge = f"{theme['dim']}○ READY\033[0m"
+            content_rows.append((f"[ {status_badge} ]", "center"))
 
-            # 4. Large Clock Face
+            # 3. Large High-Res Clock Face Display
             time_display = fmt_time_high_res(current_elapsed)
-            clock_colored = f"\033[1;39m[  {time_display}  ]\033[0m"
-            content_rows.append((clock_colored, "center"))
-
-            # 5. Blank
+            clock_banner = f"{theme['clock']}┏━ {time_display} ━┓\033[0m"
+            content_rows.append((clock_banner, "center"))
             content_rows.append(("", "center"))
 
-            # 6. Spaced HUD Soft-buttons
+            # 4. Spaced HUD Soft-buttons
             if is_running:
-                btn_left = "\033[1;36m[L] LAP\033[0m"
+                btn_left = f"{theme['accent']}[L] LAP\033[0m"
                 btn_right = "\033[1;31m[SPACE] STOP\033[0m"
             elif current_elapsed > 0:
                 btn_left = "\033[1;33m[R] RESET\033[0m"
-                btn_right = "\033[1;32m[SPACE] START\033[0m"
+                btn_right = f"{theme['badge_run']}[SPACE] START\033[0m"
             else:
-                btn_left = "\033[90m[L] LAP\033[0m"
-                btn_right = "\033[1;32m[SPACE] START\033[0m"
+                btn_left = f"{theme['dim']}[L] LAP\033[0m"
+                btn_right = f"{theme['badge_run']}[SPACE] START\033[0m"
 
-            btn_left_len = len(strip_ansi(btn_left))
-            btn_right_len = len(strip_ansi(btn_right))
-            side_margin = 6
-            available_space = (
-                box_width - (side_margin * 2) - btn_left_len - btn_right_len
-            )
-            available_space = max(available_space, 2)
-            btn_spacing = " " * available_space
-            btn_colored = f"{' ' * side_margin}{btn_left}{btn_spacing}{btn_right}{' ' * side_margin}"
+            spacing = " " * max(6, box_width - 16 - str_display_width(btn_left) - str_display_width(btn_right))
+            btn_colored = f"      {btn_left}{spacing}{btn_right}      "
             content_rows.append((btn_colored, "center"))
-
-            # 7. Blank
             content_rows.append(("", "center"))
 
-            # 8. Scaled Chrono Dial Visualizer
-            viz_width = W - 8
-            viz_colored = generate_visualizer(
-                is_running, ticks, visualizer_mode, current_elapsed, viz_width
+            # 5. Multi-line Visualizer Block (3 rows)
+            viz_lines = generate_visualizer_panel(viz_mode, is_running, current_elapsed, viz_width, theme)
+            for vl in viz_lines:
+                content_rows.append((vl, "center"))
+
+            # 6. Seconds Loop Progress Track (Circular minute-bar)
+            current_sec_pct = (current_elapsed % 60) / 60.0
+            knob_idx = max(0, min(viz_width - 1, int(current_sec_pct * (viz_width - 1))))
+            prog_bar = (
+                f"{theme['prog_fill']}{'─' * knob_idx}\033[0m"
+                f"{theme['prog_knob']}"
+                f"{theme['prog_empty']}{'─' * (viz_width - 1 - knob_idx)}\033[0m"
             )
-            content_rows.append((viz_colored, "center"))
+            content_rows.append((prog_bar, "center"))
+            content_rows.append((f"{theme['border']}{'─' * viz_width}\033[0m", "center"))
 
-            # 9. Dynamic Circular Loop Progress Bar
-            current_minute_pct = (current_elapsed % 60) / 60.0
-            filled = max(0, min(viz_width, int(current_minute_pct * viz_width)))
-            progress_colored = f"\033[38;5;209m{'━' * filled}\033[0m\033[90m{'━' * (viz_width - filled)}\033[0m"
-            content_rows.append((progress_colored, "center"))
-
-            # 10. Horizontal Layout Divider
-            content_rows.append((f"\033[90m{'─' * viz_width}\033[0m", "center"))
-
-            # 11. Current Lap Stats
+            # 7. Lap Telemetry & Current Lap Tracker
             if not laps:
-                current_lap_time = current_elapsed
+                cur_lap_dur = current_elapsed
             else:
-                current_lap_time = current_elapsed - laps[-1]["split_time"]
-            current_lap_str = fmt_time_high_res(current_lap_time)
-            lap_colored = (
-                f"\033[1mCURRENT LAP:\033[0m \033[38;5;110m{current_lap_str}\033[0m"
+                cur_lap_dur = current_elapsed - laps[-1]["split_time"]
+            cur_lap_str = fmt_time_high_res(cur_lap_dur)
+
+            # Lap statistics
+            best_lap_dur = None
+            avg_lap_dur = None
+            delta_str = ""
+            if laps:
+                durations = [l["lap_time"] for l in laps]
+                best_lap_dur = min(durations)
+                avg_lap_dur = sum(durations) / len(durations)
+                diff = cur_lap_dur - best_lap_dur
+                delta_str = f" ({fmt_delta(diff)})"
+
+            lap_stat_line = (
+                f"\033[1mCURRENT LAP:\033[0m {theme['accent']}{cur_lap_str}{delta_str}\033[0m"
             )
-            content_rows.append((lap_colored, "center"))
+            content_rows.append((lap_stat_line, "center"))
 
-            # 12. Lap History Section Header
-            content_rows.append(("── Lap History ──", "center"))
+            best_str = fmt_time_high_res(best_lap_dur) if best_lap_dur is not None else "--:--:--.--"
+            avg_str = fmt_time_high_res(avg_lap_dur) if avg_lap_dur is not None else "--:--:--.--"
+            telemetry_line = (
+                f"{theme['dim']}TOTAL LAPS: {len(laps):02d}  │  "
+                f"BEST: {best_str}  │  AVG: {avg_str}\033[0m"
+            )
+            content_rows.append((telemetry_line, "center"))
+            content_rows.append((f"{theme['border']}{'─' * viz_width}\033[0m", "center"))
 
-            # 13-15. Dynamic Lap History Items
-            best_lap_idx = -1
-            worst_lap_idx = -1
+            # 8. Lap History Header & Table (Last 3 Laps)
+            best_idx = -1
+            worst_idx = -1
             if len(laps) >= 2:
-                lap_times = [lap["lap_time"] for lap in laps]
-                min_time = min(lap_times)
-                max_time = max(lap_times)
-                if min_time != max_time:
-                    best_lap_idx = lap_times.index(min_time)
-                    worst_lap_idx = lap_times.index(max_time)
+                durations = [l["lap_time"] for l in laps]
+                min_d = min(durations)
+                max_d = max(durations)
+                if min_d != max_d:
+                    best_idx = durations.index(min_d)
+                    worst_idx = durations.index(max_d)
 
             lap_rows = []
             if not laps:
-                lap_rows.append(("\033[90m(No Laps Recorded)\033[0m", "left"))
+                lap_rows.append((f"{theme['dim']}(No Laps Recorded)\033[0m", "center"))
             else:
                 for idx, lap in list(enumerate(laps))[-3:][::-1]:
-                    lap_num = idx + 1
-                    lap_fmt = fmt_time_high_res(lap["lap_time"])
-                    split_fmt = fmt_time_high_res(lap["split_time"])
+                    l_num = lap["lap_num"]
+                    l_fmt = fmt_time_high_res(lap["lap_time"])
+                    s_fmt = fmt_time_high_res(lap["split_time"])
 
-                    if idx == best_lap_idx:
-                        lap_color = "\033[1;32m"  # Fastest: Green
-                        tag = " (Fastest)"
-                    elif idx == worst_lap_idx:
-                        lap_color = "\033[1;31m"  # Slowest: Red
-                        tag = " (Slowest)"
+                    if idx == best_idx:
+                        tag_color = "\033[1;32m"
+                        tag = " [FASTEST]"
+                    elif idx == worst_idx:
+                        tag_color = "\033[1;31m"
+                        tag = " [SLOWEST]"
                     else:
-                        lap_color = "\033[0m"
-                        tag = ""
+                        tag_color = theme["accent"]
+                        tag = "          "
 
-                    marker = "▶ " if idx == len(laps) - 1 else "  "
-                    colored_lap = f"{marker}{lap_color}Lap {lap_num:02d}: {lap_fmt:<12}{tag:<12}\033[90m(Split: {split_fmt})\033[0m"
-                    lap_rows.append((colored_lap, "left"))
+                    marker = f"{theme['accent']}▶\033[0m" if idx == len(laps) - 1 else " "
+                    row_str = (
+                        f"{marker} Lap {l_num:02d}: {tag_color}{l_fmt}\033[0m{tag} "
+                        f"{theme['dim']}(Split: {s_fmt})\033[0m"
+                    )
+                    lap_rows.append((row_str, "left"))
 
-            # Maintain structural layout budget by filling missing laps with empty rows
+            # Fill missing rows for static layout budget
             while len(lap_rows) < 3:
-                lap_rows.append(("", "left"))
+                lap_rows.append(("", "center"))
 
-            for row, alignment in lap_rows:
-                content_rows.append((row, alignment))
+            for row_content, align in lap_rows:
+                content_rows.append((row_content, align))
 
-            # 16. Lower Horizontal Divider
-            content_rows.append((f"\033[90m{'─' * viz_width}\033[0m", "center"))
+            content_rows.append((f"{theme['border']}{'─' * viz_width}\033[0m", "center"))
 
-            # 17. Footer Key Options
-            footer_colored = "\033[90m[v] Change Theme  │  [q] Quit stopwatch\033[0m"
-            content_rows.append((footer_colored, "center"))
+            # 9. Interactive HUD Legends
+            legend1 = (
+                f"{theme['dim']}[Spc/Enter]Start/Stop  [l]Lap  [r]Reset  "
+                f"[v]Visualizer  [t]Theme  [q/Esc]Quit\033[0m"
+            )
+            content_rows.append((legend1, "center"))
 
-            # -------------------------------------------------------------
-            # Render Bounding Box and Padding (Dynamic Centering Calculation)
-            # -------------------------------------------------------------
-            core_row_count = len(content_rows)
-            # Available vertical padding inside the screen bounds
-            vertical_padding = (H - 2) - core_row_count
-            top_padding = max(0, vertical_padding // 2)
-            bottom_padding = max(0, vertical_padding - top_padding)
+            # 10. Frame Layout Centering & Double Buffering
+            core_count = len(content_rows)
+            v_pad = max(0, (H - 2) - core_count)
+            top_pad = v_pad // 2
+            bot_pad = v_pad - top_pad
 
-            # Draw Top Border Frame
-            sys.stdout.write(f"\033[90m┌{'─' * box_width}┐\033[0m\r\n")
+            buffer = ["\033[H"]
+            border_c = theme["border"]
 
-            # Draw Upper Spacing Border Lines
-            for _ in range(top_padding):
-                draw_row_raw("", box_width)
+            buffer.append(f"{border_c}┌{'─' * box_width}┐\033[0m\r\n")
+            for _ in range(top_pad):
+                buffer.append(format_row("", box_width, border_color=border_c))
 
-            # Draw Main Centered Content Block
-            for colored_text, alignment in content_rows:
-                draw_row_raw(colored_text, box_width, align=alignment)
+            for text, align in content_rows:
+                buffer.append(format_row(text, box_width, align=align, border_color=border_c))
 
-            # Draw Lower Spacing Border Lines
-            for _ in range(bottom_padding):
-                draw_row_raw("", box_width)
+            for _ in range(bot_pad):
+                buffer.append(format_row("", box_width, border_color=border_c))
 
-            # Draw Bottom Border Frame
-            sys.stdout.write(f"\033[90m└{'─' * box_width}┘\033[0m")
+            buffer.append(f"{border_c}└{'─' * box_width}┘\033[0m")
+
+            sys.stdout.write("".join(buffer))
             sys.stdout.flush()
 
-            # Handle keystroke inputs
+            # 11. Keystroke Dispatcher
             key = get_key_non_blocking()
             if key:
-                if key == " " or key == "\r":
+                if key in (' ', '\r', '\n'):
                     if is_running:
                         elapsed_paused += time.time() - start_time
                         is_running = False
                     else:
                         start_time = time.time()
                         is_running = True
-                elif key.lower() == "l":
+                elif key in ('l', 'L'):
                     if is_running:
-                        total_elapsed = get_elapsed(
-                            is_running, start_time, elapsed_paused
-                        )
-                        if not laps:
-                            lap_duration = total_elapsed
-                        else:
-                            last_split = laps[-1]["split_time"]
-                            lap_duration = total_elapsed - last_split
-                        laps.append(
-                            {"lap_time": lap_duration, "split_time": total_elapsed}
-                        )
-                elif key.lower() == "r":
-                    if not is_running and current_elapsed > 0:
-                        is_running = False
+                        tot = (time.time() - start_time) + elapsed_paused
+                        last_s = laps[-1]["split_time"] if laps else 0.0
+                        lap_dur = tot - last_s
+                        laps.append({
+                            "lap_num": len(laps) + 1,
+                            "lap_time": lap_dur,
+                            "split_time": tot
+                        })
+                elif key in ('r', 'R'):
+                    if not is_running:
                         start_time = 0.0
                         elapsed_paused = 0.0
                         laps = []
-                elif key.lower() == "v":
-                    visualizer_mode = (visualizer_mode + 1) % 4
-                elif key.lower() == "q":
+                elif key in ('v', 'V'):
+                    viz_mode = (viz_mode + 1) % len(VIZ_NAMES)
+                elif key in ('t', 'T'):
+                    theme_idx = (theme_idx + 1) % len(THEMES)
+                elif key in ('q', 'Q', 'ESC'):
                     break
 
-            time.sleep(0.03)
+            time.sleep(0.025)  # ~40 FPS high-precision chronograph refresh
 
     except KeyboardInterrupt:
         pass
     finally:
-        # Restore terminal settings and show cursor again
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-        sys.stdout.write("\033[?25h\033[H\033[J")
-        sys.stdout.flush()
-
+        cleanup()
 
 if __name__ == "__main__":
     run_stopwatch_tui()
