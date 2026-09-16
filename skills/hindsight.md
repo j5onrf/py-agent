@@ -1,5 +1,15 @@
-# [SKILL] hindsight ---> hindsight, lesson, learn, retrospective, postmortem, memory review, remember
-
+---
+name: hindsight
+description: "Session retrospective and lesson compiler. Audits conversation history to extract durable engineering rules, tool quirks, and architectural decisions into memory (hindsight, lesson, learn, retrospective, postmortem, memory review, remember)."
+triggers:
+  - hindsight
+  - lesson
+  - learn
+  - retrospective
+  - postmortem
+  - memory review
+  - remember
+---
 # HINDSIGHT: RETROSPECTIVE & LESSON COMPILER
 
 Review this session's conversation history, extract durable engineering rules and workflow fixes, and persist them to memory.
