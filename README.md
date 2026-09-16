@@ -130,7 +130,7 @@
 ╭─  ∿ Py Agent  ────────────────────╮
 │     model:  Herm3.6-35B-A3B.gguf  │
 │ directory:  ~                     │
-│     skill:  chat                  │
+│   profile:  chat                  │
 │  database:  stateless             │
 ╰────────────────── Ctrl+C to exit ─╯
 
