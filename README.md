@@ -39,7 +39,7 @@
 | Model Tier | Target Architectures | Primary Use Case |
 | :--- | :--- | :--- |
 | **Sub-27B Compact (SLM)** | `Ling-3.0-tiny*` · `LFM2.5-8B` · `MiniCPM5-2B` · `Qwen3.5-2B+` | Ultra-fast tool calling, shell triage & single-turn code edits |
-| **27B+ Autonomous (LLM)** | `Qwen3.8-27B` · `Qwen3.6-35B*` · `Qwen3.8-Flash-Next` · `DeepSeek-V4.1` | Deep reasoning, multi-file refactoring & recursive sub-agents |
+| **27B+ Autonomous (LLM)** | `Nex-N2.5-mini*` ·`Qwen3.8-27B` · `Qwen3.6-35B` · `Qwen3.8-Flash-Next` · `DeepSeek-V4.1` | Deep reasoning, multi-file refactoring & recursive sub-agents |
 
 </div>
 
