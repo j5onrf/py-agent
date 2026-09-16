@@ -28,13 +28,13 @@ CPU_BALANCED_FREQ = os.environ.get("AI_CPU_BALANCED_FREQ", "5.2GHz")
 # --- MODEL REGISTRY ---
 # Map model display names to their GGUF filename and launcher script inside SERV_DIR
 LOCAL_MODELS = [
-    {
+{
         "name": "Qwen 3.5 2B (unsloth)",
         "file": "Qwen3.5-2B.gguf",
         "script": "q2bu.sh",
     },
     {
-        "name": "MiniCPM5-2B (DSpark Speculative)",
+        "name": "MiniCPM5-2B (DSpark Off)",
         "alias": "MiniCPM5-2B-DSpark",
         "file": "MiniCPM5-2B-Q4_K_M.gguf",
         "script": "Mini2Bs.sh",
@@ -54,6 +54,12 @@ LOCAL_MODELS = [
         "name": "Hermes3.6-35B-A3B-Uncensored-Genesis-V6-APEX-Compact.gguf (17gb)",
         "file": "Herm3.6-35B-A3B.gguf",
         "script": "q35b.sh",
+    },
+    {
+        "name": "Nex-N2.5-mini-APEX-I-Compact (15gb)",
+        "alias": "Nex-N2.5-mini",
+        "file": "Nex-N2.5-mini-APEX-I-Compact.gguf",
+        "script": "nex-n2.5.sh",
     },
 ]
 

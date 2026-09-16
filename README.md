@@ -62,22 +62,22 @@
 
 <div align="center">
 
-| Operational Tier | Py-Agent | DeepSeek (`dsh`) | Efficiency |
+| Operational Tier | Py-Agent | DeepSeek (`dsh`) | Comparison & Capabilities |
 | :--- | :---: | :---: | :--- |
-| **Chat vs. Minimal** | **211 tokens** (`ai`) | ~632 tokens (`minimal`) | **3x less baseline** |
-| **Standard Core Tools** | **~680 tokens** (`SMOL_TOOLS`) | ~1,200 tokens (`standard`) | **45% fewer tokens**; native file tools prevent small-model looping. |
-| **Dual Python + Native** | **~760 tokens** (`python + native`) | ~1,400+ tokens (plugins) | In-memory testing + deterministic file edits with **~95% cache hits**. |
-| **Full Tools (Index-Map)** | **~1,100 tokens** (11 tools + AST graph) | 2,500–4,000+ tokens (full suite) | Full relational SQLite symbol graph |
-| **Idle Resource Footprint** | **0% CPU / 0 MB RAM** | Node.js Runtime Active | Standard Python standard-library execution |
+| **Pure Conversational Chat** | **211 tokens** (`ai`) | ~450+ tokens (chat) | Zero tool schemas. Pure conversational Q&A without agentic tool overhead. |
+| **Minimal Agent (Native Core)** | **~680 tokens** (`SMOL_TOOLS`) | ~632 tokens (`minimal`) | **True parity.** Full agentic capability: surgical file edits, code search & shell verification. |
+| **Dual Python + Native** | **~760 tokens** (`python + native`) | ~1,200+ tokens (`standard`) | **~40% fewer tokens.** In-memory testing + deterministic file edits with **~95% cache hits**. |
+| **Full Graph Architecture** | **~1,100 tokens** (11 tools + AST graph) | 2,500–4,000+ tokens (`full`) | **Up to 3x fewer tokens.** Complete relational SQLite FTS5 symbol & impact graph. |
+| **Idle Resource Footprint** | **0% CPU / 0 MB RAM** | Node.js Runtime Active | Standard Python execution; zero background daemons or active idle processes. |
 
 </div>
 
-### Operational Tiers
-* **Pure Chat (`ai`):** **217 tokens** — instant conversational responses with zero tool schemas.
-* **Native Mode (`Py: OFF`):** **6 tools (`SMOL_TOOLS`, ~680t)** — deterministic single-turn file operations good for Sub-27B SLMs.
-* **Dual Mode (`Py: ON`):** **7 tools (`python + native`, ~760t)** — in-memory testing + native file tools with ~95% hardware cache reuse.
-* **Index-Map Mode (`Map: ON`):** **11 tools (~1,100t)** — complete codebase AST relational graph (`fts5`).
-* **OKF Memory:** Git-native `.agent/memory/*.md` directives with 1-shot `/hs` retrospective audits.
+### Operational Tiers & Scope
+* **Pure Chat (`ai`):** **211 tokens** — instant conversational Q&A. Zero tool schemas attached (agentic tool execution disabled).
+* **Native Mode (`Py: OFF`):** **6 tools (`SMOL_TOOLS`, ~680t)** — true equivalent to `dsh minimal`. Full autonomous file creation, surgical diffing (`edit_file`), and test execution optimized for Sub-27B SLMs.
+* **Dual Mode (`Py: ON`):** **7 tools (`python + native`, ~760t)** — in-memory testing & data loops via `exec_python` alongside native file tools.
+* **Index-Map Mode (`Map: ON`):** **11 tools (~1,100t)** — complete codebase AST relational graph (`read_symbol`, `trace_symbol`, `blast_radius`).
+* **OKF Memory:** Git-native `.agent/memory/*.md` persistent directives with 1-shot `/hs` retrospective audits.
 
 ---
 

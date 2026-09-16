@@ -164,22 +164,19 @@ exec $LAUNCH_PREFIX $PIN_CMD "$LLAMA_SERVER_BIN" "${SERVER_ARGS[@]}" >> "$LOG_FI
 
 ---
 
-## 4. Execution Strategies
+## 4. Execution Strategies & Architecture Tuning
 
 ### CPU Optimization
-* **SMT Bypass (`taskset -c`):** Limits execution to physical cores, preventing logical threads from competing for vector compute units and L1/L2 caches.
-* **Flash Attention (`--flash-attn on`):** Computes attention in tiled chunks, reducing memory bandwidth pressure during context evaluation.
-* **Memory Locking (`--load-mode mlock`):** Keeps active model weights pinned in physical memory to prevent OS page-swapping.
-* **Reasoning Preservation (`--reasoning-preserve`):** Maintains thinking trace formatting across conversational turns without parsing errors.
+* **SMT Bypass (`taskset -c`):** Restricts execution to physical cores, preventing virtual SMT threads from contending for vector execution units (AVX2/AVX-512) and L1/L2 caches.
+* **Flash Attention (`--flash-attn on`):** Evaluates attention in tiled blocks, preserving cache locality and accelerating prefill.
+* **Memory Locking (`--load-mode mlock`):** Locks model weights in RAM, preventing OS swapping when memory pressure rises.
+* **Repetition Penalty for Agents (`--repeat-penalty 1.0`):** Repetition penalties above `1.02` can penalize XML tags (`<tool_call>`), indentation, and repetitive JSON keys. Keep disabled or at `1.0`.
 
-### GPU Acceleration
-To run fully or partially on GPU:
-1. Set `GPU_LAYERS` to the target offload depth (or `99` for all layers).
-2. For memory-constrained setups, compress the KV cache:
-   ```bash
-   --cache-type-k q8_0 \
-   --cache-type-v q8_0
-   ```
+### CPU KV Cache Dynamics: Why `f16` Beats `q8_0`
+While system RAM bandwidth is the primary CPU bottleneck, **95%+ of bandwidth is spent reading model weights, not the KV cache**:
+1. **Vector Register Math:** Native `f16` allows CPU vector units to compute dot products directly via hardware FMA instructions.
+2. **Dequantization Penalty:** `q8_0` requires the CPU to unpack block scales and convert integers back to floats on every token step for all preceding context tokens, creating an ALU bottleneck.
+3. **Flash Attention Compatibility:** CPU FlashAttention kernels are heavily hand-optimized for native floating-point types (`f16`/`f32`).
 
 ---
 

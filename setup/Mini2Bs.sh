@@ -5,13 +5,13 @@
 # ==========================================
 PORT=8080
 HOST="127.0.0.1"
-MODEL_PATH="/home/user/models/MiniCPM5-2B-Q4_K_M.gguf"
-DRAFT_PATH="/home/user/models/MiniCPM5-2B-DSpark-Q8_0.gguf"
+MODEL_PATH="/home/j5/models/MiniCPM5-2B-Q4_K_M.gguf"
+DRAFT_PATH="/home/j5/models/MiniCPM5-2B-DSpark-Q8_0.gguf"
 ALIAS="MiniCPM5-2B-DSpark"
 
-LOG_DIR="/home/user/models/serv"
+LOG_DIR="/home/j5/models/serv"
 LOG_FILE="$LOG_DIR/server.log"
-LLAMA_SERVER_BIN="/home/user/llama.cpp/build/bin/llama-server"
+LLAMA_SERVER_BIN="/home/j5/llama.cpp/build/bin/llama-server"
 
 mkdir -p "$LOG_DIR"
 
@@ -43,7 +43,7 @@ export OMP_PLACES=cores
 ulimit -l unlimited 2>/dev/null
 
 # ==========================================
-# 5. Server & Speculative Engine Launch
+# 5. Server & Speculative Engine Launch   # --spec-draft-n-max 5
 # ==========================================
 SERVER_ARGS=(
   -m "$MODEL_PATH"
@@ -73,9 +73,9 @@ SERVER_ARGS=(
   --repeat-penalty 1.05
 
   # --- DSpark Speculative Settings ---
-  -md "$DRAFT_PATH"
-  --spec-type draft-dspark
-  --spec-draft-n-max 5
+  # -md "$DRAFT_PATH"
+  # --spec-type draft-dspark
+  # --spec-draft-n-max 3
 )
 
 # Launch wrapped in UWSM with physical core affinity
