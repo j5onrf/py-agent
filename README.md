@@ -210,7 +210,7 @@
   <br>
 
   <p>
-    <sub><b>Tiers:</b> Pure Chat (<code>ai</code>, 211t) • Native Mode (6 tools, ~680t) • Dual Mode (7 tools, ~760t) • Index-Map (11 tools, ~1.1kt) • OKF Memory (<code>.agent/memory/*.md</code>)</sub>
+    <sub><b>Tiers:</b> Pure Chat (<code>ai</code>, 211t) • Native Mode (6 tools, ~680t) • Dual Mode (7 tools, ~760t) • Index-Map (11 tools, ~1.1kt) <br> OKF Memory (<code>.agent/memory/*.md</code>)</sub>
   </p>
 </div>
 
