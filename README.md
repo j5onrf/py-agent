@@ -49,13 +49,13 @@
   </table>
   
   <p>
-    <sub>* Models &nbsp;•&nbsp; Run <code>model select</code> in your terminal to switch cloud models</sub>
+    <sub>* Models &nbsp;•&nbsp; Run <code>model select</code> in your terminal to switch models</sub>
   </p>
 
   <br>
 
   <p>
-    <sub><b>Cloud & Community Spaces:</b> Pre-configured for official <a href="https://huggingface.co">Hugging Face Router</a> endpoints (<a href="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash"><code>DeepSeek-V4.1-Flash</code></a>, <a href="https://huggingface.co/zai-org/GLM-5.3-Flash"><code>GLM-5.3-Flash</code></a>, <a href="https://huggingface.co/inclusionAI/Ling-3.0-flash-VL"><code>Ling-3.0-flash-VL</code></a>, and <a href="https://huggingface.co/moonshotai/Kimi-K3"><code>Kimi-K3</code></a>).</sub>
+    <sub><b>Cloud & Community Spaces:</b> Official <a href="https://huggingface.co">Hugging Face Router</a> endpoints (<a href="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash"><code>DeepSeek-V4.1-Flash</code></a>, <a href="https://huggingface.co/zai-org/GLM-5.3-Flash"><code>GLM-5.3-Flash</code></a>, <a href="https://huggingface.co/inclusionAI/Ling-3.0-flash-VL"><code>Ling-3.0-flash-VL</code></a>, and <a href="https://huggingface.co/moonshotai/Kimi-K3"><code>Kimi-K3</code></a>).</sub>
   </p>
 </div>
 
