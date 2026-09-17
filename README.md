@@ -104,7 +104,59 @@
 
 <br>
 
-<hr>
+---
+
+<h2 align="center">Sub-27B Model Tuning</h2>
+
+<div align="center">
+  <p>
+    <b>Scope to Single Tasks:</b> Focus on 1 file or objective per turn for maximum accuracy.<br>
+    <b>Use Native Tools (<code>Py: OFF</code>):</b> Small models are fastest with the 6 native tools (<code>SMOL_TOOLS</code>).
+  </p>
+
+  <br>
+
+  <table>
+    <thead>
+      <tr>
+        <th align="left">Benchmark Challenge</th>
+        <th align="center">Without Adapters</th>
+        <th align="center">With <code>/adp</code> Active</th>
+        <th align="left">Efficiency Gain</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>AG-03 (Surgical Edit & Test)</b></td>
+        <td align="center">16 turns</td>
+        <td align="center"><b>6 turns</b></td>
+        <td><b>62% fewer turns</b> (eliminates diff-retry loops)</td>
+      </tr>
+      <tr>
+        <td><b>AG-07 (In-Memory Batch Loop)</b></td>
+        <td align="center">14 turns</td>
+        <td align="center"><b>2 turns</b></td>
+        <td><b>85% fewer turns</b> (executes batch script on Turn 1)</td>
+      </tr>
+      <tr>
+        <td><b>Full Suite Pass Rate</b></td>
+        <td align="center">Retries / Failures</td>
+        <td align="center"><b>100% (7/7)</b></td>
+        <td><b>Zero unhandled syntax or format failures</b></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <br>
+
+  <p>
+    <sub><b>Why it matters:</b> Sub-27B models often emit malformed JSON, markdown code blocks, or broken import syntax.<br>
+    <code>/adp</code> heals these out-of-band, preventing wasted multi-turn recovery cycles.</sub>
+  </p>
+</div>
+<br>
+
+---
 
 <h2 align="center">Efficiency Benchmark: Py-Agent & DeepSeek (dsh)</h2>
 
@@ -161,7 +213,7 @@
 
 <br>
 
-<hr>
+---
 
 <h2 align="center">CLI Launch Interface</h2>
 
@@ -370,5 +422,6 @@ AI_MAX_TOKENS="8192"
 * **<a href="modules/Readme.md">System Architecture</a>**
 * **License**: Licensed under the permissive [MODIFIED MIT LICENSE](LICENSE)
 * **Community:** Contributions are always welcome!
+
 
 
