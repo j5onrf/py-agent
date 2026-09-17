@@ -140,7 +140,7 @@ A comprehensive map of all upstream foundations, architectural roots, and second
 | **Multi-Agent State** | [Vercel Eve](https://github.com/vercel/eve) + [herdr](https://github.com/ogulcancelik/herdr) | Process-isolated sub-agent PID lockfile tracking with checkpoint rollback (`-save` / `-load`) and in-kernel `delegate()` sandboxing. |
 | **Adapter Healing** | [Unsloth AI](https://github.com/unslothai/unsloth) | Self-healing tool format adapters (`agent_adapters.py`) resolving Hermes XML, DSML, Mistral, and raw planning JSON out-of-band for ≤27B models (`/adp`). |
 
-## Auxiliary Subsystems & Services<
+## Auxiliary Subsystems & Services
 
 * **Live Web Grounding (`/gnd`):** Dual-mode factual web search using the official Gemini Grounding Search tool with automatic keyless DuckDuckGo fallback across CLI, TUI, and Web surfaces.
 * **Multimodal Vision OCR (`describe_image_gemini`):** Cloud pre-processor utilizing Gemini Flash Lite vision to transcribe images, diagrams, error screenshots, and UI mockups into structured text descriptions for text-only local models.

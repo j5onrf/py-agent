@@ -354,8 +354,6 @@ AI_MAX_TOKENS="8192"
 
 - [x] **Modular Sub-27B Adapters & Self-Healing Parser:** Dedicated `agent_adapters.py` handling Hermes XML, DSML, Mistral, and raw function call extraction (`/adp`) for small quantized models.
 - [x] **3-Zone Context Compactor with Progress Anchor:** Pi-inspired context compaction (`/com`) preserving completed milestone summaries across context purges.
-- [x] **PyCode Cross-Platform GUI (T3 Fork):** Local-first React desktop and WebUI workspace connected via ACP stdio JSON-RPC bridge (`/pyc`, `/pyc web`).
-- [x] **llama.cpp WebAgent Gateway:** Real-time tool execution, Gemini vision pre-processing, and streaming proxy for the official `llama.cpp` WebUI (`/webui`).
 - [x] **Google Search Grounding (/gnd):** Live web grounding via Gemini Search tool with automatic DuckDuckGo keyless fallback across CLI, TUI, WebUI, and PyCode.
 - [x] **Zero-Trust Hardened Containment:** Non-bypassable interactive `[Y/n]` fallback gate for out-of-bounds access and package management tools (`pip`, `pacman`, `sudo`).
 - [x] **Full-Stack Agentic Benchmark Suite:** 7-test `eval-stack` measuring tool accuracy, AST resilience, and turn efficiency (Par).
@@ -372,4 +370,5 @@ AI_MAX_TOKENS="8192"
 * **<a href="modules/Readme.md">System Architecture</a>**
 * **License**: Licensed under the permissive [MODIFIED MIT LICENSE](LICENSE)
 * **Community:** Contributions are always welcome!
+
 
