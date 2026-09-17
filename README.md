@@ -5,7 +5,7 @@
 <div align="center">
 **New in v0.9.9.30:** Added minimal **KV Cache Tracking** (`cch: X%`) across local `llama-server` and cloud backends; streamlined `ipython_mode` (`/py`) to a **Single-Tool Architecture** slashing schema overhead from ~880t down to ~80t; added dynamic **Tools Inspection** in `ai init` (`ipython`, `native json`, `index-map`); fixed trailing SSE usage packet capture; and added an interactive **Project Creator** (`tools/new-project` / `newp`).
 </div>
-<br>
+<br><br>
 
 <div align="center">
   <img alt="py-agent" src="logo.svg" height="130" />
@@ -194,43 +194,32 @@
 <div align="center">
   <table>
     <tr>
-      <td align="center" width="33%" valign="top">
-        <h3><a href="https://github.com/j5onrf/pycode">PyCode Desktop IDE</a></h3>
-        <code>/pyc</code> · <code>/pyc web</code><br><br>
-        <a href="https://github.com/user-attachments/assets/0a4fee18-12a8-4c0a-93e4-05948d26306e" target="_blank">
-          <kbd>
-            <img src="https://github.com/user-attachments/assets/0a4fee18-12a8-4c0a-93e4-05948d26306e" alt="PyCode Desktop App" width="100%" />
-          </kbd>
-        </a><br><br>
-        <sub>Local-first React IDE with ACP stdio JSON-RPC 2.0, live thought streaming & ambient composer glow.</sub>
+      <td align="center" width="210" valign="top">
+        <br>
+        <h3><a href="https://github.com/j5onrf/pycode">PyCode IDE</a></h3>
+        <p><code>/pyc</code> · <code>/pyc web</code></p>
+        <sub>Local-first React desktop workspace with ACP JSON-RPC 2.0.</sub>
+        <br><br>
       </td>
-      <td align="center" width="33%" valign="top">
+      <td align="center" width="210" valign="top">
+        <br>
         <h3>Textual PyTUI</h3>
-        <code>/tui</code><br><br>
-        <a href="https://github.com/user-attachments/assets/2cb0e587-0284-4ce0-8a5e-6444228481c8" target="_blank">
-          <kbd>
-            <img src="https://github.com/user-attachments/assets/2cb0e587-0284-4ce0-8a5e-6444228481c8" alt="Py Agent Textual TUI" width="100%" />
-          </kbd>
-        </a><br><br>
-        <sub>Full-screen terminal interface with <code>uvloop</code> async event loop, socket IPC & live reasoning steps.</sub>
+        <p><code>/tui</code></p>
+        <sub>Full-screen reactive terminal workspace with <code>uvloop</code>, socket IPC.</sub>
+        <br><br>
       </td>
-      <td align="center" width="33%" valign="top">
+      <td align="center" width="210" valign="top">
+        <br>
         <h3>llama.cpp WebAgent</h3>
-        <code>/webui</code> · <code>/web</code><br><br>
-        <a href="https://github.com/user-attachments/assets/5dccbacf-98c2-4713-8f2d-1e95dcf44cfd" target="_blank">
-          <kbd>
-            <img src="https://github.com/user-attachments/assets/5dccbacf-98c2-4713-8f2d-1e95dcf44cfd" alt="llama.cpp WebAgent" width="100%" />
-          </kbd>
-        </a><br><br>
-        <sub>Autonomous tool reverse proxy for official <code>llama-server</code> (:3000) with Gemini Flash vision.</sub>
+        <p><code>/webui</code> · <code>/web</code></p>
+        <sub>Autonomous tool reverse proxy for official <code>llama-server</code>.</sub>
+        <br><br>
       </td>
     </tr>
   </table>
 
-  <p align="center">
-    <code>/v</code> <b>Voice-to-Text (:9999)</b> &nbsp;•&nbsp; 
-    <code>/tts</code> <b>Neural Kokoro Audio</b> &nbsp;•&nbsp; 
-    <code>/pybot</code> <b>Web Assistant (Roadmap)</b>
+  <p>
+    <sub><code>/v</code> Voice-to-Text (<code>:9999</code>) &nbsp;•&nbsp; <code>/tts</code> Neural Kokoro Audio &nbsp;•&nbsp; <code>/pybot</code> Web Assistant</sub>
   </p>
 </div>
 
