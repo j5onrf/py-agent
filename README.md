@@ -61,6 +61,8 @@
 
 <br>
 
+---
+
 <h2 align="center">Execution Surfaces</h2>
 
 <div align="center">
@@ -154,6 +156,7 @@
     <code>/adp</code> heals these out-of-band, preventing wasted multi-turn recovery cycles.</sub>
   </p>
 </div>
+
 <br>
 
 ---
@@ -235,7 +238,7 @@
 
 <br>
 
-<hr>
+---
 
 <h2 align="center">Client Surfaces & Environments</h2>
 
@@ -277,7 +280,7 @@
 
 <br>
 
-<hr>
+---
 
 <h2 align="center">Setup & Installation</h2>
 
@@ -293,8 +296,6 @@ echo '[ -f "$HOME/.config/py-agent/ai-hook.sh" ] && \
 source "$HOME/.config/py-agent/ai-hook.sh"' >> ~/.bashrc
 source ~/.bashrc
 ```
-
----
 
 ### 2. Configure Providers (`.env`)
 
@@ -360,8 +361,6 @@ AI_MAX_TOKENS="8192"
 
 </details>
 
----
-
 ### 3. Optional Client Surfaces
 
 <div align="center">
@@ -400,7 +399,7 @@ AI_MAX_TOKENS="8192"
 
 <br>
 
-<hr>
+---
 
 <h2 align="center">Roadmap to v1.0.0</h2>
 
@@ -414,7 +413,7 @@ AI_MAX_TOKENS="8192"
 
 <br>
 
-<hr>
+---
 
 <h2 align="center">Documentation & License</h2>
 
@@ -422,6 +421,3 @@ AI_MAX_TOKENS="8192"
 * **<a href="modules/Readme.md">System Architecture</a>**
 * **License**: Licensed under the permissive [MODIFIED MIT LICENSE](LICENSE)
 * **Community:** Contributions are always welcome!
-
-
-
