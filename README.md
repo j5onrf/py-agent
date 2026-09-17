@@ -55,7 +55,7 @@
   <br>
 
   <p>
-    <sub><b>Cloud & Community Spaces:</b> Official <a href="https://huggingface.co">Hugging Face Router</a> endpoints (<a href="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash"><code>DeepSeek-V4.1-Flash</code></a>, <a href="https://huggingface.co/zai-org/GLM-5.3-Flash"><code>GLM-5.3-Flash</code></a>, <a href="https://huggingface.co/inclusionAI/Ling-3.0-flash-VL"><code>Ling-3.0-flash-VL</code></a>, and <a href="https://huggingface.co/moonshotai/Kimi-K3"><code>Kimi-K3</code></a>).</sub>
+    <sub><b>Cloud & Community Spaces:</b> Official <a href="https://huggingface.co">Hugging Face Router</a> endpoints<br>(<a href="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash"><code>DeepSeek-V4.1-Flash</code></a>, <a href="https://huggingface.co/zai-org/GLM-5.3-Flash"><code>GLM-5.3-Flash</code></a>, <a href="https://huggingface.co/inclusionAI/Ling-3.0-flash-VL"><code>Ling-3.0-flash-VL</code></a>, and <a href="https://huggingface.co/moonshotai/Kimi-K3"><code>Kimi-K3</code></a>).</sub>
   </p>
 </div>
 
@@ -210,7 +210,7 @@
   <br>
 
   <p>
-    <sub><b>Tiers:</b> Pure Chat (<code>ai</code>, 211t) • Native Mode (6 tools, ~680t) • Dual Mode (7 tools, ~760t) • Index-Map (11 tools, ~1.1kt) <br> OKF Memory (<code>.agent/memory/*.md</code>)</sub>
+    <sub><b>Tiers:</b> Pure Chat (<code>ai</code>, 211t) • Native Mode (6 tools, ~680t) • Dual Mode (7 tools, ~760t) • Index-Map (11 tools, ~1.1kt) <br> OKF Memory (<code>.agent/memory/*.md</code>) 1-shot <code>/hs</code> retrospective audits.</sub>
   </p>
 </div>
 
@@ -421,3 +421,4 @@ AI_MAX_TOKENS="8192"
 * **<a href="modules/Readme.md">System Architecture</a>**
 * **License**: Licensed under the permissive [MODIFIED MIT LICENSE](LICENSE)
 * **Community:** Contributions are always welcome!
+
