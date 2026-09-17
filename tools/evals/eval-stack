@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py-Agent Full-Stack Agentic & Tool-Calling Benchmark Suite [Universal Multi-Model Edition]"""
+"""Py-Agent Full-Stack Agentic & Tool-Calling Benchmark Suite [Decision-Grade Edition]"""
 
 import contextlib
 import io
@@ -18,6 +18,7 @@ import tty
 
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
 MODULES_DIR = os.path.join(CFG_DIR, "modules")
+RESULTS_LOG = os.path.join(CFG_DIR, "tools", "evals", "eval_history.json")
 
 if MODULES_DIR not in sys.path:
     sys.path.insert(0, MODULES_DIR)
@@ -32,9 +33,11 @@ try:
     import agent_skills as skills
     import agent_tools as tools
     import agent_ui as ui
+    from rich.box import ROUNDED
     from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
+    from rich.text import Text
 except ImportError as e:
     sys.stderr.write(f"Import error: {e}\n")
     sys.exit(1)
@@ -47,7 +50,7 @@ class MinimalSpinner:
         self.label = "Working..."
         self.running = False
         self.thread = None
-        self.chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        self.chars = ["-", "\\", "|", "/"]
         self.target_stream = getattr(sys, "__stderr__", sys.stderr)
 
     def start(self, label: str = "Working..."):
@@ -69,7 +72,7 @@ class MinimalSpinner:
             elapsed = time.time() - self.start_time
             try:
                 self.target_stream.write(
-                    f"\r\033[1;36m{self.chars[i % len(self.chars)]}\033[0m {self.label} \033[2m{elapsed:.1f}s\033[0m"
+                    f"\r\033[1;36m[{self.chars[i % len(self.chars)]}]\033[0m {self.label} \033[2m{elapsed:.1f}s\033[0m"
                 )
                 self.target_stream.flush()
             except OSError:
@@ -98,14 +101,13 @@ def _safe_read(path: str) -> str:
     return ""
 
 
-# ── 7 Canonical Full-Stack Agentic Challenges for Py-Agent ────────────────────
 AGENTIC_BENCHMARKS = [
     {
         "id": "AG-01",
         "name": "In-Memory Math & Exit [IPython]",
         "tools_tested": "exec_python, final_answer",
         "requires_ipython": True,
-        "par_turns": 1,
+        "par_turns": 2,
         "prompt": "Calculate the sum of all multiples of 3 or 5 below 100 in-memory using exec_python. Call final_answer with the integer result and finish.",
         "verify_fn": lambda ws, out: "2318" in str(out) or "2318" in str(getattr(ipython, "_final_answer_val", ""))
     },
@@ -113,7 +115,7 @@ AGENTIC_BENCHMARKS = [
         "id": "AG-02",
         "name": "File Create & Overwrite",
         "tools_tested": "write_file (overwrite)",
-        "par_turns": 2,
+        "par_turns": 4,
         "prompt": "1. Use write_file to create 'config.json' with {\"version\": 1}.\n2. Rewrite 'config.json' with overwrite=true to {\"version\": 2, \"status\": \"ready\"}.\n3. Conclude immediately with your task complete marker.",
         "verify_fn": lambda ws, out: (
             os.path.isfile(os.path.join(ws, "config.json"))
@@ -124,7 +126,7 @@ AGENTIC_BENCHMARKS = [
         "id": "AG-03",
         "name": "Surgical Edit & Test",
         "tools_tested": "read_file, edit_file, run_command",
-        "par_turns": 3,
+        "par_turns": 6,
         "setup_fn": lambda ws: open(os.path.join(ws, "calc.py"), "w").write(
             "def multiply(a, b):\n    return a + b\n\nif __name__ == '__main__':\n    assert multiply(3, 4) == 12, 'Test failed'\n    print('PASSED')\n"
         ),
@@ -138,7 +140,7 @@ AGENTIC_BENCHMARKS = [
         "id": "AG-04",
         "name": "Code Search & Multi-File",
         "tools_tested": "search_code, edit_file",
-        "par_turns": 4,
+        "par_turns": 8,
         "setup_fn": lambda ws: (
             open(os.path.join(ws, "mod_a.py"), "w").write("API_KEY = 'OLD_KEY'\n"),
             open(os.path.join(ws, "mod_b.py"), "w").write("TARGET = 'OLD_KEY'\n")
@@ -153,8 +155,8 @@ AGENTIC_BENCHMARKS = [
         "id": "AG-05",
         "name": "One-and-Done Discipline",
         "tools_tested": "write_file, exit_discipline",
-        "par_turns": 1,
-        "prompt": "Create a file named 'done.txt' containing 'PROCESSED'. Once written, STOP immediately and output: '✔ Task complete: done.txt created'",
+        "par_turns": 2,
+        "prompt": "Create a file named 'done.txt' containing 'PROCESSED'. Once written, STOP immediately and output: 'Task complete: done.txt created'",
         "verify_fn": lambda ws, out: (
             os.path.isfile(os.path.join(ws, "done.txt"))
             and "PROCESSED" in _safe_read(os.path.join(ws, "done.txt"))
@@ -164,7 +166,7 @@ AGENTIC_BENCHMARKS = [
         "id": "AG-06",
         "name": "Whitespace-Tolerant Edit",
         "tools_tested": "edit_file (resilient match)",
-        "par_turns": 2,
+        "par_turns": 6,
         "setup_fn": lambda ws: open(os.path.join(ws, "format_test.py"), "w").write(
             "def greet(name):\n  # 2-space indentation\n  msg = f'Hello, {name}'\n  return msg\n"
         ),
@@ -176,7 +178,7 @@ AGENTIC_BENCHMARKS = [
         "name": "In-Memory Batch Loop [IPython]",
         "tools_tested": "exec_python, final_answer",
         "requires_ipython": True,
-        "par_turns": 1,
+        "par_turns": 2,
         "setup_fn": lambda ws: (
             open(os.path.join(ws, "a.txt"), "w").write("10\n"),
             open(os.path.join(ws, "b.txt"), "w").write("20\n"),
@@ -200,21 +202,13 @@ def list_available_profiles() -> list[tuple[str, str]]:
                     full = os.path.join(root, f)
                     rel = os.path.relpath(full, profiles_dir)
                     prof_key = os.path.splitext(rel)[0]
-                    if prof_key.startswith("custom/"):
-                        lbl = f"Custom {os.path.basename(prof_key).title()}"
-                    else:
-                        lbl = prof_key.replace("/pro", " Pro").title()
+                    lbl = f"Custom {os.path.basename(prof_key).title()}" if prof_key.startswith("custom/") else prof_key.replace("/pro", " Pro").title()
                     found.append((prof_key, lbl))
     return found
 
 
 def select_profile_interactive(profiles: list[tuple[str, str]], default_key: str = "custom/base") -> str:
-    current_idx = 0
-    for i, (k, _) in enumerate(profiles):
-        if k == default_key or k in ("custom/minicpm", "custom/pysmol", "custom/lingtiny"):
-            current_idx = i
-            break
-
+    current_idx = next((i for i, (k, _) in enumerate(profiles) if k == default_key or k in ("custom/lingtiny", "custom/nexn25")), 0)
     num_opts = len(profiles)
     last_lines = 0
 
@@ -248,19 +242,16 @@ def select_profile_interactive(profiles: list[tuple[str, str]], default_key: str
             if last_lines > 0:
                 sys.stderr.write(f"\033[{last_lines}A\r\033[J")
 
-            lines_count = 0
-            sys.stderr.write("\n\033[1;36mSelect Profile to Benchmark:\033[0m \033[2m(↑/↓ navigate, 1-9 select, ↵ run, Esc default)\033[0m\n")
-            lines_count += 2
+            lines_count = 2
+            sys.stderr.write("\n\033[1;36mSelect Profile to Benchmark:\033[0m \033[2m(Up/Down navigate, 1-9 select, Enter run, Esc default)\033[0m\n")
 
             for idx, (k, lbl) in enumerate(profiles):
-                marker = " \033[1;32m★\033[0m" if k in (default_key, "custom/minicpm", "custom/lingtiny") else ""
-                if idx == current_idx:
-                    sys.stderr.write(f"\033[1;33m  ❯ {idx+1:2d}. {lbl:<22}\033[0m \033[90m({k})\033[0m{marker}\n")
-                else:
-                    sys.stderr.write(f"\033[37m    {idx+1:2d}. {lbl:<22}\033[0m \033[2m({k})\033[0m{marker}\n")
+                marker = " *" if k in (default_key, "custom/lingtiny", "custom/nexn25") else ""
+                prefix = f"\033[1;33m  > {idx+1:2d}. {lbl:<22}\033[0m \033[90m({k})\033[0m{marker}\n" if idx == current_idx else f"\033[37m    {idx+1:2d}. {lbl:<22}\033[0m \033[2m({k})\033[0m{marker}\n"
+                sys.stderr.write(prefix)
                 lines_count += 1
 
-            sys.stderr.write(f"\n\033[2m:: ↵ run [{profiles[current_idx][1]}]  Esc: default\033[0m\n")
+            sys.stderr.write(f"\n\033[2m:: Enter run [{profiles[current_idx][1]}]  Esc: default\033[0m\n")
             lines_count += 2
             sys.stderr.flush()
 
@@ -277,10 +268,7 @@ def select_profile_interactive(profiles: list[tuple[str, str]], default_key: str
             elif key in ("\r", "\n", ""):
                 break
             elif key in ("\x03", "\x1b", "q", "Q"):
-                for i, (k, _) in enumerate(profiles):
-                    if k == default_key:
-                        current_idx = i
-                        break
+                current_idx = next((i for i, (k, _) in enumerate(profiles) if k == default_key), 0)
                 break
 
         sys.stderr.write(f"\033[{last_lines}A\r\033[J")
@@ -298,22 +286,16 @@ def select_profile_interactive(profiles: list[tuple[str, str]], default_key: str
 
 def resolve_dynamic_profile(cli_profile_arg: str | None = None) -> tuple[str, str]:
     skills_dir = os.path.join(CFG_DIR, "skills")
-
     if cli_profile_arg and not cli_profile_arg.startswith("-"):
         clean_arg = cli_profile_arg.lstrip("-")
-        content = skills.load_skill_content(clean_arg, skills_dir, CFG_DIR)
-        if content:
+        if content := skills.load_skill_content(clean_arg, skills_dir, CFG_DIR):
             return clean_arg, content
-        if not clean_arg.startswith("custom/"):
-            content = skills.load_skill_content(f"custom/{clean_arg}", skills_dir, CFG_DIR)
-            if content:
-                return f"custom/{clean_arg}", content
+        if not clean_arg.startswith("custom/") and (content := skills.load_skill_content(f"custom/{clean_arg}", skills_dir, CFG_DIR)):
+            return f"custom/{clean_arg}", content
 
-    active_env = os.environ.get("AI_ACTIVE_SKILL")
-    if active_env:
+    if active_env := os.environ.get("AI_ACTIVE_SKILL"):
         first_skill = active_env.split()[0]
-        content = skills.load_skill_content(first_skill, skills_dir, CFG_DIR)
-        if content:
+        if content := skills.load_skill_content(first_skill, skills_dir, CFG_DIR):
             return first_skill, content
 
     ws_path = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
@@ -321,21 +303,17 @@ def resolve_dynamic_profile(cli_profile_arg: str | None = None) -> tuple[str, st
     if os.path.isfile(cfg_file):
         try:
             with open(cfg_file, "r", encoding="utf-8") as cf:
-                saved_prof = json.load(cf).get("profile", "")
-                if saved_prof:
-                    content = skills.load_skill_content(saved_prof, skills_dir, CFG_DIR)
-                    if content:
+                if saved_prof := json.load(cf).get("profile", ""):
+                    if content := skills.load_skill_content(saved_prof, skills_dir, CFG_DIR):
                         return saved_prof, content
         except Exception:
             pass
 
-    if not os.environ.get("AI_CONTEXT_RUN"):
-        profiles = list_available_profiles()
-        if profiles:
-            chosen_key = select_profile_interactive(profiles, "custom/base")
-            content = skills.load_skill_content(chosen_key, skills_dir, CFG_DIR)
-            if content:
-                return chosen_key, content
+    profiles = list_available_profiles()
+    if profiles and not os.environ.get("AI_CONTEXT_RUN"):
+        chosen_key = select_profile_interactive(profiles, "custom/base")
+        if content := skills.load_skill_content(chosen_key, skills_dir, CFG_DIR):
+            return chosen_key, content
 
     default_prof = "custom/base"
     content = skills.load_skill_content(default_prof, skills_dir, CFG_DIR) or "You are an autonomous AI software engineer."
@@ -343,13 +321,9 @@ def resolve_dynamic_profile(cli_profile_arg: str | None = None) -> tuple[str, st
 
 
 def get_current_model_info() -> tuple[str, str]:
-    configs = cloud.get_active_configs([])
-    if configs:
-        url = configs[0][0]
-        model = configs[0][2].get("model", "cloud-model")
-        return model, url
-    local_name = ui.get_local_model_name()
-    return local_name, "http://127.0.0.1:8080"
+    if configs := cloud.get_active_configs([]):
+        return configs[0][2].get("model", "cloud-model"), configs[0][0]
+    return ui.get_local_model_name(), "http://127.0.0.1:8080"
 
 
 def run_single_agentic_test(bench: dict, model_name: str, profile_prompt: str) -> tuple[bool, float, int, int, str]:
@@ -389,17 +363,14 @@ def run_single_agentic_test(bench: dict, model_name: str, profile_prompt: str) -
                 is_agent=True,
             )
         elapsed = time.time() - t0
-
         turn_count = len([m for m in messages if m.get("role") in ("assistant", "tool")])
         total_tokens = sum(core.get_accurate_token_count(m.get("content") or "") for m in messages)
-
         passed = bench["verify_fn"](sandbox_dir, response or "")
-        par_str = f"{turn_count}/{bench.get('par_turns', '-')}"
-        detail = f"{elapsed:.2f}s ({par_str} turns)" if passed else "State verification failed"
+        par_val = bench.get("par_turns", turn_count)
+        detail = f"{elapsed:.2f}s ({turn_count}/{par_val}t)" if passed else "State verification failed"
         return passed, elapsed, turn_count, total_tokens, detail
     except Exception as e:
-        elapsed = time.time() - t0
-        return False, elapsed, 0, 0, f"Exception: {str(e)[:30]}"
+        return False, time.time() - t0, 0, 0, f"Exception: {str(e)[:30]}"
     finally:
         os.chdir(orig_cwd)
         shutil.rmtree(sandbox_dir, ignore_errors=True)
@@ -415,42 +386,46 @@ def main():
 
     console.print(Panel(
         "[bold cyan]Py-Agent Full-Stack Agentic & Tool-Calling Benchmark Suite[/bold cyan]\n"
-        "[dim]Testing agent_core, agent_adapters, in-memory /py, surgical edits, format tolerance & exit discipline[/dim]",
+        "[dim]Decision-grade evaluation: Par efficiency, token economy, tool resilience, and execution speed[/dim]",
         border_style="cyan"
     ))
 
     model_name, endpoint = get_current_model_info()
     is_py_enabled = bool(core.get_state("ipython_mode", False))
 
-    mode_label = "[bold cyan]Dual (Python + Native)[/bold cyan]" if is_py_enabled else "[bold green]Native 6-Tool[/bold green]"
-    console.print(f"• [bold green]Target Model[/bold green]: [bold]{model_name}[/bold]")
-    console.print(f"• [dim]Target Endpoint[/dim]: {endpoint}")
-    console.print(f"• [dim]Harness Profile[/dim]: [cyan]{prof_name}[/cyan] ({mode_label})\n")
+    mode_label = "Dual (Python + Native)" if is_py_enabled else "Native 6-Tool"
+    console.print(f"Target Model: [bold]{model_name}[/bold]")
+    console.print(f"Target Endpoint: {endpoint}")
+    console.print(f"Harness Profile: [cyan]{prof_name}[/cyan] ({mode_label})\n")
 
     results = []
     passed_count = 0
     total_time = 0.0
     total_tokens = 0
+    total_actual_turns = 0
+    total_par_turns = 0
     evaluated_count = 0
     spinner = MinimalSpinner()
 
     try:
         for idx, bench in enumerate(AGENTIC_BENCHMARKS, start=1):
             if bench.get("requires_ipython") and not is_py_enabled:
-                status_str = "[bold yellow]SKIP[/bold yellow]"
-                turn_metrics = "ipython: OFF"
-                tps_str = "- t/s"
-                results.append((bench["id"], bench["name"], bench["tools_tested"], status_str, turn_metrics, tps_str))
-                console.print(f"  [yellow]⊘[/yellow] {status_str} : [bold]{bench['id']}[/bold] {bench['name']:<35} [dim](Skipped: /py disabled in profile)[/dim]")
+                results.append((bench["id"], bench["name"], bench["tools_tested"], "[yellow]SKIP[/yellow]", "ipython: OFF", "-", "-"))
+                console.print(f"  [-] SKIP : [bold]{bench['id']}[/bold] {bench['name']:<33} (Skipped: /py disabled)")
                 continue
 
             evaluated_count += 1
-            spinner.start(f"[{idx}/{len(AGENTIC_BENCHMARKS)}] Running \033[1;36m{bench['id']}\033[0m ({bench['name']})...")
+            par = bench.get("par_turns", 1)
+            total_par_turns += par
+
+            spinner.start(f"[{idx}/{len(AGENTIC_BENCHMARKS)}] Running {bench['id']} ({bench['name']})...")
             passed, elapsed, turns, toks, detail = run_single_agentic_test(bench, model_name, profile_content)
             spinner.stop()
 
             total_time += elapsed
             total_tokens += toks
+            total_actual_turns += turns
+
             if passed:
                 passed_count += 1
                 status_str = "[bold green]PASS[/bold green]"
@@ -458,15 +433,20 @@ def main():
                 status_str = "[bold red]FAIL[/bold red]"
 
             tps = (toks / elapsed) if elapsed > 0 else 0
-            par_val = bench.get("par_turns", "-")
-            turn_metrics = f"{turns}t (Par {par_val})" if passed else "FAILED"
-            results.append((bench["id"], bench["name"], bench["tools_tested"], status_str, turn_metrics, f"{tps:.1f} t/s"))
-            console.print(f"  {'✔' if passed else '✖'} {status_str} : [bold]{bench['id']}[/bold] {bench['name']:<35} {detail:<24} @ [cyan]{tps:.1f} t/s[/cyan]")
+            turn_metrics = f"{turns}t (Par {par})" if passed else "FAILED"
+            results.append((bench["id"], bench["name"], bench["tools_tested"], status_str, turn_metrics, f"{toks:,}t", f"{tps:.1f} t/s"))
+            console.print(f"  {'[green]OK[/green]' if passed else '[red]XX[/red]'} {status_str} : [bold]{bench['id']}[/bold] {bench['name']:<33} {detail:<20} @ [cyan]{tps:.1f} t/s[/cyan]")
     finally:
         spinner.stop()
 
     accuracy = (passed_count / evaluated_count * 100) if evaluated_count > 0 else 0
+    par_eff = (total_par_turns / total_actual_turns * 100) if total_actual_turns > 0 else 0
     avg_tps = (total_tokens / total_time) if total_time > 0 else 0
+    toks_per_turn = (total_tokens / total_actual_turns) if total_actual_turns > 0 else 0
+
+    speed_score = min(100.0, (avg_tps / 50.0) * 100.0)
+    agent_index = (accuracy * 0.50) + (min(100.0, par_eff) * 0.35) + (speed_score * 0.15)
+    grade = "A+" if agent_index >= 95 else "A" if agent_index >= 88 else "B" if agent_index >= 75 else "C" if agent_index >= 60 else "F"
 
     table = Table(title=f"\nAgentic Stack Benchmark: {model_name} [{prof_name}]", border_style="bright_black")
     table.add_column("ID", style="cyan", justify="left")
@@ -474,15 +454,47 @@ def main():
     table.add_column("Tools Exercised", style="dim")
     table.add_column("Result", justify="center")
     table.add_column("Turns / Par", justify="center")
+    table.add_column("Context", justify="right")
     table.add_column("Speed", style="green", justify="right")
 
     for row in results:
         table.add_row(*row)
 
     console.print(table)
-    score_col = "green" if accuracy >= 80 else "yellow" if accuracy >= 50 else "red"
-    skipped_str = f" [{len(AGENTIC_BENCHMARKS) - evaluated_count} Skipped: ipython OFF]" if evaluated_count < len(AGENTIC_BENCHMARKS) else ""
-    console.print(f"\n[bold]Full-Stack Scorecard:[/bold] [{score_col}]{passed_count}/{evaluated_count} Succeeded ({accuracy:.1f}%){skipped_str}[/{score_col}] | Avg Speed: [bold cyan]{avg_tps:.1f} t/s[/bold cyan] | Total Elapsed: [dim]{total_time:.2f}s[/dim]\n")
+
+    summary_text = Text()
+    summary_text.append(f"Pass Rate:        {passed_count}/{evaluated_count} ({accuracy:.1f}%)\n", style="bold green" if accuracy >= 80 else "bold red")
+    summary_text.append(f"Par Efficiency:   {par_eff:.1f}% ({total_actual_turns} actual turns / {total_par_turns} par target)\n", style="cyan")
+    summary_text.append(f"Token Economy:    {total_tokens:,} total tokens (~{toks_per_turn:.0f} tokens/turn)\n", style="dim")
+    summary_text.append(f"Effective Speed:  {avg_tps:.1f} tokens/second (Total elapsed: {total_time:.2f}s)\n", style="dim")
+    summary_text.append(f"\nAgent Performance Index: {agent_index:.1f}/100 [Grade: {grade}]", style="bold yellow")
+
+    console.print(Panel(summary_text, title="Conclusive Benchmark Evaluation", border_style="green" if accuracy == 100 else "yellow", box=ROUNDED))
+
+    try:
+        os.makedirs(os.path.dirname(RESULTS_LOG), exist_ok=True)
+        record = {
+            "timestamp": int(time.time()),
+            "model": model_name,
+            "profile": prof_name,
+            "accuracy": accuracy,
+            "par_efficiency": par_eff,
+            "total_tokens": total_tokens,
+            "tokens_per_turn": toks_per_turn,
+            "avg_tps": avg_tps,
+            "total_time": total_time,
+            "agent_index": agent_index,
+            "grade": grade,
+        }
+        history = []
+        if os.path.isfile(RESULTS_LOG):
+            with open(RESULTS_LOG, "r") as rf:
+                history = json.load(rf)
+        history.append(record)
+        with open(RESULTS_LOG, "w") as wf:
+            json.dump(history[-30:], wf, indent=2)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

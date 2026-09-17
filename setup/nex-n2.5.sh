@@ -11,10 +11,19 @@ LOG_DIR="/home/user/models/serv"
 LOG_FILE="$LOG_DIR/server.log"
 LLAMA_SERVER_BIN="/home/user/llama.cpp/build/bin/llama-server"
 
+# --- Logging Toggle ---
+# Set to 'true' to enable server.log, 'false' to discard output to /dev/null
+ENABLE_LOG="${ENABLE_LOG:-true}"
+
+if [ "$ENABLE_LOG" = true ]; then
+    mkdir -p "$LOG_DIR"
+    LOG_TARGET="$LOG_FILE"
+else
+    LOG_TARGET="/dev/null"
+fi
+
 # Optional Vision Projector (uncomment if downloaded for multimodal agent tasks)
 # MMPROJ_PATH="/home/user/models/mmproj-Nex-N2.5-mini-Q8_0.gguf"
-
-mkdir -p "$LOG_DIR"
 
 # 1. Clean up lingering port processes
 pkill -9 -x llama-server 2>/dev/null
@@ -99,4 +108,4 @@ if command -v uwsm >/dev/null 2>&1; then
     LAUNCH_PREFIX="uwsm app --"
 fi
 
-exec $LAUNCH_PREFIX $PIN_CMD "$LLAMA_SERVER_BIN" "${SERVER_ARGS[@]}" >> "$LOG_FILE" 2>&1
+exec $LAUNCH_PREFIX $PIN_CMD "$LLAMA_SERVER_BIN" "${SERVER_ARGS[@]}" >> "$LOG_TARGET" 2>&1

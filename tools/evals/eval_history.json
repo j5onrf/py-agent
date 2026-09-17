@@ -1,0 +1,15 @@
+[
+  {
+    "timestamp": 1789609077,
+    "model": "Tiel-Coder-35B-A3B",
+    "profile": "custom/tielcoder",
+    "accuracy": 100.0,
+    "par_efficiency": 78.94736842105263,
+    "total_tokens": 4367,
+    "tokens_per_turn": 114.92105263157895,
+    "avg_tps": 14.474935201946327,
+    "total_time": 301.6939239501953,
+    "agent_index": 81.9740595079523,
+    "grade": "B"
+  }
+]
