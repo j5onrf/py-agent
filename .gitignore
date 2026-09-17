@@ -21,6 +21,7 @@ tools/agentic/fusion/logs/
 .agent/
 custom_spaces.json
 .last_cloud_key.txt
+tools/evals/eval_history.json
 
 # Databases & SQLite WAL
 projects/.database/*.db*
@@ -31,3 +32,5 @@ projects/.database/*.db*
 __pycache__/
 *.pyc
 .ruff_cache
+tools/evals/eval_history.json
+eval_history.json
