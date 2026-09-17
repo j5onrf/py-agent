@@ -34,3 +34,4 @@ __pycache__/
 .ruff_cache
 tools/evals/eval_history.json
 eval_history.json
+**/eval_history.json
