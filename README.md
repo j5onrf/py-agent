@@ -12,13 +12,11 @@
     <a href="https://shieldcn.dev/badge/status-beta-blue.svg"><img src="https://shieldcn.dev/badge/status-beta-blue.svg" alt="Status"></a>
   </p>
 
-<br>
-
----
-
   <p>
     <code>gguf</code> &nbsp;•&nbsp; <code>llama.cpp</code> &nbsp;•&nbsp; <code>gemini</code> &nbsp;•&nbsp; <code>huggingface</code> &nbsp;•&nbsp; <code>openrouter</code>
   </p>
+
+  ---
 
   <p>
     <b>Lightweight Python orchestration (<code>rich</code> + <code>requests</code>) driving a high-throughput C++ <code>llama-server</code> backend.</b><br>
@@ -423,5 +421,6 @@ AI_MAX_TOKENS="8192"
 * **<a href="modules/Readme.md">System Architecture</a>**
 * **License**: Licensed under the permissive [MODIFIED MIT LICENSE](LICENSE)
 * **Community:** Contributions are always welcome!
+
 
 
