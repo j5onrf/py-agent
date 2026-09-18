@@ -29,12 +29,15 @@
 [TOOL] ~/.config/py-agent/tools/cheatsheet ---> cheatsheet, cs
 # --- Eval Model & Profile (Agentic Tool Benchmark) ---
 ~/.config/py-agent/tools/evals/eval-stack --->  eval stack, eval-stack
+# --- System Orchestrator TUI ---
+[TOOL] ~/.config/py-agent/tools/system-stack ---> system stack, sysstack
 ```
 
 ## 2. Projects
 
 ```properties
 # --- Workspaces ---
+ai init ~/.config/py-agent/projects/tini-cybersec ---> tini-cybersec, tini cybersec
 ai init ~/.config/py-agent/projects/ornith ---> ornith
 ai init ~/.config/py-agent/projects/katcoder ---> katcoder
 ai init ~/.config/py-agent/projects/nex-n2 ---> nex-n2, nex n2
@@ -95,18 +98,18 @@ ai init ~/.config/py-agent/projects/session-test ---> session test, projects ses
 
 ```properties
 # --- System Profile ---
-[TOOL] cat ~/.config/py-agent/skills/system/mysys.md --s ---> mysys
+[TOOL] cat ~/.config/py-agent/skills/system/mysys.md ---> mysys
 [TOOL] ~/.config/py-agent/tools/generate-profile ---> generate profile, genp
 # --- System Health ---
-[TOOL] ~/.config/py-agent/tools/agentic/system/system-health --s ---> system health, sysh
+[TOOL] ~/.config/py-agent/tools/agentic/system/system-health ---> system health, sysh
 # --- Log Checker ---
-[TOOL] ~/.config/py-agent/tools/agentic/system/log-checker --s ---> log checker, ailog
+[TOOL] ~/.config/py-agent/tools/agentic/system/log-checker ---> log checker, ailog
 # --- AUR Audit ---
-[TOOL] ~/.config/py-agent/tools/agentic/system/aur-audit --s ---> aur audit, audit package
+[TOOL] ~/.config/py-agent/tools/agentic/system/aur-audit ---> aur audit, audit package
 # --- Security Audit ---
-[TOOL] ~/.config/py-agent/tools/agentic/system/security-audit --s ---> security audit, secaud
+[TOOL] ~/.config/py-agent/tools/agentic/system/security-audit ---> security audit, secaud
 # --- System Optimizer ---
 [TOOL] ~/.config/py-agent/tools/agentic/system/system-optimizer ---> system optimizer, sysop
 # --- Update Inspector ---
-[TOOL] ~/.config/py-agent/tools/agentic/system/update-inspector --s ---> update inspector
+[TOOL] ~/.config/py-agent/tools/agentic/system/update-inspector ---> update inspector
 ```

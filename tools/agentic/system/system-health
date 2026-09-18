@@ -81,9 +81,9 @@ TOP_CPU_PROC="N/A"
 TOP_MEM_PROC="N/A"
 if command -v ps >/dev/null 2>&1; then
     TOP_CPU_PROC=$(ps -eo pcpu,comm --sort=-pcpu 2>/dev/null | awk '$2 !~ /^(ps|grep|awk|system-health|comm|%CPU|COMMAND)$/ {print $2" ("$1"%)"; exit}')
-TOP_MEM_PROC=$(ps -eo pmem,comm --sort=-pmem 2>/dev/null | awk '$2 !~ /^(ps|grep|awk|system-health|comm|%MEM|COMMAND)$/ {print $2" ("$1"%)"; exit}')
-TOP_CPU_PROC="${TOP_CPU_PROC:-N/A}"
-TOP_MEM_PROC="${TOP_MEM_PROC:-N/A}"
+    TOP_MEM_PROC=$(ps -eo pmem,comm --sort=-pmem 2>/dev/null | awk '$2 !~ /^(ps|grep|awk|system-health|comm|%MEM|COMMAND)$/ {print $2" ("$1"%)"; exit}')
+    TOP_CPU_PROC="${TOP_CPU_PROC:-N/A}"
+    TOP_MEM_PROC="${TOP_MEM_PROC:-N/A}"
 fi
 
 # 6. Systemd Failed Services Audit
@@ -126,7 +126,7 @@ Top CPU Consumer: $TOP_CPU_PROC
 Available Memory: $FREE_RAM (Used: $USED_RAM_PCT)
 Swap/ZRAM Utilization: $SWAP_USAGE
 Top Memory Consumer: $TOP_MEM_PROC
-Root Disk Capacity: $DISK_PCT ($DISK_FREE Free)
+Root Storage Available: $DISK_FREE free (Partition is $DISK_PCT utilized)
 Failed Systemd Units: $FAILED_UNITS
 System Alignment State: $PROFILE_ALIGNMENT
 Alignment Details: $PROFILE_DETAILS

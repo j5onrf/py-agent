@@ -1,0 +1,271 @@
+#!/usr/bin/env python3
+"""system-stack - Interactive TUI for System Health, Security & Diagnostics"""
+
+import os
+import select
+import shutil
+import subprocess
+import sys
+import termios
+import tty
+
+# --- Path Configurations ---
+CFG_DIR = os.path.expanduser("~/.config/py-agent")
+TOOLS_DIR = os.path.join(CFG_DIR, "tools", "agentic", "system")
+GENP_BIN = os.path.join(CFG_DIR, "tools", "generate-profile")
+MYSYS_FILE = os.path.join(CFG_DIR, "skills", "system", "mysys.md")
+
+STACK_ITEMS = [
+    {
+        "name": "System Health Inspector",
+        "cmd": [os.path.join(TOOLS_DIR, "system-health")],
+        "desc": "Real-time CPU load, thermals, RAM/ZRAM, root disk, and systemd units",
+        "tag": "HEALTH",
+    },
+    {
+        "name": "Composite System Triage (syscheck)",
+        "cmd": [os.path.join(TOOLS_DIR, "syscheck")],
+        "desc": "Chained execution: Health -> Log Checker -> Update Inspector",
+        "tag": "COMPOSITE",
+    },
+    {
+        "name": "Security & Threat Audit",
+        "cmd": [os.path.join(TOOLS_DIR, "security-audit")],
+        "desc": "Network listeners, SUID scan, SSH perms, and live AUR blacklist",
+        "tag": "SECURITY",
+    },
+    {
+        "name": "Journal & Log Triage",
+        "cmd": [os.path.join(TOOLS_DIR, "log-checker")],
+        "desc": "Incremental cursor triage of systemd crashes and kernel ring-0 alerts",
+        "tag": "LOGS",
+    },
+    {
+        "name": "Arch Update & .pacnew Inspector",
+        "cmd": [os.path.join(TOOLS_DIR, "update-inspector")],
+        "desc": "Checkupdates + paru/yay against Arch news and unmerged pacnew diffs",
+        "tag": "UPDATES",
+    },
+    {
+        "name": "AUR Zero-Trust Package Auditor",
+        "cmd": "interactive_aur",
+        "desc": "Clone & audit untrusted PKGBUILDs, install hooks, and network calls",
+        "tag": "AUR",
+    },
+    {
+        "name": "System Hardware Optimizer",
+        "cmd": [os.path.join(TOOLS_DIR, "system-optimizer")],
+        "desc": "Kernel sysctl, ZRAM swappiness, BBR congestion, and BPF schedulers",
+        "tag": "TUNING",
+    },
+    {
+        "name": "View Architecture Blueprint (mysys.md)",
+        "cmd": ["less", MYSYS_FILE],
+        "desc": "Static hardware specification used to ground AI suggestions",
+        "tag": "BLUEPRINT",
+    },
+    {
+        "name": "Regenerate Hardware Blueprint (genp)",
+        "cmd": [GENP_BIN],
+        "desc": "Re-scan hardware, kernel, driver, and mounts to update mysys.md",
+        "tag": "REFRESH",
+    },
+]
+
+
+def _get_tty_streams():
+    """Acquires raw /dev/tty streams to prevent breakage if piped in shell."""
+    try:
+        t_in = open("/dev/tty", "r")
+    except OSError:
+        t_in = sys.stdin
+    try:
+        t_out = open("/dev/tty", "w")
+    except OSError:
+        t_out = sys.stdout
+    return t_in, t_out
+
+
+tty_in, tty_out = _get_tty_streams()
+
+
+def check_mysys_drift() -> tuple[str, str]:
+    """Checks if active running kernel matches mysys.md specification."""
+    if not os.path.isfile(MYSYS_FILE):
+        return "\033[1;31mMISSING\033[0m", "Run 'generate profile' to initialize"
+
+    active_kernel = os.uname().release
+    static_kernel = ""
+    try:
+        with open(MYSYS_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                if "Linux Kernel" in line and "`" in line:
+                    static_kernel = line.split("`")[1].strip()
+                    break
+    except OSError:
+        pass
+
+    if static_kernel and static_kernel.split()[0] not in active_kernel:
+        return "\033[1;33mMISALIGNED\033[0m", f"Active ({active_kernel}) != Profile ({static_kernel})"
+    return "\033[1;32mNOMINAL\033[0m", f"Kernel {active_kernel} matches blueprint"
+
+
+def get_key_non_blocking(timeout: float = 0.5) -> str | None:
+    fd = tty_in.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        rlist, _, _ = select.select([fd], [], [], timeout)
+        if not rlist:
+            return None
+
+        ch_bytes = os.read(fd, 1)
+        if not ch_bytes:
+            return None
+
+        ch = ch_bytes.decode("utf-8", errors="ignore")
+        if ch == "\x1b":
+            rlist_seq, _, _ = select.select([fd], [], [], 0.05)
+            if rlist_seq:
+                seq = os.read(fd, 2).decode("utf-8", errors="ignore")
+                if seq in ("[A", "OA"):
+                    return "up"
+                elif seq in ("[B", "OB"):
+                    return "down"
+                elif seq in ("[C", "OC"):
+                    return "right"
+                elif seq in ("[D", "OD"):
+                    return "left"
+            return "esc"
+        elif ch in ("\r", "\n"):
+            return "enter"
+        elif ch.lower() in ("q", "k", "j"):
+            return ch.lower()
+        elif ch.isdigit():
+            return ch
+        return ch
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
+def pause_terminal():
+    tty_out.write("\n\033[90m:: Press any key to return to System Stack menu...\033[0m")
+    tty_out.flush()
+    get_key_non_blocking(timeout=3600.0)
+
+
+def draw_menu(selected: int):
+    tty_out.write("\x1b[H\x1b[2J")
+    amber = "\033[38;2;230;120;60m"
+    reset = "\033[0m"
+    bold = "\033[1m"
+    dim = "\033[90m"
+    cyan = "\033[1;36m"
+
+    align_status, align_desc = check_mysys_drift()
+
+    term_cols = shutil.get_terminal_size((80, 24)).columns
+    box_width = min(max(term_cols - 6, 74), 98)
+
+    tty_out.write(
+        f"\r\n   {bold}SYSTEM & HEALTH ORCHESTRATOR{reset}  {dim}[Arch / CachyOS]{reset}\r\n"
+        f"   {dim}Blueprint Alignment: [{align_status}{dim}] {align_desc}{reset}\r\n"
+        f"   {dim}{'─' * box_width}{reset}\r\n\r\n"
+    )
+
+    for i, item in enumerate(STACK_ITEMS):
+        is_selected = i == selected
+        prefix = f"   {amber}❯{reset} {bold}" if is_selected else "     "
+        num_tag = f"{cyan}{i + 1:1d}.{reset}" if not is_selected else f"{amber}{i + 1:1d}.{reset}"
+        name_text = f"{num_tag} {item['name']}"
+
+        tag_str = f"{dim}[{item['tag']}]{reset}"
+        visible_name = f"{i + 1:1d}. {item['name']}"
+        pad = max(2, box_width - len(visible_name) - len(item["tag"]) - 8)
+
+        tty_out.write(f"{prefix}{name_text}{' ' * pad}{tag_str}{reset}\r\n")
+        tty_out.write(f"        {dim}{item['desc']}{reset}\r\n\r\n")
+
+    exit_idx = len(STACK_ITEMS)
+    tty_out.write(
+        f"{'   ' + amber + '❯' + reset + ' ' + bold if selected == exit_idx else '     '}"
+        f"✕  Exit Orchestrator{reset}\r\n"
+    )
+    tty_out.write(f"\r\n   {dim}{'─' * box_width}{reset}\r\n")
+    tty_out.write(f"   {dim}Use ▲/▼, j/k, or numbers to navigate, Enter to run, Esc/q to exit.{reset}\r\n")
+    tty_out.flush()
+
+
+def run_target(item: dict):
+    tty_out.write("\x1b[?25h\x1b[H\x1b[2J")
+    tty_out.flush()
+
+    cmd = item["cmd"]
+
+    if cmd == "interactive_aur":
+        tty_out.write("\033[1;36m==> Enter AUR package name to audit: \033[0m")
+        tty_out.flush()
+        pkg = tty_in.readline().strip()
+        if pkg:
+            aur_bin = os.path.join(TOOLS_DIR, "aur-audit")
+            if os.path.isfile(aur_bin):
+                subprocess.run([aur_bin, pkg], stdin=tty_in, stdout=tty_out, stderr=tty_out)
+            else:
+                tty_out.write(f"\033[1;31mTool not found: {aur_bin}\033[0m\n")
+        pause_terminal()
+    else:
+        if isinstance(cmd, list) and os.path.isfile(cmd[0]):
+            subprocess.run(cmd, stdin=tty_in, stdout=tty_out, stderr=tty_out)
+            if cmd[0] != "less":
+                pause_terminal()
+        elif isinstance(cmd, list) and cmd[0] == "less" and os.path.isfile(cmd[1]):
+            subprocess.run(cmd, stdin=tty_in, stdout=tty_out, stderr=tty_out)
+        else:
+            tty_out.write(f"\033[1;31mCommand not found: {cmd}\033[0m\n")
+            pause_terminal()
+
+
+def main():
+    selected = 0
+    total_options = len(STACK_ITEMS) + 1
+
+    tty_out.write("\x1b[?25l")
+    tty_out.flush()
+
+    try:
+        while True:
+            draw_menu(selected)
+            key = get_key_non_blocking(timeout=1.0)
+
+            if key is None:
+                continue
+            elif key in ("up", "k"):
+                selected = (selected - 1) % total_options
+            elif key in ("down", "j"):
+                selected = (selected + 1) % total_options
+            elif key.isdigit():
+                digit_val = int(key)
+                if 1 <= digit_val <= len(STACK_ITEMS):
+                    selected = digit_val - 1
+                    run_target(STACK_ITEMS[selected])
+            elif key == "enter":
+                if selected < len(STACK_ITEMS):
+                    run_target(STACK_ITEMS[selected])
+                else:
+                    break
+            elif key in ("q", "esc"):
+                break
+    finally:
+        tty_out.write("\x1b[?25h\x1b[H\x1b[2J")
+        tty_out.flush()
+        os.system("stty sane 2>/dev/null")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        tty_out.write("\x1b[?25h")
+        tty_out.flush()
+        os.system("stty sane 2>/dev/null")
+        sys.exit(0)

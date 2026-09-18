@@ -1,9 +1,21 @@
 #!/usr/bin/env python3
-"""Interactive & Direct Project Creator for Py-Agent with ai-context.md"""
+"""Interactive & Direct Project Creator for Py-Agent with ai-context.md [Hardened TTY]"""
 
 import os
 import re
+import signal
 import sys
+
+# 1. Neutralize background subshell TTY signals
+for sig in (getattr(signal, "SIGTTIN", None), getattr(signal, "SIGTTOU", None)):
+    if sig:
+        try:
+            signal.signal(sig, signal.SIG_IGN)
+        except Exception:
+            pass
+
+# 2. Force terminal into sane canonical mode
+os.system("stty sane 2>/dev/null")
 
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
 PROJECTS_DIR = os.path.join(CFG_DIR, "projects")
@@ -12,8 +24,23 @@ RE_SAFE_NAME = re.compile(r"[^a-zA-Z0-9_\-]")
 TRIGGER_ALIASES = frozenset({"newp", "newproject", "new-project", "new", "project", "$1"})
 
 
+def prompt_tty(msg: str) -> str:
+    """Reads directly from the controlling terminal, immune to pipe/subshell EOFs."""
+    try:
+        with open("/dev/tty", "r+") as tty:
+            tty.write(msg)
+            tty.flush()
+            line = tty.readline()
+            if not line:
+                raise EOFError
+            return line.strip()
+    except Exception:
+        # Fallback to standard input if /dev/tty is unavailable
+        return input(msg).strip()
+
+
 def add_to_context_file(slug: str, intents_str: str) -> bool:
-    """Inserts workspace shortcut under Section 2 (# --- Workspaces ---) in ai-context.md."""
+    """Inserts workspace shortcut under Section 3 (# --- Workspaces ---) in ai-context.md."""
     if not os.path.isfile(CONTEXT_FILE):
         return False
 
@@ -24,15 +51,18 @@ def add_to_context_file(slug: str, intents_str: str) -> bool:
             content = f.read()
 
         # Prevent duplicate entries
-        if f"projects/{slug}" in content:
+        if f"projects/{slug} " in content or f"projects/{slug} --->" in content or f"projects/{slug}\n" in content:
             return False
 
         target_marker = "# --- Workspaces ---"
         if target_marker in content:
             parts = content.split(target_marker, 1)
             updated_content = f"{parts[0]}{target_marker}\n{entry_line}{parts[1]}"
+        elif "## 3. Projects" in content:
+            parts = content.split("## 3. Projects", 1)
+            updated_content = f"{parts[0]}## 3. Projects\n\n# --- Workspaces ---\n{entry_line}{parts[1]}"
         else:
-            updated_content = f"{content}\n{entry_line}"
+            updated_content = f"{content.rstrip()}\n\n{entry_line}\n"
 
         with open(CONTEXT_FILE, "w", encoding="utf-8") as f:
             f.write(updated_content)
@@ -43,27 +73,34 @@ def add_to_context_file(slug: str, intents_str: str) -> bool:
 
 
 def main() -> None:
-    valid_args = [a for a in sys.argv[1:] if not a.startswith("-") and a.lower() not in TRIGGER_ALIASES]
+    valid_args = [
+        a.strip()
+        for a in sys.argv[1:]
+        if a.strip() and not a.startswith("-") and a.strip().lower() not in TRIGGER_ALIASES
+    ]
 
     # 1. Project Name Input
+    raw_name = ""
+    slug = ""
+
     if valid_args:
         raw_name = valid_args[0].strip()
+        slug = RE_SAFE_NAME.sub("-", raw_name.lower()).strip("-")
         print(f"\033[1;36m[new-project]\033[0m Project name: \033[1m{raw_name}\033[0m")
     else:
-        try:
-            raw_name = input("\033[1;36m[new-project]\033[0m Enter project name: ").strip()
-        except (KeyboardInterrupt, EOFError):
-            print("\n\033[1;33mCancelled.\033[0m")
-            sys.exit(0)
+        while not slug:
+            try:
+                raw_name = prompt_tty("\033[1;36m[new-project]\033[0m Enter project name: ")
+            except (KeyboardInterrupt, EOFError):
+                print("\n\033[1;33mCancelled.\033[0m")
+                sys.exit(0)
 
-    if not raw_name:
-        print("\033[1;31m[error] Project name cannot be empty.\033[0m")
-        sys.exit(1)
+            if not raw_name:
+                continue
 
-    slug = RE_SAFE_NAME.sub("-", raw_name.lower()).strip("-")
-    if not slug:
-        print("\033[1;31m[error] Invalid project name.\033[0m")
-        sys.exit(1)
+            slug = RE_SAFE_NAME.sub("-", raw_name.lower()).strip("-")
+            if not slug:
+                print("\033[1;31m[error] Invalid name. Use alphanumeric characters or dashes.\033[0m")
 
     # 2. Intents Input
     default_intent = slug.replace("-", " ")
@@ -72,7 +109,7 @@ def main() -> None:
     else:
         try:
             prompt_str = f"\033[1;36m[new-project]\033[0m Enter intent keywords (e.g. \033[33m{slug}, {default_intent}\033[0m) [Enter for default]: "
-            raw_intents = input(prompt_str).strip()
+            raw_intents = prompt_tty(prompt_str)
         except (KeyboardInterrupt, EOFError):
             print("\n\033[1;33mCancelled.\033[0m")
             sys.exit(0)
@@ -93,20 +130,20 @@ def main() -> None:
     else:
         try:
             os.makedirs(target_dir, exist_ok=True)
-            print(f"\n\033[1;32m✔ Project workspace created:\033[0m \033[1m{target_dir}\033[0m")
+            print(f"\n\033[1;32mProject workspace created:\033[0m \033[1m{target_dir}\033[0m")
         except OSError as e:
             print(f"\033[1;31m[error] Failed to create directory: {e}\033[0m")
             sys.exit(1)
 
     # 4. Register in ai-context.md
     if add_to_context_file(slug, intents_str):
-        print(f"\033[1;32m✔ Added to ai-context.md:\033[0m \033[36mai init ~/.config/py-agent/projects/{slug}\033[0m \033[2m--->\033[0m \033[33m{intents_str}\033[0m")
+        print(f"\033[1;32mAdded to ai-context.md:\033[0m \033[36mai init ~/.config/py-agent/projects/{slug}\033[0m \033[2m--->\033[0m \033[33m{intents_str}\033[0m")
     else:
         print(f"\033[2m[info] Shortcut already exists in ai-context.md\033[0m")
 
     # 5. Launch Instructions
     print(f"\n\033[2mLaunch workspace now:\033[0m \033[1;36mai init {target_dir}\033[0m")
-    print(f"\033[2mLaunch workspace now:\033[0m \033[1;32mtype {primary_intent} in terminal\033[0m\n")
+    print(f"\033[2mLaunch via shortcut:\033[0m \033[1;32mtype '{primary_intent}' in terminal\033[0m\n")
 
 
 if __name__ == "__main__":

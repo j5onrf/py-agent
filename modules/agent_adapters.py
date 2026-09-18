@@ -143,12 +143,32 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
                 cleaned["symbol"] = cleaned.pop(alt)
                 break
 
-    # 6. Overwrite Aliases & Booleans
-    for alt in ("force", "replace", "overwrite_file", "clobber"):
+    # 6. Surgical Edit String Aliases (old_str / new_str)
+    if "old_str" not in cleaned:
+        for alt in ("old", "old_string", "old_text", "search", "search_str", "target_str", "find", "before", "original"):
+            if alt in cleaned and not isinstance(cleaned[alt], bool):
+                cleaned["old_str"] = cleaned.pop(alt)
+                break
+
+    if "new_str" not in cleaned:
+        for alt in ("new", "new_string", "new_text", "replace", "replace_str", "replacement", "after", "update"):
+            # Only treat 'replace' as new_str if it is a text string, not a boolean flag
+            if alt in cleaned and not isinstance(cleaned[alt], bool) and str(cleaned[alt]).lower() not in ("true", "1", "yes", "on"):
+                cleaned["new_str"] = cleaned.pop(alt)
+                break
+
+    # 7. Overwrite Aliases & Booleans (Preserves replace=True for write_file)
+    for alt in ("force", "overwrite_file", "clobber"):
         if alt in cleaned:
             cleaned["overwrite"] = True
             cleaned.pop(alt, None)
             break
+
+    if "replace" in cleaned:
+        rep_val = cleaned["replace"]
+        if isinstance(rep_val, bool) or str(rep_val).lower() in ("true", "1", "yes", "on"):
+            cleaned["overwrite"] = True
+            cleaned.pop("replace", None)
 
     if "overwrite" in cleaned:
         ov = cleaned["overwrite"]
