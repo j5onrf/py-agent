@@ -37,21 +37,6 @@ def _get_console(stderr: bool = False) -> Console:
 
 _console, _console_err, _session = _get_console(False), _get_console(True), requests.Session()
 
-
-def _clean_sigint_handler(exctype, value, tb):
-    if issubclass(exctype, KeyboardInterrupt):
-        raw_err = getattr(sys, "__stderr__", sys.stderr)
-        try:
-            raw_err.write("\r\033[0m\033[?25h\x1b[2K\033[90m[sys] Interrupted.\033[0m\r\n")
-            raw_err.flush()
-        except Exception:
-            pass
-        sys.exit(130)
-    sys.__excepthook__(exctype, value, tb)
-
-
-sys.excepthook = _clean_sigint_handler
-
 RE_THINKING_TITLE = re.compile(r"^\s*Thinking Process:\s*", re.IGNORECASE)
 RE_FINAL_ANSWER = re.compile(r"^\s*Final Answer:\s*", re.IGNORECASE)
 RE_MULTIPLE_NEWLINES = re.compile(r"\n{2,}")

@@ -34,7 +34,7 @@ LOCAL_MODELS = [
         "script": "q2bu.sh",
     },
     {
-        "name": "MiniCPM5-2B (DSpark Off)",
+        "name": "MiniCPM5-2B (DSpark ON/Off)",
         "alias": "MiniCPM5-2B-DSpark",
         "file": "MiniCPM5-2B-Q4_K_M.gguf",
         "script": "Mini2Bs.sh",
@@ -51,15 +51,16 @@ LOCAL_MODELS = [
         "script": "Ltiny.sh",
     },
     {
-        "name": "Hermes3.6-35B-A3B-Uncensored-Genesis-V6-APEX-Compact.gguf (17gb)",
-        "file": "Herm3.6-35B-A3B.gguf",
-        "script": "q35b.sh",
-    },
-    {
-        "name": "Nex-N2.5-mini-APEX-I-Compact (15gb)",
+        "name": "Nex-N2.5-mini-APEX-I-Compact (16.5gb)",
         "alias": "Nex-N2.5-mini",
         "file": "Nex-N2.5-mini-APEX-I-Compact.gguf",
         "script": "nex-n2.5.sh",
+    },
+    {
+        "name": "KAT-Coder-V2.5-Dev-APEX-I-Compact (16.5gb)",
+        "alias": "KAT-Coder-V2.5-Dev",
+        "file": "KAT-Coder-V2.5-Dev-APEX-I-Compact.gguf",
+        "script": "kat.sh",
     },
 ]
 

@@ -62,6 +62,8 @@ _core_module = None
 
 
 class InlineSpinner:
+    _has_prefilled: bool = False
+
     def __init__(self, chars: tuple[str, ...] | list[str] | str = ("✦ [∿ · ·]", "✦ [· ∿ ·]", "✦ [· · ∿]", "✦ [· ∿ ·]")) -> None:
         self.chars = chars
         self.active = False
@@ -123,7 +125,11 @@ class InlineSpinner:
 
     def start(self, message: str = "Thinking...") -> None:
         with self._lock:
-            self.message = message
+            if not InlineSpinner._has_prefilled:
+                self.message = "Prefilling..."
+                InlineSpinner._has_prefilled = True
+            else:
+                self.message = message
             if not self.active:
                 self.active = True
                 self.start_time = time.time()

@@ -35,6 +35,8 @@
 
 ```properties
 # --- Workspaces ---
+ai init ~/.config/py-agent/projects/ornith ---> ornith
+ai init ~/.config/py-agent/projects/katcoder ---> katcoder
 ai init ~/.config/py-agent/projects/nex-n2 ---> nex-n2, nex n2
 ai init ~/.config/py-agent/projects/qwen2b ---> qwen2b
 ai init ~/.config/py-agent/projects/deepseek ---> deepseek-v4
