@@ -1,12 +1,5 @@
-<div align="center">
-<sub>**New in v0.9.9.31:** Established a **Dual-Mode Tool Architecture** recognizing that Sub-27B models require deterministic native tools (`SMOL_TOOLS`) for reliable file operations rather than raw scripting; pruned native tools to 6 core functions (preserving `delegate()` strictly for `/py`); added 1-shot **`/hs` (`/hindsight`)** retrospective session memory audits; compressed the entire profile suite into machine-dense directives (~240t–320t); and added `Esc`/`←` back-navigation to the `ai init` selector.</sub>
-</div>
-<br>
-<div align="center">
-<sub>**New in v0.9.9.30:** Added minimal **KV Cache Tracking** (`cch: X%`) across local `llama-server` and cloud backends; streamlined `ipython_mode` (`/py`) to a **Single-Tool Architecture** slashing schema overhead from ~880t down to ~80t; added dynamic **Tools Inspection** in `ai init` (`ipython`, `native json`, `index-map`); fixed trailing SSE usage packet capture; and added an interactive **Project Creator** (`tools/new-project` / `newp`).</sub>
-</div>
-<br><br>
-
+<br> 
+ 
 <div align="center">
   <img alt="py-agent" src="logo.svg" height="125" />
   <h1>py-agent</h1>
@@ -18,6 +11,10 @@
     <a href="https://github.com/j5onrf/py-agent/blob/main/LICENSE"><img src="https://shieldcn.dev/badge/license-MIT-green.svg" alt="License"></a>
     <a href="https://shieldcn.dev/badge/status-beta-blue.svg"><img src="https://shieldcn.dev/badge/status-beta-blue.svg" alt="Status"></a>
   </p>
+
+<br>
+
+---
 
   <p>
     <code>gguf</code> &nbsp;•&nbsp; <code>llama.cpp</code> &nbsp;•&nbsp; <code>gemini</code> &nbsp;•&nbsp; <code>huggingface</code> &nbsp;•&nbsp; <code>openrouter</code>
@@ -408,13 +405,13 @@ AI_MAX_TOKENS="8192"
 
 <h2 align="center">Roadmap to v1.0.0</h2>
 
-- [x] <sub>**Modular Sub-27B Adapters & Self-Healing Parser:** Dedicated `agent_adapters.py` handling Hermes XML, DSML, Mistral, and raw function call extraction (`/adp`) for small quantized models.</sub>
-- [x] <sub>**3-Zone Context Compactor with Progress Anchor:** Pi-inspired context compaction (`/com`) preserving completed milestone summaries across context purges.</sub>
-- [x] <sub>**Google Search Grounding (/gnd):** Live web grounding via Gemini Search tool with automatic DuckDuckGo keyless fallback across CLI, TUI, WebUI, and PyCode.</sub>
-- [x] <sub>**Zero-Trust Hardened Containment:** Non-bypassable interactive `[Y/n]` fallback gate for out-of-bounds access and package management tools (`pip`, `pacman`, `sudo`).</sub>
-- [x] <sub>**Full-Stack Agentic Benchmark Suite:** 7-test `eval-stack` measuring tool accuracy, AST resilience, and turn efficiency (Par).</sub>
-- [ ] <sub>**PyBot Integration ([AkeruBot](https://github.com/opencoredev/akeru-bot) Plugin):** Embedded web assistant & customizable agent widget plugin.</sub>
-- [ ] <sub>**v1.0.0 Production Release Tag!**</sub>
+- [x] **Modular Sub-27B Adapters & Self-Healing Parser:** Dedicated `agent_adapters.py` handling Hermes XML, DSML, Mistral, and raw function call extraction (`/adp`) for small quantized models.
+- [x] **3-Zone Context Compactor with Progress Anchor:** Pi-inspired context compaction (`/com`) preserving completed milestone summaries across context purges.
+- [x] **Google Search Grounding (/gnd):** Live web grounding via Gemini Search tool with automatic DuckDuckGo keyless fallback across CLI, TUI, WebUI, and PyCode.
+- [x] **Zero-Trust Hardened Containment:** Non-bypassable interactive `[Y/n]` fallback gate for out-of-bounds access and package management tools (`pip`, `pacman`, `sudo`).
+- [x] **Full-Stack Agentic Benchmark Suite:** 7-test `eval-stack` measuring tool accuracy, AST resilience, and turn efficiency (Par).
+- [ ] **PyBot Integration ([AkeruBot](https://github.com/opencoredev/akeru-bot) Plugin):** Embedded web assistant & customizable agent widget plugin.
+- [ ] **v1.0.0 Production Release Tag!**
 
 <br>
 
