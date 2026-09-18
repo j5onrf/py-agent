@@ -10,15 +10,17 @@ spinner_chars=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
 SPINNER_PID=""
 
 start_spinner() {
-    echo -ne "\033[?25l" >&2
-    (
-        local i=0
-        while true; do
-            printf "\r\033[1;32m%s\033[0m Checking for updates & pending pacnew files..." "${spinner_chars[i % 10]}" >&2
-            ((i++)); sleep 0.08
-        done
-    ) &
-    SPINNER_PID=$!
+    if [[ -t 2 && "${AI_CONTEXT_RUN:-0}" != "1" ]]; then
+        echo -ne "\033[?25l" >&2
+        (
+            local i=0
+            while true; do
+                printf "\r\033[1;32m%s\033[0m Checking for updates & pending pacnew files..." "${spinner_chars[i % 10]}" >&2
+                ((i++)); sleep 0.08
+            done
+        ) &
+        SPINNER_PID=$!
+    fi
 }
 
 stop_spinner() {
@@ -27,12 +29,13 @@ stop_spinner() {
         wait "$SPINNER_PID" 2>/dev/null || true
         SPINNER_PID=""
     fi
-    printf "\r\033[2K\r\033[?25h" >&2
+    if [[ -t 2 && "${AI_CONTEXT_RUN:-0}" != "1" ]]; then
+        printf "\r\033[2K\r\033[?25h" >&2
+    fi
 }
 
 trap stop_spinner EXIT INT TERM
 
-# 1. Start loading spinner
 start_spinner
 
 all_updates=""
@@ -40,7 +43,7 @@ repo_summary=""
 total_native_count=0
 total_aur_count=0
 
-# 2. Gather Official / Native Repository Updates
+# 1. Native Updates
 if command -v checkupdates >/dev/null 2>&1; then
     raw_repo=$(checkupdates 2>/dev/null || true)
     if [ -n "$raw_repo" ]; then
@@ -48,7 +51,6 @@ if command -v checkupdates >/dev/null 2>&1; then
         total_native_count=$(echo "$raw_repo" | grep -c -v "^$" || echo "0")
         pkg_names=$(echo "$raw_repo" | awk '{print $1}')
         
-        # Group packages dynamically by repository
         repo_info=$(pacman -Si $pkg_names 2>/dev/null | awk '/^Repository/ {repo=$3} /^Name/ {name=$3; if (!seen[name]) { print repo"|"name; seen[name]=1 } }')
         repos=$(echo "$repo_info" | cut -d'|' -f1 | sort -u)
         for r in $repos; do
@@ -60,13 +62,18 @@ if command -v checkupdates >/dev/null 2>&1; then
         repo_summary="* **Native Repositories**: \`0\` updates (System up to date)\n\n"
     fi
 else
-    repo_summary="* **Native Repositories**: *checkupdates missing (install pacman-contrib)*\n\n"
+    repo_summary="* **Native Repositories**: *checkupdates missing*\n\n"
 fi
 
-# 3. Gather Foreign / AUR Updates
-aur_helper=$(command -v paru 2>/dev/null && echo "paru" || { command -v yay 2>/dev/null && echo "yay"; } || echo "")
-aur_summary=""
+# 2. AUR Updates (Fixed multi-line yay bug)
+aur_helper=""
+if command -v paru >/dev/null 2>&1; then
+    aur_helper="paru"
+elif command -v yay >/dev/null 2>&1; then
+    aur_helper="yay"
+fi
 
+aur_summary=""
 if [ -n "$aur_helper" ]; then
     raw_aur=$($aur_helper -Qua 2>/dev/null || true)
     if [ -n "$raw_aur" ]; then
@@ -78,16 +85,16 @@ if [ -n "$aur_helper" ]; then
         aur_summary="* **AUR ($aur_helper)**: \`0\` updates\n"
     fi
 else
-    aur_summary="* **AUR**: *No helper (yay/paru) detected*\n"
+    aur_summary="* **AUR**: *No helper detected*\n"
 fi
 
-# 4. Check for Unmerged .pacnew Files in /etc
+# 3. Pacnew Files
 pacnew_list=()
 while IFS= read -r -d '' pfile; do
     pacnew_list+=("$pfile")
 done < <(find /etc -maxdepth 4 -name "*.pacnew" -print0 2>/dev/null || true)
 
-# 5. Core System Reboot & Risk Evaluation
+# 4. Reboot Triggers
 reboot_triggers=()
 if echo "$all_updates" | grep -iE "(linux|linux-cachyos|linux-lts|linux-zen|ucode)" >/dev/null 2>&1; then
     reboot_triggers+=("Kernel / Microcode update")
@@ -102,32 +109,36 @@ if echo "$all_updates" | grep -iE "(nvidia|nvidia-utils)" >/dev/null 2>&1; then
     reboot_triggers+=("Nvidia proprietary driver")
 fi
 
-# 6. Keyring Pre-Update Alert Check
+# 5. Keyring Alert
 keyring_alert=""
 if echo "$all_updates" | grep -iE "(archlinux-keyring|cachyos-keyring)" >/dev/null 2>&1; then
-    keyring_alert="⚠️ **KEYRING PRIORITY**: Package keyring update detected. Recommend updating keyrings first to prevent signature verification errors: \`sudo pacman -Sy archlinux-keyring cachyos-keyring\`"
+    keyring_alert="⚠️ **KEYRING PRIORITY**: Update keyrings first: \`sudo pacman -Sy archlinux-keyring cachyos-keyring\`"
 fi
 
-# 7. Filter Spotlight Applications
+# 6. Spotlight Apps
 SPOTLIGHT_REGEX="^(brave|firefox|chromium|zen-browser|librewolf|google-chrome|zed|neovim|code|vscodium|emacs|helix|yt-dlp|linux|linux-lts|linux-zen|linux-cachyos|nvidia|mesa|vulkan-intel|intel-media-driver|pipewire|wireplumber|hyprland|waybar|sway|plasma|gnome|cosmic|systemd|glibc|archlinux-keyring|cachyos-keyring|limine|python|rust|nodejs|docker|ollama|llama|kitty|ghostty)"
 spotlight_raw=""
 if [ -n "$all_updates" ]; then
     spotlight_raw=$(echo "$all_updates" | grep -iE "$SPOTLIGHT_REGEX" || true)
 fi
 
-# 8. Stop spinner
 stop_spinner
 
-# 9. Output Skill Directives and Dynamic Telemetry
-SKILL_FILE="$CFG_DIR/skills/system/update-inspector.md"
-if [ -f "$SKILL_FILE" ]; then
-    cat "$SKILL_FILE"
-    echo ""
-    echo "---"
+# 7. Output Format (AI Context vs. Clean Terminal View)
+if [[ "${AI_CONTEXT_RUN:-0}" == "1" ]]; then
+    SKILL_FILE="$CFG_DIR/skills/system/update-inspector.md"
+    if [ -f "$SKILL_FILE" ]; then
+        cat "$SKILL_FILE"
+        echo ""
+        echo "---"
+        echo ""
+    fi
+    echo "## REAL-TIME UPDATE TELEMETRY"
+else
+    echo "# ARCH LINUX & CACHYOS UPDATE INSPECTOR"
     echo ""
 fi
 
-echo "## REAL-TIME UPDATE TELEMETRY"
 echo "* Total Pending Updates: \`$((total_native_count + total_aur_count))\` (Native: \`$total_native_count\`, AUR: \`$total_aur_count\`)"
 
 if [ ${#reboot_triggers[@]} -gt 0 ]; then
@@ -142,10 +153,9 @@ if [ -n "$keyring_alert" ]; then
 fi
 echo ""
 
-# Configuration Merges (.pacnew)
 if [ ${#pacnew_list[@]} -gt 0 ]; then
     echo "### PENDING CONFIGURATION MERGES (.pacnew)"
-    echo "⚠️ The following unmerged \`.pacnew\` files were found in \`/etc\`. Run \`sudo pacdiff\` to merge before updating:"
+    echo "⚠️ Unmerged \`.pacnew\` files found in \`/etc\`. Run \`sudo pacdiff\` to merge:"
     for pf in "${pacnew_list[@]}"; do
         echo "* \`$pf\`"
     done
@@ -156,7 +166,6 @@ else
     echo ""
 fi
 
-# Spotlight Updates
 if [ -n "$spotlight_raw" ]; then
     echo "### KEY / SPOTLIGHT APPLICATION UPDATES"
     while IFS= read -r line; do
@@ -169,7 +178,6 @@ if [ -n "$spotlight_raw" ]; then
     echo ""
 fi
 
-# Detailed Repository Breakdown
 echo "### REPOSITORY BREAKDOWN"
 echo -e "$repo_summary"
 echo -e "$aur_summary"

@@ -9,72 +9,8 @@ import sys
 import termios
 import tty
 
-# --- Path Configurations ---
-CFG_DIR = os.path.expanduser("~/.config/py-agent")
-TOOLS_DIR = os.path.join(CFG_DIR, "tools", "agentic", "system")
-GENP_BIN = os.path.join(CFG_DIR, "tools", "generate-profile")
-MYSYS_FILE = os.path.join(CFG_DIR, "skills", "system", "mysys.md")
-
-STACK_ITEMS = [
-    {
-        "name": "System Health Inspector",
-        "cmd": [os.path.join(TOOLS_DIR, "system-health")],
-        "desc": "Real-time CPU load, thermals, RAM/ZRAM, root disk, and systemd units",
-        "tag": "HEALTH",
-    },
-    {
-        "name": "Composite System Triage (syscheck)",
-        "cmd": [os.path.join(TOOLS_DIR, "syscheck")],
-        "desc": "Chained execution: Health -> Log Checker -> Update Inspector",
-        "tag": "COMPOSITE",
-    },
-    {
-        "name": "Security & Threat Audit",
-        "cmd": [os.path.join(TOOLS_DIR, "security-audit")],
-        "desc": "Network listeners, SUID scan, SSH perms, and live AUR blacklist",
-        "tag": "SECURITY",
-    },
-    {
-        "name": "Journal & Log Triage",
-        "cmd": [os.path.join(TOOLS_DIR, "log-checker")],
-        "desc": "Incremental cursor triage of systemd crashes and kernel ring-0 alerts",
-        "tag": "LOGS",
-    },
-    {
-        "name": "Arch Update & .pacnew Inspector",
-        "cmd": [os.path.join(TOOLS_DIR, "update-inspector")],
-        "desc": "Checkupdates + paru/yay against Arch news and unmerged pacnew diffs",
-        "tag": "UPDATES",
-    },
-    {
-        "name": "AUR Zero-Trust Package Auditor",
-        "cmd": "interactive_aur",
-        "desc": "Clone & audit untrusted PKGBUILDs, install hooks, and network calls",
-        "tag": "AUR",
-    },
-    {
-        "name": "System Hardware Optimizer",
-        "cmd": [os.path.join(TOOLS_DIR, "system-optimizer")],
-        "desc": "Kernel sysctl, ZRAM swappiness, BBR congestion, and BPF schedulers",
-        "tag": "TUNING",
-    },
-    {
-        "name": "View Architecture Blueprint (mysys.md)",
-        "cmd": ["less", MYSYS_FILE],
-        "desc": "Static hardware specification used to ground AI suggestions",
-        "tag": "BLUEPRINT",
-    },
-    {
-        "name": "Regenerate Hardware Blueprint (genp)",
-        "cmd": [GENP_BIN],
-        "desc": "Re-scan hardware, kernel, driver, and mounts to update mysys.md",
-        "tag": "REFRESH",
-    },
-]
-
-
+# --- TTY Stream Acquisition ---
 def _get_tty_streams():
-    """Acquires raw /dev/tty streams to prevent breakage if piped in shell."""
     try:
         t_in = open("/dev/tty", "r")
     except OSError:
@@ -88,9 +24,92 @@ def _get_tty_streams():
 
 tty_in, tty_out = _get_tty_streams()
 
+# --- Rich Import & Detection ---
+try:
+    from rich.console import Console
+    from rich.markdown import Markdown
+    HAS_RICH = True
+    console = Console(file=tty_out, force_terminal=True)
+except ImportError:
+    HAS_RICH = False
+    console = None
+
+# --- Path Configurations ---
+CFG_DIR = os.path.expanduser("~/.config/py-agent")
+SYSTEM_DIR = os.path.join(CFG_DIR, "tools", "agentic", "system")
+TOOLS_DIR = SYSTEM_DIR if os.path.isdir(SYSTEM_DIR) else os.path.dirname(os.path.abspath(__file__))
+
+GENP_BIN = os.path.join(CFG_DIR, "tools", "generate-profile")
+MYSYS_FILE = os.path.join(CFG_DIR, "skills", "system", "mysys.md")
+
+STACK_ITEMS = [
+    {
+        "name": "System Health Inspector",
+        "cmd": [os.path.join(TOOLS_DIR, "system-health")],
+        "desc": "Real-time CPU load, thermals, RAM/ZRAM, root disk, and systemd units",
+        "tag": "HEALTH",
+        "markdown": True,
+    },
+    {
+        "name": "Composite System Triage (syscheck)",
+        "cmd": [os.path.join(TOOLS_DIR, "syscheck")],
+        "desc": "Chained execution: Health -> Log Checker -> Update Inspector",
+        "tag": "COMPOSITE",
+        "markdown": True,
+    },
+    {
+        "name": "Security & Threat Audit",
+        "cmd": [os.path.join(TOOLS_DIR, "security-audit")],
+        "desc": "Network listeners, SUID scan, SSH perms, and live AUR blacklist",
+        "tag": "SECURITY",
+        "markdown": True,
+    },
+    {
+        "name": "Journal & Log Triage",
+        "cmd": [os.path.join(TOOLS_DIR, "log-checker")],
+        "desc": "Incremental cursor triage of systemd crashes and kernel ring-0 alerts",
+        "tag": "LOGS",
+        "markdown": True,
+    },
+    {
+        "name": "Arch Update & .pacnew Inspector",
+        "cmd": [os.path.join(TOOLS_DIR, "update-inspector")],
+        "desc": "Checkupdates + paru/yay against Arch news and unmerged pacnew diffs",
+        "tag": "UPDATES",
+        "markdown": True,
+    },
+    {
+        "name": "AUR Zero-Trust Package Auditor",
+        "cmd": "interactive_aur",
+        "desc": "Clone & audit untrusted PKGBUILDs, install hooks, and network calls",
+        "tag": "AUR",
+        "markdown": False,
+    },
+    {
+        "name": "System Hardware Optimizer",
+        "cmd": [os.path.join(TOOLS_DIR, "system-optimizer")],
+        "desc": "Kernel sysctl, ZRAM swappiness, BBR congestion, and BPF schedulers",
+        "tag": "TUNING",
+        "markdown": True,
+    },
+    {
+        "name": "View Architecture Blueprint (mysys.md)",
+        "cmd": "view_mysys",
+        "desc": "Static hardware specification used to ground AI suggestions",
+        "tag": "BLUEPRINT",
+        "markdown": True,
+    },
+    {
+        "name": "Regenerate Hardware Blueprint (genp)",
+        "cmd": [GENP_BIN],
+        "desc": "Re-scan hardware, kernel, driver, and mounts to update mysys.md",
+        "tag": "REFRESH",
+        "markdown": False,
+    },
+]
+
 
 def check_mysys_drift() -> tuple[str, str]:
-    """Checks if active running kernel matches mysys.md specification."""
     if not os.path.isfile(MYSYS_FILE):
         return "\033[1;31mMISSING\033[0m", "Run 'generate profile' to initialize"
 
@@ -123,6 +142,9 @@ def get_key_non_blocking(timeout: float = 0.5) -> str | None:
         if not ch_bytes:
             return None
 
+        if ch_bytes == b"\x03":
+            return "esc"
+
         ch = ch_bytes.decode("utf-8", errors="ignore")
         if ch == "\x1b":
             rlist_seq, _, _ = select.select([fd], [], [], 0.05)
@@ -139,6 +161,10 @@ def get_key_non_blocking(timeout: float = 0.5) -> str | None:
             return "esc"
         elif ch in ("\r", "\n"):
             return "enter"
+        elif ch in ("\x7f", "\x08"):
+            return "backspace"
+        elif ch == " ":
+            return "space"
         elif ch.lower() in ("q", "k", "j"):
             return ch.lower()
         elif ch.isdigit():
@@ -149,9 +175,18 @@ def get_key_non_blocking(timeout: float = 0.5) -> str | None:
 
 
 def pause_terminal():
-    tty_out.write("\n\033[90m:: Press any key to return to System Stack menu...\033[0m")
+    try:
+        termios.tcflush(tty_in.fileno(), termios.TCIFLUSH)
+    except Exception:
+        pass
+
+    tty_out.write("\n\033[90m:: Press Enter to return to menu (or Esc/q)...\033[0m\n")
     tty_out.flush()
-    get_key_non_blocking(timeout=3600.0)
+
+    while True:
+        k = get_key_non_blocking(timeout=0.2)
+        if k is not None and k in ("enter", "esc", "backspace", "space", "q", "\r", "\n"):
+            break
 
 
 def draw_menu(selected: int):
@@ -202,7 +237,20 @@ def run_target(item: dict):
 
     cmd = item["cmd"]
 
-    if cmd == "interactive_aur":
+    if cmd == "view_mysys":
+        if os.path.isfile(MYSYS_FILE):
+            with open(MYSYS_FILE, "r", encoding="utf-8") as f:
+                content = f.read()
+            if HAS_RICH:
+                console.print(Markdown(content))
+            else:
+                tty_out.write(content + "\n")
+            pause_terminal()
+        else:
+            tty_out.write("\033[1;31mBlueprint file not found. Run option 9 to generate.\033[0m\n")
+            pause_terminal()
+
+    elif cmd == "interactive_aur":
         tty_out.write("\033[1;36m==> Enter AUR package name to audit: \033[0m")
         tty_out.flush()
         pkg = tty_in.readline().strip()
@@ -213,13 +261,17 @@ def run_target(item: dict):
             else:
                 tty_out.write(f"\033[1;31mTool not found: {aur_bin}\033[0m\n")
         pause_terminal()
+
     else:
         if isinstance(cmd, list) and os.path.isfile(cmd[0]):
-            subprocess.run(cmd, stdin=tty_in, stdout=tty_out, stderr=tty_out)
-            if cmd[0] != "less":
-                pause_terminal()
-        elif isinstance(cmd, list) and cmd[0] == "less" and os.path.isfile(cmd[1]):
-            subprocess.run(cmd, stdin=tty_in, stdout=tty_out, stderr=tty_out)
+            if item.get("markdown") and HAS_RICH:
+                res = subprocess.run(cmd, capture_output=True, text=True)
+                output = (res.stdout or res.stderr or "").strip()
+                if output:
+                    console.print(Markdown(output))
+            else:
+                subprocess.run(cmd, stdin=tty_in, stdout=tty_out, stderr=tty_out)
+            pause_terminal()
         else:
             tty_out.write(f"\033[1;31mCommand not found: {cmd}\033[0m\n")
             pause_terminal()
@@ -265,7 +317,7 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        tty_out.write("\x1b[?25h")
-        tty_out.flush()
+        sys.stdout.write("\x1b[?25h")
+        sys.stdout.flush()
         os.system("stty sane 2>/dev/null")
         sys.exit(0)
