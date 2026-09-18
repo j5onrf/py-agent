@@ -31,16 +31,7 @@
 ~/.config/py-agent/tools/evals/eval-stack --->  eval stack, eval-stack
 ```
 
-## 2. Plugins
-
-```properties
-# --- Index Map ---
-[TOOL] ~/.config/py-agent/tools/index-map/index-map --cat ---> index map, imap
-# --- PyCode Setup & Build ---
-~/.config/py-agent/plugins/pycode/setup.sh ---> install-pycode, setup-pycode, setup pycode
-```
-
-## 3. Projects
+## 2. Projects
 
 ```properties
 # --- Workspaces ---
@@ -54,13 +45,56 @@ ai init ~/.config/py-agent/projects/minicpm ---> minicpm
 ai init ~/.config/py-agent/projects/session-test ---> session test, projects session
 ```
 
-## 4 System & Health
+## 3. Plugins
+
+```properties
+# --- PyCode Setup & Build ---
+~/.config/py-agent/plugins/pycode/setup.sh ---> install-pycode, setup-pycode, setup pycode
+# --- Model Context Protocol (MCP) ---
+~/.config/py-agent/plugins/mcp/mcp_client.py list ---> mcp list, mcp tools, mcpl
+~/.config/py-agent/plugins/mcp/mcp_client.py schemas ---> mcp schemas, mcp export
+# Fetch: fetch <url> — Fast standard URL markdown scraper. Example: fetch https://docs.python.org/3
+[TOOL] ~/.config/py-agent/plugins/mcp/mcp_client.py fetch ---> fetch, mcp fetch
+[TOOL] ~/.config/py-agent/plugins/mcp/mcp_client.py call sqlite query ---> mcp sqlite, query db
+# Context7: docs <libraryId> <query> — Injects official markdown API docs into context. Example: docs /vercel/next.js middleware
+[TOOL] ~/.config/py-agent/plugins/mcp/mcp_client.py docs ---> context7, get docs
+# Firecrawl Scrape: scrape <url> — Bypasses JS/anti-bot to extract clean markdown. Example: scrape https://react.dev/reference/react
+[TOOL] ~/.config/py-agent/plugins/mcp/mcp_client.py scrape ---> firecrawl scrape
+# Firecrawl Search: search <query> — Web search + markdown extraction in 1 step. Example: search llama.cpp metal performance
+[TOOL] ~/.config/py-agent/plugins/mcp/mcp_client.py search ---> firecrawl search
+```
+
+## 4. Apps (Tools & Utilities)
+
+```properties
+# --- Index Map ---
+[TOOL] ~/.config/py-agent/tools/index-map/index-map --cat ---> index map, imap
+# --- eval-agent (HumanEval Benchmark) ---
+~/.config/py-agent/tools/evals/eval-agent ---> eval-agent, eval agent
+# --- Weather ---
+[TOOL] curl -s "wttr.in/?format=3" --cat ---> weather simple, get weather
+[TOOL] curl -s wttr.in --cat ---> weather full, get weather
+# --- Time & Date ---
+[TOOL] date "+Current System Date, Time: %-I %M %p on %A, %B %-d, %Y" ---> get date, get time
+# --- APPS Stopwatch ---
+~/.config/py-agent/tools/subsec/apps/stopwatch/stopwatch.py ---> stopwatch app
+# --- APPS Media ---
+~/.config/py-agent/tools/subsec/apps/media/media.py ---> tuiamp app, tuiamp
+# --- Email TUI ---
+~/.config/py-agent/tools/email/email-agent ---> email agent
+# --- AI Commit ---
+~/.config/py-agent/tools/agentic/system/ai-commit ---> ai-commit, gc, git commit
+# --- Hyprland State ---
+~/.config/py-agent/tools/subsec/hyprstate/work ---> hyprstate work, hyprwork
+~/.config/py-agent/tools/subsec/hyprstate/gitcom ---> hyprstate gitcom, gitcom
+```
+
+## 5 System & Health
 
 ```properties
 # --- System Profile ---
 [TOOL] cat ~/.config/py-agent/skills/system/mysys.md --s ---> mysys
 [TOOL] ~/.config/py-agent/tools/generate-profile ---> generate profile, genp
-
 # --- System Health ---
 [TOOL] ~/.config/py-agent/tools/agentic/system/system-health --s ---> system health, sysh
 # --- Log Checker ---
@@ -73,33 +107,4 @@ ai init ~/.config/py-agent/projects/session-test ---> session test, projects ses
 [TOOL] ~/.config/py-agent/tools/agentic/system/system-optimizer ---> system optimizer, sysop
 # --- Update Inspector ---
 [TOOL] ~/.config/py-agent/tools/agentic/system/update-inspector --s ---> update inspector
-# --- Composite System Triage ---
-[TOOL] ~/.config/py-agent/tools/agentic/system/system-health --s && ~/.config/py-agent/tools/agentic/system/log-checker --s && ~/.config/py-agent/tools/agentic/system/update-inspector --s ---> triage, full check, syscheck
 ```
-
-## 5. TUI Apps
-
-```properties
-# --- APPS Stopwatch ---
-~/.config/py-agent/tools/subsec/apps/stopwatch/stopwatch.py ---> stopwatch app
-# --- APPS Media ---
-~/.config/py-agent/tools/subsec/apps/media/media.py ---> tuiamp app
-# --- Email TUI ---
-~/.config/py-agent/tools/email/email-agent ---> email agent
-# --- Hyprland State ---
-~/.config/py-agent/tools/subsec/hyprstate/work ---> hyprstate work, hyprwork
-~/.config/py-agent/tools/subsec/hyprstate/gitcom ---> hyprstate gitcom, gitcom
-```
-
-## 5. Tools & Utilities
-
-```properties
-# --- eval-agent (HumanEval Benchmark) ---
-~/.config/py-agent/tools/evals/eval-agent ---> eval-agent, eval agent
-# --- AI Commit ---
-~/.config/py-agent/tools/agentic/system/ai-commit ---> ai-commit, gc, git commit
-# --- Weather ---
-[TOOL] curl -s "wttr.in/?format=3" --cat ---> weather simple, get weather
-[TOOL] curl -s wttr.in --cat ---> weather full, get weather
-# --- Time & Date ---
-[TOOL] date "+Current System Date, Time: %-I %M %p on %A, %B %-d, %Y" ---> get date, get time

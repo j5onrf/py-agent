@@ -341,7 +341,7 @@ GEMINI_MODEL="gemini-3.5-flash-lite"
 # OPENROUTER_API_KEY="sk-or-v1-YourOpenRouterKeyHere"
 OPENROUTER_MODEL="openrouter/free"
 
-# ── Auxiliary Services (Independent Toggles) ──────────────────────────────────
+# ── Auxiliary Services (Independent Toggles) (Optional) ───────────────────────
 
 # Google Search Grounding (/gnd)
 # GND_KEY="AIzaSyYourGeminiApiKeyHere"
@@ -354,6 +354,11 @@ OPENROUTER_MODEL="openrouter/free"
 # Multimodal Vision OCR (Pre-processor for text-only local models)
 # IMG_VOICE="AIzaSyYourGeminiApiKeyHere"
 # IMG_MODEL="gemini-3.5-flash-lite"
+
+# ── Model Context Protocol (MCP) (Optional) ───────────────────────────────────
+
+# Firecrawl Scrape & Search
+# FIRECRAWL_API_KEY="fc-your-actual-api-key"
 
 # ── Context Window Budget ─────────────────────────────────────────────────────
 AI_MAX_TOKENS="8192"
