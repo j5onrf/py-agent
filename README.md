@@ -55,10 +55,6 @@
 
 ---
 
-<div align="center">
-  <p><sub>Customize box themes with <code>/box [1-8]</code>. For detailed workflows, read the <a href="projects/Readme.md"><b>Workspace Manual</b></a>.</sub></p>
-</div>
-
 ```console
 ~ ❯ ai
 ╭─  Py Agent  ─────────────╮
@@ -71,6 +67,10 @@
 ❯ █
 ```
 
+<div align="center">
+  <p><sub>Customize box themes with <code>/box [1-8]</code>. For detailed workflows, read the <a href="projects/Readme.md"><b>Workspace Manual</b></a>.</sub></p>
+</div>
+
 <br>
 
 ---
@@ -78,145 +78,59 @@
 <h2 align="center">Execution Surfaces</h2>
 
 <div align="center">
-  <table>
-    <thead>
-      <tr>
-        <th align="left">Mode</th>
-        <th align="center">Command</th>
-        <th align="left">Operational Scope & Capabilities</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>⚡ <b>Direct Shell</b></td>
-        <td align="center"><code>&lt;space&gt; [query]</code></td>
-        <td>Sub-millisecond intent matching via <a href="ai-context.md"><code>ai-context.md</code></a>.</td>
-      </tr>
-      <tr>
-        <td>💬 <b>Single Query</b></td>
-        <td align="center"><code>ai "&lt;query&gt;"</code></td>
-        <td>Single-shot command execution and streamed responses.</td>
-      </tr>
-      <tr>
-        <td>🧠 <b>Multi-Turn Chat</b></td>
-        <td align="center"><code>ai</code></td>
-        <td>Interactive session with persistent memory and profile routing.</td>
-      </tr>
-      <tr>
-        <td>🛠️ <b>Workspace Agent</b></td>
-        <td align="center"><code>ai init [path]</code></td>
-        <td>Codebase index-map, surgical file editing (<code>edit_file</code>), tools and loops.</td>
-      </tr>
-      <tr>
-        <td>📊 <b>Agentic Benchmark</b></td>
-        <td align="center"><code>eval-stack</code></td>
-        <td>7-test decision-grade benchmark measuring tool accuracy, AST resilience, and par efficiency.</td>
-      </tr>
-      <tr>
-        <td>🌐 <b>llama.cpp WebAgent</b></td>
-        <td align="center"><code>/webui</code></td>
-        <td>Tool-enabled web gateway on official <code>llama-server</code> UI.</td>
-      </tr>
-    </tbody>
-  </table>
+
+| Command | Mode | Operational Scope |
+| :--- | :--- | :--- |
+| `<space> [query]` | **Direct Shell** | Sub-millisecond intent matching via [`ai-context.md`](ai-context.md) |
+| `ai "<query>"` | **Single Query** | Single-shot command execution and streamed response |
+| `ai` | **Interactive** | Multi-turn chat session with persistent memory and profile routing |
+| `ai init [path]` | **Workspace Agent** | Codebase index-map, surgical diffing (`edit_file`), and task loops |
+| `eval-stack` | **Agentic Benchmark** | 7-test decision-grade suite measuring tool par and accuracy |
+| `/webui` | **Web Gateway** | Autonomous tool reverse proxy for official `llama-server` UI |
+
 </div>
+
+<p align="center">
+  <sub><b>Session Hotkeys:</b> <code>/compact</code> 3-zone context prune &nbsp;•&nbsp; <code>/adp</code> toggle adapters &nbsp;•&nbsp; <code>/py</code> in-memory REPL &nbsp;•&nbsp; <code>/gnd</code> search grounding &nbsp;•&nbsp; <code>/hs</code> memory audit</sub>
+</p>
 
 <br>
 
 ---
 
-<h2 align="center">Benchmark & Efficiency Architecture</h2>
+<h2 align="center">Runtime Architecture</h2>
 
-<div align="center">
-  <p>
-    <b>Scope to Single Tasks:</b> Focus on 1 file or objective per turn for maximum accuracy.<br>
-    <b>Use Native Tools (<code>Py: OFF</code>):</b> Small models are fastest with the 6 native tools (<code>SMOL_TOOLS</code>).
-  </p>
+* **Hardened Containment:** Non-bypassable `[y/N]` confirmation gates for system-mutating commands (`sudo`, `pacman`, `pip`, `systemctl`) and out-of-bounds file access—even in YOLO mode.
+* **Git-Native Memory:** Plain Markdown directives in `.agent/memory/*.md` loaded in `<0.1ms`. Fully auditable and human-editable in `nvim` or `code` with zero database overhead.
+* **Self-Healing Adapters (`/adp`):** Out-of-band argument normalizer repairing malformed JSON and bracket syntax on small models without burning turn retries or polluting context prompts.
+* **Deterministic Diffing:** 3-stage resilient replacement (`Exact` &rarr; `Whitespace` &rarr; `88% Fuzzy`) verified by Python AST syntax guards before disk writes to eliminate corruption.
 
-  <br>
+<br>
 
-  <table>
-    <thead>
-      <tr>
-        <th align="left">Sub-27B Challenge</th>
-        <th align="center">Without Adapters</th>
-        <th align="center">With <code>/adp</code> Active</th>
-        <th align="left">Efficiency Gain</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td><b>AG-03 (Surgical Edit & Test)</b></td>
-        <td align="center">16 turns</td>
-        <td align="center"><b>6 turns</b></td>
-        <td><b>62% fewer turns</b> (eliminates diff-retry loops)</td>
-      </tr>
-      <tr>
-        <td><b>AG-07 (In-Memory Batch Loop)</b></td>
-        <td align="center">14 turns</td>
-        <td align="center"><b>2 turns</b></td>
-        <td><b>85% fewer turns</b> (executes batch script on Turn 1)</td>
-      </tr>
-      <tr>
-        <td><b>Full Suite Pass Rate</b></td>
-        <td align="center">Retries / Failures</td>
-        <td align="center"><b>100% (7/7)</b></td>
-        <td><b>Zero unhandled syntax or format failures</b></td>
-      </tr>
-    </tbody>
-  </table>
+---
 
-  <br>
+<h2 align="center">Benchmark & Efficiency</h2>
 
-  <table>
-    <thead>
-      <tr>
-        <th align="left">Operational Tier</th>
-        <th align="center">Py-Agent</th>
-        <th align="center">DeepSeek (<code>dsh</code>)</th>
-        <th align="left">Comparison & Capabilities</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td><b>Pure Chat</b></td>
-        <td align="center"><b>211 tokens</b> (<code>ai</code>)</td>
-        <td align="center">~450+ tokens</td>
-        <td>Conversational Q&A with confirmation command gates.</td>
-      </tr>
-      <tr>
-        <td><b>Native Core</b></td>
-        <td align="center"><b>~680 tokens</b> (<code>SMOL_TOOLS</code>)</td>
-        <td align="center">~632 tokens</td>
-        <td><b>True parity.</b> Surgical file edits, code search & shell verification.</td>
-      </tr>
-      <tr>
-        <td><b>Dual Mode</b></td>
-        <td align="center"><b>~760 tokens</b> (<code>python + native</code>)</td>
-        <td align="center">~1,200+ tokens</td>
-        <td><b>~40% fewer tokens.</b> In-memory testing + deterministic edits with <b>~95% cache hits</b>.</td>
-      </tr>
-      <tr>
-        <td><b>Full Graph</b></td>
-        <td align="center"><b>~1,100 tokens</b> (11 tools + AST)</td>
-        <td align="center">2,500–4,000+ tokens</td>
-        <td><b>Up to 3x fewer tokens.</b> Complete relational SQLite FTS5 symbol & impact graph.</td>
-      </tr>
-      <tr>
-        <td><b>Idle Footprint</b></td>
-        <td align="center"><b>0% CPU / 0 MB RAM</b></td>
-        <td align="center">Node.js Active</td>
-        <td>Standard Python execution; no background daemons or idle processes.</td>
-      </tr>
-    </tbody>
-  </table>
+<p align="center">
+  <sub>Synthesizing battle-tested patterns from <b>Pi</b> (3-zone context compaction), <b>SmallCoder</b> (resilient 3-stage AST diffs),<br>
+  <b>Unsloth AI</b> (out-of-band schema healing), and <b>OKF</b> (git-native persistent memory).</sub>
+</p>
 
-  <br>
+| Sub-27B Challenge | Without Adapters | With `/adp` Active | Efficiency Gain |
+| :--- | :---: | :---: | :--- |
+| **AG-03 (Surgical Edit & Test)** | 16 turns | **6 turns** | **62% fewer turns** (eliminates diff-retry loops) |
+| **AG-07 (In-Memory Batch Loop)** | 14 turns | **2 turns** | **85% fewer turns** (executes batch script on Turn 1) |
+| **Full Suite Pass Rate** | Retries / Failures | **100% (7/7)** | **Zero unhandled syntax or format failures** |
 
-  <p>
-    <sub><b>Tiers:</b> Pure Chat (<code>ai</code>, 211t) • Native Mode (6 tools, ~680t) • Dual Mode (7 tools, ~760t) • Index-Map (11 tools, ~1.1kt) <br> OKF Memory (<code>.agent/memory/*.md</code>) 1-shot <code>/hs</code> retrospective audits.</sub>
-  </p>
-</div>
+<br>
+
+| Operational Tier | Py-Agent | DeepSeek (`dsh`) | Comparison & Capabilities |
+| :--- | :---: | :---: | :--- |
+| **Pure Chat** | **211 tokens** (`ai`) | ~450+ tokens | Conversational Q&A with confirmation command gates |
+| **Native Core** | **~680 tokens** (`SMOL_TOOLS`) | ~632 tokens | Surgical file edits, code search & shell verification |
+| **Dual Mode** | **~760 tokens** (`python + native`) | ~1,200+ tokens | **~40% fewer tokens.** In-memory testing with **~95% cache hits** |
+| **Full Graph** | **~1,100 tokens** (11 tools + AST) | 2,500–4,000+ tokens | **Up to 3x fewer tokens.** Complete relational SQLite FTS5 symbol graph |
+| **Idle Overhead** | **0% CPU / 0 MB RAM** | Node.js Active | Direct process lifecycle; zero persistent background services |
 
 <br>
 
@@ -225,7 +139,7 @@
 <h2 align="center">Client Surfaces & Environments</h2>
 
 <p align="center">
-  Py-Agent is surface-agnostic. Switch seamlessly between the terminal, web gateway, and desktop IDE:
+  Py-Agent is surface-agnostic. Switch seamlessly between terminal, web gateway, and desktop IDE:
 </p>
 
 <div align="center">
@@ -350,55 +264,16 @@ AI_MAX_TOKENS="8192"
 
 </details>
 
-### 3. Optional Client Surfaces
-
-<div align="center">
-  <table>
-    <thead>
-      <tr>
-        <th align="left">Surface</th>
-        <th align="center">Setup / Command</th>
-        <th align="left">System Requirements</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td><b>Desktop IDE (<a href="https://github.com/j5onrf/pycode">PyCode</a>)</b></td>
-        <td align="center"><code>install-pycode</code></td>
-        <td>Node.js 20+, pnpm</td>
-      </tr>
-      <tr>
-        <td><b>Textual PyTUI</b></td>
-        <td align="center"><code>sudo pacman -S python-textual python-uvloop</code></td>
-        <td>uvloop (zero C-extension RAG dependencies)</td>
-      </tr>
-      <tr>
-        <td><b>Voice-to-Text Bridge</b></td>
-        <td align="center"><code>/v</code> (or <code>/v auto</code> on <code>:9999</code>)</td>
-        <td><code>wtype</code>, <code>openssl</code>, and <code>GEM_VOICE</code> in <code>.env</code></td>
-      </tr>
-      <tr>
-        <td><b>Neural Kokoro TTS</b></td>
-        <td align="center"><code>/tts</code></td>
-        <td><code>yay -S koko-bin pw-play wl-clipboard</code></td>
-      </tr>
-    </tbody>
-  </table>
-</div>
-
 <br>
 
 ---
 
 <h2 align="center">Roadmap to v1.0.0</h2>
 
-- [x] **Modular Sub-27B Adapters & Self-Healing Parser:** Dedicated `agent_adapters.py` handling Hermes XML, DSML, Mistral, and raw function call extraction (`/adp`) for small quantized models.
-- [x] **3-Zone Context Compactor with Progress Anchor:** Pi-inspired context compaction (`/com`) preserving completed milestone summaries across context purges.
-- [x] **Google Search Grounding (/gnd):** Live web grounding via Gemini Search tool with automatic DuckDuckGo keyless fallback across CLI, TUI, WebUI, and PyCode.
-- [x] **Zero-Trust Hardened Containment:** Non-bypassable interactive `[Y/n]` fallback gate for out-of-bounds access and package management tools (`pip`, `pacman`, `sudo`).
-- [x] **Full-Stack Agentic Benchmark Suite:** 7-test `eval-stack` measuring tool accuracy, AST resilience, and turn efficiency (Par).
-- [ ] **PyBot Integration ([AkeruBot](https://github.com/opencoredev/akeru-bot) Plugin):** Embedded web assistant & customizable agent widget plugin.
-- [ ] **v1.0.0 Production Release Tag!**
+* **Modular Sub-27B adapters:**  (`/adp`), 3-zone context compactor with progress anchors (`/com`), live web grounding (`/gnd`), zero-trust containment gates, and 7-test decision-grade agentic benchmark (`eval-stack`).
+* **Possible Horizons:** Embedded PyBot ([AkeruBot](https://github.com/opencoredev/akeru-bot)) Embedded AkeruBot agent widget and web gateway.
+* **Adaptive Context Slicing:**</b> Automated tool schema reduction for small windows</sub><br>
+* **v1.0.0 Production Release Tag**
 
 <br>
 
@@ -407,6 +282,7 @@ AI_MAX_TOKENS="8192"
 <h2 align="center">Documentation & License</h2>
 
 * **<a href="projects/Readme.md">Workspace & Session Manual</a>**
-* **<a href="modules/Readme.md">System Architecture</a>**
+* **<a href="modules/Readme.md">System Architecture & Lineage</a>**
 * **License**: Licensed under the permissive [MODIFIED MIT LICENSE](LICENSE)
 * **Community:** Contributions are always welcome!
+
