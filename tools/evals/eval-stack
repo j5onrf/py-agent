@@ -19,6 +19,7 @@ import tty
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
 MODULES_DIR = os.path.join(CFG_DIR, "modules")
 RESULTS_LOG = os.path.join(CFG_DIR, "tools", "evals", "eval_history.json")
+FAILURES_LOG = os.path.join(CFG_DIR, "tools", "evals", "last_failure_trace.log")
 
 if MODULES_DIR not in sys.path:
     sys.path.insert(0, MODULES_DIR)
@@ -326,6 +327,26 @@ def get_current_model_info() -> tuple[str, str]:
     return ui.get_local_model_name(), "http://127.0.0.1:8080"
 
 
+def _log_failure_trace(bench: dict, model_name: str, profile_name: str, messages: list, captured_stdout: str, sandbox_dir: str):
+    try:
+        os.makedirs(os.path.dirname(FAILURES_LOG), exist_ok=True)
+        with open(FAILURES_LOG, "a", encoding="utf-8") as f:
+            f.write(f"\n{'='*80}\n")
+            f.write(f"FAILED TEST: {bench['id']} - {bench['name']}\n")
+            f.write(f"MODEL: {model_name} | PROFILE: {profile_name}\n")
+            f.write(f"TIMESTAMP: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"{'='*80}\n\n")
+            f.write("--- MESSAGE / TOOL CALL HISTORY ---\n")
+            for m in messages:
+                role = m.get("role", "unknown").upper()
+                content = m.get("content", "")
+                f.write(f"[{role}]:\n{content}\n\n")
+            f.write("--- CAPTURED AGENT TURNS & STDERR ---\n")
+            f.write(captured_stdout + "\n")
+    except Exception:
+        pass
+
+
 def run_single_agentic_test(bench: dict, model_name: str, profile_prompt: str) -> tuple[bool, float, int, int, str]:
     orig_cwd = os.getcwd()
     sandbox_dir = tempfile.mkdtemp(prefix="agent_eval_")
@@ -366,6 +387,8 @@ def run_single_agentic_test(bench: dict, model_name: str, profile_prompt: str) -
         turn_count = len([m for m in messages if m.get("role") in ("assistant", "tool")])
         total_tokens = sum(core.get_accurate_token_count(m.get("content") or "") for m in messages)
         passed = bench["verify_fn"](sandbox_dir, response or "")
+        if not passed:
+            _log_failure_trace(bench, model_name, profile_prompt, messages, sink.getvalue(), sandbox_dir)
         par_val = bench.get("par_turns", turn_count)
         detail = f"{elapsed:.2f}s ({turn_count}/{par_val}t)" if passed else "State verification failed"
         return passed, elapsed, turn_count, total_tokens, detail
@@ -389,6 +412,10 @@ def main():
         "[dim]Decision-grade evaluation: Par efficiency, token economy, tool resilience, and execution speed[/dim]",
         border_style="cyan"
     ))
+
+    if os.path.isfile(FAILURES_LOG):
+        with contextlib.suppress(OSError):
+            os.remove(FAILURES_LOG)
 
     model_name, endpoint = get_current_model_info()
     is_py_enabled = bool(core.get_state("ipython_mode", False))

@@ -45,6 +45,12 @@ LOCAL_MODELS = [
         "script": "lfm2.sh",
     },
     {
+        "name": "Tini-Cybersec-8B-A1B (MoE)",
+        "alias": "Tini-Cybersec-8B-A1B",
+        "file": "iselabvn_Tini-Cybersec-8B-A1B-Q5_K_M.gguf",
+        "script": "tini.sh",
+    },
+    {
         "name": "Ling-3.0-tiny-abliterated-APEX-I-Compact",
         "alias": "Ling-3.0-tiny",
         "file": "Ling-3.0-tiny-abliterated-APEX-I-Compact.gguf",
@@ -61,6 +67,18 @@ LOCAL_MODELS = [
         "alias": "KAT-Coder-V2.5-Dev",
         "file": "KAT-Coder-V2.5-Dev-APEX-I-Compact.gguf",
         "script": "kat.sh",
+    },
+    {
+        "name": "Ornith-1.5-35B-A3B-APEX-I-Compact (16.5gb)",
+        "alias": "Ornith-1.5-35B-A3B",
+        "file": "Ornith-1.5-35B-A3B-APEX-I-Compact.gguf",
+        "script": "ornith.sh",
+    },
+    {
+        "name": "Occamy-1.0-APEX-I-MiniPlus-V2.1 (14.7gb)",
+        "alias": "Occamy-1.0",
+        "file": "Occamy-1.0.APEX-I-MiniPlus-V2.1.gguf",
+        "script": "occamy.sh",
     },
 ]
 

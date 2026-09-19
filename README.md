@@ -1,11 +1,11 @@
-<br> 
- 
+<br>
+
 <div align="center">
   <img alt="py-agent" src="logo.svg" height="125" />
   <h1>py-agent</h1>
 
   <p>
-    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.34.svg?variant=secondary" alt="Version"></a>
+    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.35.svg?variant=secondary" alt="Version"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/Python.svg?variant=branded&brand=python" alt="Language"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/C%2B%2B.svg?variant=branded&brand=cplusplus" alt="C++"></a>
     <a href="https://github.com/j5onrf/py-agent/blob/main/LICENSE"><img src="https://shieldcn.dev/badge/license-MIT-green.svg" alt="License"></a>
@@ -15,8 +15,6 @@
   <p>
     <code>gguf</code> &nbsp;•&nbsp; <code>llama.cpp</code> &nbsp;•&nbsp; <code>gemini</code> &nbsp;•&nbsp; <code>huggingface</code> &nbsp;•&nbsp; <code>openrouter</code>
   </p>
-
-  ---
 
   <p>
     <b>Lightweight Python orchestration (<code>rich</code> + <code>requests</code>) driving a high-throughput C++ <code>llama-server</code> backend.</b><br>
@@ -36,23 +34,42 @@
       <td align="center" width="50%" valign="top">
         <h3>27B+ Autonomous (LLM)</h3>
         <p><sub>Deep reasoning, multi-file refactoring & recursive sub-agents</sub></p>
-        <code>Nex-N2.5-mini</code> &nbsp;•&nbsp; <code>KAT-Coder-V2.5</code><br>
-        <code>Qwen3.8-27B</code> &nbsp;•&nbsp; <code>Qwen3.6-35B*</code><br> <code>Ornith/Tiel</code> &nbsp;•&nbsp;
-        <code>Qwen3.8-Flash-Next</code> <br> <code>DeepSeek&#8209;V4.1</code>
+        <code>Occamy-1.0*</code> &nbsp;•&nbsp; <code>Nex-N2.5-mini</code><br>
+        <code>KAT-Coder-V2.5</code> &nbsp;•&nbsp; <code>Qwen3.8-27B</code><br>
+        <code>Qwen3.6-35B</code> &nbsp;•&nbsp; <code>Ornith/Tiel</code><br>
+        <code>Qwen3.8-Flash-Next</code> &nbsp;•&nbsp; <code>DeepSeek&#8209;V4.1</code>
       </td>
     </tr>
   </table>
   
   <p>
-    <sub>* Models &nbsp;•&nbsp; Run <code>model select</code> in your terminal to switch models</sub>
+    <sub>* Recommended benchmark baselines &nbsp;•&nbsp; Run <code>model select</code> in your terminal to switch models</sub>
   </p>
-
-  <br>
 
   <p>
     <sub><b>Cloud & Community Spaces:</b> Official <a href="https://huggingface.co">Hugging Face Router</a> endpoints<br>(<a href="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash"><code>DeepSeek-V4.1-Flash</code></a>, <a href="https://huggingface.co/zai-org/GLM-5.3-Flash"><code>GLM-5.3-Flash</code></a>, <a href="https://huggingface.co/inclusionAI/Ling-3.0-flash-VL"><code>Ling-3.0-flash-VL</code></a>, and <a href="https://huggingface.co/moonshotai/Kimi-K3"><code>Kimi-K3</code></a>).</sub>
   </p>
 </div>
+
+<br>
+
+---
+
+<div align="center">
+  <p><sub>Customize box themes with <code>/box [1-8]</code>. For detailed workflows, read the <a href="projects/Readme.md"><b>Workspace Manual</b></a>.</sub></p>
+</div>
+
+```console
+~ ❯ ai
+╭─  Py Agent  ─────────────╮
+│     model:  Occamy-1.0   │
+│ directory:  ~            │
+│   profile:  chat         │
+│  database:  stateless    │
+╰───────── Ctrl+C to exit ─╯
+
+❯ █
+```
 
 <br>
 
@@ -72,28 +89,33 @@
     <tbody>
       <tr>
         <td>⚡ <b>Direct Shell</b></td>
-        <td align="center"><code>&lt;shortcut&gt;</code></td>
-        <td>Sub-millisecond intent matching <a href="ai-context.md"><code>ai-context.md</code></a>.</td>
+        <td align="center"><code>&lt;space&gt; [query]</code></td>
+        <td>Sub-millisecond intent matching via <a href="ai-context.md"><code>ai-context.md</code></a>.</td>
       </tr>
       <tr>
         <td>💬 <b>Single Query</b></td>
         <td align="center"><code>ai "&lt;query&gt;"</code></td>
-        <td>Fast Single Response/Call streamed directly.</td>
+        <td>Single-shot command execution and streamed responses.</td>
       </tr>
       <tr>
         <td>🧠 <b>Multi-Turn Chat</b></td>
         <td align="center"><code>ai</code></td>
-        <td>Interactive chat with persistent memory.</td>
+        <td>Interactive session with persistent memory and profile routing.</td>
       </tr>
       <tr>
         <td>🛠️ <b>Workspace Agent</b></td>
         <td align="center"><code>ai init [path]</code></td>
-        <td>Codebase index-map, file editing (<code>edit_file</code>), tools and loops.</td>
+        <td>Codebase index-map, surgical file editing (<code>edit_file</code>), tools and loops.</td>
+      </tr>
+      <tr>
+        <td>📊 <b>Agentic Benchmark</b></td>
+        <td align="center"><code>eval-stack</code></td>
+        <td>7-test decision-grade benchmark measuring tool accuracy, AST resilience, and par efficiency.</td>
       </tr>
       <tr>
         <td>🌐 <b>llama.cpp WebAgent</b></td>
         <td align="center"><code>/webui</code></td>
-        <td>Tool-enabled web gateway on official <code>llama-server</code> UI. </td>
+        <td>Tool-enabled web gateway on official <code>llama-server</code> UI.</td>
       </tr>
     </tbody>
   </table>
@@ -103,7 +125,7 @@
 
 ---
 
-<h2 align="center">Sub-27B Model Tuning</h2>
+<h2 align="center">Benchmark & Efficiency Architecture</h2>
 
 <div align="center">
   <p>
@@ -116,7 +138,7 @@
   <table>
     <thead>
       <tr>
-        <th align="left">Benchmark Challenge</th>
+        <th align="left">Sub-27B Challenge</th>
         <th align="center">Without Adapters</th>
         <th align="center">With <code>/adp</code> Active</th>
         <th align="left">Efficiency Gain</th>
@@ -146,19 +168,6 @@
 
   <br>
 
-  <p>
-    <sub><b>Why it matters:</b> Sub-27B models often emit malformed JSON, markdown code blocks, or broken import syntax.<br>
-    <code>/adp</code> heals these out-of-band, preventing wasted multi-turn recovery cycles.</sub>
-  </p>
-</div>
-
-<br>
-
----
-
-<h2 align="center">Efficiency Benchmark: Py-Agent & DeepSeek (dsh)</h2>
-
-<div align="center">
   <table>
     <thead>
       <tr>
@@ -173,7 +182,7 @@
         <td><b>Pure Chat</b></td>
         <td align="center"><b>211 tokens</b> (<code>ai</code>)</td>
         <td align="center">~450+ tokens</td>
-        <td>Conversational Q&A with confirmation cmd gates.</td>
+        <td>Conversational Q&A with confirmation command gates.</td>
       </tr>
       <tr>
         <td><b>Native Core</b></td>
@@ -208,28 +217,6 @@
     <sub><b>Tiers:</b> Pure Chat (<code>ai</code>, 211t) • Native Mode (6 tools, ~680t) • Dual Mode (7 tools, ~760t) • Index-Map (11 tools, ~1.1kt) <br> OKF Memory (<code>.agent/memory/*.md</code>) 1-shot <code>/hs</code> retrospective audits.</sub>
   </p>
 </div>
-
-<br>
-
----
-
-<h2 align="center">CLI Launch Interface</h2>
-
-<div align="center">
-  <p><sub>Customize box themes with <code>/box [1-8]</code>. For detailed workflows, read the <a href="projects/Readme.md"><b>Workspace Manual</b></a>.</sub></p>
-</div>
-
-```console
-~ ❯ ai
-╭─  ∿ Py Agent  ────────────────────╮
-│     model:  Qwen3.6-35B-A3B.gguf  │
-│ directory:  ~                     │
-│   profile:  chat                  │
-│  database:  stateless             │
-╰────────────────── Ctrl+C to exit ─╯
-
-❯ █
-```
 
 <br>
 
@@ -282,11 +269,13 @@
 ### 1. Install py-agent
 
 ```bash
-# 1. Install system dependencies & clone
-sudo pacman -S python-rich python-requests
+# 1. Install dependencies (Arch/CachyOS or generic pip)
+sudo pacman -S python-rich python-requests || pip install rich requests
+
+# 2. Clone repository
 git clone https://github.com/j5onrf/py-agent.git ~/.config/py-agent
 
-# 2. Register shell hook (bash / zsh)
+# 3. Register shell hook (bash / zsh)
 echo '[ -f "$HOME/.config/py-agent/ai-hook.sh" ] && \
 source "$HOME/.config/py-agent/ai-hook.sh"' >> ~/.bashrc
 source ~/.bashrc
@@ -421,6 +410,3 @@ AI_MAX_TOKENS="8192"
 * **<a href="modules/Readme.md">System Architecture</a>**
 * **License**: Licensed under the permissive [MODIFIED MIT LICENSE](LICENSE)
 * **Community:** Contributions are always welcome!
-
-
-

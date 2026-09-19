@@ -37,6 +37,7 @@
 
 ```properties
 # --- Workspaces ---
+ai init ~/.config/py-agent/projects/occamy ---> occamy
 ai init ~/.config/py-agent/projects/tini-cybersec ---> tini-cybersec, tini cybersec
 ai init ~/.config/py-agent/projects/ornith ---> ornith
 ai init ~/.config/py-agent/projects/katcoder ---> katcoder
