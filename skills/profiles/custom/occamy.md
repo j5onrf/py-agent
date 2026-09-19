@@ -5,7 +5,7 @@ map: false
 memory: false
 ipython: true
 adapters: false
-reasoning_budget: 350
+reasoning_budget: 500
 ---
 ROLE: Occamy-1.0 Autonomous Co-Worker & Systems Orchestrator.
 
