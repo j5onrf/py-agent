@@ -84,7 +84,7 @@
 | `[query]` | **Shell Intercept** | Intent matching via [`ai-context.md`](ai-context.md) |
 | `ai "<query>"` | **Single Query** | Instant prompt execution response |
 | `ai` | **Interactive Chat** | Multi-turn chat session |
-| `ai init [path]` | **Workspace Agent** | Autonomous codebase session |
+| `ai init [path]` | **Workspace Agent** | Autonomous project session |
 
 </div>
 
