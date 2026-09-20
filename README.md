@@ -91,7 +91,7 @@
 </div>
 
 <p align="center">
-  <sub><b>Session Hotkeys:</b> <code>/compact</code> 3-zone context prune &nbsp;•&nbsp; <code>/adp</code> toggle adapters &nbsp;•&nbsp; <code>/py</code> in-memory REPL &nbsp;•&nbsp; <code>/gnd</code> search grounding &nbsp;•&nbsp; <code>/hs</code> memory audit</sub>
+  <sub><b>Session Hotkeys:</b> <code>/com</code> 3-zone context prune &nbsp;•&nbsp; <code>/adp</code> toggle adapters &nbsp;•&nbsp; <code>/py</code> in-memory REPL &nbsp;•&nbsp; <code>/gnd</code> search grounding &nbsp;•&nbsp; <code>/hs</code> memory audit</sub>
 </p>
 
 <br>
@@ -116,21 +116,25 @@
   <b>Unsloth AI</b> (out-of-band schema healing), and <b>OKF</b> (git-native persistent memory).</sub>
 </p>
 
-| Sub-27B Challenge | Without Adapters | With `/adp` Active | Efficiency Gain |
-| :--- | :---: | :---: | :--- |
-| **AG-03 (Surgical Edit & Test)** | 16 turns | **6 turns** | **62% fewer turns** (eliminates diff-retry loops) |
-| **AG-07 (In-Memory Batch Loop)** | 14 turns | **2 turns** | **85% fewer turns** (executes batch script on Turn 1) |
-| **Full Suite Pass Rate** | Retries / Failures | **100% (7/7)** | **Zero unhandled syntax or format failures** |
+<div align="center">
+
+| Sub-27B Challenge | Without Adapters | With `/adp` Active |
+| :--- | :---: | :---: |
+| **AG-03 (Surgical Edit & Test)** | 16 turns | **6 turns** |
+| **AG-07 (In-Memory Batch Loop)** | 14 turns | **2 turns** |
+| **Full Suite Pass Rate** | Retries / Failures | **100% (7/7)** |
 
 <br>
 
-| Operational Tier | Py-Agent | DeepSeek (`dsh`) | Comparison & Capabilities |
-| :--- | :---: | :---: | :--- |
-| **Pure Chat** | **211 tokens** (`ai`) | ~450+ tokens | Conversational Q&A with confirmation command gates |
-| **Native Core** | **~680 tokens** (`SMOL_TOOLS`) | ~632 tokens | Surgical file edits, code search & shell verification |
-| **Dual Mode** | **~760 tokens** (`python + native`) | ~1,200+ tokens | **~40% fewer tokens.** In-memory testing with **~95% cache hits** |
-| **Full Graph** | **~1,100 tokens** (11 tools + AST) | 2,500–4,000+ tokens | **Up to 3x fewer tokens.** Complete relational SQLite FTS5 symbol graph |
-| **Idle Overhead** | **0% CPU / 0 MB RAM** | Node.js Active | Direct process lifecycle; zero persistent background services |
+| Operational Tier | Py-Agent | DeepSeek (`dsh`) |
+| :--- | :---: | :---: |
+| **Pure Chat** | **211 tokens** (`ai`) | ~450+ tokens |
+| **Native Core** | **~680 tokens** (`SMOL_TOOLS`) | ~632 tokens |
+| **Dual Mode** | **~760 tokens** (`python + native`) | ~1,200+ tokens |
+| **Full Graph** | **~1,100 tokens** (11 tools + AST) | 2,500–4,000+ tokens |
+| **Idle Overhead** | **0% CPU / 0 MB RAM** | Node.js Active |
+
+</div>
 
 <br>
 
@@ -281,8 +285,8 @@ AI_MAX_TOKENS="8192"
 
 <h2 align="center">Documentation & License</h2>
 
-* **<a href="projects/Readme.md">Workspace & Session Manual</a>**
-* **<a href="modules/Readme.md">System Architecture & Lineage</a>**
+* **<a href="projects/Readme.md">Workspace Manual</a>**
+* **<a href="modules/Readme.md">System Architecture/a>**
 * **License**: Licensed under the permissive [MODIFIED MIT LICENSE](LICENSE)
 * **Community:** Contributions are always welcome!
 
