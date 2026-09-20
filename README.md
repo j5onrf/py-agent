@@ -13,7 +13,7 @@
   </p>
 
   <p>
-    <code>gguf</code> &nbsp;•&nbsp; <code>llama.cpp</code> &nbsp;•&nbsp; <code>gemini</code> &nbsp;•&nbsp; <code>huggingface</code> &nbsp;•&nbsp; <code>openrouter</code>
+    <code>llama.cpp</code> &nbsp;•&nbsp; <code>gguf</code> &nbsp;•&nbsp;<code>huggingface</code> &nbsp;•&nbsp; <code>openrouter</code>
   </p>
 
   <p>
