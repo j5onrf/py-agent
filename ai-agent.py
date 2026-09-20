@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.30] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production Ready]"""
+"""Py Agent [j5onrf] [v0.9.9.35] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production Ready]"""
 
 import json
 import os
@@ -301,6 +301,17 @@ def run_interactive_chat(args: list[str]) -> None:
             ui._console.print(f"[dim yellow][sys] Skill '{clean_name}' not found. Using minimal chat prompt.[/dim yellow]")
         active_system_prompt = skill_content or BASE_PROMPT_CHAT
         os.environ["AI_ACTIVE_SKILL"] = clean_name
+
+    # Zero-overhead check: if 0 bytes or missing, never opens or reads file
+    inst_p = os.path.join(SKILLS_DIR, "system_instructions.md")
+    if os.path.isfile(inst_p) and os.path.getsize(inst_p) > 0:
+        try:
+            with open(inst_p, "r", encoding="utf-8") as f:
+                rules = [l for l in f if l.strip() and not l.strip().startswith("#")]
+                if active_rules := "".join(rules).strip():
+                    active_p += f"\n\n{active_rules}"
+        except OSError:
+            pass
 
     pending_query = " ".join(args[1:]) if len(args) > 1 else None
     if pending_query and ("CODEBASE INDEX MAP" in pending_query or "index-map" in pending_query):
@@ -774,6 +785,15 @@ def run_direct_query(args: list[str]) -> None:
         sys_ctx = ""
 
     active_p = skill_content or BASE_PROMPT_CHAT
+    inst_p = os.path.join(SKILLS_DIR, "system_instructions.md")
+    if os.path.isfile(inst_p) and os.path.getsize(inst_p) > 0:
+        try:
+            with open(inst_p, "r", encoding="utf-8") as f:
+                if txt := f.read().strip():
+                    active_p += f"\n\n{txt}"
+        except OSError:
+            pass
+
     messages = [{"role": "system", "content": active_p}, {"role": "user", "content": f"<context>\n{sys_ctx}\n</context>\n\nUser Question: {query}" if sys_ctx else f"User Question: {query}"}]
     core.stream_response(messages, prefix="AI:", show_stats=False, thinking_budget=0)
     sys.exit(0)

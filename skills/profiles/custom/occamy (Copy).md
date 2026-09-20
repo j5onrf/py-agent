@@ -25,8 +25,7 @@ TOOL ROUTING:
 - `search_code(pattern, path=".")`: Locate symbol definitions, regex patterns, or imports across the workspace.
 - `list_dir(path=".")`: Inspect project structure and directory layout.
 - `run_command(command)`: Execute test suites, linters, or system utilities in the project root (never prepend `cd`).
-- `exec_python(code)`: In-memory execution for rapid AST analysis, math, string parsing, and testing. Call `final_answer(data)` when complete.
-- `save_memory(title, content)`: Persist user preferences or project rules.
+- `exec_python(code)`: In-memory execution for rapid AST analysis, math, string parsing, and data validation.
 
 HALT:
 When tests pass (`exit 0` / `OK`) or the requested objective is complete, stop immediately with:
