@@ -89,7 +89,7 @@
 </div>
 
 <p align="center">
-  <sub><b>Session Hotkeys:</b> <code>/com</code> 3-zone context prune &nbsp;•&nbsp; <code>/adp</code> toggle adapters &nbsp;•&nbsp; <code>/py</code> in-memory REPL &nbsp;•&nbsp; <code>/gnd</code> search grounding &nbsp;•&nbsp; <code>/hs</code> memory audit</sub>
+  <sub><b>Session Hotkeys:</b> <code>/com</code> compact &nbsp;•&nbsp; <code>/adp</code> adapters &nbsp;•&nbsp; <code>/py</code> iPython &nbsp;•&nbsp; <code>/gnd</code> grounding &nbsp;•&nbsp; <code>/hs</code> hindsite </sub>
 </p>
 
 <br>
