@@ -98,9 +98,9 @@
 
 <h2 align="center">Runtime Architecture</h2>
 
-* **Hardened Containment:** Non-bypassable `[y/N]` confirmation gates for system commands (`sudo`, `pacman`, `pip`, `systemctl`) and out-of-bounds file access—even in YOLO mode.
+* **Hardened Containment:** Non-bypassable `[y/N]` confirmation gates for system commands (`sudo`, `pacman`, `pip`, `systemctl`) and out-of-bounds file access even in YOLO mode.
 * **Git-Native & Global Memory:** Global system instructions (`skills/system_instructions.md`) and workspace directives (`.agent/memory/*.md`). Human-editable.
-* **Self-Healing Adapters (`/adp`):** Out-of-band argument normalizer repairing malformed JSON and bracket syntax on small models.
+* **Self-Healing Adapters (`/adp`):** Out-of-band argument normalizer repairing malformed JSON and bracket syntax on small models. Opt-in.
 * **Deterministic Diffing:** 3-stage resilient replacement (`Exact` &rarr; `Whitespace` &rarr; `88% Fuzzy`) verified by Python AST syntax guards to eliminate corruption.
 
 <br>
