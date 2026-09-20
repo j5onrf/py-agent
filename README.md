@@ -1,7 +1,7 @@
 <br>
 
 <div align="center">
-  <img alt="py-agent" src="logo.svg" height="120" />
+  <img alt="py-agent" src="logo.svg" height="150" />
   <h1>py-agent</h1>
 
   <p>
@@ -273,5 +273,5 @@ AI_MAX_TOKENS="8192"
 
 * **<a href="projects/Readme.md">Workspace Manual</a>**
 * **<a href="modules/Readme.md">System Architecture</a>**
-* **Licensed under the permissive [MODIFIED MIT LICENSE](LICENSE)**
+* Licensed under the permissive **[MODIFIED MIT LICENSE](LICENSE)**
 
