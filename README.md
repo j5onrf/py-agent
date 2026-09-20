@@ -270,21 +270,8 @@ AI_MAX_TOKENS="8192"
 
 ---
 
-<h2 align="center">Roadmap to v1.0.0</h2>
-
-* **Modular Sub-27B adapters:**  (`/adp`), 3-zone context compactor with progress anchors (`/com`), live web grounding (`/gnd`), zero-trust containment gates, and 7-test decision-grade agentic benchmark (`eval-stack`).
-* **Possible Horizons:** Embedded PyBot ([AkeruBot](https://github.com/opencoredev/akeru-bot)) Embedded AkeruBot agent widget and web gateway.
-* **Adaptive Context Slicing:**</b> Automated tool schema reduction for small windows</sub><br>
-* **v1.0.0 Production Release Tag**
-
-<br>
-
----
-
 <h2 align="center">Documentation & License</h2>
 
 * **<a href="projects/Readme.md">Workspace Manual</a>**
 * **<a href="modules/Readme.md">System Architecture</a>**
-* **License**: Licensed under the permissive [MODIFIED MIT LICENSE](LICENSE)
-* **Community:** Contributions are always welcome!
-
+* **Licensed under the permissive [MODIFIED MIT LICENSE](LICENSE)**
