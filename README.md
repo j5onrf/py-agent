@@ -62,7 +62,7 @@
 │ directory:  ~            │
 │   profile:  chat         │
 │  database:  stateless    │
-╰───────── Ctrl+C to exit ─╯
+╰──────────────────────────╯
 
 ❯ █
 ```

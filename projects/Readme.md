@@ -14,7 +14,7 @@ OK: Profile set to: Custom Lingtiny [Yolo: ON] [Map: ON] [Mem: ON] [Py: ON] [Adp
 │ directory:  ~/.config/py-agent/projects/ling-tiny        │
 │   profile:  custom/lingtiny                              │
 │  database:  active (map + mem: 3m/5t)                    │
-╰───────────────────────────────────────── Ctrl+C to exit ─╯
+╰──────────────────────────────────────────────────────────╯
 
 ❯ /calm
  Calm mode enabled (silent tools & boat animation active).
