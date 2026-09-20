@@ -85,8 +85,6 @@
 | `ai "<query>"` | **Single Query** | Single-shot prompt execution and streamed terminal response |
 | `ai` | **Interactive Chat** | Multi-turn chat session with persistent memory and profile routing |
 | `ai init [path]` | **Workspace Agent** | Codebase index-map, surgical diffing (`edit_file`), and task loops |
-| `eval-stack` | **Agentic Benchmark** | 7-test decision-grade suite measuring tool par and accuracy |
-| `/webui` | **Web Gateway** | Autonomous tool reverse proxy for official `llama-server` UI |
 
 </div>
 
