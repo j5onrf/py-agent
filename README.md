@@ -98,10 +98,10 @@
 
 <h2 align="center">Runtime Architecture</h2>
 
-* **Hardened Containment:** Non-bypassable `[y/N]` confirmation gates for system-mutating commands (`sudo`, `pacman`, `pip`, `systemctl`) and out-of-bounds file access—even in YOLO mode.
-* **Git-Native Memory:** Plain Markdown directives in `.agent/memory/*.md` loaded in `<0.1ms`. Fully auditable and human-editable in `nvim` or `code` with zero database overhead.
-* **Self-Healing Adapters (`/adp`):** Out-of-band argument normalizer repairing malformed JSON and bracket syntax on small models without burning turn retries or polluting context prompts.
-* **Deterministic Diffing:** 3-stage resilient replacement (`Exact` &rarr; `Whitespace` &rarr; `88% Fuzzy`) verified by Python AST syntax guards before disk writes to eliminate corruption.
+* **Hardened Containment:** Non-bypassable `[y/N]` confirmation gates for system commands (`sudo`, `pacman`, `pip`, `systemctl`) and out-of-bounds file access—even in YOLO mode.
+* **Git-Native & Global Memory:** Global system instructions (`skills/system_instructions.md`) and workspace directives (`.agent/memory/*.md`). Human-editable.
+* **Self-Healing Adapters (`/adp`):** Out-of-band argument normalizer repairing malformed JSON and bracket syntax on small models.
+* **Deterministic Diffing:** 3-stage resilient replacement (`Exact` &rarr; `Whitespace` &rarr; `88% Fuzzy`) verified by Python AST syntax guards to eliminate corruption.
 
 <br>
 
