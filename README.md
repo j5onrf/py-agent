@@ -1,7 +1,7 @@
 <br>
 
 <div align="center">
-  <img alt="py-agent" src="logo.svg" height="150" />
+  <img alt="py-agent" src="logo.svg" height="135" />
   <h1>py-agent</h1>
 
   <p>
