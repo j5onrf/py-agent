@@ -81,10 +81,10 @@
 
 | Command | Mode | Operational Scope |
 | :--- | :--- | :--- |
-| `[query]` | **Shell Intercept** | Native command-not-found intent matching via [`ai-context.md`](ai-context.md) |
-| `ai "<query>"` | **Single Query** | Single-shot prompt execution and streamed terminal response |
-| `ai` | **Interactive Chat** | Multi-turn chat session with persistent memory and profile routing |
-| `ai init [path]` | **Workspace Agent** | Codebase index-map, surgical diffing (`edit_file`), and task loops |
+| `[query]` | **Shell Intercept** | Intent matching via [`ai-context.md`](ai-context.md) |
+| `ai "<query>"` | **Single Query** | Instant prompt execution response |
+| `ai` | **Interactive Chat** | Multi-turn chat session |
+| `ai init [path]` | **Workspace Agent** | Autonomous codebase session |
 
 </div>
 
