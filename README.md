@@ -80,7 +80,7 @@
 <div align="center">
 
 | Command | Mode | Operational Scope |
-| :--- | :--- | :--- |
+| :--- | :---: | :---: |
 | `[query]` | **Shell Intercept** | Intent matching via [`ai-context.md`](ai-context.md) |
 | `ai "<query>"` | **Single Query** | Instant prompt execution response |
 | `ai` | **Interactive Chat** | Multi-turn chat session |
@@ -284,7 +284,7 @@ AI_MAX_TOKENS="8192"
 <h2 align="center">Documentation & License</h2>
 
 * **<a href="projects/Readme.md">Workspace Manual</a>**
-* **<a href="modules/Readme.md">System Architecture/a>**
+* **<a href="modules/Readme.md">System Architecture</a>**
 * **License**: Licensed under the permissive [MODIFIED MIT LICENSE](LICENSE)
 * **Community:** Contributions are always welcome!
 
