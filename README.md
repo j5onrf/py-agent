@@ -185,8 +185,8 @@
 ### 1. Install py-agent
 
 ```bash
-# 1. Install dependencies (Arch/CachyOS or generic pip)
-sudo pacman -S python-rich python-requests || pip install rich requests
+# 1. Install dependencies (Arch/CachyOS or pip)
+sudo pacman -S python-rich python-requests
 
 # 2. Clone repository
 git clone https://github.com/j5onrf/py-agent.git ~/.config/py-agent
@@ -205,11 +205,10 @@ model select
 
 # Option B: Manual Configuration
 cp ~/.config/py-agent/.env.example ~/.config/py-agent/.env
-nano ~/.config/py-agent/.env
 ```
 
 <details>
-<summary><b>📋 View Example <code>~/.config/py-agent/.env</code> (Click to Expand)</b></summary>
+<summary><b>📋 View Example <code>(~/.config/py-agent/.env.example)</code></b></summary>
 
 ```env
 # ==============================================================================
@@ -275,3 +274,4 @@ AI_MAX_TOKENS="8192"
 * **<a href="projects/Readme.md">Workspace Manual</a>**
 * **<a href="modules/Readme.md">System Architecture</a>**
 * **Licensed under the permissive [MODIFIED MIT LICENSE](LICENSE)**
+
