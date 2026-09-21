@@ -1,5 +1,3 @@
-<br>
-
 <div align="center">
   <img alt="py-agent" src="logo.svg" height="125" />
   <h1>Py Agent</h1>
