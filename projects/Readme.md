@@ -5,7 +5,6 @@ Autonomous local developer agent with OKF memory, in-memory Python, and codebase
 ```console
 ~ ❯ ling
 [01/02] > [ling-tiny] ai init ~/ling-tiny
-:: enter to run, Esc to cancel: 
 OK: Profile set to: Custom Lingtiny [Yolo: ON] [Map: ON] [Mem: ON] [Py: ON] [Adp: ON]
 
  Map enabled: compiled index-map.
@@ -17,7 +16,7 @@ OK: Profile set to: Custom Lingtiny [Yolo: ON] [Map: ON] [Mem: ON] [Py: ON] [Adp
 ╰──────────────────────────────────────────────────────────╯
 
 ❯ /calm
- Calm mode enabled (silent tools & boat animation active).
+ [Calm On] enabled (silent tools & boat animation active).
 
 ❯ calculate the sum of all prime numbers between 10 and 50 and print the result.
             |>
