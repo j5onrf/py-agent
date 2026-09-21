@@ -34,13 +34,13 @@ BOX_DIAMOND = Box("◈─┬◈\n│ ││\n├─┼┤\n│ ││\n├─┼
 BOX_DASHED = Box("┌┄┬┐\n┆ ┆┆\n├┄┼┤\n┆ ┆┆\n├┄┼┤\n├┄┼┤\n┆ ┆┆\n└┄┴┘\n")
 
 STYLES = {
-    1: ("Py Agent", ROUNDED, "green", "bold bright_green"),
-    2: ("Py Agent", DOUBLE, "bright_blue", "bold bright_blue"),
-    3: ("Py Agent", SQUARE, "bright_yellow", "bold bright_yellow"),
-    4: ("Py Agent", HEAVY, "bright_cyan", "bold bright_white"),
-    5: ("Py Agent", HORIZONTALS, "dim white", "bold cyan"),
-    6: ("Py Agent", BOX_DIAMOND, "bright_cyan", "bold bright_white"),
-    7: ("Py Agent", BOX_DASHED, "bright_magenta", "bold bright_magenta"),
+    1: ("∿ Py Agent", ROUNDED, "green", "bold bright_green"),
+    2: ("∿ Py Agent", DOUBLE, "bright_blue", "bold bright_blue"),
+    3: ("∿ Py Agent", SQUARE, "bright_yellow", "bold bright_yellow"),
+    4: ("∿ Py Agent", HEAVY, "bright_cyan", "bold bright_white"),
+    5: ("∿ Py Agent", HORIZONTALS, "dim white", "bold cyan"),
+    6: ("∿ Py Agent", BOX_DIAMOND, "bright_cyan", "bold bright_white"),
+    7: ("∿ Py Agent", BOX_DASHED, "bright_magenta", "bold bright_magenta"),
 }
 
 RICH_TO_ANSI = {
@@ -410,7 +410,7 @@ def draw_session_box(
     table.add_row("database:", db_status)
 
     if box_style == 8:
-        title_str = f"  Py Agent [sub-agent #{sub_id}]" if sub_id else "  Py Agent"
+        title_str = f"  ∿ Py Agent [sub-agent #{sub_id}]" if sub_id else "  ∿ Py Agent"
         max_val_len = max(len(model_name), len(display_dir), len(clean_name or "chat"), len(db_status), 16)
         sep_str = " " + "─" * (10 + 2 + max_val_len)
         panel = Panel(
@@ -421,7 +421,7 @@ def draw_session_box(
         )
     else:
         base_title, box_type, border_col, title_style = STYLES.get(box_style, STYLES[1])
-        title_text = f" {base_title} [sub-agent #{sub_id}] " if sub_id else f" {base_title} "
+        title_text = f"{base_title} [sub-agent #{sub_id}]" if sub_id else base_title
         panel = Panel(
             table,
             title=Text(title_text, style=title_style),
