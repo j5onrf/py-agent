@@ -61,7 +61,7 @@ RE_ATTACHED_IMAGE = re.compile(r'\[(?:Attached\s+)?(?:image|file)[^\]]*?saved\s+
 TOOL_VERBS: dict[str, str] = getattr(tools, "TOOL_VERBS", {})
 
 DEFAULTS = {
-    "show_stats": True, "memory_active": False, "box_style": 1, "yolo_mode": True,
+    "show_stats": False, "memory_active": False, "box_style": 1, "yolo_mode": True,
     "show_thinking": True, "reasoning_active": True, "reasoning_budget": 500,
     "compact_mode": 0, "sidebar_hidden": False, "footer_hidden": True, "tips_card_hidden": False,
     "tui_theme": "code1", "voice_auto_submit": True, "tts_enabled": False, "tui_borders_enabled": True,

@@ -57,7 +57,7 @@
 
 ```console
 ~ ❯ ai
-╭─  Py Agent  ─────────────╮
+╭─ ∿ Py Agent ─────────────╮
 │     model:  Occamy-1.0   │
 │ directory:  ~            │
 │   profile:  chat         │

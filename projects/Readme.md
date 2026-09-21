@@ -8,7 +8,7 @@ Autonomous local developer agent with OKF memory, in-memory Python, and codebase
 OK: Profile set to: Custom Lingtiny [Yolo: ON] [Map: ON] [Mem: ON] [Py: ON] [Adp: ON]
 
  Map enabled: compiled index-map.
-╭─  Py Agent  ─────────────────────────────────────────────╮
+╭─ ∿ Py Agent ─────────────────────────────────────────────╮
 │     model:  Ling-3.0-tiny                                │
 │ directory:  ~/.config/py-agent/projects/ling-tiny        │
 │   profile:  custom/lingtiny                              │
@@ -16,7 +16,10 @@ OK: Profile set to: Custom Lingtiny [Yolo: ON] [Map: ON] [Mem: ON] [Py: ON] [Adp
 ╰──────────────────────────────────────────────────────────╯
 
 ❯ /calm
- [Calm On] enabled (silent tools & boat animation active).
+ [Calm On]
+ 
+❯ /stats
+ [Stats On]
 
 ❯ calculate the sum of all prime numbers between 10 and 50 and print the result.
             |>
