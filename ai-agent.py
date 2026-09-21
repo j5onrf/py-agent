@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.35] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production Ready]"""
+"""Py Agent [j5onrf] [v0.9.9.36] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production Ready]"""
 
 import json
 import os
@@ -74,6 +74,32 @@ try:
 except ImportError as e:
     sys.stderr.write(f"\033[1;31m[CRITICAL]: Failed to load modules: {e}\033[0m\n")
     sys.exit(1)
+
+
+_transient_cmd_count: int = 0
+
+
+def _show_transient_status(tag: str) -> None:
+    """Displays an inline status tag with breathing room, accumulating for batch removal on next query."""
+    global _transient_cmd_count
+    sys.stdout.write(f"  \033[2m[{tag}]\033[0m\n\n")
+    sys.stdout.flush()
+    _transient_cmd_count += 3
+
+
+_flash_status = _show_transient_status
+
+
+def _clear_transient_status(query: str) -> None:
+    """Erases the ephemeral slash command block and repositions the real query prompt."""
+    global _transient_cmd_count
+    if _transient_cmd_count > 0:
+        try:
+            sys.stdout.write(f"\033[{_transient_cmd_count + 1}A\r\x1b[0J❯ {query}\n")
+            sys.stdout.flush()
+        except OSError:
+            pass
+        _transient_cmd_count = 0
 
 
 def workspace_db_counts(safe_name: str, workspace_path: str = "") -> tuple[int, int]:
@@ -309,7 +335,7 @@ def run_interactive_chat(args: list[str]) -> None:
             with open(inst_p, "r", encoding="utf-8") as f:
                 rules = [l for l in f if l.strip() and not l.strip().startswith("#")]
                 if active_rules := "".join(rules).strip():
-                    active_p += f"\n\n{active_rules}"
+                    active_system_prompt += f"\n\n{active_rules}"
         except OSError:
             pass
 
@@ -400,7 +426,7 @@ def run_interactive_chat(args: list[str]) -> None:
                         for msg in chat_history:
                             if "### CODESPACE MAP:" in msg["content"]:
                                 msg["content"] = msg["content"].split("### CODESPACE MAP:")[0].strip()
-                    ui._console.print(f"[green][sys] index-map {'enabled (8 tools active)' if use_map else 'disabled (6 tools active)'}.[/green]\n")
+                    _flash_status(f"map: {'on' if use_map else 'off'}")
                     continue
 
                 if cmd in ("/mem", "/memory"):
@@ -434,8 +460,7 @@ def run_interactive_chat(args: list[str]) -> None:
                     memory_active = not memory_active
                     core.save_state("memory_active", memory_active)
                     _update_workspace_config(cfg_file, {"memory": memory_active})
-                    m_cnt = memories.get_memory_count(workspace_path)
-                    ui._console.print(f"[green][sys] Project memory {'enabled (' + str(m_cnt) + ' files loaded)' if memory_active else 'disabled'}.[/green]\n")
+                    _flash_status(f"mem: {'on' if memory_active else 'off'}")
                     continue
 
                 if cmd in ("/gnd", "/ground"):
@@ -443,28 +468,30 @@ def run_interactive_chat(args: list[str]) -> None:
                         sub = parts[1].lower()
                         if sub in ("off", "disable", "false", "0"):
                             core.save_state("grounding_active", False)
-                            ui._console.print("[yellow][sys] Google Search grounding disabled.[/yellow]\n")
+                            gnd_active, g_bud = False, 0
                         elif sub in ("on", "enable", "true"):
                             core.save_state("grounding_active", True)
                             g_bud = core.get_state("grounding_budget", 700)
-                            ui._console.print(f"[green][sys] Google Search grounding enabled (budget: {g_bud} tokens).[/green]\n")
+                            gnd_active = True
                         elif sub.isdigit():
                             g_bud = max(0, int(sub))
                             gnd_active = g_bud > 0
                             core.save_state("grounding_active", gnd_active)
                             core.save_state("grounding_budget", g_bud)
-                            ui._console.print(f"[green][sys] Google Search grounding {'enabled' if gnd_active else 'disabled'} (budget: {g_bud} tokens).[/green]\n")
+                        else:
+                            gnd_active = not core.get_state("grounding_active", False)
+                            g_bud = core.get_state("grounding_budget", 700)
                     else:
                         gnd_active = not core.get_state("grounding_active", False)
                         g_bud = core.get_state("grounding_budget", 700)
                         core.save_state("grounding_active", gnd_active)
-                        ui._console.print(f"[green][sys] Google Search grounding {'enabled (budget: ' + str(g_bud) + ' tokens)' if gnd_active else 'disabled'}.[/green]\n")
+                    _flash_status(f"gnd: {g_bud if gnd_active else 'off'}")
                     continue
 
                 if cmd in ("/v", "/voice"):
                     is_auto = len(parts) > 1 and parts[1].lower() == "auto"
                     active, auto_mode = voice.toggle_voice_bridge(auto_toggle=is_auto)
-                    ui._console.print(f"[cyan][sys] Voice to text {'active (' + ('auto-submit' if auto_mode else 'manual edit') + ' mode, port 9999)' if active else 'disabled'}.[/cyan]\n")
+                    _flash_status(f"voice: {'auto' if auto_mode else ('on' if active else 'off')}")
                     continue
 
                 if cmd in ("/tts", "/talk", "/tol"):
@@ -472,20 +499,20 @@ def run_interactive_chat(args: list[str]) -> None:
                         arg = parts[1].lower().replace("x", "")
                         if arg in ("def", "default", "reset"):
                             sp = tts.set_tts_speed(1.15)
-                            ui._console.print(f"[cyan][sys] TTS speed reset to default ({sp}x).[/cyan]\n")
+                            _flash_status(f"tts: reset {sp}x")
                         else:
                             try:
                                 val = float(arg)
                                 sp = tts.set_tts_speed(val)
                                 if not tts.is_tts_enabled():
                                     tts.toggle_tts(True)
-                                ui._console.print(f"[cyan][sys] TTS speed set to {sp}x (TTS enabled).[/cyan]\n")
+                                _flash_status(f"tts: {sp}x")
                             except ValueError:
-                                ui._console.print("[dim yellow][sys] Usage: /tts [0.5 - 2.5 | reset][/dim yellow]\n")
+                                pass
                     else:
                         active = tts.toggle_tts()
                         cur_speed = tts.get_tts_speed() if hasattr(tts, "get_tts_speed") else 1.15
-                        ui._console.print(f"[cyan][sys] Text to speech {'enabled' if active else 'disabled'} ({cur_speed}x).[/cyan]\n")
+                        _flash_status(f"tts: {cur_speed if active else 'off'}")
                     continue
 
                 if cmd in ("/adp", "/adapter", "/adapters"):
@@ -493,7 +520,7 @@ def run_interactive_chat(args: list[str]) -> None:
                     new_adp = not cur_adp
                     core.save_state("adapters_active", new_adp)
                     _update_workspace_config(cfg_file, {"adapters": new_adp})
-                    ui._console.print(f"[cyan][sys] Self-healing adapters {'enabled (small-model resilience active)' if new_adp else 'disabled (strict native schema mode)'}.[/cyan]\n")
+                    _flash_status(f"adp: {'on' if new_adp else 'off'}")
                     continue
 
                 if cmd in ("/py", "/ipython"):
@@ -506,7 +533,7 @@ def run_interactive_chat(args: list[str]) -> None:
                         active = ipython.toggle_ipython_mode()
                         os.environ["AI_IPYTHON_MODE"] = "1" if active else "0"
                         _update_workspace_config(cfg_file, {"py": active})
-                        ui._console.print(f"[cyan][sys] IPython harness {'enabled (exec_python single tool mode)' if active else 'disabled (classic JSON tools)'}.[/cyan]\n")
+                        _flash_status(f"py: {'on' if active else 'off'}")
                         continue
 
                 if cmd in ("/task", "/loop", "/ralph"):
@@ -567,7 +594,7 @@ def run_interactive_chat(args: list[str]) -> None:
                 if cmd in ("/box", "/box-style", "/boxstyle"):
                     val = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() and 1 <= int(parts[1]) <= 8 else (st.get("box_style", 2) % 8) + 1
                     core.save_state("box_style", val)
-                    ui._console.print(f"[green][sys] Switched box style to #{val}.[/green]\n")
+                    _flash_status(f"box: #{val}")
                     continue
 
                 if cmd in ("/calm", "/zen"):
@@ -575,25 +602,25 @@ def run_interactive_chat(args: list[str]) -> None:
                     new_calm = not cur_calm
                     core.save_state("calm_mode", new_calm)
                     _update_workspace_config(cfg_file, {"calm": new_calm})
-                    ui._console.print(f"[cyan][sys] Calm mode {'enabled (silent tools & boat animation active)' if new_calm else 'disabled (verbose output restored)'}.[/cyan]\n")
+                    _show_transient_status(f"calm: {'on' if new_calm else 'off'}")
                     continue
 
                 if cmd in ("/md"):
                     new_md = not (os.environ.get("AI_RENDER_MARKDOWN", "1") == "1")
                     os.environ["AI_RENDER_MARKDOWN"] = "1" if new_md else "0"
                     core.save_state("render_markdown", new_md)
-                    ui._console.print(f"[green][sys] Markdown rendering {'enabled' if new_md else 'disabled'}.[/green]\n")
+                    _show_transient_status(f"md: {'on' if new_md else 'off'}")
                     continue
 
                 if cmd in ("/g", "/yolo"):
-                    if not is_agent:
-                        ui._console.print("[dim yellow][sys] Autonomous / YOLO mode is disabled in Chat mode.[/dim yellow]\n")
-                        continue
-                    new_yolo = not (os.environ.get("AI_CONFIRM_GATES", "1") == "0")
-                    os.environ["AI_CONFIRM_GATES"] = "0" if new_yolo else "1"
-                    core.save_state("yolo_mode", new_yolo)
-                    _update_workspace_config(cfg_file, {"yolo": new_yolo})
-                    ui._console.print(f"[yellow][sys] Confirmation gates {'disabled (Autonomous / YOLO mode active)' if new_yolo else 'enabled (y/n confirmation required per action)'}.[/yellow]\n")
+                    if is_agent:
+                        new_yolo = not (os.environ.get("AI_CONFIRM_GATES", "1") == "0")
+                        os.environ["AI_CONFIRM_GATES"] = "0" if new_yolo else "1"
+                        core.save_state("yolo_mode", new_yolo)
+                        _update_workspace_config(cfg_file, {"yolo": new_yolo})
+                        _show_transient_status(f"yolo: {'on' if new_yolo else 'off'}")
+                    else:
+                        _show_transient_status("yolo: disabled in chat")
                     continue
 
                 if cmd in ("/t", "/thinking"):
@@ -602,21 +629,21 @@ def run_interactive_chat(args: list[str]) -> None:
                         if sub in ("hide", "off", "mute", "quiet"):
                             os.environ["AI_SHOW_THINKING"] = "0"
                             core.save_state("show_thinking", False)
-                            ui._console.print("[yellow][sys] Thinking display hidden (thinking mode remains active).[/yellow]\n")
+                            _show_transient_status("thinking: hidden")
                         elif sub in ("show", "on", "visible"):
                             os.environ["AI_SHOW_THINKING"] = "1"
                             core.save_state("show_thinking", True)
-                            ui._console.print("[yellow][sys] Thinking display enabled.[/yellow]\n")
+                            _show_transient_status("thinking: visible")
                         elif sub.isdigit():
                             reasoning_budget = max(0, int(sub))
                             reasoning_active = reasoning_budget > 0
                             core.save_state("reasoning_active", reasoning_active)
                             core.save_state("reasoning_budget", reasoning_budget)
-                            ui._console.print(f"[yellow][sys] Deep reasoning {'enabled' if reasoning_active else 'disabled'} (budget: {reasoning_budget} tokens).[/yellow]\n")
+                            _show_transient_status(f"thinking: {reasoning_budget if reasoning_active else 'off'}")
                     else:
                         reasoning_active = not reasoning_active
                         core.save_state("reasoning_active", reasoning_active)
-                        ui._console.print(f"[yellow][sys] Deep reasoning {'enabled' if reasoning_active else 'disabled'} (budget: {reasoning_budget} tokens).[/yellow]\n")
+                        _show_transient_status(f"thinking: {reasoning_budget if reasoning_active else 'off'}")
 
                     _update_workspace_config(cfg_file, {"reasoning": reasoning_active, "reasoning_budget": reasoning_budget})
                     continue
@@ -624,7 +651,7 @@ def run_interactive_chat(args: list[str]) -> None:
                 if cmd == "/stats":
                     show_stats = not show_stats
                     core.save_state("show_stats", show_stats)
-                    ui._console.print(f"[green][sys] Stats {'enabled' if show_stats else 'disabled'}.[/green]\n")
+                    _show_transient_status(f"stats: {'on' if show_stats else 'off'}")
                     continue
 
                 if cmd in ("/sync", "/re"):
@@ -644,7 +671,7 @@ def run_interactive_chat(args: list[str]) -> None:
                                     has_map = True
                             if not has_map:
                                 chat_history[0]["content"] += f"\n\n### CODESPACE MAP:\n{new_map}"
-                            ui._console.print("\r\x1b[2K[green][sys] Map synchronized.[/green]\n")
+                            _flash_status("map: synced")
                         except Exception as e:
                             ui._console.print(f"\r\x1b[2K[red][sys] Sync failed: {e}[/red]\n")
                     continue
@@ -653,7 +680,7 @@ def run_interactive_chat(args: list[str]) -> None:
                     chat_history = [{"role": "system", "content": active_system_prompt}]
                     if is_agent:
                         chat_history.append({"role": "assistant", "content": "Agent: Workspace loaded. Awaiting instructions."})
-                    ui._console.print("[green][sys] Active chat history cleared.[/green]\n")
+                    _flash_status("chat: cleared")
                     continue
 
                 if q_lower in ("/reset", "/r"):
@@ -670,7 +697,7 @@ def run_interactive_chat(args: list[str]) -> None:
                             pass
                     sessions.clear_turns(safe_name)
                     memories.clear_memories(workspace_path)
-                    ui._console.print("[yellow][sys] Workspace reset complete (chat cleared & .agent purged).[/yellow]\n")
+                    _flash_status("workspace: reset")
                     continue
 
                 if cmd in ("/compact", "/com", "/cpt"):
@@ -692,7 +719,7 @@ def run_interactive_chat(args: list[str]) -> None:
                 if sub_cmd in ("off", "clear", "reset", "none", "remove"):
                     chat_history[0]["content"] = active_system_prompt
                     os.environ["AI_ACTIVE_SKILL"] = clean_name or "chat"
-                    ui._console.print(f"[green][sys] On-demand skill removed. Reverted to base skill: [bold]{clean_name or 'chat'}[/bold].[/green]\n")
+                    _flash_status(f"skill: {clean_name or 'chat'}")
                     continue
 
                 chat_history, loaded_name = skills.run_skill_selector(safe_name, query, SKILLS_DIR, STOP_WORDS, chat_history)
@@ -703,6 +730,7 @@ def run_interactive_chat(args: list[str]) -> None:
             if query.startswith("-save"):
                 tag = query.replace("-save", "").strip() or "checkpoint"
                 sessions.save_checkpoint(safe_name, tag, chat_history)
+                _flash_status(f"checkpoint: {tag}")
                 continue
 
             if query in ("-load", "-timeline"):
@@ -713,6 +741,9 @@ def run_interactive_chat(args: list[str]) -> None:
                 except Exception as e:
                     ui._console.print(f"[red]Error loading session: {e}[/red]")
                 continue
+
+            # Cleanly wipe ephemeral slash commands above when real prompt is submitted
+            _clear_transient_status(query)
 
             memory_ctx = memories.get_memory_context(workspace_path) if (is_agent and memory_active) else ""
 
@@ -744,6 +775,8 @@ def run_interactive_chat(args: list[str]) -> None:
                 clean_ans = RE_THINK_TAGS.sub("", ans).strip()
                 chat_history.append({"role": "assistant", "content": clean_ans or ans})
                 tts.speak_response(clean_ans or ans)
+                if not show_stats:
+                    print()
                 if is_agent:
                     sessions.log_turn(safe_name, query, ans)
                     if match := RE_AUTO_RUN.search(ans):
@@ -789,8 +822,9 @@ def run_direct_query(args: list[str]) -> None:
     if os.path.isfile(inst_p) and os.path.getsize(inst_p) > 0:
         try:
             with open(inst_p, "r", encoding="utf-8") as f:
-                if txt := f.read().strip():
-                    active_p += f"\n\n{txt}"
+                rules = [l for l in f if l.strip() and not l.strip().startswith("#")]
+                if active_rules := "".join(rules).strip():
+                    active_p += f"\n\n{active_rules}"
         except OSError:
             pass
 

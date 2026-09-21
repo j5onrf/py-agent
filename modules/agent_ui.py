@@ -62,8 +62,6 @@ _core_module = None
 
 
 class InlineSpinner:
-    _has_prefilled: bool = False
-
     def __init__(self, chars: tuple[str, ...] | list[str] | str = ("✦ [∿ · ·]", "✦ [· ∿ ·]", "✦ [· · ∿]", "✦ [· ∿ ·]")) -> None:
         self.chars = chars
         self.active = False
@@ -125,11 +123,7 @@ class InlineSpinner:
 
     def start(self, message: str = "Thinking...") -> None:
         with self._lock:
-            if not InlineSpinner._has_prefilled:
-                self.message = "Prefilling..."
-                InlineSpinner._has_prefilled = True
-            else:
-                self.message = message
+            self.message = message
             if not self.active:
                 self.active = True
                 self.start_time = time.time()
@@ -424,8 +418,6 @@ def draw_session_box(
             border_style="green",
             box=ROUNDED,
             expand=False,
-            subtitle="[dim]Ctrl+C to exit[/dim]",
-            subtitle_align="right",
         )
     else:
         base_title, box_type, border_col, title_style = STYLES.get(box_style, STYLES[1])
@@ -437,8 +429,6 @@ def draw_session_box(
             border_style=border_col,
             box=box_type,
             expand=False,
-            subtitle="[dim]Ctrl+C to exit[/dim]",
-            subtitle_align="right",
         )
 
     _console.print(panel)
@@ -521,7 +511,8 @@ def run_interactive_selection(
                 sys.exit(127)
 
             if key in ("\r", "", "y", "Y"):
-                sys.stderr.write("\n")
+                # Cleanly erase the prompt line before handoff so terminal scrollback stays clean
+                sys.stderr.write("\r\x1b[2K")
                 sys.stderr.flush()
                 if "system" in cmd_to_show:
                     ensure_mysys_exists_fn()
