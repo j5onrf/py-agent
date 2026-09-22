@@ -1,4 +1,4 @@
-# CODEBASE INDEX MAP | Generated: 2026-09-18 13:09 | Workspace: py-agent | Path: ~/.config/py-agent
+# CODEBASE INDEX MAP | Generated: 2026-09-22 12:29 | Workspace: py-agent | Path: ~/.config/py-agent
 # Active symbols and structural connections mapped in the local index.
 # -----------------------------------------------------------------------------------------
 # Codebase Modules & Active Architecture:
@@ -14,7 +14,7 @@
 #   ├── README.md                - <br>
 #   ├── RELEASE-NOTES.md         - <div align="center">
 #   ├── SECURITY.md              - Security Policy
-#   ├── ai-agent.py              - Py Agent [j5onrf] [v0.9.9.30] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production R
+#   ├── ai-agent.py              - Py Agent [j5onrf] [v0.9.9.36] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production R
 #   ├── ai-context.md            - Py-Agent Config
 #   ├── ai-hook.sh               - Production Py-Agent Shell Hook v0.9.9.28 (Hardened & Production Ready)
 #   ├── logo.svg                 - <svg xmlns="http://www.w3.org/2000/svg" viewBox="121 101 270 310">
@@ -23,7 +23,6 @@
 #   ├── modules/agent_adapters.py - Tool Format Adapters & Self-Healing Parser for Small-Models [Production Ready]
 #   ├── modules/agent_cloud.py   - Dynamic Cloud Cascade Engine - Top-down .env provider API priority with infinite CUSTOM* support [Pr
 #   ├── modules/agent_context.py - Context Search & Indexing Engine - Jaccard intent matching [Production Ready]
-#   ├── modules/agent_core (Copy).py - Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [Production Ready]
 #   ├── modules/agent_core.py    - Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [Production Ready]
 #   ├── modules/agent_ipython.py - Local-AI Standalone IPython Kernel & RLM Harness Module [Production Ready]
 #   ├── modules/agent_memories.py - Open Knowledge Format (OKF) Project Memory Manager [Production Ready]
@@ -43,10 +42,10 @@
 [file:.gitignore] sum:Secrets & Credentials
 [markdown:CONTRIBUTING.md] title:Contributing to Py-Agent
 [file:LICENSE] sum:MODIFIED MIT LICENSE (NON-COMMERCIAL / NO BUSINESS USE)
-[markdown:README.md] title:1. Install system dependencies & clone
+[markdown:README.md] title:1. Install dependencies (Arch/CachyOS or pip) | links:ai-context.md
 [markdown:RELEASE-NOTES.md] title:RELEASE-NOTES
 [markdown:SECURITY.md] title:Security Policy
-[python:ai-agent.py] imp:agent_context,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tts,agent_ui,agent_voice,contextlib,json,os,re,readline,shutil,sqlite3,subprocess,sys,time,typing | fn:load_env_file,workspace_db_counts,ensure_clean_agent_dir,_sweep_dead_session_locks,clean_exit,_launch_surface,_update_workspace_config,run_interactive_chat,run_direct_query,run_matching_search,main
+[python:ai-agent.py] imp:agent_context,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tts,agent_ui,agent_voice,contextlib,json,os,re,readline,shutil,sqlite3,subprocess,sys,time,typing | fn:load_env_file,_show_transient_status,_clear_transient_status,workspace_db_counts,ensure_clean_agent_dir,_sweep_dead_session_locks,clean_exit,_launch_surface,_update_workspace_config,run_interactive_chat,run_direct_query,run_matching_search,main
 [markdown:ai-context.md] title:Py-Agent Config
 [shell:ai-hook.sh] sum:Production Py-Agent Shell Hook v0.9.9.28 (Hardened & Production Ready)
 [image/svg:logo.svg] dim:x | size:1.4KB
@@ -54,7 +53,6 @@
 [python:modules/agent_adapters.py] imp:ast,json,os,re,time,typing | fn:normalize_params,_extract_balanced_json,heal_tool_call,heal_json_args,_extract_ast_python_calls,extract_fallback_tool_calls
 [python:modules/agent_cloud.py] imp:os,re,typing | fn:_is_valid_key,get_active_configs
 [python:modules/agent_context.py] imp:os,re,sys,typing | fn:tokenize,load_context_entries,jaccard_search,clean_tool_prefix
-[python:modules/agent_core (Copy).py] imp:agent_adapters,agent_cloud,agent_ipython,agent_tools,agent_ui,agent_usage,base64,json,os,re,requests,rich,shutil,subprocess,sys,time,typing,urllib | cls:RichStreamer | fn:_get_console,_get_img_config,describe_image_gemini,preprocess_multimodal_messages,_heal_tool_args,get_state,save_state,workspace_safe_name,is_calm_cli,run_mod,__init__,_stop_spinner,start,update,stop,_log_turn_usage,_process_stream_chunk,_calc_turn_tokens,_confirm_gate,_print_tool_output,_run_edit_tool,agentic_turn,_calc_msg_tokens,stream_response,get_accurate_token_count,show_memory_status,prune_history
 [python:modules/agent_core.py] imp:agent_adapters,agent_cloud,agent_ipython,agent_tools,agent_ui,agent_usage,base64,json,os,re,requests,rich,shutil,subprocess,sys,time,typing,urllib | cls:RichStreamer | fn:_get_console,_clean_sigint_handler,_get_img_config,describe_image_gemini,preprocess_multimodal_messages,_heal_tool_args,get_state,save_state,workspace_safe_name,is_calm_cli,run_mod,__init__,_stop_spinner,start,update,stop,_log_turn_usage,_process_stream_chunk,_calc_turn_tokens,_confirm_gate,_print_tool_output,_run_edit_tool,agentic_turn,_calc_msg_tokens,stream_response,get_accurate_token_count,show_memory_status,prune_history
 [python:modules/agent_ipython.py] imp:IPython,agent_core,agent_memories,agent_tools,agent_ui,ast,builtins,collections,contextlib,io,os,signal,subprocess,sys,traceback,typing | cls:CellTimeoutError,MemorySDK,GraphSDK | fn:_timeout_handler,is_ipython_enabled,toggle_ipython_mode,bounded_repr,__init__,search,get_facts,add_fact,__init__,snippet,trace,blast_radius,search,architecture,delegate,_final_answer,_init_kernel_sdk,_is_outside,_check_boundary,safe_open,safe_listdir,_invalidate_module_cache,_read_file,_edit_file,_write_file,_list_dir,_search_code,_run_command,_save_memory_fn,inspect_ast_safety,run_cell,get_active_tools
 [python:modules/agent_memories.py] imp:os,re,shutil,time,typing | fn:_get_memory_dir,parse_memory_file,get_memory_count,list_memories,get_memory_context,save_memory_file,clear_memories,add_fact,get_facts
@@ -86,8 +84,10 @@
 [shell:setup/lfm2.sh] sum:Configuration
 [python:setup/model-select-local.py] imp:asyncio,os,re,select,shutil,subprocess,sys,tempfile,termios,tty | fn:async_set_cpu_chill,async_set_cpu_balanced,get_current_running_model,async_stop_all_engines,launch_local_server,async_get_key,_read,draw_menu,async_main
 [shell:setup/nex-n2.5.sh] sum:==========================================
+[shell:setup/occamy.sh] sum:==============================================================================
 [shell:setup/ornith.sh] sum:==============================================================================
 [shell:setup/q2bu.sh] sum:==========================================
+[shell:setup/tini.sh] sum:==============================================================================
 [markdown:skills/Readme.md] title:Py-Agent Skills
 [markdown:skills/hindsight.md] title:HINDSIGHT: RETROSPECTIVE & LESSON COMPILER
 [markdown:skills/meta/brainstorm.md] title:[SKILL] brainstorm ---> brainstorm, lateral, creative, perspective, future, trends, macro
@@ -118,10 +118,12 @@
 [markdown:skills/profiles/custom/lingtiny.md] title:lingtiny
 [markdown:skills/profiles/custom/minicpm.md] title:minicpm
 [markdown:skills/profiles/custom/nexn25.md] title:nexn25
+[markdown:skills/profiles/custom/occamy.md] title:occamy
 [markdown:skills/profiles/custom/ornith.md] title:ornith
 [markdown:skills/profiles/custom/q2bu.md] title:q2bu
 [markdown:skills/profiles/custom/sysadmin.md] title:sysadmin
 [markdown:skills/profiles/custom/tielcoder.md] title:tielcoder
+[markdown:skills/profiles/custom/tini-cybersec.md] title:tini-cybersec
 [markdown:skills/profiles/hermes/pro.md] title:pro
 [markdown:skills/profiles/pi/pro.md] title:pro
 [markdown:skills/system/aur-audit.md] title:AUR PRE-INSTALL SECURITY AUDIT SKILL
@@ -129,12 +131,12 @@
 [markdown:skills/system/security-audit.md] title:SYSTEM SECURITY AUDIT DIRECTIVES
 [markdown:skills/system/system-optimizer.md] title:GENERAL LINUX DESKTOP OPTIMIZATION SKILL
 [markdown:skills/system/update-inspector.md] title:ARCH LINUX UPGRADE DIRECTIVES
-[markdown:skills/system_instructions.md] title:system_instructions
+[markdown:skills/system_instructions.md] title:Global System Instructions
+[markdown:tools/agentic/system/Readme.md] title:Readme
 [file:tools/agentic/system/ai-commit] sum:ai-commit - High-Speed Minimalist Git Commit Generator
 [file:tools/agentic/system/ai-status] sum:ai-status - Diagnostics for Py-Agent Cloud Models & Quotas v2.3.0
 [file:tools/agentic/system/aur-audit] sum:aur-audit - Interactive Zero-Trust AUR Package Auditor v2.1.0
 [file:tools/agentic/system/log-checker] sum:AI Log Triage & Diagnostics v2.5.0 (Zero-Config / High-Precision)
-[markdown:tools/agentic/system/readme.md] title:Ai-Commit
 [file:tools/agentic/system/security-audit] sum:security-audit - Dynamic Security Profile Integrator & System Auditor v2.2.0
 [file:tools/agentic/system/syscheck] sum:syscheck - Composite System Triage & Diagnostics Orchestrator
 [file:tools/agentic/system/system-health] sum:system-health - Context-Aware Real-time Hardware Inspector
@@ -145,15 +147,16 @@
 [markdown:tools/email/Readme.md] title:Email TUI Monitor: `email-agent`
 [python:tools/email/email-agent] imp:agent_ui,concurrent,email,imaplib,os,re,sys | fn:load_email_config,clean_header,highlight_tags,fetch_single_account,fetch_emails,run_interactive_tui,main
 [python:tools/evals/eval-agent] imp:agent_cloud,agent_core,agent_ui,ast,contextlib,io,json,os,re,rich,shutil,subprocess,sys,tempfile,time,urllib | fn:extract_python_code,run_single_test,get_current_model_info,main
-[python:tools/evals/eval-stack] imp:agent_adapters,agent_cloud,agent_core,agent_ipython,agent_skills,agent_tools,agent_ui,contextlib,io,json,os,re,rich,select,shutil,subprocess,sys,tempfile,termios,threading,time,tty | cls:MinimalSpinner | fn:__init__,start,_spin,stop,_safe_read,list_available_profiles,select_profile_interactive,_get_k,resolve_dynamic_profile,get_current_model_info,run_single_agentic_test,main
+[python:tools/evals/eval-stack] imp:agent_adapters,agent_cloud,agent_core,agent_ipython,agent_skills,agent_tools,agent_ui,contextlib,io,json,os,re,rich,select,shutil,subprocess,sys,tempfile,termios,threading,time,tty | cls:MinimalSpinner | fn:__init__,start,_spin,stop,_safe_read,list_available_profiles,select_profile_interactive,_get_k,resolve_dynamic_profile,get_current_model_info,_log_failure_trace,run_single_agentic_test,main
 [python:tools/generate-profile] imp:glob,os,re,socket,subprocess,sys | fn:run
 [markdown:tools/index-map/Readme.md] title:Codebase Mapping & Relational Knowledge Graph: `index-map`
 [python:tools/index-map/index-map] imp:ast,fnmatch,json,os,re,sqlite3,struct,sys,time | cls:PythonGraphVisitor | fn:load_gitignore_patterns,should_ignore,is_binary,get_file_summary,__init__,visit_Import,visit_ImportFrom,visit_ClassDef,visit_FunctionDef,visit_AsyncFunctionDef,visit_any_func,parse_non_python_file,analyze_markdown_file,analyze_image_file,analyze_json_file,analyze_shell_file,analyze_generic_file,init_db,find_db_path,compile_ascii_tree,compile_flat_shorthand,run_indexing,search_symbols,extract_snippet,main
 [python:tools/loop/ralph.py] imp:agent_core,agent_ui,argparse,os,re,sys,time | fn:_read_spec_file,_log_task_turn,is_task_complete,run_task_loop,main
-[python:tools/new-project] imp:os,re,sys | fn:add_to_context_file,main
+[python:tools/new-project] imp:os,re,signal,sys | fn:prompt_tty,add_to_context_file,main
 [python:tools/subsec/apps/media/media.py] imp:math,os,random,re,select,shutil,signal,subprocess,sys,termios,time,tty,unicodedata | cls:VisualizerPhysics,SystemAudio,PlayerManager | fn:strip_ansi,char_display_width,str_display_width,truncate_str_display,fmt_time,__init__,update,render_peak_equalizer,render_braille_spectrogram,render_stereo_vu_deck,make_vu_bar,render_oscilloscope,render_symmetrical_wings,render_cyber_matrix,generate_visualizer_panel,__init__,query,adjust,toggle_mute,__init__,parse_time,find_best_player,update,toggle,next,previous,seek,toggle_shuffle,cycle_loop,get_key_non_blocking,format_row,run_tuiamp,cleanup
 [python:tools/subsec/apps/stopwatch/stopwatch.py] imp:math,os,re,select,shutil,signal,sys,termios,time,tty,unicodedata | fn:strip_ansi,char_display_width,str_display_width,truncate_str_display,fmt_time_high_res,fmt_delta,render_radar_sweep,render_chrono_pendulum,render_braille_wave,render_linear_pulse,render_matrix_stream,generate_visualizer_panel,get_key_non_blocking,format_row,run_stopwatch_tui,cleanup
 [shell:tools/subsec/apps/stopwatch/stopwatch.sh] sum:Minimalist Pure Bash High-Resolution Stopwatch v2.0
 [file:tools/subsec/hyprstate/gitcom] sum:Hyprland Workspace State Manager -- GitCom
 [file:tools/subsec/hyprstate/work] sum:Hyprland Workspace State Manager -- Work
+[python:tools/system-stack] imp:os,rich,select,shutil,subprocess,sys,termios,tty | fn:_get_tty_streams,check_mysys_drift,get_key_non_blocking,pause_terminal,draw_menu,run_target,main
 [python:tools/test-agent] imp:agent_adapters,agent_cloud,agent_context,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tools,agent_tts,agent_tui,agent_usage,ast,glob,importlib,json,os,py_compile,re,shutil,subprocess,sys,tempfile,time | fn:print_result

@@ -533,7 +533,8 @@ def agentic_turn(
             body_tools["tools"] = [tools.WEB_TOOL]
 
         if spinner and not getattr(spinner, "active", False):
-            spinner.start("Working...")
+            user_msg_count = len([m for m in messages if m.get("role") == "user"])
+            spinner.start("Preloading..." if (_round == 0 and user_msg_count <= 1) else "Working...")
         try:
             res = _session.post(url, json=body_tools, headers={"Content-Type": "application/json", **headers}, timeout=timeout, stream=True)
             if res.status_code != 200:

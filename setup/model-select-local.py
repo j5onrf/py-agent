@@ -80,6 +80,12 @@ LOCAL_MODELS = [
         "file": "Occamy-1.0.APEX-I-MiniPlus-V2.1.gguf",
         "script": "occamy.sh",
     },
+    {
+        "name": "Qwen3.8-35B-A3B-Distill-MTP-APEX-I-MiniPlus-V2.1 (17.2gb)",
+        "alias": "Qwen3.8-35B-Distill",
+        "file": "Qwen3.8-35B-A3B-Distill-MTP-APEX-I-MiniPlus-V2.1.gguf",
+        "script": "qwen38d.sh",
+    },
 ]
 
 

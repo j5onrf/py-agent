@@ -37,6 +37,8 @@
 
 ```properties
 # --- Workspaces ---
+ai init ~/.config/py-agent/projects/qwen38d ---> qwen38d
+ai init ~/.config/py-agent/projects/nemotron ---> nemotron
 ai init ~/.config/py-agent/projects/occamy ---> occamy
 ai init ~/.config/py-agent/projects/tini-cybersec ---> tini-cybersec, tini cybersec
 ai init ~/.config/py-agent/projects/ornith ---> ornith

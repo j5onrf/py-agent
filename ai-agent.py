@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.36] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production Ready]"""
+"""Py Agent [j5onrf] [v0.9.9.37] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production Ready]"""
 
 import json
 import os
@@ -23,7 +23,7 @@ BASE_PROMPT_AGENT: str = "Active local workspace developer agent."
 # Precompiled hot-path regular expressions
 RE_THINK_TAGS: re.Pattern = re.compile(r"<think>[\s\S]*?(?:</think>|$)", re.DOTALL)
 RE_AUTO_RUN: re.Pattern = re.compile(r"Run:\s*((?:trace symbol|blast radius|read function|find symbol)\s+\S+|architecture overview)")
-RE_THINK_BIN: re.Pattern = re.compile(r"^/?([ftba])(?:\s+(\d+))?$", re.IGNORECASE)
+RE_THINK_BIN: re.Pattern = re.compile(r"^/?(tk|[fba])(?:\s+(\d+))?$", re.IGNORECASE)
 RE_SHELL_META: re.Pattern = re.compile(r"[\[\]{}()='\",;|#<>]")
 
 
@@ -711,6 +711,31 @@ def run_interactive_chat(args: list[str]) -> None:
 
                 if cmd == "/tok":
                     core.show_memory_status(chat_history, max_context=int(os.environ.get("AI_MAX_TOKENS", 8192)), server_url="http://localhost:8080")
+                    continue
+
+                if cmd in ("file", "/file"):
+                    if len(parts) < 2:
+                        ui._console.print("[dim yellow][sys] Usage: file <path> (e.g. file src/main.py)[/dim yellow]\n")
+                        continue
+                    raw_f = query.split(maxsplit=1)[1].strip().strip('\'"')
+                    full_p = os.path.realpath(os.path.expanduser(raw_f) if os.path.isabs(os.path.expanduser(raw_f)) else os.path.join(workspace_path, raw_f))
+                    if not os.path.isfile(full_p):
+                        ui._console.print(f"[red][sys] File not found: {raw_f}[/red]\n")
+                        continue
+                    if any(full_p.endswith(ext) for ext in (".db", ".sqlite", ".bin", ".png", ".jpg", ".jpeg", ".zip", ".tar", ".gz", ".pyc")):
+                        ui._console.print(f"[red][sys] Cannot load binary file: {raw_f}[/red]\n")
+                        continue
+                    try:
+                        with open(full_p, "r", encoding="utf-8", errors="replace") as f:
+                            f_content = f.read()
+                        rel_name = os.path.relpath(full_p, workspace_path)
+                        lines_cnt = len(f_content.splitlines())
+                        file_entry = f"### File Context: {rel_name} ({lines_cnt} lines)\n```\n{f_content}\n```"
+                        chat_history.append({"role": "user", "content": f"[System Context]: User manually loaded file '{rel_name}' into context.\n\n{file_entry}"})
+                        chat_history.append({"role": "assistant", "content": f"Loaded '{rel_name}' ({lines_cnt} lines) into active context."})
+                        _flash_status(f"file: {rel_name} ({lines_cnt} lines)")
+                    except OSError as e:
+                        ui._console.print(f"[red][sys] Failed to read file: {e}[/red]\n")
                     continue
 
             if query.startswith(("/", "-")) and query.split()[0] in ("/skill", "/s"):
