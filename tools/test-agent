@@ -2,9 +2,11 @@
 """Unified All-in-One Py-Agent Deep Diagnostic & Comprehensive System Test Suite [Production Ready]"""
 
 import ast
+import contextlib
 import glob
 import importlib
 import importlib.util
+import io
 import json
 import os
 import py_compile
@@ -49,6 +51,7 @@ all_passed = True
 print(f"{CYAN}[Pass 1/10] Bytecode Compilation (All Core Modules & Tools){RESET}")
 files_to_compile = [
     "ai-agent.py",
+    "modules/agent_security.py",
     "modules/agent_core.py",
     "modules/agent_ipython.py",
     "modules/agent_tools.py",
@@ -90,6 +93,7 @@ all_passed = all_passed and p1
 # --- PASS 2: MODULE IMPORTS & CROSS-DEPENDENCIES ---
 print(f"\n{CYAN}[Pass 2/10] Module Imports & Cross-Dependencies{RESET}")
 modules_to_import = [
+    "agent_security",
     "agent_core",
     "agent_ipython",
     "agent_tools",
@@ -118,20 +122,22 @@ all_passed = all_passed and p2
 sandbox_dir = tempfile.mkdtemp(prefix="local_ai_test_")
 
 try:
-    import agent_sessions as sessions
-    import agent_memories as memories
     import agent_adapters as adapters
-    import agent_core as core
-    import agent_tools as tools
-    import agent_skills as skills
-    import agent_context as context
     import agent_cloud as cloud
+    import agent_context as context
+    import agent_core as core
     import agent_ipython as ipython
+    import agent_memories as memories
+    import agent_security as security
+    import agent_sessions as sessions
+    import agent_skills as skills
+    import agent_tools as tools
+    import agent_ui as ui
 
     # --- PASS 3: SQLITE SUBSYSTEM, SESSIONS & SUBAGENT REGISTRY ---
     print(f"\n{CYAN}[Pass 3/10] SQLite Sessions, Turns & Sub-Agent Lockfile Registry{RESET}")
     test_ws = f"test_ws_{int(time.time())}"
-    
+
     # 1. DB Init
     sessions.init_db(test_ws)
     c_turns = sessions.get_turns_count(test_ws)
@@ -144,9 +150,10 @@ try:
     p3_b = c_turns_after == 1
     print_result("Session Turn Logging & Tokenization", p3_b, f"Turns: {c_turns_after}")
 
-    # 3. Checkpoint Save & Rollback
+    # 3. Checkpoint Save & Rollback (Silencing noisy checkpoint stdout during test)
     sample_hist = [{"role": "user", "content": "hello"}, {"role": "assistant", "content": "hi"}]
-    sessions.save_checkpoint(test_ws, "cp-v1", sample_hist)
+    with contextlib.redirect_stdout(io.StringIO()):
+        sessions.save_checkpoint(test_ws, "cp-v1", sample_hist)
     db_path = os.path.join(sessions.SESSIONS_DIR, f"{test_ws}.db")
     with sessions.closing(sessions.connect_db(db_path)) as conn:
         row = conn.cursor().execute("SELECT tag, history FROM checkpoints WHERE workspace = ?", (test_ws,)).fetchone()
@@ -165,7 +172,7 @@ try:
     fake_stale_file = os.path.join(active_sessions_dir, f"{test_ws}-2-99999999.session")
     with open(fake_stale_file, "w") as sf:
         sf.write("2")
-    
+
     sub_id = sessions.get_sub_agent_id(test_ws, os.getpid())
     stale_cleaned = not os.path.exists(fake_stale_file)
     p3_e = sub_id == 0 and stale_cleaned
@@ -181,7 +188,7 @@ try:
 
     # --- PASS 4: OPEN KNOWLEDGE FORMAT (OKF) MARKDOWN MEMORY SUBSYSTEM ---
     print(f"\n{CYAN}[Pass 4/10] Open Knowledge Format (OKF) Markdown Memory Subsystem{RESET}")
-    
+
     # 1. Save OKF Memory Files with Bracketed Tags
     ok1, fpath1 = memories.save_memory_file(sandbox_dir, "db-choice", "Using SQLite with WAL mode.", mem_type="decision", tags=["db", "sqlite"])
     ok2, fpath2 = memories.save_memory_file(sandbox_dir, "code-style", "Prefer pathlib over os.path.", mem_type="rule", tags=["python", "style"])
@@ -212,7 +219,7 @@ try:
 
     # --- PASS 5: SMALL-MODEL FALLBACK ADAPTERS & JSON HEALER ---
     print(f"\n{CYAN}[Pass 5/10] Small-Model Fallback Adapters & Self-Healing JSON (/adp){RESET}")
-    
+
     # 1. Parameter Normalization
     normed = adapters.normalize_params({"file": "app.py", "cmd": "pytest", "query": "def test"})
     p5_a = normed.get("path") == "app.py" and normed.get("command") == "pytest" and normed.get("pattern") == "def test"
@@ -248,11 +255,11 @@ try:
 
     all_passed = all_passed and p5_a and p5_b and p5_c and p5_d and p5_e and p5_f
 
-    # --- PASS 6: LIVE TOOL EXECUTION & CONTAINER PATH HEALING ---
-    print(f"\n{CYAN}[Pass 6/10] Live Tools, Container Path Healing & 3-Stage Edit{RESET}")
+    # --- PASS 6: ZERO-TRUST SECURITY KERNEL, BOUNDARIES & 3-STAGE EDIT ---
+    print(f"\n{CYAN}[Pass 6/10] Zero-Trust Security Kernel, Boundaries & 3-Stage Edit{RESET}")
 
     # 1. Container Path Normalization (/workspace/calc.py -> calc.py)
-    safe_resolved = tools._safe_path(sandbox_dir, "/workspace/calc.py")
+    safe_resolved = security.resolve_path(sandbox_dir, "/workspace/calc.py")
     expected_resolved = os.path.realpath(os.path.join(sandbox_dir, "calc.py"))
     p6_a = safe_resolved == expected_resolved
     print_result("Container Path Self-Healing (/workspace/...)", p6_a, f"Resolved to sandbox: {os.path.basename(safe_resolved)}")
@@ -293,17 +300,73 @@ try:
     p6_h = "calc.py:2" in search_res
     print_result("search_code (Regex & Content Search)", p6_h, "Found symbol and line preview")
 
-    # 9. Zero-Trust Security Gate (Forbidden System Binaries)
-    sec_blocked = tools._check_command_security("sudo rm -rf /", sandbox_dir)
+    # 9. Static Command Security: Forbidden Binaries
+    sec_blocked = security.check_command(sandbox_dir, "sudo rm -rf /")
     p6_i = sec_blocked is not None and "sudo" in sec_blocked
     print_result("Security Gate: Forbidden Binaries (sudo/pacman)", p6_i, f"Blocked: '{sec_blocked}'")
 
-    # 10. Zero-Trust Security Gate (Forbidden System Paths)
-    sec_path_blocked = tools._check_command_security("cat /etc/passwd", sandbox_dir)
+    # 10. Static Command Security: System Path Traversal
+    sec_path_blocked = security.check_command(sandbox_dir, "cat /etc/passwd")
     p6_j = sec_path_blocked is not None and "/etc" in sec_path_blocked
     print_result("Security Gate: System Path Traversal (/etc)", p6_j, f"Blocked: '{sec_path_blocked}'")
 
-    all_passed = all_passed and p6_a and p6_b and p6_c and p6_d and p6_e and p6_f and p6_g and p6_h and p6_i and p6_j
+    # --- END-TO-END SECURITY INTERCEPTION & YOLO INVARIANT TESTS ---
+    gate_invocations: list[str] = []
+
+    def mock_gate_deny(reason: str) -> bool:
+        gate_invocations.append(reason)
+        return False
+
+    orig_gates = os.environ.get("AI_CONFIRM_GATES")
+    os.environ["AI_CONFIRM_GATES"] = "0"  # Force YOLO ON
+
+    # 11. E2E Tool Gate: Out-of-Bounds read_file Denied Under YOLO
+    gate_invocations.clear()
+    res_oob_read = tools.run_tool("read_file", {"path": "/etc/passwd"}, sandbox_dir, confirm_gate_fn=mock_gate_deny)
+    p6_k = len(gate_invocations) == 1 and "OUT-OF-BOUNDS READ" in gate_invocations[0] and "[denied]" in res_oob_read
+    print_result("E2E Tool Gate: Out-of-Bounds read_file (YOLO Denied)", p6_k, "Interception verified & blocked")
+
+    # 12. E2E Tool Gate: Out-of-Bounds run_command Denied Under YOLO
+    gate_invocations.clear()
+    res_oob_cmd = tools.run_tool("run_command", {"command": "cat /etc/passwd"}, sandbox_dir, confirm_gate_fn=mock_gate_deny)
+    p6_l = len(gate_invocations) == 1 and "OUT-OF-BOUNDS EXECUTION" in gate_invocations[0] and "[denied]" in res_oob_cmd
+    print_result("E2E Tool Gate: Out-of-Bounds run_command (YOLO Denied)", p6_l, "Command traversal intercepted")
+
+    # 13. E2E Tool Gate: In-Bounds Auto-Approved Under YOLO (Zero Prompts)
+    gate_invocations.clear()
+    res_in_yolo = tools.run_tool("read_file", {"path": "calc.py"}, sandbox_dir, confirm_gate_fn=mock_gate_deny)
+    p6_m = len(gate_invocations) == 0 and "def add" in res_in_yolo
+    print_result("E2E Tool Gate: In-Bounds Auto-Approve (YOLO ON)", p6_m, "0 prompt overhead inside workspace")
+
+    # 14. E2E Tool Gate: Spinner Shutdown During Confirmation
+    class ActiveMockSpinner:
+        def __init__(self):
+            self.active = True
+
+        def stop(self, *args, **kwargs):
+            self.active = False
+
+    mock_spinner = ActiveMockSpinner()
+    orig_confirm = getattr(ui, "confirm_tool", None)
+    ui.confirm_tool = lambda r: False
+    try:
+        core._confirm_gate("OUT-OF-BOUNDS TEST", mock_spinner)
+        p6_n = not mock_spinner.active
+        print_result("E2E Tool Gate: Spinner Clean Shutdown Hook", p6_n, "Spinner halted before prompt display")
+    finally:
+        if orig_confirm:
+            ui.confirm_tool = orig_confirm
+
+    if orig_gates is not None:
+        os.environ["AI_CONFIRM_GATES"] = orig_gates
+    else:
+        os.environ.pop("AI_CONFIRM_GATES", None)
+
+    all_passed = (
+        all_passed
+        and p6_a and p6_b and p6_c and p6_d and p6_e and p6_f and p6_g and p6_h and p6_i and p6_j
+        and p6_k and p6_l and p6_m and p6_n
+    )
 
     # --- PASS 7: IPYTHON SANDBOX KERNEL & GRAPH ENGINE ---
     print(f"\n{CYAN}[Pass 7/10] In-Memory Kernel (/py), Sandbox Guards & AST FTS5 Graph{RESET}")
@@ -356,7 +419,7 @@ try:
     test_env_path = os.path.join(sandbox_dir, "test.env")
     with open(test_env_path, "w") as ef:
         ef.write(env_sample)
-    
+
     orig_env_path = getattr(cloud, "ENV_PATH", None)
     cloud.ENV_PATH = test_env_path
     try:
@@ -418,9 +481,9 @@ try:
 
     # --- PASS 10: ZERO-I/O SPEND LEDGER, TTS, REASONIX & RALPH LOOP ---
     print(f"\n{CYAN}[Pass 10/10] Zero-I/O Ledger, TTS Sanitizer, TUI Reasonix & Ralph Loop{RESET}")
-    import agent_usage as usage
     import agent_tts as tts
     import agent_tui as tui
+    import agent_usage as usage
 
     # 1. Zero-I/O Local Spend Bypass ($0.00 does not touch disk)
     orig_ledger = getattr(usage, "LEDGER_FILE", getattr(usage, "LEDGER_PATH", ""))

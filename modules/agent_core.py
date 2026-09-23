@@ -16,6 +16,7 @@ from typing import Any
 import agent_adapters as adapters
 import agent_cloud
 import agent_ipython as ipython
+import agent_security as security
 import agent_tools as tools
 import agent_ui as ui
 import requests
@@ -427,12 +428,8 @@ def _calc_turn_tokens(ans_text: str, messages: list[dict[str, Any]], captured_us
 
 
 def _confirm_gate(reason: str, spinner: Any) -> bool:
-    if os.environ.get("AI_CONFIRM_GATES") == "0":
-        return True
-    if spinner:
-        spinner.stop(leave_on_screen=False)
-    is_tty = (hasattr(sys, "__stdout__") and sys.__stdout__ and sys.__stdout__.isatty()) or sys.stdout.isatty()
-    return is_tty and ui.confirm_tool(reason)
+    is_security_event = reason.startswith(("OUT-OF-BOUNDS", "PYTHON DANGEROUS OP", "PYTHON SHELL ESCAPE"))
+    return security.authorize(reason, is_security_event=is_security_event, spinner=spinner)
 
 
 def _print_tool_output(spinner: Any, text: str) -> None:

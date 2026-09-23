@@ -5,7 +5,7 @@
   <h1>Py Agent</h1>
 
   <p>
-    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.37.svg?variant=secondary" alt="Version"></a>
+    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.38.svg?variant=secondary" alt="Version"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/Python.svg?variant=branded&brand=python" alt="Language"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/C%2B%2B.svg?variant=branded&brand=cplusplus" alt="C++"></a>
     <a href="https://github.com/j5onrf/py-agent/blob/main/LICENSE"><img src="https://shieldcn.dev/badge/license-MIT-green.svg" alt="License"></a>
@@ -34,7 +34,7 @@
       <td align="center" width="50%" valign="top">
         <h3>27B+ Autonomous (LLM)</h3>
         <p><sub>Deep reasoning, multi-file refactoring & recursive sub-agents</sub></p>
-        <code>Qwen3.8-35B-D*</code> &nbsp;•&nbsp; <code>Occamy-1.0*</code><br>
+        <code>Qwen3.8-35B-D*</code> &nbsp;•&nbsp; <code>Occamy-1.0</code><br>
         <code>Nex-N2.5-mini</code> &nbsp;•&nbsp; <code>KAT-Coder-V2.5</code><br>
         <code>Qwen3.8-27B</code> &nbsp;•&nbsp; <code>Ornith/Tiel</code><br>
         <code>Qwen3.8-Flash-Next</code> &nbsp;•&nbsp; <code>DeepSeek&#8209;V4.1</code>

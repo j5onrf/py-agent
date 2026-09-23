@@ -27,37 +27,17 @@ BINARY_EXTENSIONS = frozenset({
     ".pdf", ".docx", ".xlsx", ".db-wal", ".db-shm", ".pyo", ".pyd"
 })
 
+import agent_security as security
+
 EXCLUDED_SEARCH_DIRS = frozenset({
     ".git", ".agent", "__pycache__", ".pytest_cache", "node_modules",
     ".venv", "venv", "env", "dist", "build", ".mypy_cache", ".ruff_cache"
 })
 
-FORBIDDEN_GLOBAL_COMMANDS = frozenset({
-    "sudo", "doas", "su", "pkexec",
-    "pip", "pip3", "pipx", "yay", "paru", "apt", "apt-get", "dnf", "yum", "brew",
-    "npm", "pnpm", "yarn", "gem", "cargo", "rustup", "go",
-    "reboot", "shutdown", "poweroff",
-    "useradd", "usermod", "userdel", "passwd",
-})
-
-READONLY_INSPECTION_SUBCOMMANDS = {
-    "systemctl": frozenset({
-        "status", "is-active", "is-enabled", "is-failed",
-        "list-units", "list-unit-files", "list-timers", "list-sockets", "show", "cat"
-    }),
-    "pacman": frozenset({
-        "-q", "-qi", "-ql", "-qs", "-qk", "-qo", "-qm", "-qu", "--query"
-    }),
-}
-
-FORBIDDEN_SYS_DIRS = (
-    "/etc", "/usr", "/var", "/bin", "/sbin", "/opt", "/root", "/boot", "/sys", "/proc", "/dev"
-)
-
-RE_ROOT_SANDBOX = re.compile(
-    r"^/(?:workspace|app|home/(?:user|developer|runner|admin))(?:/(.*))?$",
-    re.IGNORECASE,
-)
+FORBIDDEN_GLOBAL_COMMANDS = security.FORBIDDEN_GLOBAL_COMMANDS
+READONLY_INSPECTION_SUBCOMMANDS = security.READONLY_INSPECTION_SUBCOMMANDS
+FORBIDDEN_SYS_DIRS = security.FORBIDDEN_SYS_DIRS
+RE_ROOT_SANDBOX = security.RE_ROOT_SANDBOX
 
 # In-Memory Session State
 _SESSION_READ_FILES: set[str] = set()
@@ -237,93 +217,16 @@ def _is_calm() -> bool:
 
 def _safe_path(workspace: str, p: str) -> str:
     """Resolves and normalizes workspace paths with container prefix self-healing."""
-    if not p:
-        return os.path.realpath(workspace)
-    clean_p = os.path.expanduser(urllib.parse.unquote(str(p).strip().strip('\'"`\\\n\r\t ')))
-    ws_real = os.path.realpath(workspace)
-
-    # Heal hallucinated /workspace, /app, or /home/user container prefixes
-    if clean_p.startswith("/") and not clean_p.startswith(ws_real):
-        if m := RE_ROOT_SANDBOX.match(clean_p):
-            clean_p = m.group(1) or "."
-        else:
-            rel_candidate = clean_p.lstrip("/")
-            if os.path.exists(os.path.join(ws_real, rel_candidate)) or "/" not in rel_candidate:
-                clean_p = rel_candidate
-
-    return os.path.realpath(clean_p if os.path.isabs(clean_p) else os.path.join(ws_real, clean_p))
+    return security.resolve_path(workspace, p)
 
 
 def _is_outside_workspace(workspace: str, full_path: str) -> bool:
-    if not full_path:
-        return False
-    root = os.path.realpath(workspace)
-    return full_path != root and not full_path.startswith(root + os.sep)
+    return security.is_outside(workspace, full_path)
 
 
 def _check_command_security(cmd: str, workspace: str) -> str | None:
     """Detects if a shell command targets system packages or paths outside workspace."""
-    if not cmd or not cmd.strip():
-        return "Empty command"
-    clean_cmd = cmd.strip()
-    root_ws = os.path.realpath(workspace)
-
-    sub_cmds = re.split(r"[;&|]+", clean_cmd)
-    for sub in sub_cmds:
-        sub_strip = sub.strip()
-        if not sub_strip:
-            continue
-        try:
-            tokens = shlex.split(sub_strip)
-        except ValueError:
-            tokens = sub_strip.split()
-        if not tokens:
-            continue
-
-        binary = os.path.basename(tokens[0]).lower()
-
-        # Handle systemctl read-only vs mutating commands
-        if binary == "systemctl":
-            sub_actions = [t.lower() for t in tokens[1:] if not t.startswith("-")]
-            if sub_actions and sub_actions[0] in READONLY_INSPECTION_SUBCOMMANDS["systemctl"]:
-                pass
-            else:
-                return f"Privileged or mutating systemctl action: '{' '.join(tokens[:2])}'"
-
-        # Handle pacman read-only queries vs package install/removal
-        elif binary == "pacman":
-            action_flags = [t.lower() for t in tokens[1:] if t.startswith("-")]
-            if action_flags and any(any(f.startswith(rf) for rf in READONLY_INSPECTION_SUBCOMMANDS["pacman"]) for f in action_flags):
-                pass
-            else:
-                return f"Package manager modification: '{' '.join(tokens[:2])}'"
-
-        # Handle journalctl (read-only unless vacuuming/rotating)
-        elif binary == "journalctl":
-            if any(t.startswith(("--vacuum", "--rotate")) for t in tokens):
-                return f"Journal maintenance command: '{' '.join(tokens)}'"
-
-        elif binary in FORBIDDEN_GLOBAL_COMMANDS:
-            return f"Global system/package binary: '{binary}'"
-
-        for t in tokens:
-            for sys_dir in FORBIDDEN_SYS_DIRS:
-                if t == sys_dir or t.startswith(f"{sys_dir}/"):
-                    return f"System directory reference: '{t}'"
-
-        # Skip path inspection on inline python code arguments
-        if binary in ("python", "python3") and any(a in tokens for a in ("-c", "-m")):
-            tokens = [t for t in tokens if not t.startswith(("import ", "def ", "from ", "print("))]
-
-        for t in tokens:
-            if t == "/" or len(t) <= 1:
-                continue
-            if ".." in t or t.startswith("~/") or (t.startswith("/") and not t.startswith("//")):
-                exp = os.path.realpath(os.path.expanduser(t))
-                if (os.path.exists(exp) or t.startswith("/home/")) and _is_outside_workspace(root_ws, exp):
-                    return f"Path outside workspace: '{t}'"
-
-    return None
+    return security.check_command(workspace, cmd)
 
 
 def _search_codebase(pattern: str, search_root: str, workspace: str, max_results: int = 30) -> str:
@@ -570,19 +473,18 @@ def run_tool(
                     args["pattern"] = args[alt]
                     break
 
-    gates_active = os.environ.get("AI_CONFIRM_GATES", "1") == "1"
     raw_path = args.get("path", "")
     full = _safe_path(workspace, raw_path)
 
     def _in_bounds_gate(reason: str) -> bool:
-        if confirm_gate_fn and gates_active:
+        if confirm_gate_fn and os.environ.get("AI_CONFIRM_GATES", "1") == "1":
             return confirm_gate_fn(reason)
         return True
 
     def _security_gate(reason: str) -> bool:
         if confirm_gate_fn:
             return confirm_gate_fn(reason)
-        return ui.confirm_tool(reason)
+        return security.authorize(reason, is_security_event=True)
 
     # 1. Isolated Sandbox Sub-Agent Delegation with Recursion Guard
     if name == "delegate_task":

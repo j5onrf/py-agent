@@ -19,11 +19,13 @@ sys.path.append(os.path.join(CFG_DIR, "modules"))
 try:
     import agent_core as core
     import agent_memories as memories
+    import agent_security as security
     import agent_tools as tools
     import agent_ui as ui
 except ImportError:
     core = None
     memories = None
+    security = None
     tools = None
     ui = None
 
@@ -61,7 +63,6 @@ def toggle_ipython_mode(enable: bool | None = None) -> bool:
 
 _orig_open = builtins.open
 _orig_listdir = os.listdir
-_confirm_gate_fn = None
 _is_executing_cell = False
 
 
@@ -157,9 +158,7 @@ def _final_answer(val: Any) -> Any:
 
 
 def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | None = None) -> None:
-    global _shell_globals, _shell_instance, _confirm_gate_fn
-    if confirm_gate_fn:
-        _confirm_gate_fn = confirm_gate_fn
+    global _shell_globals, _shell_instance
     ws_real = os.path.realpath(workspace)
 
     try:
@@ -174,24 +173,11 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
     if _has_ipython and _shell_instance is None:
         _shell_instance = InteractiveShell.instance()
 
-    SYSTEM_DEVICES = frozenset({"/dev/tty", "/dev/null", "/dev/urandom", "/dev/zero", "/dev/random"})
-
-    def _is_outside(full_path: str) -> bool:
-        if full_path in SYSTEM_DEVICES or full_path.startswith("/dev/pts/"):
-            return False
-        return full_path != ws_real and not full_path.startswith(ws_real + os.sep)
-
     def _check_boundary(path_str: str, op_name: str) -> bool:
-        if path_str in SYSTEM_DEVICES or path_str.startswith("/dev/pts/"):
-            return True
-        full = os.path.realpath(path_str if os.path.isabs(path_str) else os.path.join(ws_real, path_str))
-        if _is_outside(full):
+        full = security.resolve_path(ws_real, path_str) if security else os.path.realpath(path_str if os.path.isabs(path_str) else os.path.join(ws_real, path_str))
+        if security and security.is_outside(ws_real, full):
             gate_msg = f"OUT-OF-BOUNDS KERNEL {op_name}: {full}"
-            if _confirm_gate_fn:
-                return _confirm_gate_fn(gate_msg)
-            if ui:
-                return ui.confirm_tool(gate_msg)
-            return False
+            return security.authorize(gate_msg, is_security_event=True)
         return True
 
     def safe_open(file, mode="r", *args, **kwargs):
@@ -201,10 +187,9 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
         return _orig_open(file, mode, *args, **kwargs)
 
     def safe_listdir(path="."):
-        # Crucial guard: Only enforce sandbox boundary checks during active cell execution
         if _is_executing_cell and not _check_boundary(str(path), "LIST DIR"):
             raise PermissionError(f"[denied] Out-of-bounds list_dir blocked: {path}")
-        full = os.path.realpath(str(path) if os.path.isabs(str(path)) else os.path.join(ws_real, str(path)))
+        full = security.resolve_path(ws_real, str(path)) if security else os.path.realpath(str(path) if os.path.isabs(str(path)) else os.path.join(ws_real, str(path)))
         return _orig_listdir(full)
 
     def _invalidate_module_cache(file_path: str) -> None:
@@ -216,12 +201,12 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
     def _read_file(path: str) -> str:
         if not _check_boundary(path, "READ"):
             return "[denied] Out-of-bounds read blocked."
-        return tools.run_tool("read_file", {"path": path}, ws_real, confirm_gate_fn=_confirm_gate_fn) if tools else ""
+        return tools.run_tool("read_file", {"path": path}, ws_real) if tools else ""
 
     def _edit_file(path: str, old_str: str, new_str: str) -> str:
         if not _check_boundary(path, "EDIT"):
             return "[denied] Out-of-bounds edit blocked."
-        res = tools.run_tool("edit_file", {"path": path, "old_str": old_str, "new_str": new_str}, ws_real, confirm_gate_fn=_confirm_gate_fn) if tools else ""
+        res = tools.run_tool("edit_file", {"path": path, "old_str": old_str, "new_str": new_str}, ws_real) if tools else ""
         if "Successfully edited" in res:
             _invalidate_module_cache(path)
         return res
@@ -229,7 +214,7 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
     def _write_file(path: str, content: str, overwrite: bool = False) -> str:
         if not _check_boundary(path, "WRITE"):
             return "[denied] Out-of-bounds write blocked."
-        res = tools.run_tool("write_file", {"path": path, "content": content, "overwrite": overwrite}, ws_real, confirm_gate_fn=_confirm_gate_fn) if tools else ""
+        res = tools.run_tool("write_file", {"path": path, "content": content, "overwrite": overwrite}, ws_real) if tools else ""
         if "wrote" in res:
             _invalidate_module_cache(path)
         return res
@@ -237,17 +222,17 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
     def _list_dir(path: str = ".") -> list[str]:
         if not _check_boundary(path, "LIST DIR"):
             return ["[denied] Out-of-bounds list_dir blocked."]
-        full = os.path.realpath(path if os.path.isabs(path) else os.path.join(ws_real, path))
+        full = security.resolve_path(ws_real, path) if security else os.path.realpath(path if os.path.isabs(path) else os.path.join(ws_real, path))
         return sorted(_orig_listdir(full))
 
     def _search_code(pattern: str, path: str = ".") -> str:
         return tools._search_codebase(pattern, path, ws_real) if tools else ""
 
     def _run_command(cmd: str) -> str:
-        if tools and hasattr(tools, "_check_command_security"):
-            if sec_reason := tools._check_command_security(cmd, ws_real):
+        if security:
+            if sec_reason := security.check_command(ws_real, cmd):
                 gate_msg = f"OUT-OF-BOUNDS KERNEL EXECUTION: $ {cmd} ({sec_reason})"
-                if (_confirm_gate_fn and not _confirm_gate_fn(gate_msg)) or (ui and not ui.confirm_tool(gate_msg)):
+                if not security.authorize(gate_msg, is_security_event=True):
                     return f"[denied] Execution halted: {sec_reason}"
         res = subprocess.run(cmd, shell=True, cwd=ws_real, capture_output=True, text=True, timeout=120)
         return ((res.stdout or "") + ("\n" + res.stderr if res.stderr else "")).strip()
@@ -293,32 +278,15 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
 
 
 def inspect_ast_safety(code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] | None = None) -> str | None:
-    clean = code.strip()
-    if clean.startswith("!"):
-        if confirm_gate_fn and not confirm_gate_fn(f"PYTHON SHELL ESCAPE: {clean[:40]}"):
-            return "[denied] Execution halted by user gate."
+    if not security:
         return None
-
-    try:
-        tree = ast.parse(code)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                # Standalone dangerous calls: exec(), eval(), system()
-                if isinstance(node.func, ast.Name) and node.func.id in ("exec", "eval", "system"):
-                    if confirm_gate_fn and not confirm_gate_fn(f"PYTHON DANGEROUS OP: {node.func.id}() cell execution"):
-                        return "[denied] Dangerous operation rejected by user gate."
-                # Module calls: os.remove(), os.system(), shutil.rmtree(), subprocess execution
-                elif isinstance(node.func, ast.Attribute):
-                    mod_name = getattr(node.func.value, "id", "")
-                    attr_name = node.func.attr
-                    if (mod_name == "os" and attr_name in ("system", "remove", "unlink", "popen")) or \
-                       (mod_name == "shutil" and attr_name in ("rmtree", "rmdir")) or \
-                       (mod_name == "subprocess" and attr_name in ("run", "Popen", "call", "check_output", "check_call", "getoutput", "getstatusoutput")):
-                        gate = confirm_gate_fn or (ui.confirm_tool if ui else None)
-                        if gate and not gate(f"OUT-OF-BOUNDS KERNEL EXECUTION: {mod_name}.{attr_name}()"):
-                            return "[denied] Dangerous operation rejected by user gate."
-    except SyntaxError as e:
-        return f"[error] Python syntax error in code cell: {e}"
+    res = security.check_ast(code)
+    if not res:
+        return None
+    if res.startswith("[error"):
+        return res
+    if not security.authorize(res, is_security_event=True):
+        return "[denied] Dangerous operation rejected by user gate."
     return None
 
 
@@ -331,7 +299,6 @@ def run_cell(code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] |
     _final_answer_val = None
     _is_executing_cell = True
 
-    # 30-Second Infinite Loop Guard
     has_alarm = hasattr(signal, "SIGALRM")
     old_handler = None
     if has_alarm:
