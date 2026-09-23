@@ -72,17 +72,24 @@ All auto-created agent metadata files are strictly isolated inside `project/.age
 Running `ai init <path>` initializes a workspace and opens the interactive profile selector with instant RAM frontmatter pre-caching and single-letter hotkeys.
 
 ```console
-[ai init] Select default Agent Profile for workspace ling-tiny:
+[ai init] Select default Agent Profile for workspace qwen2b:
 
   ─── Custom ────────────────────────
-     1. Custom Base          (~370t)
+  >  1. Custom Base          (~370t)
      2. Custom Deepseek      (~431t)
      3. Custom Gemini        (~398t)
-     4. Custom Lfm2          (~361t)
-  >  5. Custom Lingtiny      (~395t)
-     6. Custom Minicpm       (~431t)
-     7. Custom Q2B           (~365t)
-     8. Custom Sysadmin      (~442t)
+     4. Custom Katcoder      (~511t)
+     5. Custom Lfm2          (~588t)
+     6. Custom Lingtiny      (~484t)
+     7. Custom Minicpm       (~464t)
+     8. Custom Nexn25        (~515t)
+     9. Custom Occamy        (~670t)
+    10. Custom Ornith        (~541t)
+    11. Custom Q2Bu          (~466t)
+    12. Custom Qwen38D       (~435t)
+    13. Custom Sysadmin      (~442t)
+    14. Custom Tielcoder     (~517t)
+    15. Custom Tini-Cybersec (~664t)
 
   ─── Agents ────────────────────────
      1. Pi Pro               (~378t)
@@ -91,8 +98,8 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 
     Tools: python + native (7 tools, ~760t)
 
-  :: enter to select    Up/Down navigate    Esc: default
-     Tab: YOLO [ON]    m: Map [OFF]    d: Mem [OFF]    p: Py [ON]    a: Adp [ON]
+  :: Enter select    Up/Down navigate    Esc: default
+     Tab: YOLO [ON]    m: Map [OFF]    d: Mem [OFF]    p: Py [ON]    a: Adp [OFF]
 ```
 
 * **Customize Profiles:** Modify or create profile `.md` files in `~/.config/py-agent/skills/profiles/`.
@@ -243,20 +250,3 @@ adapters: true
 reasoning_budget: 500
 ---
 ```
-
----
-
-## 9. Adaptive Resilience & Model Tuning (/adp)
-
-* **Scope to Single Tasks:** Keep prompts focused on 1 file or 1 objective per turn for maximum accuracy.
-* **Universal Safety Net:** While originally designed for Sub-27B SLMs, `/adp` operates non-invasively across all model tiers (including 27B+ and MTP speculative builds). If a model emits 100% compliant native tool calls, the adapter does not execute (0ms overhead). If quantization or speculative drafting causes markdown code fencing or parameter aliasing, `/adp` rescues the call on Turn 1, preventing multi-turn recovery loops.
-
-### 9.1 Adapter Performance Impact (`eval-stack`)
-
-Empirical results across models with `/adp` active:
-
-| Benchmark Challenge | Without Adapters | With `/adp` Active | Efficiency Gain |
-| :--- | :---: | :---: | :--- |
-| **AG-03 (Surgical Edit & Test)** | 16 turns | **6 turns** | **62% fewer turns** (eliminates diff-retry loops) |
-| **AG-07 (In-Memory Batch Loop)** | 14 turns | **2 turns** | **85% fewer turns** (executes batch script on Turn 1) |
-| **Full Suite Pass Rate** | Retries / Failures | **100% (7/7)** | **Zero unhandled syntax or format failures** |
