@@ -109,7 +109,24 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 
 ---
 
-## 3. Command Reference (`/help`)
+## 3. Adaptive Resilience & Model Tuning (/adp)
+
+* **Scope to Single Tasks:** Keep prompts focused on 1 file or 1 objective per turn for maximum accuracy.
+* **Universal Safety Net:** While originally designed for Sub-27B SLMs, `/adp` operates non-invasively across all model tiers (including 27B+ and MTP speculative builds). If a model emits 100% compliant native tool calls, the adapter does not execute (0ms overhead). If quantization or speculative drafting causes markdown code fencing or parameter aliasing, `/adp` rescues the call on Turn 1, preventing multi-turn recovery loops.
+
+### 3.1 Adapter Performance Impact (`eval-stack`)
+
+Empirical results across models with `/adp` active:
+
+| Benchmark Challenge | Without Adapters | With `/adp` Active | Efficiency Gain |
+| :--- | :---: | :---: | :--- |
+| **AG-03 (Surgical Edit & Test)** | 16 turns | **6 turns** | **62% fewer turns** (eliminates diff-retry loops) |
+| **AG-07 (In-Memory Batch Loop)** | 14 turns | **2 turns** | **85% fewer turns** (executes batch script on Turn 1) |
+| **Full Suite Pass Rate** | Retries / Failures | **100% (7/7)** | **Zero unhandled syntax or format failures** |
+
+---
+
+## 4. Command Reference (`/help`)
 
 ```console
 ╭─  Help & Commands  ─────────────────────────────────────────────────╮
@@ -156,21 +173,21 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 
 ---
 
-## 4. Tooling & Safety
+## 5. Tooling & Safety
 
-### 4.1 Operational Tiers & Token Footprint
+### 5.1 Operational Tiers & Token Footprint
 * **Pure Chat (`ai`):** **211 tokens** (ultra-minimal, zero tools).
 * **Native Mode (`Py: OFF`):** **6 tools (`SMOL_TOOLS`)**, ~680t schema.
 * **Dual Mode (`Py: ON`):** **7 tools (`python + native`)**, ~760t schema with ~95% KV cache hits.
 * **Full Graph Mode (`Map: ON`):** **12 tools (`EDIT_TOOLS`)**, ~1.1kt schema.
 * **OKF Memory:** `.agent/memory/*.md` with 1-shot `/hs` retrospective audits.
 
-### 4.2 Guardrails & Execution
+### 5.2 Guardrails & Execution
 * **Zero-Trust Safety Gate (`agent_security.py`):** System mutations (`sudo`, `pacman`, `systemctl`) and out-of-bounds file access strictly ignore YOLO mode and always require interactive `[y/N]` confirmation.
 * **Surgical File Edits (`edit_file`):** 3-stage replacement (Exact -> Whitespace-tolerant -> 88% Fuzzy match).
 * **Adaptive Reads (`read_file`):** Automatically switches to an AST structural outline when files exceed your active context ceiling (250 to 4,000 lines).
 
-### 4.3 Adaptive Context Protection & File Inspection (`read_file`)
+### 5.3 Adaptive Context Protection & File Inspection (`read_file`)
 
 `py-agent` automatically scales file-reading ceilings and scratchpad thresholds based on your active context budget (`AI_MAX_TOKENS`):
 
@@ -188,7 +205,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 
 ---
 
-## 5. Project Memory (OKF)
+## 6. Project Memory (OKF)
 
 Persistent directives stored in `.agent/memory/*.md` that load automatically into prompt context when Memory is ON (`/mem` or `d` in selector).
 
@@ -203,7 +220,7 @@ Create or edit any `.md` file directly in `<workspace>/.agent/memory/` using any
 
 ---
 
-## 6. Client Surfaces
+## 7. Client Surfaces
 
 * **PyCode React Desktop IDE (`/pyc`):** Connects via ACP stdio JSON-RPC 2.0 with live token streaming and workspace synchronization.
 * **llama.cpp WebAgent (`/webui`):** Autonomous tool reverse proxy for `llama-server` (:8080) with auxiliary Gemini Flash Lite vision pre-processing.
@@ -211,7 +228,7 @@ Create or edit any `.md` file directly in `<workspace>/.agent/memory/` using any
 
 ---
 
-## 7. Official Skill Frontmatter Schema
+## 8. Official Skill Frontmatter Schema
 
 Skill profiles (`skills/profiles/**/*.md`) configure agent persona and defaults using YAML frontmatter (`---`).
 
@@ -229,12 +246,12 @@ reasoning_budget: 500
 
 ---
 
-## 8. Adaptive Resilience & Model Tuning (/adp)
+## 9. Adaptive Resilience & Model Tuning (/adp)
 
 * **Scope to Single Tasks:** Keep prompts focused on 1 file or 1 objective per turn for maximum accuracy.
 * **Universal Safety Net:** While originally designed for Sub-27B SLMs, `/adp` operates non-invasively across all model tiers (including 27B+ and MTP speculative builds). If a model emits 100% compliant native tool calls, the adapter does not execute (0ms overhead). If quantization or speculative drafting causes markdown code fencing or parameter aliasing, `/adp` rescues the call on Turn 1, preventing multi-turn recovery loops.
 
-### 8.1 Adapter Performance Impact (`eval-stack`)
+### 9.1 Adapter Performance Impact (`eval-stack`)
 
 Empirical results across models with `/adp` active:
 
