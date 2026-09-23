@@ -85,12 +85,12 @@ SERVER_ARGS=(
   --reasoning-format auto
   --reasoning-preserve
 
-  # ── Mode 1: Agent, Reasoning & Code Synthesis (Distill Sweet Spot) ──
-  --temp 0.3
+  # ── Mode 1: Agent, Reasoning & Code Synthesis (MTP Speculative Sweet Spot) ──
+  --temp 0.2                 # Lower temperature increases MTP draft acceptance
   --top-p 0.95
   --top-k 40
   --min-p 0.05
-  --repeat-penalty 1.05
+  --repeat-penalty 1.0       # Disabled: prevents verification skew on MTP drafting
 
   # ── Mode 2: Chat & Creative ──
   # (To enable: comment out Mode 1 above and uncomment the lines below)

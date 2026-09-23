@@ -100,10 +100,10 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 * **Real-Time Tools Inspector:** The `Tools:` line dynamically calculates active tool schema cost (`ipython`, `native json`, or `index-map`) alongside prompt context add-ons (`[+Map | +Mem]`).
 * **Single-Letter Overrides:**
   * **`Tab`** -> Toggle Autonomous YOLO mode (`[ON]` disables confirmation gates).
-  * **`m`** -> Toggle Codebase Index-Map (11 tools + AST graph intelligence).
+  * **`m`** -> Toggle Codebase Index-Map (12 tools + AST graph intelligence).
   * **`d`** -> Toggle Database Session Memory & OKF Memory Directives.
   * **`p`** -> Toggle In-Memory IPython Kernel Harness (`exec_python` tool execution).
-  * **`a`** -> Toggle Self-Healing Adapters (`agent_adapters.py` for small models).
+  * **`a`** -> Toggle Self-Healing Adapters (`agent_adapters.py` universal out-of-band safety net).
 * **Hierarchy of Precedence:** Manual toggle overrides take precedence over frontmatter defaults and are saved to `<workspace>/.agent/config.json`.
 * **Auto-Compiling Index-Map:** When Map is `[ON]`, `ai init` automatically builds missing or stale index maps on startup and injects them directly into turn 0.
 
@@ -124,7 +124,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 │   /tts                   - Text to speech (Kokoro)                  │
 │                                                                     │
 │   Agent & Execution                                                 │
-│   /adp                   - Toggle small-model self-healing adapters │
+│   /adp                   - Toggle universal self-healing adapters   │
 │   /py [code]             - In-memory IPython kernel execution       │
 │   /task [goal]           - Autonomous task loop                     │
 │   /t [N|show|hide]       - Reasoning budget & display               │
@@ -162,10 +162,11 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 * **Pure Chat (`ai`):** **211 tokens** (ultra-minimal, zero tools).
 * **Native Mode (`Py: OFF`):** **6 tools (`SMOL_TOOLS`)**, ~680t schema.
 * **Dual Mode (`Py: ON`):** **7 tools (`python + native`)**, ~760t schema with ~95% KV cache hits.
+* **Full Graph Mode (`Map: ON`):** **12 tools (`EDIT_TOOLS`)**, ~1.1kt schema.
 * **OKF Memory:** `.agent/memory/*.md` with 1-shot `/hs` retrospective audits.
 
 ### 4.2 Guardrails & Execution
-* **Zero-Trust Safety Gate:** System mutations (`sudo`, `pacman`, `systemctl`) and out-of-bounds file access always require explicit `[y/N]` confirmation—even in YOLO mode.
+* **Zero-Trust Safety Gate (`agent_security.py`):** System mutations (`sudo`, `pacman`, `systemctl`) and out-of-bounds file access strictly ignore YOLO mode and always require interactive `[y/N]` confirmation.
 * **Surgical File Edits (`edit_file`):** 3-stage replacement (Exact -> Whitespace-tolerant -> 88% Fuzzy match).
 * **Adaptive Reads (`read_file`):** Automatically switches to an AST structural outline when files exceed your active context ceiling (250 to 4,000 lines).
 
@@ -228,19 +229,17 @@ reasoning_budget: 500
 
 ---
 
-## 8. Sub-27B Model Tuning
+## 8. Adaptive Resilience & Model Tuning (/adp)
 
 * **Scope to Single Tasks:** Keep prompts focused on 1 file or 1 objective per turn for maximum accuracy.
-* **Use Native Tools (`Py: OFF`):** Small models are fastest and most reliable with the 6 native tools (`SMOL_TOOLS`), avoiding raw Python scripting loops.
+* **Universal Safety Net:** While originally designed for Sub-27B SLMs, `/adp` operates non-invasively across all model tiers (including 27B+ and MTP speculative builds). If a model emits 100% compliant native tool calls, the adapter does not execute (0ms overhead). If quantization or speculative drafting causes markdown code fencing or parameter aliasing, `/adp` rescues the call on Turn 1, preventing multi-turn recovery loops.
 
 ### 8.1 Adapter Performance Impact (`eval-stack`)
 
-Empirical results across small quantized models (Sub-27B):
+Empirical results across models with `/adp` active:
 
 | Benchmark Challenge | Without Adapters | With `/adp` Active | Efficiency Gain |
 | :--- | :---: | :---: | :--- |
 | **AG-03 (Surgical Edit & Test)** | 16 turns | **6 turns** | **62% fewer turns** (eliminates diff-retry loops) |
 | **AG-07 (In-Memory Batch Loop)** | 14 turns | **2 turns** | **85% fewer turns** (executes batch script on Turn 1) |
 | **Full Suite Pass Rate** | Retries / Failures | **100% (7/7)** | **Zero unhandled syntax or format failures** |
-
-* **Why it matters:** Sub-27B models often emit malformed JSON, markdown code blocks, or broken import syntax. `/adp` heals these out-of-band, preventing wasted multi-turn recovery cycles and preserving active context window space on any hardware.

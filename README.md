@@ -89,7 +89,7 @@
 </div>
 
 <p align="center">
-  <sub><b>Session Hotkeys:</b> <code>/com</code> compact &nbsp;•&nbsp; <code>/adp</code> adapters &nbsp;•&nbsp; <code>/py</code> iPython &nbsp;•&nbsp; <code>/gnd</code> grounding &nbsp;•&nbsp; <code>/hs</code> hindsite </sub>
+  <sub><b>Session Hotkeys:</b> <code>/com</code> compact &nbsp;•&nbsp; <code>/adp</code> adapters &nbsp;•&nbsp; <code>/py</code> iPython &nbsp;•&nbsp; <code>/gnd</code> grounding &nbsp;•&nbsp; <code>/hs</code> hindsight </sub>
 </p>
 
 <br>
@@ -98,9 +98,9 @@
 
 <h2 align="center">Runtime Architecture</h2>
 
-* **Hardened Containment:** Non-bypassable `[y/N]` confirmation gates for system commands (`sudo`, `pacman`, `pip`, `systemctl`) and out-of-bounds file access even in YOLO mode.
+* **Hardened Containment (`agent_security.py`):** Non-bypassable interactive `[y/N]` confirmation gates for system commands (`sudo`, `pacman`, `pip`, `systemctl`) and out-of-bounds file access even in YOLO mode.
 * **Git-Native & Global Memory:** Global system instructions (`skills/system_instructions.md`) and workspace directives (`.agent/memory/*.md`). Human-editable.
-* **Self-Healing Adapters (`/adp`):** Out-of-band argument normalizer repairing malformed JSON and bracket syntax on small models. Opt-in.
+* **Universal Self-Healing Adapters (`/adp`):** Out-of-band argument normalizer repairing malformed JSON, markdown fences, and parameter aliases across all model tiers. Zero overhead when native tool calls are compliant.
 * **Deterministic Diffing:** 3-stage resilient replacement (`Exact` &rarr; `Whitespace` &rarr; `88% Fuzzy`) verified by Python AST syntax guards to eliminate corruption.
 
 <br>
@@ -116,11 +116,11 @@
 
 <div align="center">
 
-| Sub-27B Challenge | Without Adapters | With `/adp` Active |
-| :--- | :---: | :---: |
-| **AG-03 (Surgical Edit & Test)** | 16 turns | **6 turns** |
-| **AG-07 (In-Memory Batch Loop)** | 14 turns | **2 turns** |
-| **Full Suite Pass Rate** | Retries / Failures | **100% (7/7)** |
+| Benchmark Challenge | Without Adapters | With `/adp` Active | Efficiency Gain |
+| :--- | :---: | :---: | :--- |
+| **AG-03 (Surgical Edit & Test)** | 16 turns | **6 turns** | **62% fewer turns** (eliminates diff-retry loops) |
+| **AG-07 (In-Memory Batch Loop)** | 14 turns | **2 turns** | **85% fewer turns** (executes batch script on Turn 1) |
+| **Full Suite Pass Rate** | Retries / Failures | **100% (7/7)** | **Zero unhandled syntax or format failures** |
 
 <br>
 
@@ -129,7 +129,7 @@
 | **Pure Chat** | **211 tokens** (`ai`) | ~450+ tokens |
 | **Native Core** | **~680 tokens** (`SMOL_TOOLS`) | ~632 tokens |
 | **Dual Mode** | **~760 tokens** (`python + native`) | ~1,200+ tokens |
-| **Full Graph** | **~1,100 tokens** (11 tools + AST) | 2,500–4,000+ tokens |
+| **Full Graph** | **~1,100 tokens** (12 tools + AST) | 2,500–4,000+ tokens |
 | **Idle Overhead** | **0% CPU / 0 MB RAM** | Node.js Active |
 
 </div>
@@ -274,4 +274,3 @@ AI_MAX_TOKENS="8192"
 * **<a href="projects/Readme.md">Workspace Manual</a>**
 * **<a href="modules/Readme.md">System Architecture</a>**
 * Licensed under the permissive **[MODIFIED MIT LICENSE](LICENSE)**
-
