@@ -457,7 +457,7 @@ def run_interactive_selection(
     intent: str,
     jaccard_search_fn: Callable[[str], str | None],
     clean_tool_prefix_fn: Callable[[str], str],
-    print_stock_error_fn: Callable[[str], None],
+    print_stock_error_fn: Callable[[str], Any],
     ensure_mysys_exists_fn: Callable[[], None],
 ) -> None:
     if RE_UNSAFE_SHELL_CHARS.search(intent) or not (matched_base := jaccard_search_fn(intent)):

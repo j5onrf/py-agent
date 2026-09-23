@@ -142,7 +142,6 @@ def load_skill_content(skills_str: str, skills_dir: str, cfg_dir: str) -> str:
                                 if "AI_IPYTHON_MODE" not in os.environ:
                                     agent_core.save_state("ipython_mode", str(v).lower() in ("true", "1", "yes", "on"))
 
-                        # Set adapters explicitly from frontmatter, otherwise default to False
                         adp_val = meta.get("adapters") or meta.get("adp") or meta.get("adapter")
                         agent_core.save_state("adapters_active", str(adp_val).lower() in ("true", "1", "yes", "on") if adp_val is not None else False)
                     except Exception:
@@ -197,7 +196,13 @@ EXCLUDED_CONTEXT_TOOLS = (
 )
 
 
-def get_system_context(query: str, context_file: str, stop_words: set[str], skills_dir: str, cfg_dir: str) -> str:
+def get_system_context(
+    query: str,
+    context_file: str,
+    stop_words: set[str] | frozenset[str],
+    skills_dir: str,
+    cfg_dir: str,
+) -> str:
     if not (q_tokens := context.tokenize(query, stop_words)) or "\n" in query.strip():
         return ""
     for entry in context.load_context_entries(context_file, stop_words):
@@ -228,7 +233,7 @@ def get_system_context(query: str, context_file: str, stop_words: set[str], skil
     return ""
 
 
-def load_skill_blueprints(base_skills_dir: str, stop_words: set[str]) -> list[dict[str, Any]]:
+def load_skill_blueprints(base_skills_dir: str, stop_words: set[str] | frozenset[str]) -> list[dict[str, Any]]:
     """Universal indexer: walks skills directory and parses all markdown and YAML frontmatter skills."""
     blueprints: list[dict[str, Any]] = []
     seen_names = set()
@@ -288,13 +293,25 @@ def load_skill_blueprints(base_skills_dir: str, stop_words: set[str]) -> list[di
     return blueprints
 
 
-def run_skill_selector(workspace: str, raw_cmd: str, base_skills_dir: str, stop_words: set[str], chat_history: list[dict[str, Any]] | None = None) -> tuple[list[dict[str, Any]], str | None]:
+def run_skill_selector(
+    workspace: str,
+    raw_cmd: str,
+    base_skills_dir: str,
+    stop_words: set[str] | frozenset[str],
+    chat_history: list[dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, Any]], str | None]:
     """Interactive arrow-key skill loading overlay across all skill subdirectories."""
-    if chat_history is None:
+    if chat_history is not None:
+        hist: list[dict[str, Any]] = list(chat_history)
+    else:
         try:
-            chat_history = json.loads(sys.stdin.read().strip())
+            loaded = json.loads(sys.stdin.read().strip())
+            hist = loaded if isinstance(loaded, list) else [{"role": "system", "content": ""}]
         except Exception:
-            chat_history = [{"role": "system", "content": ""}]
+            hist = [{"role": "system", "content": ""}]
+
+    if not hist:
+        hist = [{"role": "system", "content": ""}]
 
     parts = raw_cmd.strip().split(maxsplit=1)
     search_query = parts[1].strip() if len(parts) > 1 else ""
@@ -341,7 +358,7 @@ def run_skill_selector(workspace: str, raw_cmd: str, base_skills_dir: str, stop_
             clear_2_lines = "\r\x1b[2K\x1b[1A\r\x1b[2K"
             if key in ('\x03', '\x1b'):
                 sys.stderr.write(f"{clear_2_lines}Cancelled.\n")
-                return chat_history, None
+                return hist, None
             elif key in ('\r', '\n', ''):
                 if num_opts > 0:
                     _, sel = candidates[current_idx]
@@ -351,7 +368,7 @@ def run_skill_selector(workspace: str, raw_cmd: str, base_skills_dir: str, stop_
                         _, body = parse_frontmatter(raw_file)
                         body = body or raw_file
 
-                        sys_c = chat_history[0]["content"] if chat_history else ""
+                        sys_c = hist[0]["content"] if hist else ""
                         raw_blocks = RE_SKILL_BLOCK.findall(sys_c)
                         cat = "personality" if "personality" in sel["path"] else ("code" if "code" in sel["path"] else "system")
 
@@ -367,16 +384,16 @@ def run_skill_selector(workspace: str, raw_cmd: str, base_skills_dir: str, stop_
 
                         base_p = sys_c.split("### Loaded On-Demand Skill:")[0].strip()
                         new_blocks = "\n\n".join(f"### Loaded On-Demand Skill: {n}\n{b}" for n, b in active_skills)
-                        chat_history[0]["content"] = f"{base_p}\n\n{new_blocks}\n" if base_p else f"{new_blocks}\n"
+                        hist[0]["content"] = f"{base_p}\n\n{new_blocks}\n" if base_p else f"{new_blocks}\n"
 
                         s_name = sel["name"].replace(" ", "-")
                         sys.stderr.write(f"{clear_2_lines}\033[1;32m✓ Skill '{sel['name']}' successfully loaded.\033[0m\n\n")
-                        return chat_history, s_name
+                        return hist, s_name
                     except Exception as e:
                         sys.stderr.write(f"{clear_2_lines}\033[1;31m[sys] Failed to load skill: {e}\033[0m\n")
                 else:
                     sys.stderr.write(f"{clear_2_lines}No skill selected.\n")
-                return chat_history, None
+                return hist, None
             elif key == '\x1b[A':
                 if num_opts > 0:
                     current_idx = max(0, current_idx - 1)

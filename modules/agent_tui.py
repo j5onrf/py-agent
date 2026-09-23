@@ -10,7 +10,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 from contextlib import closing
 from typing import Any
 
@@ -255,7 +255,7 @@ class Message(Static):
 
 
 class AgentCommandProvider(Provider):
-    async def search(self, query: str) -> Iterator[Hit]:
+    async def search(self, query: str) -> AsyncIterator[Hit]:
         m = self.matcher(query)
         cmds = [
             ("Copy Last Response", "copy_last_response", "Copy latest agent response"),
@@ -796,8 +796,8 @@ class LocalAITUI(App):
             self.use_map = not getattr(self, "use_map", False)
             core.save_state("use_map", self.use_map)
             os.environ["AI_USE_MAP"] = "1" if self.use_map else "0"
-            if hasattr(self, "lbl_map"):
-                self.lbl_map.update(f"[dim]Map[/dim]        {'Active' if self.use_map else 'Disabled'}")
+            if lbl_m := getattr(self, "lbl_map", None):
+                lbl_m.update(f"[dim]Map[/dim]        {'Active' if self.use_map else 'Disabled'}")
             self.notify(f"index-map {'enabled' if self.use_map else 'disabled'}.")
         elif root in ("/mem", "/memory"):
             if args:

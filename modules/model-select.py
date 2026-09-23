@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Streamlined TUI Model Selector driven by Local/HF, Generic Custom 2, Google Gemini & OpenRouter [Production Ready]"""
+"""Streamlined TUI Model Selector driven by Local/HF, Generic Custom 2, Gemini & OpenRouter [Production Ready]"""
 
 import asyncio
 import atexit
@@ -12,6 +12,7 @@ import sys
 import termios
 import time
 import tty
+import urllib.error as urlerr
 import urllib.request as urlreq
 
 ENV_PATH = os.path.expanduser("~/.config/py-agent/.env")
@@ -348,7 +349,7 @@ async def async_fetch_remote(env_vars: dict, spaces: dict):
                             if "generateContent" in m.get("supportedGenerationMethods", []) and not any(x in mid for x in ("embedding", "aqa", "imagen", "tts")):
                                 gem_models.append(mid)
                         gem_models.sort(key=lambda x: [int(c) if c.isdigit() else c for c in re.split(r'(\d+)', x)], reverse=True)
-            except (urlreq.URLError, json.JSONDecodeError, OSError):
+            except (urlerr.URLError, json.JSONDecodeError, OSError):
                 pass
 
         try:
@@ -380,7 +381,7 @@ async def async_fetch_remote(env_vars: dict, spaces: dict):
                                 free_c.append(m_id)
                         else:
                             paid_c.append(m_id)
-        except (urlreq.URLError, json.JSONDecodeError, OSError):
+        except (urlerr.URLError, json.JSONDecodeError, OSError):
             pass
 
         free_c.sort(key=lambda s: s.lower())
@@ -395,7 +396,7 @@ async def async_fetch_remote(env_vars: dict, spaces: dict):
                             hf_res.append(m_id)
                             if len(hf_res) >= 25:
                                 break
-        except (urlreq.URLError, json.JSONDecodeError, OSError):
+        except (urlerr.URLError, json.JSONDecodeError, OSError):
             pass
 
         return {
@@ -515,7 +516,7 @@ async def async_main():
             remote_data = await async_fetch_remote(env, spaces)
             cache.update(remote_data)
             save_json(CACHE_PATH, cache)
-        except (urlreq.URLError, json.JSONDecodeError, OSError):
+        except (urlerr.URLError, json.JSONDecodeError, OSError):
             pass
 
     free_list = cache.get("free", DEFAULTS["free"])
@@ -615,7 +616,10 @@ async def async_main():
                 sys.stdout.write(f"   {DIM}{'─'*19}  Context Budget  {'─'*23}{RESET}\n\n")
             elif i == 10:
                 sys.stdout.write(f"   {DIM}{'─'*60}{RESET}\n")
-            sys.stdout.write(f"{f'   {AMBER}❯{RESET}  {BOLD}' if i == menu_idx else '      '}{opt}{RESET}\n{'\n' if (1 <= i <= 5 or 6 <= i <= 9) else ''}")
+            cursor = f"   {AMBER}❯{RESET}  {BOLD}" if i == menu_idx else "      "
+            extra_nl = "\n" if (1 <= i <= 5 or 6 <= i <= 9) else ""
+            sys.stdout.write(f"{cursor}{opt}{RESET}\n{extra_nl}")
+
         sys.stdout.write(f"\n   {DIM}{'─'*60}{RESET}\n   {message or f'{DIM}▲/▼: Navigate | Space: Toggle | Enter: Select | Q: Quit{RESET}'}\n")
         sys.stdout.flush()
         message = ""

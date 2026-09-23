@@ -4,6 +4,7 @@
 import asyncio
 import json
 import os
+import subprocess
 
 
 async def run_async_cmd(cmd: list[str], cwd: str) -> str:
@@ -17,7 +18,7 @@ async def run_async_cmd(cmd: list[str], cwd: str) -> str:
         )
         out, err = await proc.communicate()
         return (out or err).decode("utf-8", errors="ignore").strip()
-    except (OSError, asyncio.SubprocessError) as e:
+    except (OSError, subprocess.SubprocessError) as e:
         return f"Async command error: {e}"
 
 
