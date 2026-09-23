@@ -116,24 +116,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 
 ---
 
-## 3. Adaptive Resilience & Model Tuning (/adp)
-
-* **Scope to Single Tasks:** Keep prompts focused on 1 file or 1 objective per turn for maximum accuracy.
-* **Universal Safety Net:** While originally designed for Sub-27B SLMs, `/adp` operates non-invasively across all model tiers (including 27B+ and MTP speculative builds). If a model emits 100% compliant native tool calls, the adapter does not execute (0ms overhead). If quantization or speculative drafting causes markdown code fencing or parameter aliasing, `/adp` rescues the call on Turn 1, preventing multi-turn recovery loops.
-
-### 3.1 Adapter Performance Impact (`eval-stack`)
-
-Empirical results across models with `/adp` active:
-
-| Benchmark Challenge | Without Adapters | With `/adp` Active | Efficiency Gain |
-| :--- | :---: | :---: | :--- |
-| **AG-03 (Surgical Edit & Test)** | 16 turns | **6 turns** | **62% fewer turns** (eliminates diff-retry loops) |
-| **AG-07 (In-Memory Batch Loop)** | 14 turns | **2 turns** | **85% fewer turns** (executes batch script on Turn 1) |
-| **Full Suite Pass Rate** | Retries / Failures | **100% (7/7)** | **Zero unhandled syntax or format failures** |
-
----
-
-## 4. Command Reference (`/help`)
+## 3. Command Reference (`/help`)
 
 ```console
 ╭─  Help & Commands  ─────────────────────────────────────────────────╮
@@ -177,6 +160,23 @@ Empirical results across models with `/adp` active:
 │   exit, quit, q          - Exit conversation                        │
 ╰─────────────────────────────────────────────────────────────────────╯
 ```
+
+---
+
+## 4. Adaptive Resilience & Model Tuning (/adp)
+
+* **Scope to Single Tasks:** Keep prompts focused on 1 file or 1 objective per turn for maximum accuracy.
+* **Universal Safety Net:** While originally designed for Sub-27B SLMs, `/adp` operates non-invasively across all model tiers (including 27B+ and MTP speculative builds). If a model emits 100% compliant native tool calls, the adapter does not execute (0ms overhead). If quantization or speculative drafting causes markdown code fencing or parameter aliasing, `/adp` rescues the call on Turn 1, preventing multi-turn recovery loops.
+
+### 4.1 Adapter Performance Impact (`eval-stack`)
+
+Empirical results across models with `/adp` active:
+
+| Benchmark Challenge | Without Adapters | With `/adp` Active | Efficiency Gain |
+| :--- | :---: | :---: | :--- |
+| **AG-03 (Surgical Edit & Test)** | 16 turns | **6 turns** | **62% fewer turns** (eliminates diff-retry loops) |
+| **AG-07 (In-Memory Batch Loop)** | 14 turns | **2 turns** | **85% fewer turns** (executes batch script on Turn 1) |
+| **Full Suite Pass Rate** | Retries / Failures | **100% (7/7)** | **Zero unhandled syntax or format failures** |
 
 ---
 
