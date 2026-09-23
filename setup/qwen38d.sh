@@ -18,9 +18,9 @@ LLAMA_SERVER_BIN="/home/user/llama.cpp/build/bin/llama-server"
 # ==============================================================================
 # Static Toggles (Edit directly here)
 # ==============================================================================
-ENABLE_MTP=false     # true: auxiliary MTP head speculation | false: pure decode
-ENABLE_NGRAM=false   # true: enable N-gram acceleration    | false: pure decode
-ENABLE_LOG=false     # true: write to qwen3.8-server.log   | false: live output
+ENABLE_MTP=true      # true: external Q4_0 MTP draft head speculation | false: disable
+ENABLE_NGRAM=false    # true: enable N-gram acceleration               | false: pure decode
+ENABLE_LOG=false      # true: write to qwen3.8-server.log              | false: live output
 
 # 1. Clean up lingering port processes
 pkill -9 -x llama-server 2>/dev/null
@@ -101,13 +101,14 @@ SERVER_ARGS=(
   # --repeat-penalty 1.05
 )
 
-# Attach Built-in MTP Speculation if statically enabled
-if [ "$ENABLE_MTP" = "true" ]; then
+# Speculative decoding configuration
+MTP_DRAFT="/home/user/models/mtp-Qwen3.8-35B-A3B-Distill-Q4_0.gguf"
+
+if [ "$ENABLE_MTP" = "true" ] && [ -f "$MTP_DRAFT" ]; then
     SERVER_ARGS+=(
-      --spec-type draft-mtp
+      -md "$MTP_DRAFT"
       --spec-draft-n-max 2
     )
-# Attach N-Gram Speculation if statically enabled
 elif [ "$ENABLE_NGRAM" = "true" ]; then
     SERVER_ARGS+=(
       --spec-type ngram-mod
