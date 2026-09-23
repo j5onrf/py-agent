@@ -72,10 +72,10 @@ All auto-created agent metadata files are strictly isolated inside `project/.age
 Running `ai init <path>` initializes a workspace and opens the interactive profile selector with instant RAM frontmatter pre-caching and single-letter hotkeys.
 
 ```console
-[ai init] Select default Agent Profile for workspace qwen2b:
+[ai init] Select default Agent Profile for workspace Qwen38D:
 
   ─── Custom ────────────────────────
-  >  1. Custom Base          (~370t)
+     1. Custom Base          (~370t)
      2. Custom Deepseek      (~431t)
      3. Custom Gemini        (~398t)
      4. Custom Katcoder      (~511t)
@@ -86,7 +86,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
      9. Custom Occamy        (~670t)
     10. Custom Ornith        (~541t)
     11. Custom Q2Bu          (~466t)
-    12. Custom Qwen38D       (~435t)
+ >  12. Custom Qwen38D       (~435t)
     13. Custom Sysadmin      (~442t)
     14. Custom Tielcoder     (~517t)
     15. Custom Tini-Cybersec (~664t)
@@ -99,7 +99,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
     Tools: python + native (7 tools, ~760t)
 
   :: Enter select    Up/Down navigate    Esc: default
-     Tab: YOLO [ON]    m: Map [OFF]    d: Mem [OFF]    p: Py [ON]    a: Adp [OFF]
+     Tab: YOLO [ON]    m: Map [OFF]    d: Mem [OFF]    p: Py [ON]    a: Adp [ON]
 ```
 
 * **Customize Profiles:** Modify or create profile `.md` files in `~/.config/py-agent/skills/profiles/`.
