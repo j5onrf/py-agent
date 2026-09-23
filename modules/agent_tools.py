@@ -6,7 +6,6 @@ import difflib
 import json
 import os
 import re
-import shlex
 import subprocess
 import sys
 import urllib.parse
@@ -14,7 +13,6 @@ import urllib.request
 from collections.abc import Callable
 from typing import Any
 
-import agent_ui as ui
 from rich.console import Console
 from rich.syntax import Syntax
 

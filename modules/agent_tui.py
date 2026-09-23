@@ -852,6 +852,7 @@ class LocalAITUI(App):
             self.history.clear()
             self.stats_turns = 0
             self.update_stats_ui(0, 0.0, 0.0)
+            import shutil
             for d in [os.path.join(self.workspace_path, ".agent"), os.path.join(SESSIONS_DIR, f"{self.safe_name}.db")]:
                 try:
                     (os.remove(d) if os.path.isfile(d) else shutil.rmtree(d)) if os.path.exists(d) else None

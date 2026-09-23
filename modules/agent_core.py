@@ -22,7 +22,6 @@ import agent_ui as ui
 import requests
 from rich.box import ROUNDED
 from rich.console import Console, Group
-from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.text import Text
 
@@ -573,7 +572,6 @@ def agentic_turn(
                     if not choices:
                         continue
 
-                    finish_reason = choices[0].get("finish_reason")
                     delta = choices[0].get("delta", {})
 
                     content = delta.get("content", "") or ""

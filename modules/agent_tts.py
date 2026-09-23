@@ -147,6 +147,7 @@ def speak_response(response_text: str) -> None:
 
 
 if __name__ == "__main__":
+    import sys
     if len(sys.argv) > 1:
         speak_text(" ".join(sys.argv[1:]))
     else:

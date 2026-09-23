@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Local-AI Standalone IPython Kernel & RLM Harness Module [Production Ready]"""
 
-import ast
 import builtins
 import contextlib
 import io

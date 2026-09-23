@@ -35,3 +35,4 @@ __pycache__/
 tools/evals/eval_history.json
 eval_history.json
 **/eval_history.json
+pyproject.toml

@@ -5,7 +5,6 @@ import json
 import os
 import re
 import select
-import shutil
 import sys
 import threading
 import time
@@ -728,8 +727,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
             map_badge  = b_on if use_map  else b_off
             mem_badge  = b_on if is_mem   else b_off
             py_badge   = b_on if is_py    else b_off
-            adp_active = is_adp if "is_adp" in locals() else (adapters_active if "adapters_active" in locals() else False)
-            adp_badge  = b_on if adp_active else b_off
+            adp_badge  = b_on if is_adp else b_off
 
             if is_py:
                 tool_label = "python + native (7 tools, ~760t)"
