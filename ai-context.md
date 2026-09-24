@@ -37,6 +37,7 @@
 
 ```properties
 # --- Workspaces ---
+ai init ~/.config/py-agent/projects/tielcoder ---> tielcoder
 ai init ~/.config/py-agent/projects/qwen38d ---> qwen38d
 ai init ~/.config/py-agent/projects/nemotron ---> nemotron
 ai init ~/.config/py-agent/projects/occamy ---> occamy

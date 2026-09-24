@@ -19,7 +19,7 @@ STATE_FILE = "/tmp/cpu_mode_state"
 
 LOCAL_MODELS = [
     {
-        "name": "MiniCPM5-2B (DSpark Off)",
+        "name": "MiniCPM5-2B (DSpark ON/Off)",
         "alias": "MiniCPM5-2B-DSpark",
         "file": "MiniCPM5-2B-Q4_K_M.gguf",
         "script": "Mini2Bs.sh",
@@ -59,6 +59,12 @@ LOCAL_MODELS = [
         "alias": "Ornith-1.5-35B-A3B",
         "file": "Ornith-1.5-35B-A3B-APEX-I-Compact.gguf",
         "script": "ornith.sh",
+    },
+    {
+        "name": "Tiel-Coder-35B-A3B-APEX-I-MiniPlus-V2.1 (15.2gb)",
+        "alias": "Tiel-Coder-35B-A3B",
+        "file": "Tiel-Coder-35B-A3B.APEX-I-MiniPlus-V2.1.gguf",
+        "script": "tielcoder.sh",
     },
     {
         "name": "KAT-Coder-V2.5-Dev-APEX-I-Compact (16.5gb)",

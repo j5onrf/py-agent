@@ -101,7 +101,6 @@
 * **Hardened Containment (`agent_security.py`):** Non-bypassable interactive `[y/N]` confirmation gates for system commands (`sudo`, `pacman`, `pip`, `systemctl`) and out-of-bounds file access even in YOLO mode.
 * **Git-Native & Global Memory:** Global system instructions (`skills/system_instructions.md`) and workspace directives (`.agent/memory/*.md`). Human-editable.
 * **Universal Self-Healing Adapters (`/adp`):** Out-of-band argument normalizer repairing malformed JSON, markdown fences, and parameter aliases across all model tiers. Zero overhead when native tool calls are compliant.
-* **Deterministic Diffing:** 3-stage resilient replacement (`Exact` &rarr; `Whitespace` &rarr; `88% Fuzzy`) verified by Python AST syntax guards to eliminate corruption.
 
 <br>
 
@@ -110,11 +109,23 @@
 <h2 align="center">Benchmark & Efficiency</h2>
 
 <p align="center">
-  <sub>Synthesizing battle-tested patterns from <b>Pi</b> (3-zone context compaction), <b>SmallCoder</b> (resilient 3-stage AST diffs),<br>
-  <b>Unsloth AI</b> (out-of-band schema healing), and <b>OKF</b> (git-native persistent memory).</sub>
+  <sub>Decision-grade evaluation across 7-stage agentic challenges (<code>eval-stack</code>) and operational token budgets.</sub>
 </p>
 
 <div align="center">
+
+### Master Agent Leaderboard (`eval-stack`)
+
+| Rank | Model | Par Eff | Agent Index |
+| :---: | :--- | :---: | :---: |
+| **1** | **Tiel-Coder-35B-A3B** | **90.9%** | **87.6 (B)** |
+| **2** | **Qwen3.8-35B-Distill** *(MTP)* | **93.8%** | **87.5 (B)** |
+| **3** | **Qwen3.8-35B-Distill** *(Pure)* | **90.9%** | **86.4 (B)** |
+| **4** | **Nex-N2.5-mini** | **88.2%** | **85.8 (B)** |
+| **5** | **Occamy-1.0** | **85.7%** | **85.8 (B)** |
+| **—** | **Ling-3.0-tiny** *(SLM)* | **100.0%** | **97.8 (A+)** |
+
+<br>
 
 | Benchmark Challenge | Without Adapters | With `/adp` Active | Efficiency Gain |
 | :--- | :---: | :---: | :--- |
