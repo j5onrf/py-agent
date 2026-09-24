@@ -109,7 +109,8 @@
 <h2 align="center">Benchmark & Efficiency</h2>
 
 <p align="center">
-  <sub>Decision-grade evaluation across 7-stage agentic challenges (<code>eval-stack</code>) and operational token budgets.</sub>
+  <sub>Decision-grade evaluation across 7-stage agentic challenges (<code>eval-stack</code>).<br>
+  Results scale with tuning: select a model foundation and optimize for your workload via profile directives, sampling flags, and <code>/adp</code>.</sub>
 </p>
 
 <div align="center">
@@ -119,11 +120,12 @@
 | Rank | Model | Par Eff | Agent Index |
 | :---: | :--- | :---: | :---: |
 | **1** | **KAT-Coder-V2.5-Dev** | **96.8%** | **90.3 (A)** |
-| **2** | **Tiel-Coder-35B-A3B** | **90.9%** | **87.6 (B)** |
-| **3** | **Qwen3.8-35B-Distill** *(MTP)* | **93.8%** | **87.5 (B)** |
-| **4** | **Occamy-1.0** | **90.9%** | **87.0 (B)** |
-| **5** | **Qwen3.8-35B-Distill** *(Pure)* | **90.9%** | **86.4 (B)** |
-| **6** | **Nex-N2.5-mini** | **88.2%** | **85.8 (B)** |
+| **2** | **Ornith-1.5-35B-A3B** | **88.2%** | **89.3 (A)** |
+| **3** | **Tiel-Coder-35B-A3B** | **90.9%** | **87.6 (B)** |
+| **4** | **Qwen3.8-35B-Distill** *(MTP)* | **93.8%** | **87.5 (B)** |
+| **5** | **Occamy-1.0** | **90.9%** | **87.0 (B)** |
+| **6** | **Qwen3.8-35B-Distill** *(Pure)* | **90.9%** | **86.4 (B)** |
+| **7** | **Nex-N2.5-mini** | **88.2%** | **85.8 (B)** |
 | **—** | **Ling-3.0-tiny** *(SLM)* | **100.0%** | **97.8 (A+)** |
 
 <br>
