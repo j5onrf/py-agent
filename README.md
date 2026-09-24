@@ -34,9 +34,9 @@
       <td align="center" width="50%" valign="top">
         <h3>27B+ Autonomous (LLM)</h3>
         <p><sub>Deep reasoning, multi-file refactoring & recursive sub-agents</sub></p>
-        <code>Qwen3.8-35B-D</code> &nbsp;•&nbsp; <code>Tiel-Coder-35B*</code><br>
+        <code>Qwen3.8-35B-D</code> &nbsp;•&nbsp; <code>Tiel-Coder-35B</code><br>
         <code>Occamy-1.0</code> &nbsp;•&nbsp; <code>Nex-N2.5-mini</code><br>
-        <code>KAT-Coder-V2.5</code> &nbsp;•&nbsp; <code>Qwen3.8-27B</code><br>
+        <code>KAT-Coder-V2.5*</code> &nbsp;•&nbsp; <code>Qwen3.8-27B</code><br>
         <code>Qwen3.8-Flash-Next</code> &nbsp;•&nbsp; <code>DeepSeek&#8209;V4.1</code>
       </td>
     </tr>
@@ -118,11 +118,12 @@
 
 | Rank | Model | Par Eff | Agent Index |
 | :---: | :--- | :---: | :---: |
-| **1** | **Tiel-Coder-35B-A3B** | **90.9%** | **87.6 (B)** |
-| **2** | **Qwen3.8-35B-Distill** *(MTP)* | **93.8%** | **87.5 (B)** |
-| **3** | **Occamy-1.0** | **90.9%** | **87.0 (B)** |
-| **4** | **Qwen3.8-35B-Distill** *(Pure)* | **90.9%** | **86.4 (B)** |
-| **5** | **Nex-N2.5-mini** | **88.2%** | **85.8 (B)** |
+| **1** | **KAT-Coder-V2.5-Dev** | **96.8%** | **90.3 (A)** |
+| **2** | **Tiel-Coder-35B-A3B** | **90.9%** | **87.6 (B)** |
+| **3** | **Qwen3.8-35B-Distill** *(MTP)* | **93.8%** | **87.5 (B)** |
+| **4** | **Occamy-1.0** | **90.9%** | **87.0 (B)** |
+| **5** | **Qwen3.8-35B-Distill** *(Pure)* | **90.9%** | **86.4 (B)** |
+| **6** | **Nex-N2.5-mini** | **88.2%** | **85.8 (B)** |
 | **—** | **Ling-3.0-tiny** *(SLM)* | **100.0%** | **97.8 (A+)** |
 
 <br>
