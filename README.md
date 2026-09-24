@@ -90,8 +90,9 @@
 </div>
 
 <p align="center">
-  <sub><b>Agent & Execution:</b> <code>/yolo</code> gates &nbsp;•&nbsp; <code>/py</code> iPython &nbsp;•&nbsp; <code>/adp</code> adapters &nbsp;•&nbsp; <code>/t</code> reasoning &nbsp;•&nbsp; <code>/task</code> loop &nbsp;•&nbsp; <code>/tui</code> terminal UI</sub><br>
-  <sub><b>Workspace & Memory:</b> <code>/m</code> index-map &nbsp;•&nbsp; <code>file</code> load &nbsp;•&nbsp; <code>/com</code> compact &nbsp;•&nbsp; <code>/mem</code> memory &nbsp;•&nbsp; <code>/gnd</code> search &nbsp;•&nbsp; <code>/hs</code> hindsight</sub>
+  <sub><code>/yolo</code> yolo &nbsp;•&nbsp; <code>/py</code> ipython &nbsp;•&nbsp; <code>/adp</code> adapters &nbsp;•&nbsp; <code>/t</code> reasoning &nbsp;•&nbsp; <code>/task</code> task-loop &nbsp;•&nbsp; <code>/s</code> skill &nbsp;•&nbsp; <code>/tk</code> follow-up</sub><br>
+  <sub><code>/m</code> index-map &nbsp;•&nbsp; <code>file</code> load-file &nbsp;•&nbsp; <code>/com</code> compact &nbsp;•&nbsp; <code>/mem</code> memory &nbsp;•&nbsp; <code>/gnd</code> search &nbsp;•&nbsp; <code>/hs</code> hindsight &nbsp;•&nbsp; <code>/tok</code> tokens &nbsp;•&nbsp; <code>/sync</code> sync</sub><br>
+  <sub><code>/tui</code> tui &nbsp;•&nbsp; <code>/pyc</code> pycode &nbsp;•&nbsp; <code>/webui</code> webui &nbsp;•&nbsp; <code>/calm</code> calm &nbsp;•&nbsp; <code>/v</code> voice &nbsp;•&nbsp; <code>/tts</code> tts &nbsp;•&nbsp; <code>/box</code> theme &nbsp;•&nbsp; <code>/stats</code> stats &nbsp;•&nbsp; <code>-save</code> / <code>-load</code> &nbsp;•&nbsp; <code>/c</code> clear &nbsp;•&nbsp; <code>/r</code> reset</sub>
 </p>
 
 <br>
