@@ -90,7 +90,8 @@
 </div>
 
 <p align="center">
-  <sub><b>Session Hotkeys:</b> <code>/com</code> compact &nbsp;•&nbsp; <code>/adp</code> adapters &nbsp;•&nbsp; <code>/py</code> iPython &nbsp;•&nbsp; <code>/gnd</code> grounding &nbsp;•&nbsp; <code>/hs</code> hindsight </sub>
+  <sub><b>Agent & Execution:</b> <code>/yolo</code> gates &nbsp;•&nbsp; <code>/py</code> iPython &nbsp;•&nbsp; <code>/adp</code> adapters &nbsp;•&nbsp; <code>/t</code> reasoning &nbsp;•&nbsp; <code>/task</code> loop &nbsp;•&nbsp; <code>/tui</code> terminal UI</sub><br>
+  <sub><b>Workspace & Memory:</b> <code>/m</code> index-map &nbsp;•&nbsp; <code>file</code> load &nbsp;•&nbsp; <code>/com</code> compact &nbsp;•&nbsp; <code>/mem</code> memory &nbsp;•&nbsp; <code>/gnd</code> search &nbsp;•&nbsp; <code>/hs</code> hindsight</sub>
 </p>
 
 <br>
