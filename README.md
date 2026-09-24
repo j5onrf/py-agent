@@ -34,9 +34,9 @@
       <td align="center" width="50%" valign="top">
         <h3>27B+ Autonomous (LLM)</h3>
         <p><sub>Deep reasoning, multi-file refactoring & recursive sub-agents</sub></p>
-        <code>Qwen3.8-35B-D*</code> &nbsp;•&nbsp; <code>Occamy-1.0</code><br>
-        <code>Nex-N2.5-mini</code> &nbsp;•&nbsp; <code>KAT-Coder-V2.5</code><br>
-        <code>Qwen3.8-27B</code> &nbsp;•&nbsp; <code>Ornith/Tiel</code><br>
+        <code>Qwen3.8-35B-D</code> &nbsp;•&nbsp; <code>Tiel-Coder-35B*</code><br>
+        <code>Occamy-1.0</code> &nbsp;•&nbsp; <code>Nex-N2.5-mini</code><br>
+        <code>KAT-Coder-V2.5</code> &nbsp;•&nbsp; <code>Qwen3.8-27B</code><br>
         <code>Qwen3.8-Flash-Next</code> &nbsp;•&nbsp; <code>DeepSeek&#8209;V4.1</code>
       </td>
     </tr>
