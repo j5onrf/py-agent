@@ -5,7 +5,7 @@
   <h1>Py Agent</h1>
 
   <p>
-    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.38.svg?variant=secondary" alt="Version"></a>
+    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.39.svg?variant=secondary" alt="Version"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/Python.svg?variant=branded&brand=python" alt="Language"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/C%2B%2B.svg?variant=branded&brand=cplusplus" alt="C++"></a>
     <a href="https://github.com/j5onrf/py-agent/blob/main/LICENSE"><img src="https://shieldcn.dev/badge/license-MIT-green.svg" alt="License"></a>
@@ -129,7 +129,7 @@
 | **5** | **Occamy-1.0** | **90.9%** | **87.0 (B)** |
 | **6** | **Qwen3.8-35B-Distill** *(Pure)* | **90.9%** | **86.4 (B)** |
 | **7** | **Nex-N2.5-mini** | **88.2%** | **85.8 (B)** |
-| **—** | **Ling-3.0-tiny** *(SLM)* | **100.0%** | **97.8 (A+)** |
+| **—** | **Ling-3.0-tiny** *(SLM)* | **108.3%** | **100.0 (A+)** |
 
 <br>
 

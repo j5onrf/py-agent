@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Local-AI Standalone IPython Kernel & RLM Harness Module [Production Ready]"""
 
+import ast
 import builtins
 import contextlib
 import io
@@ -45,7 +46,7 @@ class CellTimeoutError(TimeoutError):
     pass
 
 
-def _timeout_handler(signum, frame):
+def _timeout_handler(_signum, _frame):
     raise CellTimeoutError("Cell execution timed out (30s limit exceeded - potential infinite loop halted).")
 
 
@@ -176,7 +177,8 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
         full = security.resolve_path(ws_real, path_str) if security else os.path.realpath(path_str if os.path.isabs(path_str) else os.path.join(ws_real, path_str))
         if security and security.is_outside(ws_real, full):
             gate_msg = f"OUT-OF-BOUNDS KERNEL {op_name}: {full}"
-            return security.authorize(gate_msg, is_security_event=True)
+            gate = confirm_gate_fn or (lambda r: security.authorize(r, is_security_event=True) if security else False)
+            return gate(gate_msg)
         return True
 
     def safe_open(file, mode="r", *args, **kwargs):
@@ -200,12 +202,12 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
     def _read_file(path: str) -> str:
         if not _check_boundary(path, "READ"):
             return "[denied] Out-of-bounds read blocked."
-        return tools.run_tool("read_file", {"path": path}, ws_real) if tools else ""
+        return tools.run_tool("read_file", {"path": path}, ws_real, confirm_gate_fn=confirm_gate_fn) if tools else ""
 
     def _edit_file(path: str, old_str: str, new_str: str) -> str:
         if not _check_boundary(path, "EDIT"):
             return "[denied] Out-of-bounds edit blocked."
-        res = tools.run_tool("edit_file", {"path": path, "old_str": old_str, "new_str": new_str}, ws_real) if tools else ""
+        res = tools.run_tool("edit_file", {"path": path, "old_str": old_str, "new_str": new_str}, ws_real, confirm_gate_fn=confirm_gate_fn) if tools else ""
         if "Successfully edited" in res:
             _invalidate_module_cache(path)
         return res
@@ -213,7 +215,7 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
     def _write_file(path: str, content: str, overwrite: bool = False) -> str:
         if not _check_boundary(path, "WRITE"):
             return "[denied] Out-of-bounds write blocked."
-        res = tools.run_tool("write_file", {"path": path, "content": content, "overwrite": overwrite}, ws_real) if tools else ""
+        res = tools.run_tool("write_file", {"path": path, "content": content, "overwrite": overwrite}, ws_real, confirm_gate_fn=confirm_gate_fn) if tools else ""
         if "wrote" in res:
             _invalidate_module_cache(path)
         return res
@@ -231,7 +233,8 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
         if security:
             if sec_reason := security.check_command(ws_real, cmd):
                 gate_msg = f"OUT-OF-BOUNDS KERNEL EXECUTION: $ {cmd} ({sec_reason})"
-                if not security.authorize(gate_msg, is_security_event=True):
+                gate = confirm_gate_fn or (lambda r: security.authorize(r, is_security_event=True) if security else False)
+                if not gate(gate_msg):
                     return f"[denied] Execution halted: {sec_reason}"
         res = subprocess.run(cmd, shell=True, cwd=ws_real, capture_output=True, text=True, timeout=120)
         return ((res.stdout or "") + ("\n" + res.stderr if res.stderr else "")).strip()
@@ -284,7 +287,9 @@ def inspect_ast_safety(code: str, workspace: str, confirm_gate_fn: Callable[[str
         return None
     if res.startswith("[error"):
         return res
-    if not security.authorize(res, is_security_event=True):
+
+    gate = confirm_gate_fn or (lambda r: security.authorize(r, is_security_event=True) if security else False)
+    if not gate(res):
         return "[denied] Dangerous operation rejected by user gate."
     return None
 
