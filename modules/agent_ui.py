@@ -597,15 +597,15 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
     """Renders consolidated profile selector with automatic frontmatter pre-cache and 2-line layout."""
     import agent_skills as skills
 
-    custom_dir = os.path.join(CFG_DIR, "skills", "profiles", "custom")
+    profiles_dir = os.path.join(CFG_DIR, "skills", "profiles")
     collected = []
 
-    if os.path.isdir(custom_dir):
-        for fname in sorted(os.listdir(custom_dir)):
+    if os.path.isdir(profiles_dir):
+        for fname in sorted(os.listdir(profiles_dir)):
             if fname.endswith(".md") and not fname.endswith(("-py.md", "-map.md")):
                 base_name = os.path.splitext(fname)[0]
-                k = f"custom/{base_name}"
-                sf = os.path.join(custom_dir, fname)
+                k = base_name
+                sf = os.path.join(profiles_dir, fname)
                 defaults = {"yolo": False, "map": False, "py": False, "mem": False, "adp": False}
                 tok_lbl = "~200t"
                 cat = None
