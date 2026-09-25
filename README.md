@@ -2,7 +2,7 @@
 
 <div align="center">
   <img alt="py-agent" src="logo.svg" height="120" />
-  <h1>Py Agent</h1>
+  <h1>py-agent</h1>
 
   <p>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.39.svg?variant=secondary" alt="Version"></a>
@@ -13,7 +13,7 @@
   </p>
 
   <p>
-    <code>gguf</code> &nbsp;•&nbsp; <code>llama.cpp</code> &nbsp;•&nbsp; <code>gemini</code> &nbsp;•&nbsp; <code>huggingface</code> &nbsp;•&nbsp; <code>openrouter</code> &nbsp;•&nbsp; <code>tokenharbor</code>
+    <code>gguf</code> &nbsp;•&nbsp; <code>llama.cpp</code> &nbsp;•&nbsp; <code>gemini</code> &nbsp;•&nbsp; <code>huggingface</code> &nbsp;•&nbsp; <code>openrouter</code>
   </p>
 
   <p>
