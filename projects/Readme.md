@@ -72,9 +72,6 @@ All auto-created agent metadata files are strictly isolated inside `project/.age
 Running `ai init <path>` initializes a workspace and opens the interactive profile selector with instant RAM frontmatter pre-caching and single-letter hotkeys.
 
 ```console
-~ ❯ sess
-[01/01] > [session test] ai init ~/session-test
-
 [ai init] Select default Agent Profile for workspace session-test:
 
   ─── Cloud ─────────────────────────
