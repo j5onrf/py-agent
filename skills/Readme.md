@@ -1,17 +1,42 @@
-# Py-Agent Skills
+# Py-Agent Skills & Directives
 
-Modular personas, on-demand behaviors, system directives, and prompt harnesses.
+## 1. Profiles (`skills/profiles/`)
+
+### Setup
+1. Type `newp` in terminal to create a project.
+2. Launch the project by typing its intent shortcut.
+3. Select an existing profile on first run (or create a new `.md` file in `skills/profiles/`).
+
+### What Profiles Are For
+* **Identity & Directives:** Defines tone, brevity, standards, and role (Cloud, Local GGUF, or Task Persona).
+* **Workspace Defaults:** Sets default flags for `ipython`, `map`, `memory`, `yolo`, and `adapters`.
+* **Reasoning Baseline:** Sets initial `reasoning_budget` (adjust anytime in-session via `/t <budget>`).
 
 ---
 
-### Quick Reference
+## 2. Skills (`skills/on-demand/`)
 
-| Action | Command / Location | Behavior |
-|---|---|---|
-| **Browse / Search Skills** | `/s` or `/skill` | Opens live fuzzy TUI selector across `on-demand/`. |
-| **Load Skill** | `/s <name>` *(e.g. `/s hindsight`)* | Stacks skill into active system prompt (max 3). |
-| **One-Shot Run** | `/s <name> <prompt>` | Loads skill and executes query in single turn. |
-| **Unload Skills** | `/s off` (or `/s clear`) | Reverts to base workspace profile. |
-| **Select Workspace Profile** | `ai init <dir>` | Selects base profile from `profiles/` with toggle auto-sync. |
-| **Dynamic Context Tool** | Registered in `ai-context.md` | Ephemeral single-turn context injection via `cat`. |
+Stackable behaviors loaded on top of the active workspace profile.
 
+| Command | Action |
+|---|---|
+| `/s` | Open interactive skill selector. |
+| `/s <name>` | Stack skill into active session (max 3). |
+| `/s <name> <prompt>` | Run single-turn query with skill. |
+| `/s off` | Unload skills and revert to base profile. |
+
+---
+
+## 3. Global System Instructions (`system_instructions.md`)
+
+Persistent rules injected into turn 0 across **all** workspaces.
+* Edit `skills/system_instructions.md`.
+* Lines starting with `#` are ignored. Active lines apply globally (e.g. environment constraints, universal diff preferences).
+
+---
+
+## 4. Hindsight (`hindsight.md`)
+
+Retrospective session auditor and durable lesson compiler.
+* **Trigger:** Run `/hs` (or `/hindsight`) before ending a session.
+* **Action:** Audits conversation history for root-cause fixes, tool quirks, and architectural rules, persisting them directly to `.agent/memory/` via `save_memory` (Human editable).
