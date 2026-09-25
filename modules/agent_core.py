@@ -501,7 +501,7 @@ def agentic_turn(
 
         body_tools = {**body, "messages": messages, "stream": True, "stream_options": {"include_usage": True}}
         st = get_state()
-        use_gnd = st.get("grounding_active", False)
+        use_gnd = st.get("grounding_active", False) and bool(os.environ.get("GND_KEY") or os.environ.get("GEMINI_API_KEY"))
 
         if is_agent:
             is_py_mode = st.get("ipython_mode", False)
@@ -532,7 +532,7 @@ def agentic_turn(
             user_msg_count = len([m for m in messages if m.get("role") == "user"])
             spinner.start("Preloading..." if (_round == 0 and user_msg_count <= 1) else "Working...")
         try:
-            res = _session.post(url, json=body_tools, headers={"Content-Type": "application/json", **headers}, timeout=timeout, stream=True)
+            res = _session.post(url, json=body_tools, headers={"Content-Type": "application/json", "User-Agent": "py-agent", **headers}, timeout=timeout, stream=True)
             if res.status_code != 200:
                 err_text = res.text[:200].replace("\n", " ").strip()
                 if res.status_code == 400 and ("exceed" in err_text.lower() or "context" in err_text.lower()):
