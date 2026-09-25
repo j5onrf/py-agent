@@ -3,9 +3,9 @@
 ## 1. Profiles (`skills/profiles/`)
 
 ### Setup
-1. Type `newp` in terminal to create a project.
+1. Type `newp` or `new project` in terminal to create a project.
 2. Launch the project by typing its intent shortcut.
-3. Select an existing profile on first run (or create a new `.md` file in `skills/profiles/`).
+3. Select a profile on first run (re-select anytime with `/r` reset; add new `.md` files in `skills/profiles/`).
 
 ### What Profiles Are For
 * **Identity & Directives:** Defines tone, brevity, standards, and role (Cloud, Local GGUF, or Task Persona).
