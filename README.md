@@ -2,7 +2,7 @@
 
 <div align="center">
   <img alt="py-agent" src="logo.svg" height="120" />
-  <h1>py-agent</h1>
+  <h1>Py Agent</h1>
 
   <p>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.39.svg?variant=secondary" alt="Version"></a>
