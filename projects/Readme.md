@@ -72,33 +72,35 @@ All auto-created agent metadata files are strictly isolated inside `project/.age
 Running `ai init <path>` initializes a workspace and opens the interactive profile selector with instant RAM frontmatter pre-caching and single-letter hotkeys.
 
 ```console
-[ai init] Select default Agent Profile for workspace qwen38d:
+~ ❯ sess
+[01/01] > [session test] ai init ~/session-test
 
-  ─── Custom ────────────────────────
-     1. Custom Deepseek      (~431t)
-     2. Custom Gemini        (~398t)
-     3. Custom Katcoder      (~574t)
-     4. Custom Lfm2          (~588t)
-     5. Custom Lingtiny      (~484t)
-     6. Custom Minicpm       (~464t)
-     7. Custom Nexn25        (~606t)
-     8. Custom Occamy        (~575t)
-     9. Custom Ornith        (~677t)
-    10. Custom Q2Bu          (~466t)
-  > 11. Custom Qwen38D       (~444t)
-    12. Custom Sysadmin      (~442t)
-    13. Custom Tielcoder     (~522t)
-    14. Custom Tini-Cybersec (~664t)
+[ai init] Select default Agent Profile for workspace session-test:
 
-  ─── Agents ────────────────────────
-     1. Pi Pro               (~378t)
-     2. Claude Pro           (~425t)
-     3. Hermes Pro           (~423t)
+  ─── Cloud ─────────────────────────
+  >  1. Cloud                (~633t)
+     2. Deepseek             (~431t)
+
+  ─── Local ─────────────────────────
+     1. Katcoder             (~574t)
+     2. Lfm2                 (~588t)
+     3. Lingtiny             (~458t)
+     4. Minicpm              (~464t)
+     5. Nexn25               (~606t)
+     6. Occamy               (~575t)
+     7. Ornith               (~677t)
+     8. Q2Bu                 (~466t)
+     9. Qwen38D              (~444t)
+    10. Tielcoder            (~522t)
+
+  ─── Roles ─────────────────────────
+     1. Sysadmin             (~442t)
+     2. Tini Cybersec        (~664t)
 
     Tools: python + native (7 tools, ~760t)
 
   :: Enter select    Up/Down navigate    Esc: default
-     Tab: YOLO [ON]    m: Map [OFF]    d: Mem [OFF]    p: Py [ON]    a: Adp [ON]
+     Tab: YOLO [ON]    m: Map [OFF]    d: Mem [OFF]    p: Py [ON]    a: Adp [OFF]
 ```
 
 * **Customize Profiles:** Modify or create profile `.md` files in `~/.config/py-agent/skills/profiles/`.
@@ -241,6 +243,7 @@ Skill profiles (`skills/profiles/**/*.md`) configure agent persona and defaults 
 ```yaml
 ---
 description: "Autonomous software engineer"
+category: "Cloud"          # Optional: Cloud (0) → Local (1) → Roles (2) → Custom (3+)
 yolo: true
 map: true
 memory: true
@@ -249,3 +252,5 @@ adapters: true
 reasoning_budget: 500
 ---
 ```
+
+* **`category` (optional):** Section header in `ai init`. Built-in ordering: `Cloud` (0) → `Local` (1) → `Roles` (2) → Any custom frontmatter categories (3+). If omitted, category is inferred automatically from the filename.

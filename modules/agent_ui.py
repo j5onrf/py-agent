@@ -383,10 +383,11 @@ def draw_session_box(
     table.add_column("Key", style="dim cyan", justify="right")
     table.add_column("Value", style="green")
 
+    display_profile = (clean_name or "chat").replace("custom/", "", 1)
     m_style = "bold red" if ("not loaded" in model_name or "offline" in model_name) else "green"
     table.add_row("model:", Text(model_name, style=m_style))
     table.add_row("directory:", display_dir)
-    table.add_row("profile:", clean_name or "chat")
+    table.add_row("profile:", display_profile)
 
     if is_agent:
         try:
@@ -410,7 +411,7 @@ def draw_session_box(
 
     if box_style == 8:
         title_str = f"  ∿ Py Agent [sub-agent #{sub_id}]" if sub_id else "  ∿ Py Agent"
-        max_val_len = max(len(model_name), len(display_dir), len(clean_name or "chat"), len(db_status), 16)
+        max_val_len = max(len(model_name), len(display_dir), len(display_profile), len(db_status), 16)
         sep_str = " " + "─" * (10 + 2 + max_val_len)
         panel = Panel(
             Group(Text(title_str, style="bold bright_green"), Text(sep_str, style="dim green"), table),
@@ -597,49 +598,56 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
     import agent_skills as skills
 
     custom_dir = os.path.join(CFG_DIR, "skills", "profiles", "custom")
-    custom_opts = []
+    collected = []
 
     if os.path.isdir(custom_dir):
         for fname in sorted(os.listdir(custom_dir)):
             if fname.endswith(".md") and not fname.endswith(("-py.md", "-map.md")):
                 base_name = os.path.splitext(fname)[0]
-                lbl = f"Custom {base_name.title()}" if base_name.lower() != "custom" else "Custom"
-                custom_opts.append((f"custom/{base_name}", lbl, "~200t", None))
+                k = f"custom/{base_name}"
+                sf = os.path.join(custom_dir, fname)
+                defaults = {"yolo": False, "map": False, "py": False, "mem": False, "adp": False}
+                tok_lbl = "~200t"
+                cat = None
 
-    if custom_opts:
-        custom_opts[0] = (custom_opts[0][0], custom_opts[0][1], custom_opts[0][2], "Custom")
+                try:
+                    with open(sf, "r", encoding="utf-8") as f:
+                        raw_content = f.read()
+                    meta, body = skills.parse_frontmatter(raw_content)
+                    tok_count = max(1, (len(body or raw_content) * 10) // 36)
+                    tok_lbl = f"~{tok_count / 1000:.1f}kt" if tok_count >= 1000 else f"~{tok_count}t"
+                    defaults["yolo"] = str(meta.get("yolo", "")).lower() in ("true", "1", "yes", "on")
+                    defaults["map"] = str(meta.get("map", meta.get("use_map", ""))).lower() in ("true", "1", "yes", "on")
+                    defaults["py"] = str(meta.get("ipython", meta.get("py", ""))).lower() in ("true", "1", "yes", "on")
+                    defaults["mem"] = str(meta.get("memory", meta.get("mem", ""))).lower() in ("true", "1", "yes", "on")
+                    defaults["adp"] = str(meta.get("adapters", meta.get("adp", meta.get("adapter", "")))).lower() in ("true", "1", "yes", "on")
+                    cat = meta.get("category")
+                except Exception:
+                    pass
 
-    standard_agents = [
-        ("pi/pro",     "Pi Pro",     "~180t", "Agents"),
-        ("claude/pro", "Claude Pro", "~190t", None),
-        ("hermes/pro", "Hermes Pro", "~180t", None),
-    ]
+                if not cat:
+                    if base_name.startswith("cloud-") or base_name in ("gemini", "deepseek"):
+                        cat = "Cloud"
+                    elif base_name in ("sysadmin", "tini-cybersec"):
+                        cat = "Roles"
+                    else:
+                        cat = "Local"
 
-    options = custom_opts + standard_agents
+                lbl = base_name.replace("-", " ").title()
+                collected.append((cat, k, lbl, tok_lbl, defaults))
+
+    all_entries = collected
+    cat_order = {"Cloud": 0, "Local": 1, "Roles": 2}
+    all_entries.sort(key=lambda x: (cat_order.get(x[0], 99), x[2].lower()))
 
     profile_cache = {}
-    resolved_options = []
-    for k, lbl, fallback_d, cat in options:
-        sf = skills.find_skill_file(os.path.join(CFG_DIR, "skills"), k)
-        defaults = {"yolo": False, "map": False, "py": False, "mem": False, "adp": False}
-        tok_lbl = fallback_d
-        if sf and os.path.isfile(sf):
-            try:
-                with open(sf, "r", encoding="utf-8") as f:
-                    raw_content = f.read()
-                meta, body = skills.parse_frontmatter(raw_content)
-                tok_count = max(1, (len(body or raw_content) * 10) // 36)
-                tok_lbl = f"~{tok_count / 1000:.1f}kt" if tok_count >= 1000 else f"~{tok_count}t"
-                defaults["yolo"] = str(meta.get("yolo", "")).lower() in ("true", "1", "yes", "on")
-                defaults["map"] = str(meta.get("map", meta.get("use_map", ""))).lower() in ("true", "1", "yes", "on")
-                defaults["py"] = str(meta.get("ipython", meta.get("py", ""))).lower() in ("true", "1", "yes", "on")
-                defaults["mem"] = str(meta.get("memory", meta.get("mem", ""))).lower() in ("true", "1", "yes", "on")
-                defaults["adp"] = str(meta.get("adapters", meta.get("adp", meta.get("adapter", "")))).lower() in ("true", "1", "yes", "on")
-            except Exception:
-                pass
+    options = []
+    seen_cats = set()
+    for cat_name, k, lbl, tok_lbl, defaults in all_entries:
         profile_cache[k] = defaults
-        resolved_options.append((k, lbl, tok_lbl, cat))
-    options = resolved_options
+        cat_header = cat_name if cat_name not in seen_cats else None
+        seen_cats.add(cat_name)
+        options.append((k, lbl, tok_lbl, cat_header))
 
     sys.stderr.write(f"\n\033[1;36m[ai init]\033[0m Select default Agent Profile for workspace \033[1;33m{workspace_name}\033[0m:\n\n\033[?25l")
     sys.stderr.flush()

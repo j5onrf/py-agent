@@ -442,7 +442,7 @@ def prompt_user_input(prompt_text: str) -> str:
 
 
 async def run_interactive_menu(title: str, items: list[str], current: str, active: bool, extras: list[str] | None = None):
-    state = {"query": "", "all": False}
+    state = {"query": "", "all": len(items) <= 50}
     extras = extras or []
 
     def filter_items():
@@ -510,15 +510,6 @@ async def async_main():
     spaces = load_json(CUSTOM_SPACES_FILE, DEFAULTS["spaces"])
     cache = load_json(CACHE_PATH, DEFAULTS)
 
-    cache_mtime = os.path.getmtime(CACHE_PATH) if os.path.exists(CACHE_PATH) else 0
-    if time.time() - cache_mtime > 86400:
-        try:
-            remote_data = await async_fetch_remote(env, spaces)
-            cache.update(remote_data)
-            save_json(CACHE_PATH, cache)
-        except (urlerr.URLError, json.JSONDecodeError, OSError):
-            pass
-
     free_list = cache.get("free", DEFAULTS["free"])
     if "openrouter/free" in free_list:
         free_list.remove("openrouter/free")
@@ -578,7 +569,8 @@ async def async_main():
 
         or_model_val = env.get("OPENROUTER_MODEL", "").lower()
         is_or_active = "OPENROUTER_API_KEY" in active_keys
-        is_free_active = is_or_active and ("free" in or_model_val or not or_model_val)
+        free_ids_lower = {m.lower() for m in free_list}
+        is_free_active = is_or_active and (or_model_val in free_ids_lower or "free" in or_model_val or not or_model_val)
         is_paid_active = is_or_active and not is_free_active
 
         def fmt(curr: str, k: str, ak: set[str] = active_keys) -> str:
