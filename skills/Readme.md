@@ -1,4 +1,4 @@
-# Py-Agent Skills & Directives
+# Skills & Directives
 
 ## 1. Profiles (`skills/profiles/`)
 
@@ -31,7 +31,7 @@ Stackable behaviors loaded on top of the active workspace profile.
 
 Persistent rules injected into turn 0 across **all** workspaces.
 * Edit `skills/system_instructions.md`.
-* Lines starting with `#` are ignored. Active lines apply globally (e.g. environment constraints, universal diff preferences).
+* Lines starting with `#` are ignored. Active lines apply globally (e.g. environment constraints, universal preferences).
 
 ---
 
