@@ -1,11 +1,12 @@
-# CODEBASE INDEX MAP | Generated: 2026-09-23 11:12 | Workspace: py-agent | Path: ~/.config/py-agent
+# CODEBASE INDEX MAP | Generated: 2026-09-25 12:05 | Workspace: py-agent | Path: ~/.config/py-agent
 # Active symbols and structural connections mapped in the local index.
 # -----------------------------------------------------------------------------------------
 # Codebase Modules & Active Architecture:
+#   ├── .active_cd.1114661       - home/j5/.config/py-agent/projects/session-test
 #   ├── .env                     - ~/.config/py-agent/.env
 #   ├── .env.example             - ==============================================================================
 #   ├── .gitignore               - Secrets & Credentials
-#   ├── .last_cloud_key.txt      - GEMINI_API_KEY
+#   ├── .last_cloud_key.txt      - OPENROUTER_API_KEY
 #   ├── .openrouter_cache_v2.json - {
 #   ├── .request_log
 #   ├── .state.json              - {
@@ -18,6 +19,8 @@
 #   ├── ai-context.md            - Py-Agent Config
 #   ├── ai-hook.sh               - Production Py-Agent Shell Hook v0.9.9.28 (Hardened & Production Ready)
 #   ├── logo.svg                 - <svg xmlns="http://www.w3.org/2000/svg" viewBox="121 101 270 310">
+#   ├── pyproject.toml           - [tool.ruff]
+#   ├── pyrightconfig.json       - {
 #   ├── server.pem               - -----BEGIN PRIVATE KEY-----
 #   ├── modules/Readme.md        - Private-First
 #   ├── modules/agent_adapters.py - Tool Format Adapters & Self-Healing Parser for Small-Models [Production Ready]
@@ -37,7 +40,7 @@
 #   ├── modules/agent_usage.py   - Unified Token Usage, Spend Ledger & Speed Tracker [Production Ready]
 #   ├── modules/agent_voice.py   - Local-AI Standalone Voice to Text Module [Production Ready]
 #   ├── modules/chat             - Unified Agentic Brainstorm, Thinking & Follow-up Recommendation Engine [Production Ready]
-#   └── modules/model-select.py  - Streamlined TUI Model Selector driven by Local/HF, Generic Custom 2, Google Gemini & OpenRouter [Pro
+#   └── modules/model-select.py  - Streamlined TUI Model Selector driven by Local/HF, Generic Custom 2, Gemini & OpenRouter [Production
 # -----------------------------------------------------------------------------------------
 [example:.env.example] sum:==============================================================================
 [file:.gitignore] sum:Secrets & Credentials
@@ -51,7 +54,7 @@
 [shell:ai-hook.sh] sum:Production Py-Agent Shell Hook v0.9.9.28 (Hardened & Production Ready)
 [image/svg:logo.svg] dim:x | size:1.4KB
 [markdown:modules/Readme.md] title:Private-First
-[python:modules/agent_adapters.py] imp:ast,json,os,re,time,typing | fn:normalize_params,_extract_balanced_json,heal_tool_call,heal_json_args,_extract_ast_python_calls,extract_fallback_tool_calls
+[python:modules/agent_adapters.py] imp:ast,json,re,time,typing | fn:normalize_params,_extract_balanced_json,heal_tool_call,heal_json_args,_extract_ast_python_calls,extract_fallback_tool_calls
 [python:modules/agent_cloud.py] imp:os,re,typing | fn:_is_valid_key,get_active_configs
 [python:modules/agent_context.py] imp:os,re,sys,typing | fn:tokenize,load_context_entries,jaccard_search,clean_tool_prefix
 [python:modules/agent_core.py] imp:agent_adapters,agent_cloud,agent_ipython,agent_security,agent_tools,agent_ui,agent_usage,base64,json,os,re,requests,rich,shutil,subprocess,sys,time,typing,urllib | cls:RichStreamer | fn:_get_console,_clean_sigint_handler,_get_img_config,describe_image_gemini,preprocess_multimodal_messages,_heal_tool_args,get_state,save_state,workspace_safe_name,is_calm_cli,run_mod,__init__,_stop_spinner,start,update,stop,_log_turn_usage,_process_stream_chunk,_calc_turn_tokens,_confirm_gate,_print_tool_output,_run_edit_tool,agentic_turn,_calc_msg_tokens,stream_response,get_accurate_token_count,show_memory_status,prune_history
@@ -60,11 +63,11 @@
 [python:modules/agent_security.py] imp:agent_ui,ast,os,re,shlex,sys,typing,urllib | fn:resolve_path,is_outside,check_command,check_ast,authorize
 [python:modules/agent_sessions.py] imp:agent_context,contextlib,glob,json,os,re,select,sqlite3,sys,termios,time,tty,typing | fn:tokenize,get_key,connect_db,cleanup_all_stale_locks,get_sub_agent_id,cleanup_sub_agent,init_db,save_checkpoint,rollback_checkpoint,log_turn,get_turns_count,clear_turns
 [python:modules/agent_skills.py] imp:agent_context,agent_core,agent_ui,json,os,re,shutil,subprocess,sys,typing | fn:ensure_mysys_exists,parse_frontmatter,find_skill_file,load_skill_content,_exec_tool_cmd,run_local_tool,run_interactive_tool,get_system_context,load_skill_blueprints,run_skill_selector
-[python:modules/agent_tools.py] imp:agent_core,agent_ipython,agent_security,agent_ui,ast,collections,difflib,json,os,re,rich,shlex,subprocess,sys,typing,urllib | fn:get_modified_files,clear_session_tracking,_invalidate_module_cache,_is_calm,_safe_path,_is_outside_workspace,_check_command_security,_search_codebase,_generate_ast_skeleton,_resilient_replace,run_graph_cmd,run_tool,_in_bounds_gate,_security_gate
-[python:modules/agent_tts.py] imp:agent_core,os,re,subprocess,threading | fn:stop_tts,is_tts_enabled,get_tts_speed,set_tts_speed,toggle_tts,clean_text_for_speech,speak_text,_run,speak_response
-[python:modules/agent_tui.py] imp:agent_adapters,agent_cloud,agent_core,agent_ipython,agent_memories,agent_skills,agent_tools,agent_tts,agent_tui_async,agent_ui,agent_voice,base64,collections,contextlib,json,os,re,requests,rich,sqlite3,subprocess,sys,textual,threading,time,typing,uvloop | cls:FooterToggle,ImageButton,CloseCardButton,Message,AgentCommandProvider,LocalAITUI | fn:format_dir_path,format_model_name,copy_to_clipboard,_glimmer_tui_text,_format_tui_reasonix_text,on_click,on_click,on_click,__init__,update_content,render,search,command_sources,border_accent,is_dark_theme,watch_theme,__init__,on_unmount,_safe_remove_banner,notify,set_skill,set_mode,set_reasoning,action_prompt_image_url,on_key,refresh_db_counts,ensure_system_context,get_db_status_string,update_welcome_banner,compose,action_close_tips_card,on_mount,action_toggle_plan_build,on_input_changed,update_stats_ui,action_scroll_page_up,action_scroll_page_down,action_scroll_up,action_scroll_down,action_copy_last_response,action_copy_entire_chat,handle_view_file,handle_task_command,_sub,handle_slash_command,prompt_tui_confirm,_show,process_query_worker,on_input_submitted,disable_input,enable_input,action_stop_generation,update_sidebar_visibility,action_toggle_sidebar,update_footer_visibility,action_toggle_footer,action_toggle_compact,action_cycle_theme,action_toggle_reasoning,action_toggle_borders
-[python:modules/agent_tui_async.py] imp:asyncio,json,os | fn:run_async_cmd,watch_workspace_changes,_get_dir_mtime,start_subagent_ipc_hub,handle_subagent_msg
-[python:modules/agent_ui.py] imp:agent_cloud,agent_core,agent_skills,collections,json,os,re,rich,select,shutil,sys,termios,threading,time,tty,typing,urllib | cls:InlineSpinner,CalmBoatSpinner | fn:__init__,_get_theme_color,_glimmer,_spin,update,start,stop,__init__,update_context,update,_sail,start,stop,_read_fd,get_key,get_local_model_name,draw_session_box,confirm_tool,run_interactive_selection,show_help,select_workspace_profile
+[python:modules/agent_tools.py] imp:agent_core,agent_ipython,agent_security,ast,collections,difflib,json,os,re,rich,subprocess,sys,typing,urllib | fn:get_modified_files,clear_session_tracking,_invalidate_module_cache,_is_calm,_safe_path,_is_outside_workspace,_check_command_security,_search_codebase,_generate_ast_skeleton,_resilient_replace,run_graph_cmd,run_tool,_in_bounds_gate,_security_gate
+[python:modules/agent_tts.py] imp:agent_core,os,re,subprocess,sys,threading | fn:stop_tts,is_tts_enabled,get_tts_speed,set_tts_speed,toggle_tts,clean_text_for_speech,speak_text,_run,speak_response
+[python:modules/agent_tui.py] imp:agent_adapters,agent_cloud,agent_core,agent_ipython,agent_memories,agent_skills,agent_tools,agent_tts,agent_tui_async,agent_ui,agent_voice,base64,collections,contextlib,json,os,re,requests,rich,shutil,sqlite3,subprocess,sys,textual,threading,time,typing,uvloop | cls:FooterToggle,ImageButton,CloseCardButton,Message,AgentCommandProvider,LocalAITUI | fn:format_dir_path,format_model_name,copy_to_clipboard,_glimmer_tui_text,_format_tui_reasonix_text,on_click,on_click,on_click,__init__,update_content,render,search,command_sources,border_accent,is_dark_theme,watch_theme,__init__,on_unmount,_safe_remove_banner,notify,set_skill,set_mode,set_reasoning,action_prompt_image_url,on_key,refresh_db_counts,ensure_system_context,get_db_status_string,update_welcome_banner,compose,action_close_tips_card,on_mount,action_toggle_plan_build,on_input_changed,update_stats_ui,action_scroll_page_up,action_scroll_page_down,action_scroll_up,action_scroll_down,action_copy_last_response,action_copy_entire_chat,handle_view_file,handle_task_command,_sub,handle_slash_command,prompt_tui_confirm,_show,process_query_worker,on_input_submitted,disable_input,enable_input,action_stop_generation,update_sidebar_visibility,action_toggle_sidebar,update_footer_visibility,action_toggle_footer,action_toggle_compact,action_cycle_theme,action_toggle_reasoning,action_toggle_borders
+[python:modules/agent_tui_async.py] imp:asyncio,json,os,subprocess | fn:run_async_cmd,watch_workspace_changes,_get_dir_mtime,start_subagent_ipc_hub,handle_subagent_msg
+[python:modules/agent_ui.py] imp:agent_cloud,agent_core,agent_skills,collections,json,os,re,rich,select,sys,termios,threading,time,tty,typing,urllib | cls:InlineSpinner,CalmBoatSpinner | fn:__init__,_get_theme_color,_glimmer,_spin,update,start,stop,__init__,update_context,update,_sail,start,stop,_read_fd,get_key,get_local_model_name,draw_session_box,confirm_tool,run_interactive_selection,show_help,select_workspace_profile
 [python:modules/agent_usage.py] imp:json,os,sys,time,typing | fn:start,count_token,end,calculate_cost,record,turn_line
 [python:modules/agent_voice.py] imp:agent_core,base64,http,json,os,re,socket,ssl,subprocess,sys,time,urllib | cls:VoiceHandler | fn:is_bridge_running,load_voice_env,transcribe_gemini,get_prompt_input,log_message,do_POST,do_GET,run_server,toggle_voice_bridge
 [python:modules/chat] imp:agent_cloud,agent_ui,json,os,re,sys,urllib
@@ -84,7 +87,7 @@
 [markdown:setup/Readme.md] title:Local Server Configuration & Model Selector (Universal CPU & GPU)
 [shell:setup/kat.sh] sum:==============================================================================
 [shell:setup/lfm2.sh] sum:Configuration
-[python:setup/model-select-local.py] imp:asyncio,os,re,select,shutil,subprocess,sys,tempfile,termios,tty | fn:async_set_cpu_chill,async_set_cpu_balanced,get_current_running_model,async_stop_all_engines,launch_local_server,async_get_key,_read,draw_menu,async_main
+[python:setup/model-select-local.py] imp:asyncio,atexit,os,re,select,shutil,subprocess,sys,termios,time,tty | fn:cleanup_terminal,get_running_instances,is_model_active,async_set_cpu_chill,async_set_cpu_balanced,async_stop_all_engines,launch_local_server,async_get_key_with_timeout,_read_with_select,draw_menu,async_main
 [shell:setup/nex-n2.5.sh] sum:==========================================
 [shell:setup/occamy.sh] sum:==============================================================================
 [shell:setup/ornith.sh] sum:==============================================================================
@@ -112,10 +115,15 @@
 [markdown:skills/on-demand/ponytail-py.md] title:[SKILL] Ponytail-Py ---> ponytail-py, senior python dev, yagni, minimal python, pythonic simplicity
 [markdown:skills/on-demand/ponytail.md] title:[SKILL] Ponytail ---> ponytail, lazy senior dev, yagni, minimal code, simplify code
 [markdown:skills/on-demand/pysmol.md] title:[SKILL] PySmol ---> pysmol, smol, smolagents, codeagent, python-loop, batch-code, in-memory-python, code-first
-[markdown:skills/profiles/claude/pro.md] title:pro
-[markdown:skills/profiles/custom/base.md] title:base
+[markdown:skills/profiles/custom/archive/claude.md] title:claude
+[markdown:skills/profiles/custom/archive/cloud-fast.md] title:cloud-fast
+[markdown:skills/profiles/custom/archive/cloud-reasoning.md] title:cloud-reasoning
+[markdown:skills/profiles/custom/archive/deepseek.md] title:deepseek
+[markdown:skills/profiles/custom/archive/gemini.md] title:gemini
+[markdown:skills/profiles/custom/archive/hermes.md] title:hermes
+[markdown:skills/profiles/custom/archive/pi.md] title:pi
+[markdown:skills/profiles/custom/cloud.md] title:cloud
 [markdown:skills/profiles/custom/deepseek.md] title:deepseek
-[markdown:skills/profiles/custom/gemini.md] title:gemini
 [markdown:skills/profiles/custom/katcoder.md] title:katcoder
 [markdown:skills/profiles/custom/lfm2.md] title:lfm2
 [markdown:skills/profiles/custom/lingtiny.md] title:lingtiny
@@ -128,8 +136,6 @@
 [markdown:skills/profiles/custom/sysadmin.md] title:sysadmin
 [markdown:skills/profiles/custom/tielcoder.md] title:tielcoder
 [markdown:skills/profiles/custom/tini-cybersec.md] title:tini-cybersec
-[markdown:skills/profiles/hermes/pro.md] title:pro
-[markdown:skills/profiles/pi/pro.md] title:pro
 [markdown:skills/system/aur-audit.md] title:AUR PRE-INSTALL SECURITY AUDIT SKILL
 [markdown:skills/system/mysys.md] title:SYSTEM ARCHITECTURE BLUEPRINT
 [markdown:skills/system/security-audit.md] title:SYSTEM SECURITY AUDIT DIRECTIVES
