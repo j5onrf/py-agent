@@ -26,8 +26,8 @@ except ImportError:
     _HAS_TERMIOS = False
 
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
-_console, _console_err = Console(), Console(stderr=True)
-RE_UNSAFE_SHELL_CHARS: re.Pattern = re.compile(r'[\[\]{}()=\'"",;|<>#]')
+_console = Console()
+RE_UNSAFE_SHELL_CHARS: re.Pattern = re.compile(r'[\[\]{}()=\'"",;|<>#`$&*!\\\r\n]')
 
 BOX_DIAMOND = Box("◈─┬◈\n│ ││\n├─┼┤\n│ ││\n├─┼┤\n├─┼┤\n│ ││\n◈─┴◈\n")
 BOX_DASHED = Box("┌┄┬┐\n┆ ┆┆\n├┄┼┤\n┆ ┆┆\n├┄┼┤\n├┄┼┤\n┆ ┆┆\n└┄┴┘\n")
@@ -157,6 +157,7 @@ class InlineSpinner:
 
 
 class CalmBoatSpinner:
+    _boat_lock = threading.Lock()
     _last_x: int = 0
     _last_dir: int = 1
 
@@ -177,8 +178,10 @@ class CalmBoatSpinner:
         pass
 
     def _sail(self) -> None:
-        x = CalmBoatSpinner._last_x
-        direction = CalmBoatSpinner._last_dir
+        with CalmBoatSpinner._boat_lock:
+            x = CalmBoatSpinner._last_x
+            direction = CalmBoatSpinner._last_dir
+
         w_offset = 0
         step_timer = time.time()
         step_interval = 0.88
@@ -213,8 +216,9 @@ class CalmBoatSpinner:
                 elif x <= 0:
                     x = 0
                     direction = 1
-                CalmBoatSpinner._last_x = x
-                CalmBoatSpinner._last_dir = direction
+                with CalmBoatSpinner._boat_lock:
+                    CalmBoatSpinner._last_x = x
+                    CalmBoatSpinner._last_dir = direction
                 step_timer = now
 
             sail = "<|" if direction == 1 else "|>"
@@ -493,6 +497,12 @@ def run_interactive_selection(
 
             key = get_key()
 
+            # Empty key indicates EOF or read failure — treat strictly as abort
+            if not key or key == "\x1b":
+                sys.stderr.write("\r\x1b[2K\x1b[1A\r\x1b[2K")
+                sys.stderr.flush()
+                sys.exit(127)
+
             if key in ("\x1b[A", "\x1b[B"):
                 current_idx = (current_idx + (1 if key == "\x1b[B" else -1) + num_opts) % num_opts
                 sys.stderr.write("\r\x1b[2K\x1b[1A\r\x1b[2K")
@@ -510,8 +520,7 @@ def run_interactive_selection(
                     sys.exit(0)
                 sys.exit(127)
 
-            if key in ("\r", "", "y", "Y"):
-                # Cleanly erase the prompt line before handoff so terminal scrollback stays clean
+            if key in ("\r", "\n", "y", "Y"):
                 sys.stderr.write("\r\x1b[2K")
                 sys.stderr.flush()
                 if "system" in cmd_to_show:
@@ -622,8 +631,8 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                     defaults["mem"] = str(meta.get("memory", meta.get("mem", ""))).lower() in ("true", "1", "yes", "on")
                     defaults["adp"] = str(meta.get("adapters", meta.get("adp", meta.get("adapter", "")))).lower() in ("true", "1", "yes", "on")
                     cat = meta.get("category")
-                except Exception:
-                    pass
+                except Exception as e:
+                    sys.stderr.write(f"\033[1;33m[ai init]\033[0m Failed to parse {sf}: {e}\n")
 
                 if not cat:
                     if base_name.startswith("cloud-") or base_name in ("gemini", "deepseek"):
@@ -648,6 +657,11 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
         cat_header = cat_name if cat_name not in seen_cats else None
         seen_cats.add(cat_name)
         options.append((k, lbl, tok_lbl, cat_header))
+
+    # Guard against missing or empty profiles directory before touching terminal cursor
+    if not options:
+        sys.stderr.write(f"\033[1;33m[ai init]\033[0m No agent profiles found in {profiles_dir}. Using defaults.\n")
+        return "chat", False, False, False, False, False
 
     sys.stderr.write(f"\n\033[1;36m[ai init]\033[0m Select default Agent Profile for workspace \033[1;33m{workspace_name}\033[0m:\n\n\033[?25l")
     sys.stderr.flush()
@@ -801,7 +815,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                 sys.stderr.write(f"\x1b[{last_rendered_lines + 3}A\r\x1b[J\033[1;32mOK: Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}{b_adp}\n\n")
                 sys.stderr.flush()
                 return key, is_yolo, use_map, is_py, is_mem, is_adp
-            elif char in ("\r", "\n", ""):
+            elif char in ("\r", "\n"):
                 key, label = options[current_idx][0], options[current_idx][1]
                 sys.stderr.write(f"\x1b[{last_rendered_lines + 3}A\r\x1b[J")
                 if not is_yolo:

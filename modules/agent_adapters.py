@@ -3,7 +3,9 @@
 
 import ast
 import json
+import os
 import re
+import sys
 import time
 from typing import Any
 
@@ -18,7 +20,7 @@ RE_HERMES_PARAM = re.compile(
     re.DOTALL,
 )
 RE_DSML = re.compile(
-    r"<｜DSML｜invoke\s+name=[\"'](?P<name>[^\"']+)[\"']\s+arguments=[\"'](?P<args>[\s\S]*?)[\"']\s*/>",
+    r"<[|｜]DSML[|｜]invoke\s+name=[\"'](?P<name>[^\"']+)[\"']\s+arguments=[\"'](?P<args>[\s\S]*?)[\"']\s*/>",
     re.DOTALL,
 )
 RE_MISTRAL = re.compile(r"\[TOOL_CALLS\]\s*(?P<calls>\[[\s\S]*?\])", re.DOTALL)
@@ -26,7 +28,7 @@ RE_XML_TOOL_CALL = re.compile(r"<tool_call>\s*(?P<payload>[\s\S]*?)\s*</tool_cal
 RE_MD_JSON_WRAPPER = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.DOTALL)
 RE_MD_PY_WRAPPER = re.compile(r"```(?:python|py)?\s*([\s\S]*?)\s*```", re.DOTALL)
 RE_XML_TOOL_TAGS = re.compile(
-    r"<\|?[a-zA-Z_]+_call_?(?:start|end)?\|?>|</?tool_call>|</?function[^>]*>|</?parameter[^>]*>|<｜/?DSML｜(?:function_calls)?>",
+    r"<\|?[a-zA-Z_]+_call_?(?:start|end)?\|?>|</?tool_call>|</?function[^>]*>|</?parameter[^>]*>|</?function_calls>|</?[|｜]DSML[|｜]?(?:invoke)?>",
     re.DOTALL,
 )
 RE_PATH_EXTRACT = re.compile(
@@ -119,9 +121,9 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
 
         cleaned["command"] = c
 
-    # 3. Search Pattern Aliases
+    # 3. Search Pattern Aliases (omits 'find' to prevent collision with edit_file)
     if "pattern" not in cleaned:
-        for alt in ("query", "regex", "search_term", "find", "match"):
+        for alt in ("query", "regex", "search_term", "match"):
             if alt in cleaned:
                 cleaned["pattern"] = cleaned.pop(alt)
                 break
@@ -151,12 +153,11 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
 
     if "new_str" not in cleaned:
         for alt in ("new", "new_string", "new_text", "replace", "replace_str", "replacement", "after", "update"):
-            # Only treat 'replace' as new_str if it is a text string, not a boolean flag
             if alt in cleaned and not isinstance(cleaned[alt], bool) and str(cleaned[alt]).lower() not in ("true", "1", "yes", "on"):
                 cleaned["new_str"] = cleaned.pop(alt)
                 break
 
-    # 7. Overwrite Aliases & Booleans (Preserves replace=True for write_file)
+    # 7. Overwrite Aliases & Booleans
     for alt in ("force", "overwrite_file", "clobber"):
         if alt in cleaned:
             cleaned["overwrite"] = True
@@ -209,8 +210,9 @@ def _extract_balanced_json(text: str) -> list[dict[str, Any]]:
                                 if isinstance(parsed, dict) and ("name" in parsed or "commands" in parsed or "function" in parsed):
                                     results.append(parsed)
                                     valid = True
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                if os.environ.get("AI_DEBUG") == "1":
+                                    sys.stderr.write(f"\r\n[debug] _extract_balanced_json dict parse error: {e}\r\n")
                             i = j
                             break
             if not valid:
@@ -242,8 +244,9 @@ def _extract_balanced_json(text: str) -> list[dict[str, Any]]:
                                     for item in parsed:
                                         if isinstance(item, dict) and "name" in item:
                                             results.append(item)
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                if os.environ.get("AI_DEBUG") == "1":
+                                    sys.stderr.write(f"\r\n[debug] _extract_balanced_json list parse error: {e}\r\n")
                             i = j
                             break
             i += 1
@@ -361,6 +364,7 @@ def _extract_ast_python_calls(text: str) -> list[dict[str, Any]]:
         "trace_symbol",
         "blast_radius",
         "find_symbol",
+        "architecture_overview",
         "exec_python",
         "final_answer",
     }
@@ -379,7 +383,6 @@ def _extract_ast_python_calls(text: str) -> list[dict[str, Any]]:
             ch = text[i]
             if in_quote:
                 if ch == in_quote:
-                    # Count preceding backslashes to handle escaped quotes accurately
                     bs_count = 0
                     k = i - 1
                     while k >= start_idx and text[k] == "\\":
@@ -494,17 +497,19 @@ def extract_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
     # Format 2: DeepSeek & Liquid DSML Format
     if not calls:
         for i, m in enumerate(RE_DSML.finditer(text)):
-            raw_args = m.group("args").replace('\\"', '"').replace("\\\\", "\\")
-            calls.append(
-                {
-                    "id": f"call_dsml_{i}_{int(time.time())}",
-                    "type": "function",
-                    "function": {
-                        "name": m.group("name"),
-                        "arguments": json.dumps(heal_json_args(raw_args)),
-                    },
-                }
-            )
+            args_val = m.group("args")
+            if args_val is not None:
+                raw_args = args_val.replace('\\"', '"').replace("\\\\", "\\")
+                calls.append(
+                    {
+                        "id": f"call_dsml_{i}_{int(time.time())}",
+                        "type": "function",
+                        "function": {
+                            "name": m.group("name"),
+                            "arguments": json.dumps(heal_json_args(raw_args)),
+                        },
+                    }
+                )
 
     # Format 3: Mistral Format
     if not calls and (mm := RE_MISTRAL.search(text)):

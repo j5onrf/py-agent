@@ -4,6 +4,7 @@
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -13,18 +14,18 @@ import agent_context as context
 import agent_ui as ui
 
 PAGER_STRIP_RE: re.Pattern = re.compile(r'\|\s*(leaf|mdcat|cat|glow|view)\b.*$', re.IGNORECASE)
-RE_FRONTMATTER_JSON: re.Pattern = re.compile(r'^\s*(\{[\s\S]*?\})\s*')
 RE_METADATA_LINE: re.Pattern = re.compile(r'^\w+:\s')
 RE_SKILL_SPLIT: re.Pattern = re.compile(r"[-_/]")
 RE_SKILL_BLOCK: re.Pattern = re.compile(r"### Loaded On-Demand Skill:\s*([^\n]+)\n([\s\S]*?)(?=\n\n### Loaded On-Demand Skill:|\Z)")
 
 
 def ensure_mysys_exists(skills_dir: str, cfg_dir: str) -> None:
-    if not os.path.exists(os.path.join(skills_dir, "system", "mysys.md")):
+    target = os.path.join(skills_dir, "system", "mysys.md")
+    if not os.path.exists(target):
         try:
             subprocess.run([sys.executable, os.path.join(cfg_dir, "tools", "generate-profile")], check=False)
-        except Exception:
-            pass
+        except (OSError, subprocess.SubprocessError) as e:
+            sys.stderr.write(f"\033[1;31m[sys] Failed to generate profile: {e}\033[0m\n")
 
 
 def parse_frontmatter(raw_text: str) -> tuple[dict[str, Any], str]:
@@ -61,12 +62,13 @@ def parse_frontmatter(raw_text: str) -> tuple[dict[str, Any], str]:
             return meta, body
 
     elif raw.startswith("{"):
-        if m := RE_FRONTMATTER_JSON.match(raw):
-            try:
-                meta = json.loads(m.group(1))
-                return meta, raw[m.end():].strip()
-            except (json.JSONDecodeError, TypeError):
-                pass
+        try:
+            decoder = json.JSONDecoder()
+            meta, end_idx = decoder.raw_decode(raw)
+            if isinstance(meta, dict):
+                return meta, raw[end_idx:].strip()
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     return {}, raw
 
@@ -91,19 +93,29 @@ def find_skill_file(base_dir: str, skill_name: str) -> str | None:
         if os.path.isfile(cand):
             return cand
 
-    # Fallback directory scan (bounded depth)
-    target_fnames = {f"{os.path.basename(clean)}.md", "skill.md", "skill.md".upper()}
+    # Fallback directory scan (bounded depth with in-place dir pruning)
     clean_target = os.path.basename(clean)
+    target_fnames = {f"{clean_target}.md", "skill.md"}
 
-    for root, _, files in os.walk(base_dir):
-        if root[len(base_dir):].count(os.sep) <= 5:
-            if os.path.basename(root).lower() == clean_target:
-                for f in files:
-                    if f.lower() in ("skill.md", f"{clean_target}.md"):
-                        return os.path.join(root, f)
+    for root, dirs, files in os.walk(base_dir):
+        rel_depth = root[len(base_dir):].count(os.sep)
+        if rel_depth > 4:
+            dirs[:] = []
+            continue
+
+        root_base = os.path.basename(root).lower()
+        if root_base == clean_target:
             for f in files:
-                if f.lower() in target_fnames:
+                if f.lower() in ("skill.md", f"{clean_target}.md"):
                     return os.path.join(root, f)
+
+        for f in files:
+            f_l = f.lower()
+            if f_l in target_fnames:
+                if f_l == "skill.md" and root_base != clean_target:
+                    continue
+                return os.path.join(root, f)
+
     return None
 
 
@@ -113,9 +125,10 @@ def load_skill_content(skills_str: str, skills_dir: str, cfg_dir: str) -> str:
         return ""
     contents: list[str] = []
     for skill in [s.lstrip("-").lower() for s in skills_str.split()]:
+        if "system" in skill or skill == "mysys":
+            ensure_mysys_exists(skills_dir, cfg_dir)
+
         if sf := find_skill_file(skills_dir, skill):
-            if "system" in skill:
-                ensure_mysys_exists(skills_dir, cfg_dir)
             try:
                 with open(sf, "r", encoding="utf-8") as f:
                     raw = f.read().strip()
@@ -144,8 +157,8 @@ def load_skill_content(skills_str: str, skills_dir: str, cfg_dir: str) -> str:
 
                         adp_val = meta.get("adapters") or meta.get("adp") or meta.get("adapter")
                         agent_core.save_state("adapters_active", str(adp_val).lower() in ("true", "1", "yes", "on") if adp_val is not None else False)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        sys.stderr.write(f"\033[2m[sys] Skill state update failed: {e}\033[0m\n")
 
                 contents.append(body or raw)
             except (OSError, UnicodeDecodeError) as e:
@@ -156,6 +169,8 @@ def load_skill_content(skills_str: str, skills_dir: str, cfg_dir: str) -> str:
 def _exec_tool_cmd(cmd: str, interactive: bool = False) -> str:
     try:
         sanitized = PAGER_STRIP_RE.sub('', cmd.strip()).strip()
+        if not sanitized:
+            return "__ABORT_TURN__"
         workspace = os.environ.get("AI_WORKSPACE_PATH") or os.getcwd()
         env = {**os.environ, "AI_CONTEXT_RUN": "1"}
         if interactive:
@@ -191,6 +206,7 @@ EXCLUDED_CONTEXT_TOOLS = (
     "agent_cloud.py",
     "agent_usage.py",
     "agent_tui_async.py",
+    "agent_chat.py",
     "model-select.py",
     "speed_test.py",
 )
@@ -223,9 +239,14 @@ def get_system_context(
                 tool = tool.replace(flag, "")
             intent_tokens = set(context.tokenize(entry.get("intent", ""), stop_words))
 
-            args = " ".join(w for w in query.split() if any(c in w for c in ("/", "~", ".")) or (context.tokenize(w, stop_words) and context.tokenize(w, stop_words)[0] not in intent_tokens))
+            raw_args = [
+                w for w in query.split()
+                if any(c in w for c in ("/", "~", ".")) or (context.tokenize(w, stop_words) and context.tokenize(w, stop_words)[0] not in intent_tokens)
+            ]
+            quoted_args = " ".join(shlex.quote(a) for a in raw_args)
+
             if "$1" in tool or "{}" in tool:
-                tool = tool.replace("$1", args).replace("{}", args).strip()
+                tool = tool.replace("$1", quoted_args).replace("{}", quoted_args).strip()
 
             sys.stderr.write(f"\033[2m[sys] Executing: {tool}\033[0m\n")
             sys.stderr.flush()
@@ -239,7 +260,12 @@ def load_skill_blueprints(base_skills_dir: str, stop_words: set[str] | frozenset
     seen_names = set()
 
     if os.path.exists(base_skills_dir):
-        for root, _, files in os.walk(base_skills_dir):
+        for root, dirs, files in os.walk(base_skills_dir):
+            rel_depth = root[len(base_skills_dir):].count(os.sep)
+            if rel_depth > 5:
+                dirs[:] = []
+                continue
+
             for f in files:
                 if f.lower().endswith(".md"):
                     path = os.path.join(root, f)
@@ -304,11 +330,16 @@ def run_skill_selector(
     if chat_history is not None:
         hist: list[dict[str, Any]] = list(chat_history)
     else:
-        try:
-            loaded = json.loads(sys.stdin.read().strip())
-            hist = loaded if isinstance(loaded, list) else [{"role": "system", "content": ""}]
-        except Exception:
-            hist = [{"role": "system", "content": ""}]
+        hist = [{"role": "system", "content": ""}]
+        if not sys.stdin.isatty():
+            try:
+                raw_in = sys.stdin.read().strip()
+                if raw_in:
+                    loaded = json.loads(raw_in)
+                    if isinstance(loaded, list):
+                        hist = loaded
+            except Exception:
+                pass
 
     if not hist:
         hist = [{"role": "system", "content": ""}]
@@ -356,10 +387,10 @@ def run_skill_selector(
 
             key = ui.get_key()
             clear_2_lines = "\r\x1b[2K\x1b[1A\r\x1b[2K"
-            if key in ('\x03', '\x1b'):
+            if not key or key in ('\x03', '\x1b'):
                 sys.stderr.write(f"{clear_2_lines}Cancelled.\n")
                 return hist, None
-            elif key in ('\r', '\n', ''):
+            elif key in ('\r', '\n'):
                 if num_opts > 0:
                     _, sel = candidates[current_idx]
                     try:
@@ -421,6 +452,6 @@ if __name__ == "__main__":
     stop_words = getattr(context, "STOP_WORDS", {"is", "what", "it", "do", "any", "i", "have", "the", "a", "an", "on", "to", "for", "me", "you", "my", "your", "we", "us", "are", "about", "in", "how"})
     if len(sys.argv) < 3:
         sys.argv.extend(["", ""])
-    hist, name = run_skill_selector(sys.argv[1], sys.argv[2], os.path.join(CFG_DIR, "skills"), stop_words)
+    hist, _ = run_skill_selector(sys.argv[1], sys.argv[2], os.path.join(CFG_DIR, "skills"), stop_words)
     if hist:
         print(json.dumps(hist))

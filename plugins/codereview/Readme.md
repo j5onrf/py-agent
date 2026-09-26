@@ -1,4 +1,3 @@
-```markdown
 # Open Code Review
 # https://github.com/alibaba/open-code-review
 
@@ -12,17 +11,17 @@ npm install -g @alibaba-group/open-code-review
 
 ## 2. Usage
 
-Type `opencr` in the terminal:
-* Enter the path to review (or press `Enter` for the current directory).
-* Automatically uses the active credentials and model from `~/.config/py-agent/.env`.
+Type `opencr` or `codereview` in the terminal:
+* Enter a direct file path (e.g. `~/.config/py-agent/modules/agent_core.py`) or directory.
+* Automatically uses active credentials and model from `~/.config/py-agent/.env`.
+* Audits the file in place with full repository context (strictly read-only; never modifies files).
 
 ---
 
 ## 3. Direct CLI
 
-Run inside any target directory:
+Run inside your repository:
+* `ocr scan --path <file>` — Audit a single file directly.
 * `ocr scan` — Audit full directory.
 * `ocr review` — Audit uncommitted Git changes.
 
-*(Tip: Copy files to an isolated directory like `~/codereview` to avoid scanning `.env` or keys).*
-```

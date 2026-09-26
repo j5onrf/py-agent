@@ -141,7 +141,7 @@ def ensure_clean_agent_dir(workspace_path: str) -> None:
 
 
 def _sweep_dead_session_locks() -> None:
-    """Removes .session lockfiles whose owning process is dead. Catches ValueError on malformed files."""
+    """Removes .session lockfiles whose owning process is dead. Ignores alive processes."""
     sess_dir = os.path.join(CFG_DIR, ".active_sessions")
     if not os.path.isdir(sess_dir):
         return
@@ -153,11 +153,15 @@ def _sweep_dead_session_locks() -> None:
             if pid <= 0:
                 continue
             os.kill(pid, 0)
-        except (OSError, ValueError):
+        except ProcessLookupError:
+            # Process strictly dead (ESRCH), safe to sweep lockfile
             try:
                 os.remove(os.path.join(sess_dir, f))
             except OSError:
                 pass
+        except (PermissionError, ValueError):
+            # Process alive under another user (PermissionError) or filename malformed
+            pass
 
 
 def clean_exit(safe_name: str | None = None) -> None:
@@ -182,7 +186,7 @@ def _launch_surface(script_path: str, is_agent: bool, ws_path: str, skill: str, 
         "AI_IS_AGENT": "1" if is_agent else "0",
         "AI_WORKSPACE_PATH": ws_path,
         "AI_ACTIVE_SKILL": skill,
-        "AI_CONFIRM_GATES": "0",
+        "AI_CONFIRM_GATES": os.environ.get("AI_CONFIRM_GATES", "1"),
         "AI_SESSION_HISTORY": json.dumps(history)
     }
     cmd = [sys.executable, script_path] if script_path.endswith(".py") else ["/bin/bash", script_path] + (args or [])
@@ -196,20 +200,25 @@ def _launch_surface(script_path: str, is_agent: bool, ws_path: str, skill: str, 
 
 
 def _update_workspace_config(cfg_file: str, updates: dict[str, Any]) -> None:
-    """Atomically updates settings inside .agent/config.json."""
+    """Atomically updates settings inside .agent/config.json with cleanup on error."""
     if not os.path.exists(cfg_file):
         return
+    tmp = f"{cfg_file}.tmp"
     try:
         data = {}
         with open(cfg_file, "r", encoding="utf-8") as cf:
             data = json.load(cf)
         data.update(updates)
-        tmp = f"{cfg_file}.tmp"
         with open(tmp, "w", encoding="utf-8") as cf:
             json.dump(data, cf, indent=2)
         os.replace(tmp, cfg_file)
-    except Exception:
-        pass
+    except (OSError, json.JSONDecodeError):
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+        ui._console.print("[dim yellow][sys] Failed to persist workspace config.[/dim yellow]")
 
 
 def run_interactive_chat(args: list[str]) -> None:
@@ -592,7 +601,8 @@ def run_interactive_chat(args: list[str]) -> None:
                     continue
 
                 if cmd in ("/box", "/box-style", "/boxstyle"):
-                    val = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() and 1 <= int(parts[1]) <= 8 else (st.get("box_style", 2) % 8) + 1
+                    cur_box = core.get_state("box_style", 2)
+                    val = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() and 1 <= int(parts[1]) <= 8 else (cur_box % 8) + 1
                     core.save_state("box_style", val)
                     _flash_status(f"box: #{val}")
                     continue
@@ -718,17 +728,40 @@ def run_interactive_chat(args: list[str]) -> None:
                         ui._console.print("[dim yellow][sys] Usage: file <path> (e.g. file src/main.py)[/dim yellow]\n")
                         continue
                     raw_f = query.split(maxsplit=1)[1].strip().strip('\'"')
-                    full_p = os.path.realpath(os.path.expanduser(raw_f) if os.path.isabs(os.path.expanduser(raw_f)) else os.path.join(workspace_path, raw_f))
+                    ws_real = os.path.realpath(workspace_path)
+                    cand_p = os.path.expanduser(raw_f) if os.path.isabs(os.path.expanduser(raw_f)) else os.path.join(workspace_path, raw_f)
+                    full_p = os.path.realpath(cand_p)
+
+                    # 1. Boundary containment check: must be inside workspace or home directory workspace
+                    home_real = os.path.realpath(home_dir)
+                    if not (full_p == ws_real or full_p.startswith(ws_real + os.sep) or ws_real == home_real):
+                        ui._console.print(f"[red][sys] Access denied: '{raw_f}' is outside the workspace.[/red]\n")
+                        continue
+
                     if not os.path.isfile(full_p):
                         ui._console.print(f"[red][sys] File not found: {raw_f}[/red]\n")
                         continue
-                    if any(full_p.endswith(ext) for ext in (".db", ".sqlite", ".bin", ".png", ".jpg", ".jpeg", ".zip", ".tar", ".gz", ".pyc")):
+
+                    # 2. Sensitive credential files protection
+                    base_f = os.path.basename(full_p).lower()
+                    if base_f in (".env", ".env.example", ".last_cloud_key.txt") or any(full_p.endswith(ext) for ext in (".pem", ".key", ".p12", ".pfx", "id_rsa", "id_ed25519")):
+                        ui._console.print(f"[red][sys] Access denied: Sensitive credential file '{base_f}'.[/red]\n")
+                        continue
+
+                    # 3. Binary file protection
+                    if any(full_p.endswith(ext) for ext in (".db", ".sqlite", ".bin", ".png", ".jpg", ".jpeg", ".zip", ".tar", ".gz", ".pyc", ".so", ".dylib")):
                         ui._console.print(f"[red][sys] Cannot load binary file: {raw_f}[/red]\n")
                         continue
+
+                    # 4. Size protection cap (max 250 KB / ~60k tokens to prevent context blowup)
                     try:
+                        f_size = os.path.getsize(full_p)
+                        if f_size > 250 * 1024:
+                            ui._console.print(f"[red][sys] File too large ({f_size // 1024} KB > 250 KB limit). Use read_file slices.[/red]\n")
+                            continue
                         with open(full_p, "r", encoding="utf-8", errors="replace") as f:
                             f_content = f.read()
-                        rel_name = os.path.relpath(full_p, workspace_path)
+                        rel_name = os.path.relpath(full_p, workspace_path) if full_p.startswith(ws_real) else os.path.basename(full_p)
                         lines_cnt = len(f_content.splitlines())
                         file_entry = f"### File Context: {rel_name} ({lines_cnt} lines)\n```\n{f_content}\n```"
                         chat_history.append({"role": "user", "content": f"[System Context]: User manually loaded file '{rel_name}' into context.\n\n{file_entry}"})
@@ -773,8 +806,8 @@ def run_interactive_chat(args: list[str]) -> None:
             memory_ctx = memories.get_memory_context(workspace_path) if (is_agent and memory_active) else ""
 
             if RE_THINK_BIN.match(query):
-                think_bin = f"{CFG_DIR}/modules/chat"
-                if os.path.exists(think_bin):
+                think_bin = next((p for p in (f"{CFG_DIR}/modules/agent_chat.py", f"{CFG_DIR}/modules/chat") if os.path.isfile(p)), None)
+                if think_bin:
                     try:
                         subprocess.run([sys.executable, think_bin, query], input=json.dumps(chat_history), text=True)
                         continue

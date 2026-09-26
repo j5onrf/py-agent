@@ -4,6 +4,8 @@
 import os
 import re
 import shutil
+import sys
+import tempfile
 import time
 from typing import Any
 
@@ -135,34 +137,45 @@ def save_memory_file(
     if not content or not content.strip():
         return False, "Memory content cannot be empty."
 
-    clean_title = title.strip()
+    # Sanitize title, mem_type, and tags to prevent YAML frontmatter injection
+    clean_title = " ".join(title.split()).strip()
+    clean_type = " ".join(mem_type.split()).lower().strip() or "decision"
     safe_slug = RE_SAFE_NAME.sub("-", clean_title.lower()).strip("-") or "memory"
     mem_dir = _get_memory_dir(workspace_path)
 
+    clean_tags = []
+    if tags:
+        for t in tags:
+            ct = " ".join(str(t).split()).strip().strip("'\"")
+            if ct:
+                clean_tags.append(ct)
+
+    tmp_path = None
     try:
         os.makedirs(mem_dir, exist_ok=True)
         filepath = os.path.join(mem_dir, f"{safe_slug}.md")
-        tmp_path = f"{filepath}.tmp"
 
-        tags_line = f"tags: [{', '.join(tags)}]\n" if tags else ""
+        tags_line = f"tags: [{', '.join(clean_tags)}]\n" if clean_tags else ""
         date_str = time.strftime("%Y-%m-%d")
 
         raw_text = (
             f"---\n"
             f"title: {clean_title}\n"
-            f"type: {mem_type.lower().strip()}\n"
+            f"type: {clean_type}\n"
             f"date: {date_str}\n"
             f"{tags_line}"
             f"---\n\n"
             f"{content.strip()}\n"
         )
 
-        with open(tmp_path, "w", encoding="utf-8") as f:
+        # Unique staging file in the same directory guarantees atomic os.replace without thread collisions
+        fd, tmp_path = tempfile.mkstemp(dir=mem_dir, prefix=f".{safe_slug}_", suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(raw_text)
         os.replace(tmp_path, filepath)
         return True, filepath
     except OSError as e:
-        if os.path.exists(tmp_path):
+        if tmp_path and os.path.exists(tmp_path):
             try:
                 os.remove(tmp_path)
             except OSError:
@@ -170,11 +183,17 @@ def save_memory_file(
         return False, f"Failed to write memory file: {e}"
 
 
-def clear_memories(workspace_path: str) -> None:
+def clear_memories(workspace_path: str) -> bool:
     """Removes all files in <workspace>/.agent/memory/."""
     mem_dir = _get_memory_dir(workspace_path)
     if os.path.isdir(mem_dir):
-        shutil.rmtree(mem_dir, ignore_errors=True)
+        try:
+            shutil.rmtree(mem_dir)
+            return True
+        except OSError as e:
+            sys.stderr.write(f"\033[1;31m[memories] Failed to clear {mem_dir}: {e}\033[0m\n")
+            return False
+    return True
 
 
 # Compatibility SDK aliases for in-kernel Python harness (/py)

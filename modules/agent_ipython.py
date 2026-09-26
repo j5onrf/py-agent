@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Local-AI Standalone IPython Kernel & RLM Harness Module [Production Ready]"""
 
-import ast
 import builtins
 import contextlib
 import io
@@ -9,6 +8,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import traceback
 from collections.abc import Callable
 from typing import Any
@@ -32,6 +32,7 @@ except ImportError:
 _shell_globals: dict[str, Any] = {}
 _shell_instance = None
 _final_answer_val: Any = None
+_cell_lock = threading.Lock()
 
 try:
     from IPython.core.interactiveshell import InteractiveShell
@@ -157,27 +158,34 @@ def _final_answer(val: Any) -> Any:
     return val
 
 
+def _invalidate_module_cache(file_path: str) -> None:
+    if file_path.endswith(".py"):
+        mod_name = os.path.splitext(os.path.basename(file_path))[0]
+        if mod_name in sys.modules:
+            sys.modules.pop(mod_name, None)
+
+
 def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | None = None) -> None:
     global _shell_globals, _shell_instance
     ws_real = os.path.realpath(workspace)
 
-    try:
-        if os.path.realpath(os.getcwd()) != ws_real:
-            os.chdir(ws_real)
-    except OSError:
-        pass
-
+    # Append workspace to sys.path to prevent shadowing stdlib modules
     if ws_real not in sys.path:
-        sys.path.insert(0, ws_real)
+        sys.path.append(ws_real)
 
     if _has_ipython and _shell_instance is None:
         _shell_instance = InteractiveShell.instance()
 
     def _check_boundary(path_str: str, op_name: str) -> bool:
-        full = security.resolve_path(ws_real, path_str) if security else os.path.realpath(path_str if os.path.isabs(path_str) else os.path.join(ws_real, path_str))
-        if security and security.is_outside(ws_real, full):
+        if not security:
+            # Fail closed: reject out-of-workspace paths if security module is missing
+            full = os.path.realpath(path_str if os.path.isabs(path_str) else os.path.join(ws_real, path_str))
+            return full == ws_real or full.startswith(ws_real + os.sep)
+
+        full = security.resolve_path(ws_real, path_str)
+        if security.is_outside(ws_real, full):
             gate_msg = f"OUT-OF-BOUNDS KERNEL {op_name}: {full}"
-            gate = confirm_gate_fn or (lambda r: security.authorize(r, is_security_event=True) if security else False)
+            gate = confirm_gate_fn or (lambda r: security.authorize(r, is_security_event=True))
             return gate(gate_msg)
         return True
 
@@ -193,12 +201,6 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
         full = security.resolve_path(ws_real, str(path)) if security else os.path.realpath(str(path) if os.path.isabs(str(path)) else os.path.join(ws_real, str(path)))
         return _orig_listdir(full)
 
-    def _invalidate_module_cache(file_path: str) -> None:
-        if file_path.endswith(".py"):
-            mod_name = os.path.splitext(os.path.basename(file_path))[0]
-            if mod_name in sys.modules:
-                sys.modules.pop(mod_name, None)
-
     def _read_file(path: str) -> str:
         if not _check_boundary(path, "READ"):
             return "[denied] Out-of-bounds read blocked."
@@ -208,7 +210,7 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
         if not _check_boundary(path, "EDIT"):
             return "[denied] Out-of-bounds edit blocked."
         res = tools.run_tool("edit_file", {"path": path, "old_str": old_str, "new_str": new_str}, ws_real, confirm_gate_fn=confirm_gate_fn) if tools else ""
-        if "Successfully edited" in res:
+        if not res.startswith(("[error", "[denied")):
             _invalidate_module_cache(path)
         return res
 
@@ -216,7 +218,7 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
         if not _check_boundary(path, "WRITE"):
             return "[denied] Out-of-bounds write blocked."
         res = tools.run_tool("write_file", {"path": path, "content": content, "overwrite": overwrite}, ws_real, confirm_gate_fn=confirm_gate_fn) if tools else ""
-        if "wrote" in res:
+        if not res.startswith(("[error", "[denied")):
             _invalidate_module_cache(path)
         return res
 
@@ -230,14 +232,20 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
         return tools._search_codebase(pattern, path, ws_real) if tools else ""
 
     def _run_command(cmd: str) -> str:
-        if security:
-            if sec_reason := security.check_command(ws_real, cmd):
-                gate_msg = f"OUT-OF-BOUNDS KERNEL EXECUTION: $ {cmd} ({sec_reason})"
-                gate = confirm_gate_fn or (lambda r: security.authorize(r, is_security_event=True) if security else False)
-                if not gate(gate_msg):
-                    return f"[denied] Execution halted: {sec_reason}"
-        res = subprocess.run(cmd, shell=True, cwd=ws_real, capture_output=True, text=True, timeout=120)
-        return ((res.stdout or "") + ("\n" + res.stderr if res.stderr else "")).strip()
+        if not security:
+            return "[denied] Security module unavailable; execution blocked."
+        if sec_reason := security.check_command(ws_real, cmd):
+            gate_msg = f"OUT-OF-BOUNDS KERNEL EXECUTION: $ {cmd} ({sec_reason})"
+            gate = confirm_gate_fn or (lambda r: security.authorize(r, is_security_event=True))
+            if not gate(gate_msg):
+                return f"[denied] Execution halted: {sec_reason}"
+        try:
+            res = subprocess.run(cmd, shell=True, cwd=ws_real, capture_output=True, text=True, timeout=120)
+            return ((res.stdout or "") + ("\n" + res.stderr if res.stderr else "")).strip()
+        except subprocess.TimeoutExpired:
+            return "[error] Command timed out after 120 seconds."
+        except Exception as e:
+            return f"[error] Command execution failed: {e}"
 
     safe_name = os.path.basename(ws_real)
     mem_sdk = MemorySDK(ws_real, safe_name)
@@ -281,14 +289,14 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
 
 def inspect_ast_safety(code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] | None = None) -> str | None:
     if not security:
-        return None
+        return "[denied] Security module unavailable; cell execution halted for safety."
     res = security.check_ast(code)
     if not res:
         return None
     if res.startswith("[error"):
         return res
 
-    gate = confirm_gate_fn or (lambda r: security.authorize(r, is_security_event=True) if security else False)
+    gate = confirm_gate_fn or (lambda r: security.authorize(r, is_security_event=True))
     if not gate(res):
         return "[denied] Dangerous operation rejected by user gate."
     return None
@@ -296,75 +304,98 @@ def inspect_ast_safety(code: str, workspace: str, confirm_gate_fn: Callable[[str
 
 def run_cell(code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] | None = None) -> str:
     global _is_executing_cell, _final_answer_val
-    _init_kernel_sdk(workspace, confirm_gate_fn)
-    if denial := inspect_ast_safety(code, workspace, confirm_gate_fn):
-        return denial
 
-    _final_answer_val = None
-    _is_executing_cell = True
+    # Ensure single-cell execution synchronization
+    if not _cell_lock.acquire(blocking=True, timeout=35):
+        return "[error] Kernel busy: another cell is currently executing."
 
-    has_alarm = hasattr(signal, "SIGALRM")
-    old_handler = None
-    if has_alarm:
-        try:
-            old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
-            signal.alarm(30)
-        except (ValueError, OSError):
-            has_alarm = False
+    ws_real = os.path.realpath(workspace)
+    prev_cwd = os.getcwd()
 
     try:
-        if _shell_instance and capture_output:
-            with capture_output() as captured:
-                res = _shell_instance.run_cell(code, store_history=True)
-                if res.error_in_exec:
-                    traceback.print_exception(type(res.error_in_exec), res.error_in_exec, res.error_in_exec.__traceback__)
-            out = (captured.stdout or "").strip()
-            err = (captured.stderr or "").strip()
-            eval_result = getattr(res, "result", None)
+        if os.path.realpath(prev_cwd) != ws_real:
+            os.chdir(ws_real)
+    except OSError:
+        pass
 
-            if _final_answer_val is not None:
-                return f"### Final Answer\n{bounded_repr(_final_answer_val)}"
-            if not out and eval_result is not None:
-                out = bounded_repr(eval_result)
-            elif out:
-                out = bounded_repr(out)
-            if err:
-                out = f"{out}\n{err}".strip() if out else err
-            return out or "(Cell executed successfully with no output)"
-        else:
-            stdout_buf = io.StringIO()
-            eval_result = None
-            with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stdout_buf):
-                try:
-                    eval_result = eval(code, _shell_globals)
-                except SyntaxError:
-                    eval_result = None
-                    exec(code, _shell_globals)
-            out = stdout_buf.getvalue().strip()
+    try:
+        _init_kernel_sdk(workspace, confirm_gate_fn)
+        if denial := inspect_ast_safety(code, workspace, confirm_gate_fn):
+            return denial
 
-            if _final_answer_val is not None:
-                return f"### Final Answer\n{bounded_repr(_final_answer_val)}"
-            if not out and eval_result is not None:
-                out = bounded_repr(eval_result)
-            elif out:
-                out = bounded_repr(out)
-            return out or "(Cell executed successfully with no output)"
-    except CellTimeoutError as e:
-        return f"[timeout] {e}"
-    except PermissionError as e:
-        return f"[denied] {e}"
-    except Exception as e:
-        err_msg = str(e).strip().split("\n")[0]
-        return f"[error] Cell execution failed: {err_msg}"
-    finally:
+        _final_answer_val = None
+        _is_executing_cell = True
+
+        is_main_thread = (threading.current_thread() is threading.main_thread())
+        has_alarm = is_main_thread and hasattr(signal, "SIGALRM")
+        old_handler = None
         if has_alarm:
             try:
-                signal.alarm(0)
+                old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+                signal.alarm(30)
+            except (ValueError, OSError):
+                has_alarm = False
                 if old_handler is not None:
                     signal.signal(signal.SIGALRM, old_handler)
-            except (ValueError, OSError):
-                pass
-        _is_executing_cell = False
+
+        try:
+            if _shell_instance and capture_output:
+                with capture_output() as captured:
+                    res = _shell_instance.run_cell(code, store_history=True)
+                    if res.error_in_exec:
+                        traceback.print_exception(type(res.error_in_exec), res.error_in_exec, res.error_in_exec.__traceback__)
+                out = (captured.stdout or "").strip()
+                err = (captured.stderr or "").strip()
+                eval_result = getattr(res, "result", None)
+
+                if _final_answer_val is not None:
+                    return f"### Final Answer\n{bounded_repr(_final_answer_val)}"
+                if not out and eval_result is not None:
+                    out = bounded_repr(eval_result)
+                elif out:
+                    out = bounded_repr(out)
+                if err:
+                    out = f"{out}\n{err}".strip() if out else err
+                return out or "(Cell executed successfully with no output)"
+            else:
+                stdout_buf = io.StringIO()
+                eval_result = None
+                with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stdout_buf):
+                    try:
+                        eval_result = eval(code, _shell_globals)
+                    except SyntaxError:
+                        eval_result = None
+                        exec(code, _shell_globals)
+                out = stdout_buf.getvalue().strip()
+
+                if _final_answer_val is not None:
+                    return f"### Final Answer\n{bounded_repr(_final_answer_val)}"
+                if not out and eval_result is not None:
+                    out = bounded_repr(eval_result)
+                elif out:
+                    out = bounded_repr(out)
+                return out or "(Cell executed successfully with no output)"
+        except CellTimeoutError as e:
+            return f"[timeout] {e}"
+        except PermissionError as e:
+            return f"[denied] {e}"
+        except Exception as e:
+            err_msg = str(e).strip().split("\n")[0]
+            return f"[error] Cell execution failed: {err_msg}"
+        finally:
+            if has_alarm:
+                try:
+                    signal.alarm(0)
+                finally:
+                    if old_handler is not None:
+                        signal.signal(signal.SIGALRM, old_handler)
+            _is_executing_cell = False
+    finally:
+        try:
+            os.chdir(prev_cwd)
+        except OSError:
+            pass
+        _cell_lock.release()
 
 
 IPYTHON_TOOL = [

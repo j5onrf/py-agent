@@ -102,7 +102,7 @@ def copy_to_clipboard(text: str) -> bool:
                 return True
         except (OSError, subprocess.SubprocessError):
             continue
-    return True
+    return False
 
 
 def _glimmer_tui_text(title: str, theme: str = "code1", is_dark: bool = True) -> Text:
@@ -529,6 +529,7 @@ class LocalAITUI(App):
                 with Vertical(classes="sidebar-section"):
                     yield Static("SETTINGS", classes="sidebar-label")
                     yield Static("[dim]Reasoning[/dim]  Disabled", id="lbl-reasoning", classes="sidebar-val")
+                    yield Static("[dim]Map[/dim]        Disabled", id="lbl-map", classes="sidebar-val")
                     yield Static("[dim]Gnd[/dim]        Disabled", id="lbl-grounding", classes="sidebar-val")
                     yield Static("[dim]Voice[/dim]      Disabled", id="lbl-voice", classes="sidebar-val")
                     yield Static("[dim]TTS[/dim]        Disabled", id="lbl-tts", classes="sidebar-val")
@@ -572,6 +573,7 @@ class LocalAITUI(App):
         self.lbl_mode = self.query_one("#lbl-mode", Static)
         self.lbl_harness = self.query_one("#lbl-harness", Static)
         self.lbl_reasoning = self.query_one("#lbl-reasoning", Static)
+        self.lbl_map = self.query_one("#lbl-map", Static)
         self.lbl_database = self.query_one("#lbl-database", Static)
         self.lbl_stats = self.query_one("#lbl-stats", Static)
         self.lbl_voice = self.query_one("#lbl-voice", Static)
@@ -582,6 +584,9 @@ class LocalAITUI(App):
         gnd_on = core.get_state("grounding_active", False)
         g_bud = core.get_state("grounding_budget", 700)
         self.lbl_grounding.update(f"[dim]Gnd[/dim]        {f'{g_bud}t' if gnd_on else 'Disabled'}")
+
+        self.use_map = core.get_state("use_map", False) or os.environ.get("AI_USE_MAP") == "1"
+        self.lbl_map.update(f"[dim]Map[/dim]        {'Active' if self.use_map else 'Disabled'}")
 
         use_ip = ("py-" in self.active_skill.lower() or (ipython and ipython.is_ipython_enabled())) if self.is_agent else False
         self.lbl_harness.update("[dim]Harness[/dim] " + ("NOOA IPython" if use_ip else ("Native Tools" if self.is_agent else "Chat Mode")))
@@ -645,15 +650,19 @@ class LocalAITUI(App):
 
     def action_copy_last_response(self) -> None:
         if last := next((m.get("content", "") for m in reversed(self.history) if m.get("role") == "assistant"), ""):
-            copy_to_clipboard(THINK_TAGS_RE.sub("", last).strip())
-            self.notify("Copied response to clipboard.")
+            if copy_to_clipboard(THINK_TAGS_RE.sub("", last).strip()):
+                self.notify("Copied response to clipboard.")
+            else:
+                self.notify("[red]Failed to copy to clipboard.[/red]", sys_prefix=False)
         else:
             self.notify("No response to copy.")
 
     def action_copy_entire_chat(self) -> None:
         if tr := [f"❯ USER: {m['content']}" if m.get("role") == "user" else f"AGENT:\n{THINK_TAGS_RE.sub('', str(m['content'])).strip()}" for m in self.history if m.get("content") and m.get("role") != "system"]:
-            copy_to_clipboard("\n\n".join(tr))
-            self.notify("Copied transcript to clipboard.")
+            if copy_to_clipboard("\n\n".join(tr)):
+                self.notify("Copied transcript to clipboard.")
+            else:
+                self.notify("[red]Failed to copy transcript to clipboard.[/red]", sys_prefix=False)
         else:
             self.notify("No transcript to copy.")
 
@@ -796,8 +805,8 @@ class LocalAITUI(App):
             self.use_map = not getattr(self, "use_map", False)
             core.save_state("use_map", self.use_map)
             os.environ["AI_USE_MAP"] = "1" if self.use_map else "0"
-            if lbl_m := getattr(self, "lbl_map", None):
-                lbl_m.update(f"[dim]Map[/dim]        {'Active' if self.use_map else 'Disabled'}")
+            if hasattr(self, "lbl_map"):
+                self.lbl_map.update(f"[dim]Map[/dim]        {'Active' if self.use_map else 'Disabled'}")
             self.notify(f"index-map {'enabled' if self.use_map else 'disabled'}.")
         elif root in ("/mem", "/memory"):
             if args:
@@ -900,7 +909,7 @@ class LocalAITUI(App):
                     self.notify(f"Skill not found for '{args}'.")
             else:
                 self.notify("Usage: /skill <query> or /s off")
-        elif root in ("/compact", "/c"):
+        elif root in ("/compact", "/com", "/cpt"):
             self.action_toggle_compact()
         elif root in ("/t", "/thinking"):
             if args:
@@ -942,7 +951,8 @@ class LocalAITUI(App):
             self.chat_input.placeholder = f"  ▲ Authorize: {prompt_text}? [Y/n]: "
             self.chat_input.focus()
         self.call_from_thread(_show)
-        self.gate_auth_event.wait()
+        if not self.gate_auth_event.wait(timeout=300):
+            self.gate_auth_result = False
         return self.gate_auth_result
 
     def process_query_worker(self, query: Any) -> None:
@@ -953,12 +963,15 @@ class LocalAITUI(App):
             except Exception:
                 pass
 
-        self.ensure_system_context()
-        self.call_from_thread(self.chat_area.mount, Message("User", query))
+        assistant_msg = None
+        accumulated = ""
         old_confirm = getattr(ui, "confirm_tool", None)
-        ui.confirm_tool = lambda reason: self.prompt_tui_confirm(reason)
 
         try:
+            self.ensure_system_context()
+            self.call_from_thread(self.chat_area.mount, Message("User", query))
+            ui.confirm_tool = lambda reason: self.prompt_tui_confirm(reason)
+
             mem_ctx = (memories.get_memory_context(self.workspace_path) if (self.is_agent and self.memory_active and isinstance(query, str)) else "")
             user_txt = query if isinstance(query, str) else next((i["text"] for i in query if isinstance(i, dict) and i.get("type") == "text"), "Multimodal Query")
             assistant_msg = Message("Agent", "Thinking...")
@@ -1027,6 +1040,8 @@ class LocalAITUI(App):
                         if resp.status_code == 200:
                             response = resp
                             break
+                        else:
+                            resp.close()
                     except Exception:
                         continue
 
@@ -1076,8 +1091,9 @@ class LocalAITUI(App):
                                 last_ui = now
                                 self.call_from_thread(assistant_msg.update_content, accumulated)
                                 self.call_from_thread(self.chat_area.scroll_end, animate=False)
-                        except Exception:
-                            pass
+                        except (json.JSONDecodeError, KeyError, IndexError, TypeError, ValueError) as exc:
+                            if os.environ.get("AI_DEBUG") == "1":
+                                sys.stderr.write(f"\r\n[debug] TUI stream parse error: {exc}\r\n")
 
                 if in_th:
                     accumulated += "</think>"
@@ -1120,17 +1136,10 @@ class LocalAITUI(App):
                         res, aborted = f"[denied] rejected {fn}", True
                     else:
                         self.call_from_thread(self.notify, f"∗ {verb} • [bold cyan]{fn}[/bold cyan] [italic]{brief}[/italic]")
-                        old_g = os.environ.get("AI_CONFIRM_GATES")
-                        os.environ["AI_CONFIRM_GATES"] = "0"
                         try:
-                            res = core._run_edit_tool(fn, args, self.workspace_path)
+                            res = tools.run_tool(fn, args, self.workspace_path, confirm_gate_fn=lambda r: True)
                         except Exception as te:
                             res = f"[tool error] {te}"
-                        finally:
-                            if old_g is not None:
-                                os.environ["AI_CONFIRM_GATES"] = old_g
-                            else:
-                                os.environ.pop("AI_CONFIRM_GATES", None)
                         if "[denied]" in res:
                             aborted = True
 
@@ -1167,7 +1176,10 @@ class LocalAITUI(App):
 
         except Exception as e:
             msg = (accumulated or "") + " (stopped)" if self.generation_cancelled else f"Error: {e}"
-            self.call_from_thread(assistant_msg.update_content, msg)
+            if assistant_msg is not None:
+                self.call_from_thread(assistant_msg.update_content, msg)
+            else:
+                self.notify(f"[bold red]{msg}[/bold red]", sys_prefix=False)
         finally:
             self.active_response = None
             if old_confirm:

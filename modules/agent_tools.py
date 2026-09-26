@@ -47,6 +47,11 @@ def get_modified_files() -> list[str]:
     return sorted(_SESSION_MODIFIED_FILES)
 
 
+def get_read_files() -> list[str]:
+    """Returns sorted list of paths read in the active session."""
+    return sorted(_SESSION_READ_FILES)
+
+
 def clear_session_tracking() -> None:
     """Resets session file tracking state."""
     _SESSION_READ_FILES.clear()
@@ -360,6 +365,7 @@ def _resilient_replace(original: str, old_str: str, new_str: str) -> tuple[str |
     if old_len == 0:
         return None, "Parameter 'old_str' contains no non-whitespace content."
 
+    # Stage 2: Whitespace-normalized comparison with exact non-blank line alignment
     matches = []
     for i in range(len(orig_lines)):
         window_lines = []
@@ -401,17 +407,27 @@ def _resilient_replace(original: str, old_str: str, new_str: str) -> tuple[str |
     elif len(matches) > 1:
         return None, f"Whitespace-normalized old_str matched {len(matches)} locations. Include more surrounding lines to make it unique."
 
+    # Stage 3: Fuzzy matching over windows with exactly old_len non-blank lines
     best_ratio = 0.0
     best_window = None
     old_block_str = "\n".join(norm_old)
 
-    for i in range(len(orig_lines) - old_len + 1):
-        cand_lines = [re.sub(r"\s+", " ", orig_lines[k].strip()) for k in range(i, i + old_len) if orig_lines[k].strip()]
-        cand_block_str = "\n".join(cand_lines)
-        ratio = difflib.SequenceMatcher(None, old_block_str, cand_block_str).ratio()
-        if ratio > best_ratio:
-            best_ratio = ratio
-            best_window = (i, i + old_len)
+    for i in range(len(orig_lines)):
+        window_lines = []
+        window_raw_indices = []
+        for j in range(i, len(orig_lines)):
+            line_str = orig_lines[j]
+            if line_str.strip():
+                window_lines.append(re.sub(r"\s+", " ", line_str.strip()))
+                window_raw_indices.append(j)
+                if len(window_lines) == old_len:
+                    break
+        if len(window_lines) == old_len:
+            cand_block_str = "\n".join(window_lines)
+            ratio = difflib.SequenceMatcher(None, old_block_str, cand_block_str).ratio()
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_window = (window_raw_indices[0], window_raw_indices[-1] + 1)
 
     if best_ratio >= 0.88 and best_window is not None:
         start_idx, end_idx = best_window
@@ -625,7 +641,20 @@ def run_tool(
                 else:
                     # Dynamically allow reading up to 40% of context window in a single call
                     char_cap = max(20000, int(max_ctx * 3.5 * 0.40))
-                    res_out = "".join(lines)[:char_cap]
+                    full_content = "".join(lines)
+                    if len(full_content) > char_cap:
+                        truncated_c = full_content[:char_cap]
+                        last_nl = truncated_c.rfind("\n")
+                        if last_nl > 0:
+                            truncated_c = truncated_c[:last_nl]
+                        cut_lines = len(truncated_c.splitlines())
+                        res_out = (
+                            f"{truncated_c}\n\n"
+                            f"... [Truncated at character cap: showing lines 1-{cut_lines} of {total_lines} (~{char_cap:,} chars). "
+                            f"Use read_file('{raw_path}', line_start={cut_lines + 1}, line_end={total_lines}) to view remaining content]"
+                        )
+                    else:
+                        res_out = full_content
 
             if print_output_fn:
                 print_output_fn(res_out)
@@ -698,14 +727,22 @@ def run_tool(
         content = args.get("content", "")
         is_overwrite = bool(args.get("overwrite", False) or args.get("force", False))
 
+        # Check existing file length and block overwrite unless overwrite=True
         if os.path.exists(full) and not is_overwrite:
             try:
                 with open(full, "r", encoding="utf-8", errors="replace") as f:
                     existing_len = len(f.read().splitlines())
                 if existing_len > 0:
                     return f"[error] File '{raw_path}' already exists ({existing_len} lines). To make targeted changes, use edit_file(path, old_str, new_str). If you intend to overwrite the entire file, pass overwrite=true."
-            except Exception:
-                pass
+            except OSError as e:
+                return f"[error] File '{raw_path}' already exists, but reading it failed: {e}. Pass overwrite=true to force overwrite."
+
+        # Security and in-bounds gates evaluated BEFORE inspecting content or printing diffs
+        if _is_outside_workspace(workspace, full):
+            if not _security_gate(f"OUT-OF-BOUNDS WRITE: {full}"):
+                return f"[denied] User declined write to '{raw_path}' outside workspace."
+        elif not _in_bounds_gate(f"{'overwrite' if os.path.exists(full) else 'create'} {raw_path}"):
+            return f"[denied] User declined write to '{raw_path}'."
 
         if full.endswith(".py"):
             try:
@@ -738,12 +775,6 @@ def run_tool(
                     )
             except OSError:
                 pass
-
-        if _is_outside_workspace(workspace, full):
-            if not _security_gate(f"OUT-OF-BOUNDS WRITE: {full}"):
-                return f"[denied] User declined write to '{raw_path}' outside workspace."
-        elif not _in_bounds_gate(f"{'overwrite' if os.path.exists(full) else 'create'} {raw_path}"):
-            return f"[denied] User declined write to '{raw_path}'."
 
         try:
             os.makedirs(os.path.dirname(full) or workspace, exist_ok=True)
@@ -787,10 +818,11 @@ def run_tool(
                 gem_key = os.environ.get("GEM_API_KEY", "")
             if not gem_key:
                 return "[error] Google search requires GEM_API_KEY."
-            
+
             gnd_model = os.environ.get("GND_MODEL", "gemini-2.5-flash")
             payload = {"contents": [{"parts": [{"text": f"Search the web and provide concise facts for: {q}"}]}], "tools": [{"googleSearch": {}}]}
-            req = urllib.request.Request(f"https://generativelanguage.googleapis.com/v1beta/models/{gnd_model}:generateContent?key={gem_key}", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST")
+            headers = {"Content-Type": "application/json", "x-goog-api-key": gem_key}
+            req = urllib.request.Request(f"https://generativelanguage.googleapis.com/v1beta/models/{gnd_model}:generateContent", data=json.dumps(payload).encode(), headers=headers, method="POST")
             with urllib.request.urlopen(req, timeout=15) as resp:
                 data = json.loads(resp.read().decode())
             res = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
@@ -799,7 +831,8 @@ def run_tool(
                 print_output_fn(out)
             return out
         except Exception as e:
-            return f"[error] Web search failed: {e}"
+            clean_err = str(e).split("?key=")[0].strip()
+            return f"[error] Web search failed: {clean_err}"
 
     if name == "run_command":
         cmd = args.get("command", "")

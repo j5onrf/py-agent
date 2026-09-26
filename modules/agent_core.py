@@ -125,8 +125,24 @@ def describe_image_gemini(target: Any) -> str:
                     mime = ct if ct and ct.startswith("image/") else ("image/jpeg" if any(x in url.lower() for x in (".jpg", ".jpeg")) else ("image/webp" if ".webp" in url.lower() else "image/png"))
             else:
                 p = urllib.parse.unquote(c[7:]) if c.startswith("file://") else c
-                ws = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
-                rf = next((f for f in (os.path.expanduser(p), os.path.join(ws, p), os.path.join(os.getcwd(), p), os.path.join(os.path.expanduser("~"), p)) if os.path.isfile(f)), None)
+                ws = os.path.realpath(os.environ.get("AI_WORKSPACE_PATH", os.getcwd()))
+                home = os.path.realpath(os.path.expanduser("~"))
+
+                # Strict boundary validation: prevent arbitrary file read / path traversal
+                cand_paths = []
+                if not os.path.isabs(p) and not p.startswith("~"):
+                    cand_paths.append(os.path.realpath(os.path.join(ws, p)))
+                else:
+                    cand_paths.append(os.path.realpath(os.path.expanduser(p)))
+
+                rf = None
+                for cand in cand_paths:
+                    if os.path.isfile(cand):
+                        # Ensure resolved path is strictly within workspace boundary (or home workspace)
+                        if cand == ws or cand.startswith(ws + os.sep) or ws == home:
+                            rf = cand
+                            break
+
                 if rf:
                     ext = os.path.splitext(rf)[1].lower()
                     mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".svg": "image/svg+xml"}.get(ext, "image/png")
@@ -135,7 +151,7 @@ def describe_image_gemini(target: Any) -> str:
                 elif len(c) > 100 and not any(c.startswith(x) for x in ("/", "~", ".", "file:")):
                     b64 = c
                 else:
-                    return f"[Error: Image file not found at '{target}']"
+                    return f"[Error: Image file access denied or not found at '{target}']"
     except Exception as e:
         return f"[Error loading image: {e}]"
 
@@ -196,10 +212,10 @@ def preprocess_multimodal_messages(messages: list[dict[str, Any]]) -> list[dict[
     return processed
 
 
-def _heal_tool_args(raw: str) -> dict[str, Any]:
-    """Heals malformed JSON tool arguments via modular adapter if active."""
+def _heal_tool_args(raw: Any) -> dict[str, Any]:
+    """Heals malformed JSON tool arguments via modular adapter or safe decode."""
     if get_state("adapters_active", False):
-        return adapters.heal_json_args(raw)
+        return adapters.heal_json_args(raw) if isinstance(raw, str) else (raw or {})
     try:
         return json.loads(raw) if isinstance(raw, str) else (raw or {})
     except Exception:
@@ -470,6 +486,7 @@ def agentic_turn(
     is_calm = is_calm_cli()
 
     consecutive_tool_failures = 0
+    tools_disabled = False
 
     def _calc_msg_tokens(msg_list: list[dict[str, Any]]) -> int:
         total = 0
@@ -503,7 +520,7 @@ def agentic_turn(
         st = get_state()
         use_gnd = st.get("grounding_active", False) and bool(os.environ.get("GND_KEY") or os.environ.get("GEMINI_API_KEY"))
 
-        if is_agent:
+        if is_agent and not tools_disabled:
             is_py_mode = st.get("ipython_mode", False)
             use_map = st.get("use_map", False) or os.environ.get("AI_USE_MAP", "0") == "1"
 
@@ -525,8 +542,10 @@ def agentic_turn(
                 active_tools.append(tools.WEB_TOOL)
 
             body_tools["tools"] = active_tools
-        elif use_gnd and hasattr(tools, "WEB_TOOL"):
+        elif use_gnd and hasattr(tools, "WEB_TOOL") and not tools_disabled:
             body_tools["tools"] = [tools.WEB_TOOL]
+        else:
+            body_tools.pop("tools", None)
 
         if spinner and not getattr(spinner, "active", False):
             user_msg_count = len([m for m in messages if m.get("role") == "user"])
@@ -561,6 +580,10 @@ def agentic_turn(
 
                 try:
                     data = json.loads(data_str)
+                except json.JSONDecodeError:
+                    continue
+
+                try:
                     captured_usage = data.get("usage") or captured_usage
                     captured_timings = data.get("timings") or data.get("usage", {}).get("timings") or captured_timings
 
@@ -622,8 +645,9 @@ def agentic_turn(
                             tc_entry["function"]["arguments"] += arg_chunk
                             if speed_test and show_stats and not is_calm:
                                 speed_test.count_token(arg_chunk, is_thinking=False)
-                except Exception:
-                    pass
+                except Exception as e:
+                    if os.environ.get("AI_DEBUG") == "1":
+                        sys.stderr.write(f"\r\n[debug] Stream chunk processing error: {e}\r\n")
 
             if streamer and not is_calm:
                 print()
@@ -684,10 +708,8 @@ def agentic_turn(
                     fname, healed_dict = adapters.heal_tool_call(raw_fname, raw_args)
                 else:
                     fname = raw_fname
-                    try:
-                        healed_dict = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
-                    except Exception:
-                        healed_dict = {}
+                    healed_dict = _heal_tool_args(raw_args)
+
                 sig = (
                     tc.get("thought_signature")
                     or tc.get("thoughtSignature")
@@ -768,6 +790,7 @@ def agentic_turn(
 
                 if fname == "exec_python" and ("### Final Answer" in result or "Final Answer" in result):
                     messages.append({"role": "user", "content": "[System Directive]: final_answer() was received. Output your concise summary to the user now. Do not call any further tools."})
+                    tools_disabled = True
                     body.pop("tools", None)
 
                 if result.startswith("[error") or result.startswith("[tool error"):
@@ -910,8 +933,14 @@ def prune_history(history: list[dict[str, Any]], max_tokens: int | None = None) 
     limit = max_tokens or int(os.environ.get("AI_MAX_TOKENS", 8192))
     sys_msg = history[0]
 
-    recent_tail = history[-4:]
-    middle_msgs = history[1:-4]
+    # Select recent tail (at least 4 messages), walking backward to ensure we never start
+    # on an orphaned tool message whose assistant tool_calls message was moved to middle
+    tail_idx = max(1, len(history) - 4)
+    while tail_idx > 1 and history[tail_idx].get("role") == "tool":
+        tail_idx -= 1
+
+    recent_tail = history[tail_idx:]
+    middle_msgs = history[1:tail_idx]
 
     completed_actions = []
     compacted_middle = []

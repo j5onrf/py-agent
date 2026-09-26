@@ -3,6 +3,7 @@
 
 import asyncio
 import atexit
+import copy
 import json
 import os
 import re
@@ -10,7 +11,6 @@ import select
 import shutil
 import sys
 import termios
-import time
 import tty
 import urllib.error as urlerr
 import urllib.request as urlreq
@@ -48,12 +48,13 @@ AMBER, GREEN, RED, RESET, BOLD, DIM = (
 )
 
 DEFAULTS = {
-    "gemini": ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.5-pro"],
+    "gemini": [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.0-flash",
+    ],
     "free": [
         "openrouter/free",
-        "google/gemma-4-31b-it:free",
-        "nvidia/nemotron-3-ultra-550b-a55b:free",
-        "minimax/minimax-m3:free",
         "meta-llama/llama-3.3-70b-instruct:free",
         "deepseek/deepseek-chat:free",
         "qwen/qwen-2.5-coder-32b-instruct:free",
@@ -63,7 +64,7 @@ DEFAULTS = {
         "openai/gpt-4o",
         "openai/o3-mini",
         "deepseek/deepseek-r1",
-        "google/gemini-3.8-flash",
+        "google/gemini-2.5-flash",
         "qwen/qwen-2.5-72b-instruct",
     ],
     "spaces": {
@@ -72,15 +73,12 @@ DEFAULTS = {
     },
     "custom2_models": {
         "deepseek": ["deepseek-chat", "deepseek-reasoner"],
-        "x.ai": ["grok-2-latest", "grok-2-vision-latest", "grok-beta"],
-        "anthropic": ["claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"],
-        "openai": ["gpt-4o", "gpt-4o-mini", "o3-mini", "o1"],
-        "meta": ["meta-llama/Llama-3.3-70B-Instruct", "meta-llama/Llama-3.1-8B-Instruct"],
-        "spark": ["spark-lite", "spark-v3.5", "spark-max", "spark-ultra"],
-        "muse": ["muse-v1", "muse-chat"],
-        "groq": ["llama-3.3-70b-versatile", "mixtral-8x7b-32768", "llama-3.1-8b-instant"],
-        "mistral": ["mistral-large-latest", "codestral-latest", "mistral-small-latest"],
-        "together": ["meta-llama/Llama-3.3-70B-Instruct-Turbo", "deepseek-ai/DeepSeek-V3"],
+        "tokenharbor": ["qwen3.8-flash:free", "deepseek-v4.1-flash:free"],
+        "x.ai": ["grok-2-latest", "grok-beta"],
+        "anthropic": ["claude-3-7-sonnet-20250219", "claude-3-5-haiku-20241022"],
+        "openai": ["gpt-4o", "o3-mini", "gpt-4o-mini"],
+        "groq": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
+        "mistral": ["codestral-latest", "mistral-large-latest"],
     }
 }
 
@@ -94,7 +92,7 @@ def load_json(path, default):
                 return json.load(f)
         except (OSError, json.JSONDecodeError):
             pass
-    return default
+    return copy.deepcopy(default)
 
 
 def save_json(path, data):
@@ -108,16 +106,38 @@ def save_json(path, data):
         pass
 
 
-def ensure_env_exists():
-    """Auto-applies template for new users if .env does not exist."""
-    if not os.path.exists(ENV_PATH):
-        os.makedirs(os.path.dirname(ENV_PATH), exist_ok=True)
-        if os.path.isfile(ENV_EXAMPLE):
+def _atomic_write_env(lines: list[str]) -> None:
+    tmp = f"{ENV_PATH}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, ENV_PATH)
+    except OSError:
+        if os.path.exists(tmp):
             try:
-                shutil.copy2(ENV_EXAMPLE, ENV_PATH)
-                return
+                os.remove(tmp)
             except OSError:
                 pass
+
+
+def ensure_env_exists():
+    """Auto-applies template for new users if .env does not exist, and enforces 0o600 permissions."""
+    if os.path.exists(ENV_PATH):
+        try:
+            os.chmod(ENV_PATH, 0o600)
+        except OSError:
+            pass
+        return
+
+    os.makedirs(os.path.dirname(ENV_PATH), exist_ok=True)
+    if os.path.isfile(ENV_EXAMPLE):
+        try:
+            shutil.copy2(ENV_EXAMPLE, ENV_PATH)
+            os.chmod(ENV_PATH, 0o600)
+            return
+        except OSError:
+            pass
 
         template = (
             "# ==============================================================================\n"
@@ -140,7 +160,7 @@ def ensure_env_exists():
             'CUSTOM2_MODEL="deepseek-chat"\n\n'
             "# ── 3. Google Gemini (Free daily tier via Google AI Studio) ───────────────────\n"
             '# GEMINI_API_KEY="AIzaSyYourGeminiApiKeyHere"\n'
-            'GEMINI_MODEL="gemini-3.5-flash-lite"\n\n'
+            'GEMINI_MODEL="gemini-2.5-flash"\n\n'
             "# ── 4. OpenRouter (Free community models & Universal paid gateway) ────────────\n"
             '# OPENROUTER_API_KEY="sk-or-v1-YourOpenRouterKeyHere"\n'
             'OPENROUTER_MODEL="openrouter/free"\n\n'
@@ -160,6 +180,7 @@ def ensure_env_exists():
         try:
             with open(ENV_PATH, "w", encoding="utf-8") as f:
                 f.write(template)
+            os.chmod(ENV_PATH, 0o600)
         except OSError:
             pass
 
@@ -167,13 +188,20 @@ def ensure_env_exists():
 def load_env_vars():
     ensure_env_exists()
     env = {}
+    uncommented_seen = set()
     if os.path.exists(ENV_PATH):
         try:
             with open(ENV_PATH, "r", encoding="utf-8") as f:
                 for l in f:
-                    if m := re.match(r"^#?\s*([A-Z0-9_]+)\s*=\s*\"?([^\"]*)\"?$", l.strip()):
+                    s = l.strip()
+                    if m := re.match(r"^#?\s*([A-Z0-9_]+)\s*=\s*\"?([^\"]*)\"?$", s):
                         k, val = m.groups()
-                        if not l.strip().startswith("#") or k not in env:
+                        is_commented = s.startswith("#")
+                        if not is_commented:
+                            if k not in uncommented_seen:
+                                env[k] = val
+                                uncommented_seen.add(k)
+                        elif k not in env:
                             env[k] = val
         except OSError:
             pass
@@ -190,7 +218,7 @@ def get_active_key_set() -> set[str]:
                     if s and not s.startswith("#") and "=" in s:
                         k, v = s.split("=", 1)
                         val = v.strip().strip('"').strip("'")
-                        if val and not any(sub in val.lower() for sub in ("your", "here", "api-key")):
+                        if val and len(val) >= 8 and not any(sub in val.lower() for sub in ("your-key-here", "aizasyyour", "not-needed", "sk-your")):
                             active.add(k.strip())
         except OSError:
             pass
@@ -212,8 +240,7 @@ def update_env_multiple(updates: dict[str, str]):
                     break
             if not updated:
                 lines.append(f'{k}="{v}"\n')
-        with open(ENV_PATH, "w", encoding="utf-8") as f:
-            f.writelines(lines)
+        _atomic_write_env(lines)
     except OSError:
         pass
 
@@ -230,6 +257,7 @@ def isolate_active_key(active_key_name: str):
             try:
                 with open(LAST_KEY_FILE, "w", encoding="utf-8") as lkf:
                     lkf.write(active_key_name)
+                os.chmod(LAST_KEY_FILE, 0o600)
             except OSError:
                 pass
 
@@ -240,8 +268,24 @@ def isolate_active_key(active_key_name: str):
                     raw = re.sub(rf"^#?\s*({k}\s*=.*)$", r"\1", l.strip())
                     lines[i] = f"{'#' if should_comment else ''}{raw}\n"
 
-        with open(ENV_PATH, "w", encoding="utf-8") as f:
-            f.writelines(lines)
+        _atomic_write_env(lines)
+    except OSError:
+        pass
+
+
+def deactivate_key(key_to_disable: str):
+    """Comments out only the specified provider key without touching other keys."""
+    if not os.path.exists(ENV_PATH):
+        return
+    try:
+        with open(ENV_PATH, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        for i, l in enumerate(lines):
+            s = l.strip()
+            if re.match(rf"^#?\s*{key_to_disable}\s*=", s):
+                raw = re.sub(rf"^#?\s*({key_to_disable}\s*=.*)$", r"\1", s)
+                lines[i] = f"#{raw}\n"
+        _atomic_write_env(lines)
     except OSError:
         pass
 
@@ -249,7 +293,7 @@ def isolate_active_key(active_key_name: str):
 def toggle_single_provider(key_name: str, model_var: str, default_model: str) -> bool:
     active_keys = get_active_key_set()
     if key_name in active_keys:
-        isolate_active_key("")
+        deactivate_key(key_name)
         return False
     else:
         isolate_active_key(key_name)
@@ -260,7 +304,7 @@ def toggle_single_provider(key_name: str, model_var: str, default_model: str) ->
 
 
 def toggle_independent_key(key_name: str) -> bool:
-    """Toggles auxiliary service key (GND_KEY, GEM_VOICE, IMG_VOICE) without disturbing primary chat models."""
+    """Toggles auxiliary service key without disturbing primary chat models."""
     if not os.path.exists(ENV_PATH):
         return False
     try:
@@ -281,8 +325,7 @@ def toggle_independent_key(key_name: str) -> bool:
         if not found:
             lines.append(f'{key_name}="AIzaSyYourApiKeyHere"\n')
             now_active = True
-        with open(ENV_PATH, "w", encoding="utf-8") as f:
-            f.writelines(lines)
+        _atomic_write_env(lines)
         return now_active
     except OSError:
         return False
@@ -293,7 +336,8 @@ def toggle_env_api_keys():
         return False
     active_keys = get_active_key_set()
     if any(k in active_keys for k in PROVIDER_KEYS):
-        isolate_active_key("")
+        for k in PROVIDER_KEYS:
+            deactivate_key(k)
         return False
     else:
         last_key = "OPENROUTER_API_KEY"
@@ -338,9 +382,12 @@ async def async_fetch_remote(env_vars: dict, spaces: dict):
         free_c, paid_c, hf_res = [], [], list(spaces.keys())
         gem_models = []
 
-        if api_key_gem and "your" not in api_key_gem.lower():
+        if api_key_gem and len(api_key_gem) > 8 and "your" not in api_key_gem.lower():
             try:
-                req_gem = urlreq.Request(f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key_gem}")
+                req_gem = urlreq.Request(
+                    "https://generativelanguage.googleapis.com/v1beta/models",
+                    headers={"x-goog-api-key": api_key_gem}
+                )
                 with urlreq.urlopen(req_gem, timeout=6) as res:
                     if res.status == 200:
                         data = json.loads(res.read().decode("utf-8"))
@@ -413,19 +460,28 @@ async def async_get_key():
     fd = sys.stdin.fileno()
 
     def _read():
-        old = termios.tcgetattr(fd)
+        if not sys.stdin.isatty():
+            return "esc"
+        try:
+            old = termios.tcgetattr(fd)
+        except (termios.error, OSError):
+            return "esc"
+
         try:
             tty.setraw(fd)
             if not (b := os.read(fd, 1)):
-                return None
+                return "esc"
             ch = b.decode("utf-8", errors="ignore")
             if ch == "\x1b" and select.select([fd], [], [], 0.05)[0]:
                 return {"[A": "up", "OA": "up", "[B": "down", "OB": "down", "[C": "right", "OC": "right", "[D": "left", "OD": "left"}.get(os.read(fd, 2).decode("utf-8", errors="ignore"), "esc")
             return {"\x1b": "esc", "\r": "enter", "\n": "enter", " ": "space", "\x7f": "backspace", "\x08": "backspace"}.get(ch, ch.lower() if ch.lower() == "q" else ch)
         except Exception:
-            return None
+            return "esc"
         finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+            try:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old)
+            except (termios.error, OSError):
+                pass
 
     return await asyncio.to_thread(_read)
 
@@ -537,7 +593,9 @@ async def async_main():
         c2_url = env.get("CUSTOM2_URL", "").lower()
         c2_mod = custom2_curr.lower()
 
-        if "deepseek" in c2_url or "deepseek" in c2_mod:
+        if "tokenharbor" in c2_url:
+            c2_name, c2_icon = "TokenHarbor", "⚓"
+        elif "deepseek" in c2_url or "deepseek" in c2_mod:
             c2_name, c2_icon = "DeepSeek", "🐳"
         elif "x.ai" in c2_url or "grok" in c2_mod:
             c2_name, c2_icon = "xAI (Grok)", "🪐"
@@ -547,18 +605,10 @@ async def async_main():
             c2_name, c2_icon = "OpenAI", "✳️"
         elif "meta" in c2_url or "llama" in c2_mod:
             c2_name, c2_icon = "Meta (Llama)", "🦙"
-        elif "spark" in c2_url or "xfyun" in c2_url or "spark" in c2_mod:
-            c2_name, c2_icon = "iFlytek Spark", "✨"
-        elif "muse" in c2_url or "muse" in c2_mod:
-            c2_name, c2_icon = "Muse", "🎨"
         elif "groq" in c2_url:
             c2_name, c2_icon = "Groq", "⚡"
         elif "mistral" in c2_url or "codestral" in c2_mod:
             c2_name, c2_icon = "Mistral", "🌪️"
-        elif "together" in c2_url:
-            c2_name, c2_icon = "Together AI", "🤝"
-        elif "perplexity" in c2_url:
-            c2_name, c2_icon = "Perplexity", "🔮"
         elif c2_url:
             host = c2_url.split("://")[-1].split("/")[0]
             c2_name, c2_icon = host, "🌐"
@@ -590,7 +640,7 @@ async def async_main():
             f"🔌  {'Cloud Connection':<{col_w}} {status_all}",
             f"🤗  {'Custom 1 (Local / HF)':<{col_w}} {fmt(custom_curr, 'CUSTOM_API_KEY')}\n       {DIM}Local llama-server, Ollama, HF Spaces & official HF Router{RESET}",
             f"{c2_icon}  {c2_label:<{col_w}} {fmt(custom2_curr, 'CUSTOM2_API_KEY')}\n       {DIM}Direct endpoint via {c2_url or 'OpenAI-compatible URL'}{RESET}",
-            f"✨  {'Google Gemini':<{col_w}} {fmt(env.get('GEMINI_MODEL', 'gemini-3.8-flash'), 'GEMINI_API_KEY')}\n       {DIM}Free daily tier via Google AI Studio{RESET}",
+            f"✨  {'Google Gemini':<{col_w}} {fmt(env.get('GEMINI_MODEL', 'gemini-2.5-flash'), 'GEMINI_API_KEY')}\n       {DIM}Free daily tier via Google AI Studio{RESET}",
             f"🌐  {'OpenRouter Free':<{col_w}} {fmt_or_free}\n       {DIM}Top rotating community models (100% free){RESET}",
             f"🌐  {'OpenRouter Paid':<{col_w}} {fmt_or_paid}\n       {DIM}High-end paid catalog (Claude, GPT, DeepSeek, Llama){RESET}",
             f"🔍  {'Search Grounding (/gnd)':<{col_w}} {fmt(gnd_curr, 'GND_KEY')}\n       {DIM}Live Google search retrieval for facts & documentation{RESET}",
@@ -629,7 +679,7 @@ async def async_main():
                 k_map = {
                     1: ("CUSTOM_API_KEY", "CUSTOM_MODEL", "Qwen/Qwen3.8-27B"),
                     2: ("CUSTOM2_API_KEY", "CUSTOM2_MODEL", custom2_curr or "deepseek-chat"),
-                    3: ("GEMINI_API_KEY", "GEMINI_MODEL", "gemini-3.8-flash"),
+                    3: ("GEMINI_API_KEY", "GEMINI_MODEL", "gemini-2.5-flash"),
                     4: ("OPENROUTER_API_KEY", "OPENROUTER_MODEL", cur_or_model if "free" in cur_or_model.lower() else "openrouter/free"),
                     5: ("OPENROUTER_API_KEY", "OPENROUTER_MODEL", cur_or_model if "free" not in cur_or_model.lower() else "anthropic/claude-3.7-sonnet"),
                 }
@@ -663,7 +713,7 @@ async def async_main():
                 if not res:
                     continue
                 if res.startswith("🚫 Turn Off"):
-                    isolate_active_key("")
+                    deactivate_key("CUSTOM2_API_KEY")
                     message = "✓ Custom 2 disabled."
                 elif res == "✏️  [Edit Model Name]":
                     if m_in := prompt_user_input(f"Enter model name for {c2_name} (current: {custom2_curr})"):
@@ -697,7 +747,7 @@ async def async_main():
                 if not res:
                     continue
                 if res.startswith("🚫 Turn Off"):
-                    isolate_active_key("")
+                    deactivate_key(key_name)
                     message = f"✓ {title} disabled."
                 elif res == "➕ [Add Endpoint / Space URL]":
                     if url_in := prompt_user_input("Paste Space / Endpoint URL"):
@@ -728,9 +778,9 @@ async def async_main():
                     message = f"✓ Primary model set: {res}"
             elif 6 <= menu_idx <= 8:
                 aux_cfg = {
-                    6: ("Search Grounding (/gnd)", "GND_KEY", "GND_MODEL", gnd_curr, ["gemini-2.5-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite"]),
-                    7: ("Voice Transcription", "GEM_VOICE", "GEM_MODEL", voice_curr, ["gemini-3.5-flash-lite", "gemini-2.5-flash"]),
-                    8: ("Vision OCR Multimodal", "IMG_VOICE", "IMG_MODEL", img_curr, ["gemini-3.5-flash-lite", "gemini-2.5-flash"]),
+                    6: ("Search Grounding (/gnd)", "GND_KEY", "GND_MODEL", gnd_curr, ["gemini-2.5-flash", "gemini-2.0-flash"]),
+                    7: ("Voice Transcription", "GEM_VOICE", "GEM_MODEL", voice_curr, ["gemini-2.5-flash", "gemini-2.0-flash"]),
+                    8: ("Vision OCR Multimodal", "IMG_VOICE", "IMG_MODEL", img_curr, ["gemini-2.5-flash", "gemini-2.0-flash"]),
                 }[menu_idx]
                 a_title, a_key, a_mod_var, a_cur_m, a_presets = aux_cfg
                 res = await run_interactive_menu(a_title, a_presets, a_cur_m, a_key in active_keys, [f"🚫 Turn Off {a_title}", "🔑 [Edit API Key]", "✏️  [Custom Model Name]"])

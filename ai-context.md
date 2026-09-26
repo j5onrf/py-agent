@@ -60,7 +60,7 @@ ai init ~/.config/py-agent/projects/session-test ---> session test, projects ses
 # --- PyCode Setup & Build ---
 ~/.config/py-agent/plugins/pycode/setup.sh ---> install-pycode, setup-pycode, setup pycode
 # --- Open Code Review Plugin ---
-~/.config/py-agent/plugins/codereview/run-review ---> codereview, opencr
+~/.config/py-agent/plugins/codereview/run-review ---> codereview, opencr, openreview
 # --- Model Context Protocol (MCP) ---
 ~/.config/py-agent/plugins/mcp/mcp_client.py list ---> mcp list, mcp tools, mcpl
 ~/.config/py-agent/plugins/mcp/mcp_client.py schemas ---> mcp schemas, mcp export

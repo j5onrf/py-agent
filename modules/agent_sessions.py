@@ -37,6 +37,15 @@ except ImportError:
         return [w for w in TOKEN_RE.sub(" ", text.lower()).split() if len(w) > 1 and w not in STOP_WORDS] if text else []
 
 
+def _sanitize_workspace(ws: str) -> str:
+    """Sanitizes workspace strings to prevent path traversal outside SESSIONS_DIR."""
+    if not ws:
+        return "default"
+    clean = os.path.basename(ws.strip().replace("\\", "/"))
+    clean = re.sub(r"[^a-zA-Z0-9._-]+", "-", clean).strip("-.")
+    return clean or "default"
+
+
 def get_key() -> str:
     """Self-contained, low-latency keyboard reader."""
     if not _HAS_TERMIOS:
@@ -83,10 +92,24 @@ def connect_db(db_path: str) -> sqlite3.Connection:
         conn.execute("PRAGMA synchronous=NORMAL;")
         cur = conn.cursor()
         cur.execute(
-            "CREATE TABLE IF NOT EXISTS checkpoints (id INTEGER PRIMARY KEY AUTOINCREMENT, workspace TEXT NOT NULL, tag TEXT NOT NULL, history TEXT NOT NULL, timestamp INTEGER NOT NULL);"
+            "CREATE TABLE IF NOT EXISTS checkpoints ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "workspace TEXT NOT NULL, "
+            "tag TEXT NOT NULL, "
+            "history TEXT NOT NULL, "
+            "timestamp INTEGER NOT NULL, "
+            "UNIQUE(workspace, tag)"
+            ");"
         )
         cur.execute(
-            "CREATE TABLE IF NOT EXISTS turns (id INTEGER PRIMARY KEY AUTOINCREMENT, workspace TEXT NOT NULL, user_msg TEXT NOT NULL, assistant_msg TEXT NOT NULL, tokens TEXT NOT NULL, timestamp INTEGER NOT NULL);"
+            "CREATE TABLE IF NOT EXISTS turns ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "workspace TEXT NOT NULL, "
+            "user_msg TEXT NOT NULL, "
+            "assistant_msg TEXT NOT NULL, "
+            "tokens TEXT NOT NULL, "
+            "timestamp INTEGER NOT NULL"
+            ");"
         )
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_turns_workspace ON turns (workspace);"
@@ -94,9 +117,14 @@ def connect_db(db_path: str) -> sqlite3.Connection:
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_checkpoints_workspace ON checkpoints (workspace);"
         )
+        cur.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_checkpoints_ws_tag ON checkpoints (workspace, tag);"
+        )
         conn.commit()
-    except sqlite3.Error:
-        pass
+    except sqlite3.Error as exc:
+        conn.close()
+        sys.stderr.write(f"\033[1;31m[session-mgr] Database init error on {db_path}: {exc}\033[0m\n")
+        raise
     return conn
 
 
@@ -108,7 +136,7 @@ def cleanup_all_stale_locks() -> None:
         for fpath in glob.glob(os.path.join(session_dir, "*.session")):
             try:
                 fname = os.path.basename(fpath).replace(".session", "")
-                if m := re.search(r"(\d+)$", fname):
+                if m := re.search(r"-(\d+)$", fname):
                     pid = int(m.group(1))
                     os.kill(pid, 0)
                 else:
@@ -136,19 +164,30 @@ def cleanup_all_stale_locks() -> None:
 
 
 def get_sub_agent_id(workspace: str, target_pid: int | None = None) -> int:
-    """Calculates active sub-agent index (0 = primary agent, 1+ = sub-agent) and manages lockfiles."""
+    """Calculates active sub-agent index (0 = primary agent, 1+ = sub-agent) with atomic lock claims."""
     cleanup_all_stale_locks()
     session_dir = os.path.join(CFG_DIR, ".active_sessions")
     os.makedirs(session_dir, exist_ok=True)
+    ws_clean = _sanitize_workspace(workspace)
     current_pid = target_pid or os.getpid()
 
+    # Atomically claim our session lockfile first to close the TOCTOU race
+    session_file = os.path.join(session_dir, f"{ws_clean}-{current_pid}.session")
+    try:
+        fd = os.open(session_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        os.close(fd)
+    except FileExistsError:
+        pass
+    except OSError:
+        pass
+
     active_pids: list[int] = []
-    escaped_ws = glob.escape(workspace)
+    escaped_ws = glob.escape(ws_clean)
     for fpath in glob.glob(os.path.join(session_dir, f"{escaped_ws}-*.session")):
         pid: int | None = None
         try:
             fname = os.path.basename(fpath).replace(".session", "")
-            if m := re.search(r"(\d+)$", fname):
+            if m := re.search(r"-(\d+)$", fname):
                 pid = int(m.group(1))
                 os.kill(pid, 0)
                 if pid not in active_pids:
@@ -173,7 +212,6 @@ def get_sub_agent_id(workspace: str, target_pid: int | None = None) -> int:
     agent_index = active_pids.index(current_pid)
 
     try:
-        session_file = os.path.join(session_dir, f"{workspace}-{current_pid}.session")
         with open(session_file, "w", encoding="utf-8") as f:
             f.write(str(agent_index))
     except OSError:
@@ -183,20 +221,24 @@ def get_sub_agent_id(workspace: str, target_pid: int | None = None) -> int:
 
 
 def cleanup_sub_agent(workspace: str, target_pid: int | None = None) -> None:
-    """Removes all session lockfiles associated with the target PID."""
+    """Removes all session lockfiles associated with the exact target PID."""
     session_dir = os.path.join(CFG_DIR, ".active_sessions")
     if not os.path.isdir(session_dir):
         return
+    ws_clean = _sanitize_workspace(workspace)
     current_pid = target_pid or os.getpid()
 
-    escaped_ws = glob.escape(workspace)
-    for fpath in glob.glob(os.path.join(session_dir, f"{escaped_ws}-*{current_pid}.session")):
-        try:
-            os.remove(fpath)
-        except OSError:
-            pass
+    escaped_ws = glob.escape(ws_clean)
+    for fpath in glob.glob(os.path.join(session_dir, f"{escaped_ws}-*.session")):
+        fname = os.path.basename(fpath).replace(".session", "")
+        if m := re.search(r"-(\d+)$", fname):
+            if int(m.group(1)) == current_pid:
+                try:
+                    os.remove(fpath)
+                except OSError:
+                    pass
 
-    direct = os.path.join(session_dir, f"{workspace}-{current_pid}.session")
+    direct = os.path.join(session_dir, f"{ws_clean}-{current_pid}.session")
     if os.path.exists(direct):
         try:
             os.remove(direct)
@@ -206,27 +248,33 @@ def cleanup_sub_agent(workspace: str, target_pid: int | None = None) -> None:
 
 def init_db(workspace: str) -> None:
     """Wrapper that ensures DB and tables exist."""
-    db_path = os.path.join(SESSIONS_DIR, f"{workspace}.db")
+    ws_clean = _sanitize_workspace(workspace)
+    db_path = os.path.join(SESSIONS_DIR, f"{ws_clean}.db")
     with closing(connect_db(db_path)):
         pass
 
 
 def save_checkpoint(workspace: str, tag: str, history_obj: Any = None) -> None:
     """Persists chat history snapshot into workspace checkpoints table."""
+    ws_clean = _sanitize_workspace(workspace)
     clean_tag = tag.strip() if tag else f"checkpoint-{int(time.time())}"
     if history_obj is not None:
         hist_data = json.dumps(history_obj) if not isinstance(history_obj, str) else history_obj
     else:
         try:
             hist_data = sys.stdin.read().strip()
+            if not hist_data:
+                sys.stderr.write("\033[1;31m[session-mgr] Error: Empty checkpoint history on stdin.\033[0m\n")
+                return
             json.loads(hist_data)
-        except Exception:
+        except Exception as exc:
+            sys.stderr.write(f"\033[1;31m[session-mgr] Invalid checkpoint history on stdin: {exc}\033[0m\n")
             return
 
-    with closing(connect_db(os.path.join(SESSIONS_DIR, f"{workspace}.db"))) as conn:
+    with closing(connect_db(os.path.join(SESSIONS_DIR, f"{ws_clean}.db"))) as conn:
         conn.cursor().execute(
-            "INSERT INTO checkpoints (workspace, tag, history, timestamp) VALUES (?, ?, ?, ?)",
-            (workspace, clean_tag, hist_data, int(time.time())),
+            "INSERT OR REPLACE INTO checkpoints (workspace, tag, history, timestamp) VALUES (?, ?, ?, ?)",
+            (ws_clean, clean_tag, hist_data, int(time.time())),
         )
         conn.commit()
     sys.stderr.write(f"\033[1;32m[session-mgr] Checkpoint '{clean_tag}' saved to SQLite.\033[0m\n")
@@ -234,19 +282,21 @@ def save_checkpoint(workspace: str, tag: str, history_obj: Any = None) -> None:
 
 def rollback_checkpoint(workspace: str) -> list[dict[str, Any]] | None:
     """Interactive checkpoint selector with arrow-key navigation and clone support."""
-    db_path, rows, global_rows = os.path.join(SESSIONS_DIR, f"{workspace}.db"), [], []
+    ws_clean = _sanitize_workspace(workspace)
+    db_path = os.path.join(SESSIONS_DIR, f"{ws_clean}.db")
+    rows, global_rows = [], []
     if os.path.exists(db_path):
         with closing(connect_db(db_path)) as conn:
             rows = (
                 conn.cursor()
-                .execute("SELECT tag, history, timestamp FROM checkpoints WHERE workspace = ? ORDER BY timestamp DESC LIMIT 50", (workspace,))
+                .execute("SELECT tag, history, timestamp FROM checkpoints WHERE workspace = ? ORDER BY timestamp DESC LIMIT 50", (ws_clean,))
                 .fetchall()
             )
 
     is_global = not bool(rows)
     if is_global and os.path.exists(SESSIONS_DIR):
         for f in os.listdir(SESSIONS_DIR):
-            if f.endswith(".db") and f != f"{workspace}.db":
+            if f.endswith(".db") and f != f"{ws_clean}.db":
                 try:
                     with closing(connect_db(os.path.join(SESSIONS_DIR, f))) as conn_g:
                         for tag, history, ts in (
@@ -303,7 +353,7 @@ def rollback_checkpoint(workspace: str) -> list[dict[str, Any]] | None:
                 selected_idx = int(key)
                 selected = display_rows[selected_idx]
                 break
-            elif key in ("\r", "\n", ""):
+            elif key in ("\r", "\n"):
                 selected = display_rows[selected_idx]
                 break
     finally:
@@ -315,36 +365,39 @@ def rollback_checkpoint(workspace: str) -> list[dict[str, Any]] | None:
         with closing(connect_db(db_path)) as conn3:
             conn3.cursor().execute(
                 "INSERT OR REPLACE INTO checkpoints (workspace, tag, history, timestamp) VALUES (?, ?, ?, ?)",
-                (workspace, tag, history, int(time.time())),
+                (ws_clean, tag, history, int(time.time())),
             )
             conn3.commit()
 
     sys.stderr.write(f"\n\033[1;32m[session-mgr] Checkpoint '{selected[0]}' loaded!\033[0m\n\n")
     try:
         return json.loads(selected[1])
-    except (json.JSONDecodeError, TypeError):
+    except (json.JSONDecodeError, TypeError) as exc:
+        sys.stderr.write(f"\033[1;31m[session-mgr] Corrupt checkpoint data in '{selected[0]}': {exc}\033[0m\n")
         return None
 
 
 def log_turn(workspace: str, user_msg: str, assistant_msg: str) -> None:
     """Logs an agent interaction turn and tokenized intent into SQLite."""
+    ws_clean = _sanitize_workspace(workspace)
     clean_user = user_msg.split("User Question:", 1)[-1].strip() if "User Question:" in user_msg else user_msg
     tokens_str = " ".join(tokenize(clean_user))
-    with closing(connect_db(os.path.join(SESSIONS_DIR, f"{workspace}.db"))) as conn:
+    with closing(connect_db(os.path.join(SESSIONS_DIR, f"{ws_clean}.db"))) as conn:
         conn.cursor().execute(
             "INSERT INTO turns (workspace, user_msg, assistant_msg, tokens, timestamp) VALUES (?, ?, ?, ?, ?)",
-            (workspace, clean_user, assistant_msg, tokens_str, int(time.time())),
+            (ws_clean, clean_user, assistant_msg, tokens_str, int(time.time())),
         )
         conn.commit()
 
 
 def get_turns_count(workspace: str) -> int:
     """Retrieves total turns logged for this workspace."""
-    db_path = os.path.join(SESSIONS_DIR, f"{workspace}.db")
+    ws_clean = _sanitize_workspace(workspace)
+    db_path = os.path.join(SESSIONS_DIR, f"{ws_clean}.db")
     if os.path.exists(db_path):
         try:
             with closing(connect_db(db_path)) as conn:
-                return conn.cursor().execute("SELECT COUNT(*) FROM turns WHERE workspace = ?", (workspace,)).fetchone()[0]
+                return conn.cursor().execute("SELECT COUNT(*) FROM turns WHERE workspace = ?", (ws_clean,)).fetchone()[0]
         except (sqlite3.Error, TypeError):
             pass
     return 0
@@ -352,11 +405,12 @@ def get_turns_count(workspace: str) -> int:
 
 def clear_turns(workspace: str) -> None:
     """Purges all turns recorded for this workspace."""
-    db_path = os.path.join(SESSIONS_DIR, f"{workspace}.db")
+    ws_clean = _sanitize_workspace(workspace)
+    db_path = os.path.join(SESSIONS_DIR, f"{ws_clean}.db")
     if os.path.exists(db_path):
         try:
             with closing(connect_db(db_path)) as conn:
-                conn.cursor().execute("DELETE FROM turns WHERE workspace = ?", (workspace,))
+                conn.cursor().execute("DELETE FROM turns WHERE workspace = ?", (ws_clean,))
                 conn.commit()
         except sqlite3.Error:
             pass
@@ -368,7 +422,7 @@ if __name__ == "__main__":
     cmd = args[0]
     if len(args) < 2:
         sys.exit(1)
-    workspace_name = args[1]
+    workspace_name = _sanitize_workspace(args[1])
 
     if cmd == "init":
         init_db(workspace_name)

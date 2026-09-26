@@ -11,12 +11,14 @@ import ssl
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.request as urlreq
 
 PORT = 9999
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
+TOKEN_FILE = os.path.join(CFG_DIR, ".voice_token")
 
-RE_CLEAN_TRANSCRIPTION: re.Pattern = re.compile(r"[^a-zA-Z0-9\s?.,!\'-]")
+RE_CONTROL_CHARS: re.Pattern = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 RE_NUMERIC_DIGITS: re.Pattern = re.compile(r"^\d{1,4}$")
 
 try:
@@ -24,12 +26,35 @@ try:
 except ImportError:
     core = None
 
+
+def _get_or_create_token() -> str:
+    """Retrieves or generates a persistent 16-character auth token for network voice uploads."""
+    if os.path.isfile(TOKEN_FILE):
+        try:
+            with open(TOKEN_FILE, "r", encoding="utf-8") as f:
+                if tok := f.read().strip():
+                    return tok
+        except OSError:
+            pass
+
+    token = os.urandom(8).hex()
+    try:
+        os.makedirs(CFG_DIR, exist_ok=True)
+        tmp = f"{TOKEN_FILE}.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(token)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, TOKEN_FILE)
+    except OSError:
+        pass
+    return token
+
+
 HTML_CONTENT = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <!-- Disable client-side caching -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -56,6 +81,10 @@ HTML_CONTENT = """<!DOCTYPE html>
         const btn = document.getElementById('mic-btn'), ring = document.getElementById('ring'), status = document.getElementById('status'), result = document.getElementById('result');
         let mediaRecorder, audioChunks = [], audioCtx, analyser, dataArray, animId, activeMime = 'audio/webm';
 
+        const urlParams = new URLSearchParams(window.location.search);
+        let token = urlParams.get('token') || localStorage.getItem('voice_token') || '';
+        if (urlParams.get('token')) localStorage.setItem('voice_token', token);
+
         const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
         for (const m of mimeTypes) {
             if (MediaRecorder.isTypeSupported(m)) { activeMime = m; break; }
@@ -77,12 +106,18 @@ HTML_CONTENT = """<!DOCTYPE html>
                 status.innerText = "Transcribing...";
                 const audioBlob = new Blob(audioChunks, { type: activeMime });
                 audioChunks = [];
-                fetch('/upload', { method: 'POST', headers: { 'Content-Type': activeMime }, body: audioBlob })
-                    .then(r => r.text())
+                const uploadUrl = token ? `/upload?token=${encodeURIComponent(token)}` : '/upload';
+                fetch(uploadUrl, { method: 'POST', headers: { 'Content-Type': activeMime }, body: audioBlob })
+                    .then(r => {
+                        if (r.status === 401) throw new Error("Unauthorized");
+                        return r.text();
+                    })
                     .then(text => {
                         result.innerText = text ? `"${text}"` : "Silence detected.";
                         status.innerText = "Executed.";
-                    }).catch(() => { status.innerText = "Transmission failed."; });
+                    }).catch(err => {
+                        status.innerText = err.message === "Unauthorized" ? "Auth Failed" : "Transmission failed.";
+                    });
             };
         }).catch(() => { status.innerText = "Mic Permission Blocked"; btn.style.borderColor = "#f7768e"; });
 
@@ -137,7 +172,6 @@ HTML_CONTENT = """<!DOCTYPE html>
 """
 
 _voice_proc = None
-_auto_submit = True
 
 
 def is_bridge_running() -> bool:
@@ -166,14 +200,13 @@ def load_voice_env() -> None:
 def transcribe_gemini(audio_data: bytes, mime_type: str = "audio/webm") -> str:
     load_voice_env()
     gkey = os.environ.get("GEM_VOICE") or os.environ.get("GEMINI_API_KEY")
-    model = os.environ.get("GEM_MODEL") or os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
+    model = os.environ.get("GEM_MODEL") or os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
     if not gkey:
         sys.stderr.write("[error] GEM_VOICE key is not set in ~/.config/py-agent/.env\n")
         sys.stderr.flush()
         return ""
 
     encoded = base64.b64encode(audio_data).decode("utf-8")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={gkey}"
     payload = {
         "contents": [
             {
@@ -188,9 +221,9 @@ def transcribe_gemini(audio_data: bytes, mime_type: str = "audio/webm") -> str:
     }
     try:
         req = urlreq.Request(
-            url,
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
             data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", "x-goog-api-key": gkey},
             method="POST",
         )
         with urlreq.urlopen(req, timeout=10) as resp:
@@ -201,7 +234,7 @@ def transcribe_gemini(audio_data: bytes, mime_type: str = "audio/webm") -> str:
                 pass
             res_data = json.loads(resp.read().decode("utf-8"))
             raw = res_data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            clean = RE_CLEAN_TRANSCRIPTION.sub("", raw).strip()
+            clean = RE_CONTROL_CHARS.sub("", raw).strip()
             cl_lower = clean.lower()
             if (
                 not clean
@@ -219,40 +252,63 @@ def transcribe_gemini(audio_data: bytes, mime_type: str = "audio/webm") -> str:
 
 
 def get_prompt_input(symbol: str = "❯") -> str:
-    try:
-        return input(f"{symbol} ").strip()
-    except (KeyboardInterrupt, EOFError):
-        raise
+    return input(f"{symbol} ").strip()
 
 
 class VoiceHandler(http.server.SimpleHTTPRequestHandler):
+    auth_token: str = ""
+
     def log_message(self, format, *args):
         pass
 
+    def _is_authorized(self) -> bool:
+        if not self.auth_token:
+            return True
+        query = urllib.parse.urlparse(self.path).query
+        params = urllib.parse.parse_qs(query)
+        token_val = params.get("token", [""])[0] or self.headers.get("X-Voice-Token", "")
+        return token_val == self.auth_token
+
     def do_POST(self):
+        parsed_url = urllib.parse.urlparse(self.path)
+        if parsed_url.path != "/upload":
+            self.send_error(404, "Not Found")
+            return
+
+        if not self._is_authorized():
+            self.send_error(401, "Unauthorized")
+            return
+
         try:
-            if self.path == "/upload":
-                length = int(self.headers.get("Content-Length", 0))
-                mime_type = self.headers.get("Content-Type", "audio/webm").split(";")[0]
-                audio_data = self.rfile.read(length)
-                query = transcribe_gemini(audio_data, mime_type=mime_type) if audio_data else ""
-                if query:
-                    sys.stderr.write(f"[sys] Transcribed: {query}\n")
+            length = int(self.headers.get("Content-Length", 0))
+            mime_type = self.headers.get("Content-Type", "audio/webm").split(";")[0]
+            audio_data = self.rfile.read(length)
+            query = transcribe_gemini(audio_data, mime_type=mime_type) if audio_data else ""
+            if query:
+                sys.stderr.write(f"[sys] Transcribed: {query}\n")
+                sys.stderr.flush()
+
+                # Dynamic check: reads current auto-submit state per request
+                auto_submit = True
+                if core:
+                    auto_submit = bool(core.get_state("voice_auto_submit", True))
+
+                try:
+                    res = subprocess.run(["wtype", "--", query], capture_output=True, text=True, timeout=5)
+                    if res.returncode != 0:
+                        sys.stderr.write(f"[warn] wtype keystroke injection failed (exit {res.returncode}): {res.stderr.strip()}\n")
+                        sys.stderr.flush()
+                    elif auto_submit:
+                        time.sleep(0.05)
+                        subprocess.run(["wtype", "-k", "Return"], capture_output=True, timeout=2)
+                except (FileNotFoundError, subprocess.SubprocessError) as err:
+                    sys.stderr.write(f"[warn] Keystroke injection failed: {err}\n")
                     sys.stderr.flush()
 
-                    # Universal Wayland / Hyprland virtual typing with flag protection (--)
-                    try:
-                        subprocess.run(["wtype", "--", query], check=False)
-                        if _auto_submit:
-                            time.sleep(0.05)
-                            subprocess.run(["wtype", "-k", "Return"], check=False)
-                    except Exception:
-                        pass
-
-                self.send_response(200)
-                self.send_header("Content-Type", "text/plain")
-                self.end_headers()
-                self.wfile.write(query.encode("utf-8"))
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(query.encode("utf-8"))
         except Exception as e:
             sys.stderr.write(f"[error] Server error: {e}\n")
             sys.stderr.flush()
@@ -260,6 +316,11 @@ class VoiceHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
 
     def do_GET(self):
+        parsed_url = urllib.parse.urlparse(self.path)
+        if parsed_url.path not in ("/", "/index.html"):
+            self.send_error(404, "Not Found")
+            return
+
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
@@ -281,20 +342,33 @@ def run_server() -> None:
 
     cert_path = os.path.join(CFG_DIR, "server.pem")
     if not os.path.exists(cert_path):
-        subprocess.run(
+        res = subprocess.run(
             f'openssl req -new -x509 -keyout "{cert_path}" -out "{cert_path}" -days 365 -nodes -subj "/CN={local_ip}"',
             shell=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+        if res.returncode != 0 or not os.path.exists(cert_path):
+            sys.stderr.write(f"[error] OpenSSL certificate generation failed. Cannot start secure voice bridge.\n")
+            sys.exit(1)
+        try:
+            os.chmod(cert_path, 0o600)
+        except OSError:
+            pass
+
+    token = _get_or_create_token()
+    VoiceHandler.auth_token = token
 
     with http.server.ThreadingHTTPServer(("", PORT), VoiceHandler) as httpd:
-        if os.path.exists(cert_path):
-            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        try:
             ctx.load_cert_chain(certfile=cert_path)
             httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
+        except Exception as e:
+            sys.stderr.write(f"[error] TLS initialization failed: {e}\n")
+            sys.exit(1)
 
-        print(f"[ok] Voice to Text active: https://{local_ip}:{PORT}")
+        print(f"[ok] Voice to Text active: https://{local_ip}:{PORT}/?token={token}")
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
@@ -302,17 +376,18 @@ def run_server() -> None:
 
 
 def toggle_voice_bridge(auto_toggle: bool = False) -> tuple[bool, bool]:
-    global _voice_proc, _auto_submit
+    global _voice_proc
+    auto_submit = True
     if core:
-        _auto_submit = core.get_state().get("voice_auto_submit", True)
+        auto_submit = core.get_state().get("voice_auto_submit", True)
 
     is_running = is_bridge_running()
 
     if auto_toggle and is_running:
-        _auto_submit = not _auto_submit
+        new_auto = not auto_submit
         if core:
-            core.save_state("voice_auto_submit", _auto_submit)
-        return True, _auto_submit
+            core.save_state("voice_auto_submit", new_auto)
+        return True, new_auto
 
     if is_running:
         if _voice_proc:
@@ -322,7 +397,7 @@ def toggle_voice_bridge(auto_toggle: bool = False) -> tuple[bool, bool]:
                 pass
         subprocess.run(["pkill", "-f", "agent_voice.py --server"], stderr=subprocess.DEVNULL)
         _voice_proc = None
-        return False, _auto_submit
+        return False, auto_submit
     else:
         mod_path = os.path.abspath(__file__)
         _voice_proc = subprocess.Popen(
@@ -331,7 +406,7 @@ def toggle_voice_bridge(auto_toggle: bool = False) -> tuple[bool, bool]:
             stderr=subprocess.DEVNULL,
             start_new_session=True,
         )
-        return True, _auto_submit
+        return True, auto_submit
 
 
 if __name__ == "__main__":

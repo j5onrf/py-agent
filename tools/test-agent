@@ -69,7 +69,7 @@ files_to_compile = [
     "modules/agent_sessions.py",
     "modules/agent_memories.py",
     "modules/model-select.py",
-    "modules/chat",
+    "modules/agent_chat.py",
     "tools/index-map/index-map",
     "tools/loop/ralph.py",
     "plugins/webui/server.py",
