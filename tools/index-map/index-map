@@ -91,7 +91,7 @@ def get_file_summary(filepath: str, limit: int = 10) -> str:
                 if idx >= limit:
                     break
                 s = line.strip()
-                if s and not line.startswith("#!") and not s.lower().startswith(("file:", "path:", "description:", "author:", "license:")):
+                if s and not s.startswith("#!") and not s.lower().startswith(("file:", "path:", "description:", "author:", "license:")):
                     return s.strip('#"\'/ \t')[:100].strip()
     except Exception:
         pass
@@ -211,6 +211,8 @@ def analyze_image_file(filepath: str) -> dict:
 
 def analyze_json_file(filepath: str) -> dict:
     try:
+        if os.path.getsize(filepath) > 10 * 1024 * 1024:
+            return {"type": "json", "summary": "Large JSON file (>10MB)"}
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
             data = json.load(f)
         return {"type": "json", "keys": list(data.keys()) if isinstance(data, dict) else []}
@@ -228,11 +230,12 @@ def analyze_generic_file(filepath: str) -> dict:
 
 def init_db(db_path: str) -> sqlite3.Connection:
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30.0)
     cur = conn.cursor()
     cur.execute("PRAGMA journal_mode=WAL;")
-    cur.execute("DROP TABLE IF EXISTS nodes;")
-    cur.execute("CREATE VIRTUAL TABLE nodes USING fts5(id, name, type, filepath, language, signature, doc, lines);")
+    cur.execute("PRAGMA synchronous=NORMAL;")
+    cur.execute("CREATE VIRTUAL TABLE IF NOT EXISTS nodes USING fts5(id, name, type, filepath, language, signature, doc, lines);")
+    cur.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);")
     conn.commit()
     return conn
 
@@ -252,9 +255,11 @@ def find_db_path(start_dir: str | None = None) -> str | None:
 
 def compile_ascii_tree(target_dir: str) -> str:
     files = []
-    for root in (target_dir, os.path.join(target_dir, "modules")):
+    modules_dir = os.path.join(target_dir, "modules")
+    for root in (target_dir, modules_dir):
         if os.path.isdir(root):
-            sub = "modules" if "modules" in root else ""
+            is_modules = (os.path.realpath(root) == os.path.realpath(modules_dir))
+            sub = "modules" if is_modules else ""
             files.extend((sub, f, os.path.join(root, f)) for f in sorted(os.listdir(root)) if os.path.isfile(os.path.join(root, f)) and not f.startswith("index-map-") and not f.endswith(('.db', '.tmp', '.log')))
 
     if not files:
@@ -303,13 +308,40 @@ def run_indexing(target_dir: str, force: bool = False, is_agent: bool = False, n
 
     os.makedirs(out_dir, exist_ok=True)
     output_file = os.path.join(out_dir, f"index-map-{proj_name}.txt")
+    db_path = os.path.join(out_dir, f"index-map-memory-{proj_name}.db")
+
+    patterns = load_gitignore_patterns(target_dir)
+
+    # Staleness guard: skip re-indexing if output is fresh and force=False
+    if not force and os.path.isfile(output_file) and (no_db or os.path.isfile(db_path)):
+        try:
+            map_mtime = os.path.getmtime(output_file)
+            is_stale = False
+            for root, dirs, files in os.walk(target_dir):
+                dirs[:] = [d for d in dirs if not should_ignore(os.path.relpath(os.path.join(root, d), target_dir), True, patterns)]
+                for file in files:
+                    fp = os.path.join(root, file)
+                    rel_path = os.path.relpath(fp, target_dir)
+                    if not should_ignore(rel_path, False, patterns):
+                        if os.path.getmtime(fp) > map_mtime:
+                            is_stale = True
+                            break
+                if is_stale:
+                    break
+            if not is_stale:
+                if print_output:
+                    with open(output_file, 'r', encoding='utf-8') as f:
+                        sys.stdout.write(f.read())
+                        sys.stdout.flush()
+                return
+        except OSError:
+            pass
 
     db_conn = None
     if not no_db:
-        db_path = os.path.join(out_dir, f"index-map-memory-{proj_name}.db")
         db_conn = init_db(db_path)
 
-    patterns, skeleton = load_gitignore_patterns(target_dir), {}
+    skeleton = {}
     db_rows = []
 
     for root, dirs, files in os.walk(target_dir):
@@ -367,10 +399,16 @@ def run_indexing(target_dir: str, force: bool = False, is_agent: bool = False, n
                 if db_conn and res.get("title"):
                     db_rows.append((f"doc:{rel_path}", res.get("title", ""), "markdown", rel_path, "markdown", res.get("title", ""), ", ".join(res.get("tags", [])), "1-1"))
 
-    if db_conn and db_rows:
-        db_conn.cursor().executemany("INSERT INTO nodes VALUES (?, ?, ?, ?, ?, ?, ?, ?)", db_rows)
-        db_conn.commit()
-        db_conn.close()
+    if db_conn:
+        try:
+            cur = db_conn.cursor()
+            cur.execute("DELETE FROM nodes;")
+            if db_rows:
+                cur.executemany("INSERT INTO nodes VALUES (?, ?, ?, ?, ?, ?, ?, ?)", db_rows)
+            cur.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('root_dir', ?)", (os.path.realpath(target_dir),))
+            db_conn.commit()
+        finally:
+            db_conn.close()
 
     disp_dir = target_dir.replace(os.path.expanduser("~"), "~", 1) if target_dir.startswith(os.path.expanduser("~")) else target_dir
     header = f"# CODEBASE INDEX MAP | Generated: {time.strftime('%Y-%m-%d %H:%M')} | Workspace: {proj_name} | Path: {disp_dir}\n# Active symbols and structural connections mapped in the local index.\n# -----------------------------------------------------------------------------------------\n"
@@ -386,7 +424,7 @@ def run_indexing(target_dir: str, force: bool = False, is_agent: bool = False, n
             sys.stdout.write(flat_map)
             sys.stdout.flush()
         elif not is_agent:
-            sys.stderr.write(f"\r\x1b[2K\033[1;32m[ok] Mapping complete! [{proj_name} index-map {'& SQLite database updated' if db_conn else 'updated'}]\033[0m\n")
+            sys.stderr.write(f"\r\x1b[2K\033[1;32m[ok] Mapping complete! [{proj_name} index-map {'& SQLite database updated' if not no_db else 'updated'}]\033[0m\n")
     except Exception as e:
         sys.stderr.write(f"\r\x1b[2K\033[1;31m[error] Failed to write map: {e}\033[0m\n")
 
@@ -395,21 +433,28 @@ def search_symbols(pattern: str, workspace: str | None = None) -> str:
     db = find_db_path(workspace)
     if not db:
         return "[error] Index database not found. Initialize with 'ai init' or 'index-map init --db'."
-    conn = sqlite3.connect(db)
-    cur = conn.cursor()
 
-    clean_query = re.sub(r'[^a-zA-Z0-9_* ]', ' ', pattern).strip()
+    # Strip wildcards from pattern before appending prefix operators
+    clean_query = re.sub(r'[^a-zA-Z0-9_ ]', ' ', pattern).strip()
     if not clean_query:
-        conn.close()
         return "[error] Empty search pattern."
 
     fts_terms = " OR ".join(f"{w}*" for w in clean_query.split())
     sql = "SELECT id, type, filepath, signature, doc, lines, bm25(nodes) as rank FROM nodes WHERE nodes MATCH ? ORDER BY rank LIMIT 15"
+
+    conn = sqlite3.connect(db, timeout=15.0)
     try:
-        rows = cur.execute(sql, (fts_terms,)).fetchall()
-    except Exception:
-        rows = cur.execute("SELECT id, type, filepath, signature, doc, lines, 0 FROM nodes WHERE name LIKE ? LIMIT 15", (f"%{clean_query}%",)).fetchall()
-    conn.close()
+        cur = conn.cursor()
+        try:
+            rows = cur.execute(sql, (fts_terms,)).fetchall()
+        except Exception:
+            escaped_like = clean_query.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+            rows = cur.execute(
+                "SELECT id, type, filepath, signature, doc, lines, 0 FROM nodes WHERE name LIKE ? ESCAPE '\\' LIMIT 15",
+                (f"%{escaped_like}%",)
+            ).fetchall()
+    finally:
+        conn.close()
 
     if not rows:
         return f"[no matches found for '{pattern}']"
@@ -425,16 +470,34 @@ def extract_snippet(symbol: str, workspace: str | None = None) -> str:
     db = find_db_path(workspace)
     if not db:
         return "[error] Database not found."
-    conn = sqlite3.connect(db)
-    cur = conn.cursor()
-    rows = cur.execute("SELECT filepath, lines, type, name FROM nodes WHERE name = ? OR id LIKE ? LIMIT 5", (symbol, f"%:{symbol}")).fetchall()
-    conn.close()
+
+    escaped_sym = symbol.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+
+    conn = sqlite3.connect(db, timeout=15.0)
+    try:
+        cur = conn.cursor()
+        rows = cur.execute(
+            "SELECT filepath, lines, type, name FROM nodes WHERE name = ? OR id LIKE ? ESCAPE '\\' LIMIT 5",
+            (symbol, f"%:{escaped_sym}")
+        ).fetchall()
+
+        root_dir = None
+        try:
+            row = cur.execute("SELECT value FROM meta WHERE key = 'root_dir'").fetchone()
+            if row:
+                root_dir = row[0]
+        except sqlite3.Error:
+            pass
+    finally:
+        conn.close()
 
     if not rows:
         return f"[error] Symbol '{symbol}' not found."
 
+    if not root_dir:
+        root_dir = os.path.dirname(os.path.dirname(db)) if os.path.basename(os.path.dirname(db)) == ".agent" else os.path.dirname(db)
+
     res = []
-    root_dir = os.path.dirname(os.path.dirname(db)) if os.path.basename(os.path.dirname(db)) == ".agent" else os.path.dirname(db)
     for filepath, lines_str, node_type, name in rows:
         if not lines_str or "-" not in lines_str:
             continue

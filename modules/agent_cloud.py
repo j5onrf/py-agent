@@ -6,26 +6,35 @@ import re
 from typing import Any
 
 ENV_PATH: str = os.path.expanduser("~/.config/py-agent/.env")
-RE_ENV_API_KEY: re.Pattern = re.compile(
-    r"^([A-Z0-9_]+(?:_API)?_KEY)\s*=\s*[\"']?(.*?)[\"']?$"
+
+# Matches: KEY="val" or KEY='val' or KEY=val, with optional 'export ' prefix and trailing comments
+RE_ENV_LINE: re.Pattern = re.compile(
+    r"^\s*(?:export\s+)?([A-Za-z0-9_]+)\s*=\s*(?:([\"'])(.*?)\2|([^#\s\r\n]+))(?:\s*#.*)?$"
 )
+RE_API_KEY_NAME: re.Pattern = re.compile(r"^[A-Z0-9_]+(?:_API)?_KEY$")
 
 FALLBACK_MODELS = {
-    "gemini": "gemini-3.8-flash",
+    "gemini": "gemini-2.5-flash",
     "openrouter": "openrouter/free",
     "deepseek": "deepseek-chat",
     "openai": "gpt-4o",
     "custom": "Qwen/Qwen3.8-27B",
 }
 
+PLACEHOLDER_PREFIXES = ("your-", "sk-your", "aizasyyour", "<your", "todo", "replace-me")
+PLACEHOLDER_EXACT = {"your-api-key-here", "sk-your-key-here", "aizasyyourgeminiapikeyhere", "not-set"}
+
 
 def _is_valid_key(val: str) -> bool:
     v = val.strip().strip("'\"")
     if not v:
         return False
-    if v.lower() == "not-needed":
+    v_low = v.lower()
+    if v_low == "not-needed":
         return True
-    return not any(sub in v.lower() for sub in ("your", "here", "api-key"))
+    if v_low in PLACEHOLDER_EXACT or any(v_low.startswith(p) for p in PLACEHOLDER_PREFIXES):
+        return False
+    return len(v) >= 8
 
 
 def get_active_configs(
@@ -33,7 +42,8 @@ def get_active_configs(
 ) -> list[tuple[str, dict[str, str], dict[str, Any], int]]:
     """Compiles all active cloud API configurations in a single pass top-down scan."""
     configs: list[tuple[str, dict[str, str], dict[str, Any], int]] = []
-    if not os.path.exists(ENV_PATH):
+    target_env = getattr(get_active_configs, "ENV_PATH", ENV_PATH)
+    if not os.path.exists(target_env):
         return configs
 
     env_vars: dict[str, str] = {}
@@ -41,30 +51,30 @@ def get_active_configs(
 
     # Single-pass read: parse all variables and preserve top-down priority ordering
     try:
-        with open(ENV_PATH, "r", encoding="utf-8") as f:
+        with open(target_env, "r", encoding="utf-8") as f:
             for line in f:
                 line_clean = line.strip()
                 if not line_clean or line_clean.startswith("#"):
                     continue
 
-                # Strip trailing inline comments: KEY="val" # comment -> KEY="val"
-                line_no_comment = re.sub(r"\s+#.*$", "", line_clean).strip()
-                if "=" in line_no_comment:
-                    k, v = line_no_comment.replace("export ", "", 1).split("=", 1)
-                    k_str = k.strip()
-                    v_str = v.strip().strip('"').strip("'")
+                if m := RE_ENV_LINE.match(line_clean):
+                    k_str = m.group(1).strip()
+                    # Quoted value is group 3; unquoted value is group 4
+                    v_str = (m.group(3) if m.group(2) else m.group(4)) or ""
+                    v_str = v_str.strip()
+
                     env_vars[k_str] = v_str
 
-                    if match := RE_ENV_API_KEY.match(line_no_comment):
-                        key_name, key_val = match.groups()
-                        val_clean = key_val.strip().strip('"').strip("'")
-                        if _is_valid_key(val_clean):
-                            ordered_keys.append((key_name, val_clean))
+                    if RE_API_KEY_NAME.match(k_str) and _is_valid_key(v_str):
+                        ordered_keys.append((k_str, v_str))
     except OSError:
         return configs
 
     # Resolve endpoints matching the exact top-down priority
     for key_name, val_clean in ordered_keys:
+        # Isolate message list for each provider config to prevent cross-provider mutation
+        isolated_messages = [dict(msg) for msg in messages]
+
         # 1. Custom Matcher: CUSTOM_API_KEY, CUSTOM2_KEY, CUSTOM_GROQ_API_KEY, etc.
         if m_custom := re.match(r"^(CUSTOM[0-9A-Z_]*?)(?:_API)?_KEY$", key_name):
             prefix = m_custom.group(1)
@@ -81,7 +91,7 @@ def get_active_configs(
             headers = {"Content-Type": "application/json"}
             if val_clean.lower() != "not-needed":
                 headers["Authorization"] = f"Bearer {val_clean}"
-            body = {"model": model, "messages": messages, "stream": True}
+            body = {"model": model, "messages": isolated_messages, "stream": True}
             configs.append((url, headers, body, 180))
 
         # 2. Google Gemini
@@ -97,7 +107,7 @@ def get_active_configs(
                 "x-goog-api-key": val_clean,
                 "Content-Type": "application/json",
             }
-            body = {"model": model, "messages": messages, "stream": True}
+            body = {"model": model, "messages": isolated_messages, "stream": True}
             configs.append((url, headers, body, 45))
 
         # 3. OpenRouter
@@ -115,7 +125,7 @@ def get_active_configs(
             }
             body = {
                 "model": model,
-                "messages": messages,
+                "messages": isolated_messages,
                 "stream": True,
                 "usage": {"include": True},
             }
@@ -133,7 +143,7 @@ def get_active_configs(
                 "Authorization": f"Bearer {val_clean}",
                 "Content-Type": "application/json",
             }
-            body = {"model": model, "messages": messages, "stream": True}
+            body = {"model": model, "messages": isolated_messages, "stream": True}
             configs.append((url, headers, body, 180))
 
         # 5. OpenAI Direct
@@ -148,7 +158,7 @@ def get_active_configs(
                 "Authorization": f"Bearer {val_clean}",
                 "Content-Type": "application/json",
             }
-            body = {"model": model, "messages": messages, "stream": True}
+            body = {"model": model, "messages": isolated_messages, "stream": True}
             configs.append((url, headers, body, 120))
 
     return configs

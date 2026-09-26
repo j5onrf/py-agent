@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Zero-Trust Security & Boundary Enforcement Kernel [Production Ready]"""
+"""Zero-Trust Security & Boundary Enforcement Kernel [Hardened Production Ready]"""
 
 import ast
 import os
@@ -108,6 +108,24 @@ READONLY_INSPECTION_SUBCOMMANDS: dict[str, frozenset[str]] = {
     }),
 }
 
+# Unified dangerous operations across direct and aliased AST invocations
+DANGEROUS_OS_OPS: frozenset[str] = frozenset({
+    "system", "remove", "unlink", "popen", "chmod", "rename", "replace",
+    "kill", "execv", "execve", "rmdir", "truncate"
+})
+DANGEROUS_SHUTIL_OPS: frozenset[str] = frozenset({
+    "rmtree", "rmdir", "move", "chown", "copytree"
+})
+DANGEROUS_SUBPROCESS_OPS: frozenset[str] = frozenset({
+    "run", "Popen", "call", "check_output", "check_call", "getoutput", "getstatusoutput"
+})
+DANGEROUS_PATHLIB_OPS: frozenset[str] = frozenset({
+    "unlink", "rmdir", "chmod", "rename", "replace"
+})
+DANGEROUS_BUILTINS: frozenset[str] = frozenset({
+    "exec", "eval", "compile", "__import__"
+})
+
 RE_ROOT_SANDBOX: re.Pattern = re.compile(
     r"^/(?:workspace|app|home/(?:user|developer|runner|admin))(?:/(.*))?$",
     re.IGNORECASE,
@@ -117,7 +135,10 @@ RE_CMD_SUBSTITUTION: re.Pattern = re.compile(r"\$\((.*?)\)|`([^`]+)`", re.DOTALL
 
 
 def resolve_path(workspace: str, target: str) -> str:
-    """Normalizes paths, expanding user directories and healing container sandbox prefixes."""
+    """Normalizes paths, expanding user directories and healing container sandbox prefixes.
+
+    Protected system directories (/etc, /var, etc.) are never remapped to workspace relative paths.
+    """
     if not target:
         return os.path.realpath(workspace)
 
@@ -130,8 +151,11 @@ def resolve_path(workspace: str, target: str) -> str:
             clean = m.group(1) or "."
         else:
             rel_candidate = clean.lstrip("/")
-            if os.path.exists(os.path.join(ws_real, rel_candidate)) or "/" not in rel_candidate:
-                clean = rel_candidate
+            first_comp = "/" + rel_candidate.split("/", 1)[0]
+            # Protected system trees must never be remapped into workspace relative paths
+            if first_comp not in FORBIDDEN_SYS_DIRS and first_comp not in ("/tmp", "/opt", "/home"):
+                if os.path.exists(os.path.join(ws_real, rel_candidate)):
+                    clean = rel_candidate
 
     return os.path.realpath(clean if os.path.isabs(clean) else os.path.join(ws_real, clean))
 
@@ -140,11 +164,17 @@ def is_outside(workspace: str, full_path: str) -> bool:
     """Determines whether full_path breaks outside the workspace root boundary."""
     if not full_path:
         return False
-    if full_path in SYSTEM_DEVICES or full_path.startswith("/dev/pts/"):
-        return False
 
     root = os.path.realpath(workspace)
-    return full_path != root and not full_path.startswith(root + os.sep)
+    norm_path = os.path.realpath(os.path.expanduser(full_path))
+
+    if norm_path in SYSTEM_DEVICES:
+        return False
+
+    try:
+        return os.path.commonpath([root, norm_path]) != root
+    except ValueError:
+        return True
 
 
 def check_command(workspace: str, cmd: str) -> str | None:
@@ -173,9 +203,20 @@ def check_command(workspace: str, cmd: str) -> str | None:
         if not tokens:
             continue
 
-        # Skip leading environment variable assignments (e.g. FOO=1 BAR=2 cmd)
+        # Inspect and pop leading environment variable assignments (e.g. FOO=/etc/passwd cmd)
         while tokens and RE_ENV_VAR_PREFIX.match(tokens[0]):
-            tokens.pop(0)
+            var_token = tokens.pop(0)
+            if "=" in var_token:
+                _, val = var_token.split("=", 1)
+                clean_val = val.strip("'\"`")
+                if clean_val and (clean_val.startswith("/") or clean_val.startswith("~") or ".." in clean_val):
+                    norm_val = os.path.realpath(os.path.expanduser(clean_val))
+                    for sys_dir in FORBIDDEN_SYS_DIRS:
+                        real_sys = os.path.realpath(sys_dir)
+                        if norm_val == real_sys or norm_val.startswith(real_sys + os.sep):
+                            return f"System directory reference in environment variable: '{var_token}'"
+                    if is_outside(root_ws, norm_val):
+                        return f"Path outside workspace in environment variable: '{var_token}'"
 
         # Skip standard command wrappers (e.g. env, nohup, timeout 5)
         while tokens and os.path.basename(tokens[0]).lower() in EXEC_WRAPPERS:
@@ -194,10 +235,20 @@ def check_command(workspace: str, cmd: str) -> str | None:
             if not (sub_actions and sub_actions[0] in READONLY_INSPECTION_SUBCOMMANDS["systemctl"]):
                 return f"Privileged or mutating systemctl action: '{' '.join(tokens[:2])}'"
 
-        # pacman query vs package install/removal
+        # pacman query vs package install/removal (deny-by-default for mutating operations)
         elif binary == "pacman":
             action_flags = [t.lower() for t in tokens[1:] if t.startswith("-")]
-            if not (action_flags and any(any(f.startswith(rf) for rf in READONLY_INSPECTION_SUBCOMMANDS["pacman"]) for f in action_flags)):
+            mutating = False
+            for f in action_flags:
+                if f.startswith("--"):
+                    if f in ("--sync", "--remove", "--upgrade", "--database", "--refresh"):
+                        mutating = True
+                        break
+                elif any(c in f for c in ("s", "r", "u", "d", "f")):
+                    if f not in ("-ss", "-si", "-qs", "-qi", "-ql", "-qk", "-qo", "-qm", "-qu"):
+                        mutating = True
+                        break
+            if mutating or not action_flags:
                 return f"Package manager modification: '{' '.join(tokens[:2])}'"
 
         # journalctl (read-only unless vacuuming or rotating)
@@ -208,8 +259,15 @@ def check_command(workspace: str, cmd: str) -> str | None:
         elif binary in FORBIDDEN_GLOBAL_COMMANDS:
             return f"Global system/package binary: '{binary}'"
 
-        # Inspect inline Python commands (-c payload validation)
+        # Inspect Python invocations (-c payloads, -m package escalation, script target path)
         if binary in ("python", "python3") or binary.startswith("python3."):
+            if "-m" in tokens:
+                m_idx = tokens.index("-m")
+                if m_idx + 1 < len(tokens):
+                    mod = tokens[m_idx + 1].lower()
+                    if mod in ("pip", "pip3", "ensurepip", "venv"):
+                        return f"Privileged Python module execution blocked: '-m {mod}'"
+
             if "-c" in tokens:
                 try:
                     c_idx = tokens.index("-c")
@@ -219,25 +277,42 @@ def check_command(workspace: str, cmd: str) -> str | None:
                             return f"Python -c payload execution blocked: {ast_err}"
                 except ValueError:
                     pass
+            else:
+                pos_args = [t for t in tokens[1:] if not t.startswith("-")]
+                if pos_args:
+                    script_token = pos_args[0]
+                    if script_token != "-" and (script_token.startswith("/") or script_token.startswith("~") or ".." in script_token):
+                        norm_script = os.path.realpath(os.path.expanduser(script_token))
+                        if is_outside(root_ws, norm_script):
+                            return f"Python script path outside workspace: '{script_token}'"
 
-        # Check for system directory references (skipping allowlisted system devices)
-        for t in tokens:
-            if t in SYSTEM_DEVICES or t.startswith("/dev/pts/"):
+        # Token path scanning (System directories and workspace boundaries)
+        for raw_t in tokens:
+            if raw_t.startswith("-") and not raw_t.startswith("--/"):
                 continue
+
+            # Unquote and collapse redundant slashes (//etc -> /etc)
+            clean_t = re.sub(r"/+", "/", raw_t.strip("'\"`"))
+            expanded_t = os.path.expandvars(clean_t)
+
+            if expanded_t in SYSTEM_DEVICES:
+                continue
+
+            norm_path = os.path.realpath(os.path.expanduser(expanded_t))
+
+            # Explicit root filesystem ban
+            if expanded_t in ("/", "//") or (norm_path == "/" and clean_t not in (".", "")):
+                if norm_path != root_ws:
+                    return f"Path outside workspace: '{raw_t}'"
+
             for sys_dir in FORBIDDEN_SYS_DIRS:
-                if t == sys_dir or t.startswith(f"{sys_dir}/"):
-                    return f"System directory reference: '{t}'"
+                real_sys = os.path.realpath(sys_dir)
+                if norm_path == real_sys or norm_path.startswith(real_sys + os.sep):
+                    return f"System directory reference: '{raw_t}'"
 
-        # Path boundary checks (independent of whether path currently exists on disk)
-        for t in tokens:
-            if t in ("/", ".") or len(t) <= 1:
-                continue
-            if t in SYSTEM_DEVICES or t.startswith("/dev/pts/"):
-                continue
-            if ".." in t or t.startswith("~/") or (t.startswith("/") and not t.startswith("//")):
-                exp = os.path.realpath(os.path.expanduser(t))
-                if is_outside(root_ws, exp):
-                    return f"Path outside workspace: '{t}'"
+            if ".." in clean_t or clean_t.startswith("~/") or clean_t.startswith("/") or expanded_t.startswith("/"):
+                if is_outside(root_ws, norm_path):
+                    return f"Path outside workspace: '{raw_t}'"
 
     return None
 
@@ -269,40 +344,53 @@ def check_ast(code: str) -> str | None:
     # 2. Inspect calls against resolved module/attribute pairs
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
-            # Standalone dangerous calls: exec(), eval(), system()
+            # Standalone dangerous calls: exec(), eval(), compile(), __import__()
             if isinstance(node.func, ast.Name):
                 func_id = node.func.id
                 resolved = aliases.get(func_id, func_id)
 
-                if func_id in ("exec", "eval", "system"):
+                if func_id in DANGEROUS_BUILTINS:
                     return f"PYTHON DANGEROUS OP: {func_id}() cell execution"
-                if resolved.startswith("os.") and resolved.split(".", 1)[1] in (
-                    "system", "remove", "unlink", "popen", "chmod", "rename", "kill", "execv", "rmdir"
-                ):
+                if resolved.startswith("os.") and resolved.split(".", 1)[1] in DANGEROUS_OS_OPS:
                     return f"OUT-OF-BOUNDS KERNEL EXECUTION: {resolved}()"
-                if resolved.startswith("subprocess."):
+                if resolved.startswith("shutil.") and resolved.split(".", 1)[1] in DANGEROUS_SHUTIL_OPS:
                     return f"OUT-OF-BOUNDS KERNEL EXECUTION: {resolved}()"
-                if resolved.startswith("shutil.") and resolved.split(".", 1)[1] in ("rmtree", "rmdir", "move"):
+                if resolved.startswith("subprocess.") and resolved.split(".", 1)[1] in DANGEROUS_SUBPROCESS_OPS:
+                    return f"OUT-OF-BOUNDS KERNEL EXECUTION: {resolved}()"
+                if resolved.startswith("pathlib.") and resolved.split(".", 1)[1] in DANGEROUS_PATHLIB_OPS:
                     return f"OUT-OF-BOUNDS KERNEL EXECUTION: {resolved}()"
 
-            # Attribute calls: os.system(), shutil.rmtree(), subprocess execution
+            # Attribute calls: os.system(), shutil.rmtree(), __import__(...).system()
             elif isinstance(node.func, ast.Attribute):
-                raw_mod = getattr(node.func.value, "id", "")
-                mod_name = aliases.get(raw_mod, raw_mod)
                 attr_name = node.func.attr
+                val_node = node.func.value
 
-                if (mod_name == "os" and attr_name in ("system", "remove", "unlink", "popen", "chmod", "rename", "replace", "kill", "execv", "rmdir")) or \
-                   (mod_name == "shutil" and attr_name in ("rmtree", "rmdir", "move", "chown")) or \
-                   (mod_name == "subprocess" and attr_name in ("run", "Popen", "call", "check_output", "check_call", "getoutput", "getstatusoutput")) or \
-                   (mod_name == "pathlib" and attr_name in ("unlink", "rmdir")):
+                mod_name = ""
+                if isinstance(val_node, ast.Name):
+                    mod_name = aliases.get(val_node.id, val_node.id)
+                elif isinstance(val_node, ast.Call):
+                    if isinstance(val_node.func, ast.Name) and val_node.func.id == "__import__":
+                        if val_node.args and isinstance(val_node.args[0], ast.Constant) and isinstance(val_node.args[0].value, str):
+                            mod_name = val_node.args[0].value
+                        else:
+                            return "PYTHON DANGEROUS OP: dynamic __import__() execution"
+
+                if (mod_name == "os" and attr_name in DANGEROUS_OS_OPS) or \
+                   (mod_name == "shutil" and attr_name in DANGEROUS_SHUTIL_OPS) or \
+                   (mod_name == "subprocess" and attr_name in DANGEROUS_SUBPROCESS_OPS) or \
+                   (mod_name == "pathlib" and attr_name in DANGEROUS_PATHLIB_OPS):
                     return f"OUT-OF-BOUNDS KERNEL EXECUTION: {mod_name}.{attr_name}()"
+
+                # Guard dynamic reflection calls on sensitive modules
+                if isinstance(node.func, ast.Name) and node.func.id == "getattr":
+                    return "PYTHON DANGEROUS OP: getattr() dynamic reflection"
 
     return None
 
 
 def authorize(action_desc: str, is_security_event: bool = False, spinner: Any = None) -> bool:
-    """
-    Centralized Invariant Authorization Gate:
+    """Centralized Invariant Authorization Gate.
+
     1. Zero-Trust security events (out-of-bounds, sudo, package mutation, dangerous AST calls):
        Confirmation bypass is strictly ignored. Mandatory interactive [y/N] prompt.
     2. Safe in-bounds operations:
@@ -318,8 +406,26 @@ def authorize(action_desc: str, is_security_event: bool = False, spinner: Any = 
         except Exception:
             pass
 
-    is_tty = (hasattr(sys, "__stdout__") and sys.__stdout__ and sys.__stdout__.isatty()) or sys.stdout.isatty()
+    is_tty = False
+    try:
+        if hasattr(sys, "__stdout__") and sys.__stdout__ and sys.__stdout__.isatty():
+            is_tty = True
+        elif sys.stdout and sys.stdout.isatty():
+            is_tty = True
+    except Exception:
+        is_tty = False
+
     if not is_tty:
+        sys.stderr.write(
+            f"\r\033[1;33m[security-gate] Blocked non-interactive execution: {action_desc}\033[0m\r\n"
+        )
+        sys.stderr.flush()
         return False
 
-    return bool(ui and ui.confirm_tool(action_desc))
+    approved = bool(ui and ui.confirm_tool(action_desc))
+    if not approved:
+        sys.stderr.write(
+            f"\r\033[1;33m[security-gate] Action declined by user: {action_desc}\033[0m\r\n"
+        )
+        sys.stderr.flush()
+    return approved

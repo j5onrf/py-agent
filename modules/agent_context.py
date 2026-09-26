@@ -1,11 +1,27 @@
 #!/usr/bin/env python3
-"""Context Search & Indexing Engine - Jaccard intent matching [Production Ready]"""
+"""Context Search, Indexing & Compaction Engine [Production Ready]
 
+Handles Jaccard semantic intent matching, accurate token counting heuristics,
+context window monitoring, and the 3-Zone Context Compactor.
+"""
+
+import json
 import os
 import re
 import sys
 import threading
+import urllib.request as urlreq
 from typing import Any
+
+from rich.box import ROUNDED
+from rich.console import Console, Group
+from rich.panel import Panel
+from rich.text import Text
+
+try:
+    import agent_tools as tools
+except ImportError:
+    tools = None
 
 _cache_lock = threading.Lock()
 _CACHE_KEY: tuple[str, float, frozenset[str]] | None = None
@@ -19,6 +35,18 @@ STOP_WORDS: frozenset[str] = frozenset({
     "me", "you", "my", "your", "we", "us", "are", "about", "in", "how"
 })
 
+
+def _get_int_env(key: str, default: int) -> int:
+    val = os.environ.get(key)
+    if val is None or not str(val).strip():
+        return default
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return default
+
+
+# ── 1. Jaccard Semantic Search & Blueprint Loader ─────────────────────────────
 
 def tokenize(text: str, stop_words: frozenset[str] | set[str] = STOP_WORDS) -> list[str]:
     """Extracts lowercase tokens directly via C-speed regex without allocating intermediate strings."""
@@ -99,7 +127,6 @@ def jaccard_search(
         inter_len = len(q_tokens & ent_tokens)
         is_exact = (q_clean == ent_clean)
 
-        # Apply substring matching only on tokens >= 3 chars or on exact word boundaries
         has_sub = False
         if not is_exact:
             if len(ent_clean) >= 3 and ent_clean in q_clean:
@@ -107,14 +134,12 @@ def jaccard_search(
             elif len(q_clean) >= 3 and q_clean in ent_clean:
                 has_sub = True
             elif len(ent_clean) < 3:
-                # Short 2-char aliases (e.g. 'cs', 'ta', 'gc') must match exact word boundaries
                 if re.search(rf"\b{re.escape(ent_clean)}\b", q_clean):
                     has_sub = True
 
         if not inter_len and not has_sub and not is_exact:
             continue
 
-        # Zero-allocation union computation: |A ∪ B| = |A| + |B| - |A ∩ B|
         union_len = len_q + len(ent_tokens) - inter_len
         score = (inter_len / union_len) if union_len else 0.0
 
@@ -151,7 +176,6 @@ def clean_tool_prefix(cmd: str) -> str:
     if cleaned.startswith("DANGER_FLAGGED:"):
         cleaned = f"DANGER_FLAGGED:{cleaned.replace('DANGER_FLAGGED:', '').replace('[TOOL]', '').strip()}"
 
-    # Strip standalone --s flag without mangling words like --sort or --strip
     cleaned = RE_SILENT_FLAG.sub("", cleaned).strip()
 
     pager = ""
@@ -166,3 +190,151 @@ def clean_tool_prefix(cmd: str) -> str:
     if not pager and is_tool:
         pager = "view"
     return f"{cleaned} | {pager}" if pager else cleaned
+
+
+# ── 2. Accurate Token Heuristics & Memory Context Status ─────────────────────
+
+def get_accurate_token_count(text: Any, *args: Any, **kwargs: Any) -> int:
+    """Fast, accurate token heuristic for llama.cpp/OAI models (len * 10 // 36)."""
+    return max(1, (len(text if isinstance(text, str) else str(text)) * 10) // 36) if text else 0
+
+
+estimate_token_count = get_accurate_token_count
+
+
+def show_memory_status(
+    messages: list[dict[str, Any]],
+    max_context: int = 8192,
+    server_url: str = "http://localhost:8080",
+) -> None:
+    """Queries upstream server context props and renders Rich context usage meter."""
+    try:
+        req = urlreq.Request(f"{server_url.rstrip('/')}/props")
+        with urlreq.urlopen(req, timeout=0.25) as r:
+            srv_settings = json.loads(r.read().decode("utf-8")).get("default_generation_settings", {})
+            srv_ctx = srv_settings.get("n_ctx")
+            if isinstance(srv_ctx, int) and srv_ctx > 0:
+                max_context = srv_ctx
+    except Exception:
+        max_context = _get_int_env("AI_MAX_TOKENS", max_context)
+
+    if not isinstance(max_context, int) or max_context <= 0:
+        max_context = _get_int_env("AI_MAX_TOKENS", 8192)
+    if max_context <= 0:
+        max_context = 8192
+
+    total_toks = sum(get_accurate_token_count(m.get("content") or "") for m in messages) + 760
+    pct = (total_toks / max_context) * 100
+    bar = "█" * int(min(20, pct / 5)) + "░" * (20 - int(min(20, pct / 5)))
+    color = "green" if pct < 70 else "yellow" if pct < 90 else "red"
+
+    console = Console()
+    console.print(Panel(
+        Group(
+            Text.assemble(
+                ("Context Window: ", "dim"),
+                (f"{total_toks}", f"bold {color}"),
+                (f"/{max_context} tokens ", "dim"),
+                (f"({pct:.1f}%)", f"bold {color}"),
+            ),
+            Text(f"[{bar}]", style=color),
+        ),
+        title="Memory & Context Status",
+        title_align="left",
+        border_style="bright_black",
+        box=ROUNDED,
+        expand=False,
+    ))
+
+
+# ── 3. 3-Zone Context Compactor with SmolCoder Active Session Anchors ─────────
+
+def prune_history(history: list[dict[str, Any]], max_tokens: int | None = None) -> list[dict[str, Any]]:
+    """3-Zone Context Compactor: Preserves system prompt, active session anchors, and recent tail.
+
+    Safely walks backward to ensure tool responses are never orphaned from their
+    initiating assistant tool_calls message.
+    """
+    if len(history) <= 4:
+        return history
+
+    limit = max_tokens or _get_int_env("AI_MAX_TOKENS", 8192)
+    sys_msg = history[0]
+
+    # Select recent tail (at least 4 messages), walking backward to ensure we never start
+    # on an orphaned tool message whose assistant tool_calls message was moved to middle
+    tail_idx = max(1, len(history) - 4)
+    while tail_idx > 1 and history[tail_idx].get("role") == "tool":
+        tail_idx -= 1
+
+    recent_tail = history[tail_idx:]
+    middle_msgs = history[1:tail_idx]
+
+    completed_actions = []
+    compacted_middle = []
+
+    for msg in middle_msgs:
+        role = msg.get("role")
+        content = str(msg.get("content") or "")
+
+        if role == "tool":
+            fname = msg.get("name", "tool")
+            line_count = len(content.splitlines())
+
+            if "Successfully edited" in content:
+                if m := re.search(r"Successfully edited\s+(\S+)", content):
+                    completed_actions.append(f"Edited {m.group(1)}")
+                summary = f"[{fname}: applied targeted edit]"
+            elif "wrote" in content and "chars to" in content:
+                if m := re.search(r"wrote \d+ chars to\s+(\S+)", content):
+                    completed_actions.append(f"Created {m.group(1)}")
+                summary = f"[{fname}: created file]"
+            elif "(exit 0" in content:
+                completed_actions.append("Passed shell verification")
+                summary = f"[{fname}: command passed (exit 0)]"
+            elif "### File:" in content or line_count > 10:
+                summary = f"[{fname}: {line_count} lines processed successfully]"
+            elif "(exit" in content:
+                first_err = content.splitlines()[0] if content else "error"
+                summary = f"[{fname}: {first_err[:120]}]"
+            else:
+                summary = content if len(content) <= 150 else content[:120] + "... [snipped]"
+
+            compacted_middle.append({"role": "assistant", "content": summary})
+        elif role == "assistant":
+            clean_msg = {k: v for k, v in msg.items() if k != "tool_calls"}
+            clean_c = re.sub(r"<think>[\s\S]*?(?:</think>|$)", "", str(clean_msg.get("content") or "")).strip()
+            if clean_c:
+                compacted_middle.append({**clean_msg, "content": clean_c})
+        else:
+            compacted_middle.append(msg)
+
+    anchors = []
+    if tools and hasattr(tools, "get_modified_files"):
+        try:
+            if mod_files := tools.get_modified_files():
+                anchors.append(f"[Active Session Modified Files: {', '.join(mod_files)}]")
+        except Exception:
+            pass
+    if completed_actions:
+        deduped = list(dict.fromkeys(completed_actions))[-6:]
+        anchors.append("[Completed Milestones]:\n" + "\n".join(f"✓ {act}" for act in deduped))
+
+    anchor_msg = {"role": "system", "content": "\n\n".join(anchors)} if anchors else None
+
+    assembled = [sys_msg] + ([anchor_msg] if anchor_msg else [])
+    sys_anchor_tokens = sum(get_accurate_token_count(m.get("content", "")) for m in assembled)
+    tail_tokens = sum(get_accurate_token_count(m.get("content") or "") for m in recent_tail)
+
+    budget_for_middle = max(500, limit - tail_tokens - sys_anchor_tokens)
+    selected_middle = []
+    middle_used = 0
+
+    for m in reversed(compacted_middle):
+        toks = get_accurate_token_count(m.get("content") or "")
+        if middle_used + toks > budget_for_middle and selected_middle:
+            break
+        selected_middle.append(m)
+        middle_used += toks
+
+    return assembled + list(reversed(selected_middle)) + recent_tail

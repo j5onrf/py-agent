@@ -1,12 +1,11 @@
-# CODEBASE INDEX MAP | Generated: 2026-09-25 12:05 | Workspace: py-agent | Path: ~/.config/py-agent
+# CODEBASE INDEX MAP | Generated: 2026-09-26 14:42 | Workspace: py-agent | Path: ~/.config/py-agent
 # Active symbols and structural connections mapped in the local index.
 # -----------------------------------------------------------------------------------------
 # Codebase Modules & Active Architecture:
-#   ├── .active_cd.1114661       - home/j5/.config/py-agent/projects/session-test
 #   ├── .env                     - ~/.config/py-agent/.env
 #   ├── .env.example             - ==============================================================================
 #   ├── .gitignore               - Secrets & Credentials
-#   ├── .last_cloud_key.txt      - OPENROUTER_API_KEY
+#   ├── .last_cloud_key.txt      - CUSTOM2_API_KEY
 #   ├── .openrouter_cache_v2.json - {
 #   ├── .request_log
 #   ├── .state.json              - {
@@ -15,16 +14,19 @@
 #   ├── README.md                - <br>
 #   ├── RELEASE-NOTES.md         - <div align="center">
 #   ├── SECURITY.md              - Security Policy
-#   ├── ai-agent.py              - Py Agent [j5onrf] [v0.9.9.38] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production R
+#   ├── ai-agent.py              - Py Agent [j5onrf] [v0.9.9.39] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production R
 #   ├── ai-context.md            - Py-Agent Config
-#   ├── ai-hook.sh               - Production Py-Agent Shell Hook v0.9.9.28 (Hardened & Production Ready)
+#   ├── ai-hook.sh               - Production Py-Agent Shell Hook v0.9.9.40 (Hardened & Production Ready)
 #   ├── logo.svg                 - <svg xmlns="http://www.w3.org/2000/svg" viewBox="121 101 270 310">
+#   ├── model_pricing.json       - ==============================================================================
 #   ├── pyproject.toml           - [tool.ruff]
 #   ├── pyrightconfig.json       - {
 #   ├── server.pem               - -----BEGIN PRIVATE KEY-----
 #   ├── modules/Readme.md        - Private-First
 #   ├── modules/agent_adapters.py - Tool Format Adapters & Self-Healing Parser for Small-Models [Production Ready]
+#   ├── modules/agent_chat.py    - Unified Agentic Brainstorm, Thinking & Follow-up Recommendation Engine [Production Ready]
 #   ├── modules/agent_cloud.py   - Dynamic Cloud Cascade Engine - Top-down .env provider API priority with infinite CUSTOM* support [Pr
+#   ├── modules/agent_commands.py - Modular Command Dispatcher & Slash Action Registry for Py-Agent [Production Ready]
 #   ├── modules/agent_context.py - Context Search & Indexing Engine - Jaccard intent matching [Production Ready]
 #   ├── modules/agent_core.py    - Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [Production Ready]
 #   ├── modules/agent_ipython.py - Local-AI Standalone IPython Kernel & RLM Harness Module [Production Ready]
@@ -39,7 +41,6 @@
 #   ├── modules/agent_ui.py      - UI Module - Spinners, session boxes, and interactive menus [Production Ready]
 #   ├── modules/agent_usage.py   - Unified Token Usage, Spend Ledger & Speed Tracker [Production Ready]
 #   ├── modules/agent_voice.py   - Local-AI Standalone Voice to Text Module [Production Ready]
-#   ├── modules/chat             - Unified Agentic Brainstorm, Thinking & Follow-up Recommendation Engine [Production Ready]
 #   └── modules/model-select.py  - Streamlined TUI Model Selector driven by Local/HF, Generic Custom 2, Gemini & OpenRouter [Production
 # -----------------------------------------------------------------------------------------
 [example:.env.example] sum:==============================================================================
@@ -49,32 +50,37 @@
 [markdown:README.md] title:1. Install dependencies (Arch/CachyOS or pip) | links:ai-context.md
 [markdown:RELEASE-NOTES.md] title:RELEASE-NOTES
 [markdown:SECURITY.md] title:Security Policy
-[python:ai-agent.py] imp:agent_context,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tts,agent_ui,agent_voice,contextlib,json,os,re,readline,shutil,sqlite3,subprocess,sys,time,typing | fn:load_env_file,_show_transient_status,_clear_transient_status,workspace_db_counts,ensure_clean_agent_dir,_sweep_dead_session_locks,clean_exit,_launch_surface,_update_workspace_config,run_interactive_chat,run_direct_query,run_matching_search,main
+[python:ai-agent.py] imp:agent_commands,agent_context,agent_core,agent_memories,agent_sessions,agent_skills,agent_tts,agent_ui,agent_voice,contextlib,json,os,re,readline,shutil,sqlite3,subprocess,sys,tempfile,time,typing | fn:load_env_file,_show_transient_status,_clear_transient_status,workspace_db_counts,ensure_clean_agent_dir,_sweep_dead_session_locks,clean_exit,_launch_surface,run_interactive_chat,run_direct_query,run_matching_search,main
 [markdown:ai-context.md] title:Py-Agent Config
-[shell:ai-hook.sh] sum:Production Py-Agent Shell Hook v0.9.9.28 (Hardened & Production Ready)
+[shell:ai-hook.sh] sum:Production Py-Agent Shell Hook v0.9.9.40 (Hardened & Production Ready)
 [image/svg:logo.svg] dim:x | size:1.4KB
+[json:model_pricing.json]
 [markdown:modules/Readme.md] title:Private-First
-[python:modules/agent_adapters.py] imp:ast,json,re,time,typing | fn:normalize_params,_extract_balanced_json,heal_tool_call,heal_json_args,_extract_ast_python_calls,extract_fallback_tool_calls
+[python:modules/agent_adapters.py] imp:ast,json,os,re,sys,time,typing | fn:normalize_params,_extract_balanced_json,heal_tool_call,heal_json_args,_extract_ast_python_calls,extract_fallback_tool_calls
+[python:modules/agent_chat.py] imp:agent_cloud,agent_ui,json,os,re,sys,urllib | fn:_build_option_placeholders
 [python:modules/agent_cloud.py] imp:os,re,typing | fn:_is_valid_key,get_active_configs
-[python:modules/agent_context.py] imp:os,re,sys,typing | fn:tokenize,load_context_entries,jaccard_search,clean_tool_prefix
+[python:modules/agent_commands.py] imp:agent_context,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tts,agent_ui,agent_voice,collections,dataclasses,json,os,re,shutil,subprocess,sys,time,typing | cls:SessionContext | fn:update_workspace_config,handle_map_toggle,handle_memory_cmd,handle_grounding_cmd,handle_tts_cmd,handle_file_command,handle_hindsight_cmd,dispatch_command
+[python:modules/agent_context.py] imp:os,re,sys,threading,typing | fn:tokenize,load_context_entries,jaccard_search,clean_tool_prefix
 [python:modules/agent_core.py] imp:agent_adapters,agent_cloud,agent_ipython,agent_security,agent_tools,agent_ui,agent_usage,base64,json,os,re,requests,rich,shutil,subprocess,sys,time,typing,urllib | cls:RichStreamer | fn:_get_console,_clean_sigint_handler,_get_img_config,describe_image_gemini,preprocess_multimodal_messages,_heal_tool_args,get_state,save_state,workspace_safe_name,is_calm_cli,run_mod,__init__,_stop_spinner,start,update,stop,_log_turn_usage,_process_stream_chunk,_calc_turn_tokens,_confirm_gate,_print_tool_output,_run_edit_tool,agentic_turn,_calc_msg_tokens,stream_response,get_accurate_token_count,show_memory_status,prune_history
-[python:modules/agent_ipython.py] imp:IPython,agent_core,agent_memories,agent_security,agent_tools,agent_ui,ast,builtins,collections,contextlib,io,os,signal,subprocess,sys,traceback,typing | cls:CellTimeoutError,MemorySDK,GraphSDK | fn:_timeout_handler,is_ipython_enabled,toggle_ipython_mode,bounded_repr,__init__,search,get_facts,add_fact,__init__,snippet,trace,blast_radius,search,architecture,delegate,_final_answer,_init_kernel_sdk,_check_boundary,safe_open,safe_listdir,_invalidate_module_cache,_read_file,_edit_file,_write_file,_list_dir,_search_code,_run_command,_save_memory_fn,inspect_ast_safety,run_cell,get_active_tools
-[python:modules/agent_memories.py] imp:os,re,shutil,time,typing | fn:_get_memory_dir,parse_memory_file,get_memory_count,list_memories,get_memory_context,save_memory_file,clear_memories,add_fact,get_facts
+[python:modules/agent_ipython.py] imp:IPython,agent_core,agent_memories,agent_security,agent_tools,agent_ui,builtins,collections,contextlib,io,os,signal,subprocess,sys,threading,traceback,typing | cls:CellTimeoutError,MemorySDK,GraphSDK | fn:_timeout_handler,is_ipython_enabled,toggle_ipython_mode,bounded_repr,__init__,search,get_facts,add_fact,__init__,snippet,trace,blast_radius,search,architecture,delegate,_final_answer,_invalidate_module_cache,_init_kernel_sdk,_check_boundary,safe_open,safe_listdir,_read_file,_edit_file,_write_file,_list_dir,_search_code,_run_command,_save_memory_fn,inspect_ast_safety,run_cell,get_active_tools
+[python:modules/agent_memories.py] imp:os,re,shutil,sys,tempfile,time,typing | fn:_get_memory_dir,parse_memory_file,get_memory_count,list_memories,get_memory_context,save_memory_file,clear_memories,add_fact,get_facts
 [python:modules/agent_security.py] imp:agent_ui,ast,os,re,shlex,sys,typing,urllib | fn:resolve_path,is_outside,check_command,check_ast,authorize
-[python:modules/agent_sessions.py] imp:agent_context,contextlib,glob,json,os,re,select,sqlite3,sys,termios,time,tty,typing | fn:tokenize,get_key,connect_db,cleanup_all_stale_locks,get_sub_agent_id,cleanup_sub_agent,init_db,save_checkpoint,rollback_checkpoint,log_turn,get_turns_count,clear_turns
-[python:modules/agent_skills.py] imp:agent_context,agent_core,agent_ui,json,os,re,shutil,subprocess,sys,typing | fn:ensure_mysys_exists,parse_frontmatter,find_skill_file,load_skill_content,_exec_tool_cmd,run_local_tool,run_interactive_tool,get_system_context,load_skill_blueprints,run_skill_selector
-[python:modules/agent_tools.py] imp:agent_core,agent_ipython,agent_security,ast,collections,difflib,json,os,re,rich,subprocess,sys,typing,urllib | fn:get_modified_files,clear_session_tracking,_invalidate_module_cache,_is_calm,_safe_path,_is_outside_workspace,_check_command_security,_search_codebase,_generate_ast_skeleton,_resilient_replace,run_graph_cmd,run_tool,_in_bounds_gate,_security_gate
-[python:modules/agent_tts.py] imp:agent_core,os,re,subprocess,sys,threading | fn:stop_tts,is_tts_enabled,get_tts_speed,set_tts_speed,toggle_tts,clean_text_for_speech,speak_text,_run,speak_response
+[python:modules/agent_sessions.py] imp:agent_context,contextlib,glob,json,os,re,select,sqlite3,sys,termios,time,tty,typing | fn:tokenize,_sanitize_workspace,get_key,connect_db,cleanup_all_stale_locks,get_sub_agent_id,cleanup_sub_agent,init_db,save_checkpoint,rollback_checkpoint,log_turn,get_turns_count,clear_turns
+[python:modules/agent_skills.py] imp:agent_context,agent_core,agent_ui,json,os,re,shlex,shutil,subprocess,sys,typing | fn:ensure_mysys_exists,parse_frontmatter,find_skill_file,load_skill_content,_exec_tool_cmd,run_local_tool,run_interactive_tool,get_system_context,load_skill_blueprints,run_skill_selector
+[python:modules/agent_tools.py] imp:agent_core,agent_ipython,agent_security,ast,collections,difflib,json,os,re,rich,subprocess,sys,typing,urllib | fn:get_modified_files,get_read_files,clear_session_tracking,_invalidate_module_cache,_is_calm,_safe_path,_is_outside_workspace,_check_command_security,_search_codebase,_generate_ast_skeleton,_resilient_replace,run_graph_cmd,run_tool,_in_bounds_gate,_security_gate
+[python:modules/agent_tts.py] imp:agent_core,os,re,signal,subprocess,sys,threading,typing | fn:stop_tts,is_tts_enabled,get_tts_speed,set_tts_speed,toggle_tts,clean_text_for_speech,_run_subprocess_safe,speak_text,_run,speak_response
 [python:modules/agent_tui.py] imp:agent_adapters,agent_cloud,agent_core,agent_ipython,agent_memories,agent_skills,agent_tools,agent_tts,agent_tui_async,agent_ui,agent_voice,base64,collections,contextlib,json,os,re,requests,rich,shutil,sqlite3,subprocess,sys,textual,threading,time,typing,uvloop | cls:FooterToggle,ImageButton,CloseCardButton,Message,AgentCommandProvider,LocalAITUI | fn:format_dir_path,format_model_name,copy_to_clipboard,_glimmer_tui_text,_format_tui_reasonix_text,on_click,on_click,on_click,__init__,update_content,render,search,command_sources,border_accent,is_dark_theme,watch_theme,__init__,on_unmount,_safe_remove_banner,notify,set_skill,set_mode,set_reasoning,action_prompt_image_url,on_key,refresh_db_counts,ensure_system_context,get_db_status_string,update_welcome_banner,compose,action_close_tips_card,on_mount,action_toggle_plan_build,on_input_changed,update_stats_ui,action_scroll_page_up,action_scroll_page_down,action_scroll_up,action_scroll_down,action_copy_last_response,action_copy_entire_chat,handle_view_file,handle_task_command,_sub,handle_slash_command,prompt_tui_confirm,_show,process_query_worker,on_input_submitted,disable_input,enable_input,action_stop_generation,update_sidebar_visibility,action_toggle_sidebar,update_footer_visibility,action_toggle_footer,action_toggle_compact,action_cycle_theme,action_toggle_reasoning,action_toggle_borders
-[python:modules/agent_tui_async.py] imp:asyncio,json,os,subprocess | fn:run_async_cmd,watch_workspace_changes,_get_dir_mtime,start_subagent_ipc_hub,handle_subagent_msg
+[python:modules/agent_tui_async.py] imp:asyncio,json,os,rich,subprocess | fn:run_async_cmd,watch_workspace_changes,_get_dir_state,start_subagent_ipc_hub,handle_subagent_msg
 [python:modules/agent_ui.py] imp:agent_cloud,agent_core,agent_skills,collections,json,os,re,rich,select,sys,termios,threading,time,tty,typing,urllib | cls:InlineSpinner,CalmBoatSpinner | fn:__init__,_get_theme_color,_glimmer,_spin,update,start,stop,__init__,update_context,update,_sail,start,stop,_read_fd,get_key,get_local_model_name,draw_session_box,confirm_tool,run_interactive_selection,show_help,select_workspace_profile
-[python:modules/agent_usage.py] imp:json,os,sys,time,typing | fn:start,count_token,end,calculate_cost,record,turn_line
-[python:modules/agent_voice.py] imp:agent_core,base64,http,json,os,re,socket,ssl,subprocess,sys,time,urllib | cls:VoiceHandler | fn:is_bridge_running,load_voice_env,transcribe_gemini,get_prompt_input,log_message,do_POST,do_GET,run_server,toggle_voice_bridge
-[python:modules/chat] imp:agent_cloud,agent_ui,json,os,re,sys,urllib
-[python:modules/model-select.py] imp:asyncio,atexit,json,os,re,select,shutil,sys,termios,time,tty,urllib | fn:cleanup_terminal,load_json,save_json,ensure_env_exists,load_env_vars,get_active_key_set,update_env_multiple,isolate_active_key,toggle_single_provider,toggle_independent_key,toggle_env_api_keys,parse_endpoint_url,async_fetch_remote,_fetch,async_get_key,_read,prompt_user_input,run_interactive_menu,filter_items,async_main,fmt
+[python:modules/agent_usage.py] imp:fcntl,json,os,sys,threading,time,typing | fn:ensure_pricing_file_exists,get_pricing_map,start,count_token,end,calculate_cost,record,turn_line
+[python:modules/agent_voice.py] imp:agent_core,base64,http,json,os,re,socket,ssl,subprocess,sys,time,urllib | cls:VoiceHandler | fn:_get_or_create_token,is_bridge_running,load_voice_env,transcribe_gemini,get_prompt_input,log_message,_is_authorized,do_POST,do_GET,run_server,toggle_voice_bridge
+[python:modules/model-select.py] imp:asyncio,atexit,copy,json,os,re,select,shutil,sys,termios,tty,urllib | fn:cleanup_terminal,load_json,save_json,_atomic_write_env,ensure_env_exists,load_env_vars,get_active_key_set,update_env_multiple,isolate_active_key,deactivate_key,toggle_single_provider,toggle_independent_key,toggle_env_api_keys,parse_endpoint_url,async_fetch_remote,_fetch,async_get_key,_read,prompt_user_input,run_interactive_menu,filter_items,async_main,fmt
 [markdown:plugins/Readme.md] title:Plugins: `plugins/`
 [markdown:plugins/audio/Readme.md] title:Kokoro Neural Text-to-Speech & Selection Speaker Plugin
 [shell:plugins/audio/koko-speak.sh] sum:High-Performance Kokoro Selection Speaker (RAM-disk execution)
+[markdown:plugins/codereview/Readme.md] title:Open Code Review
+[markdown:plugins/codereview/codereview.md] title:Py-Agent Architectural Review Directives
+[python:plugins/codereview/run-review] imp:json,os,re,readline,rich,subprocess,sys,threading,time | cls:TelemetrySpinner | fn:__init__,update,_spin,start,stop,load_env,build_reasoning_payload,sync_ocr_config,parse_action,main
 [python:plugins/mcp/mcp_client.py] imp:json,os,sqlite3,subprocess,sys,typing | cls:MCPSession | fn:load_dotenv,load_servers_config,_ensure_sqlite_target,__init__,__enter__,__exit__,_send_rpc,_send_notification,_initialize,list_tools,call_tool,run_call,run_list,export_schemas,main
 [json:plugins/mcp/servers.json] keys:servers
 [python:plugins/pycode/bridge.py] imp:agent_adapters,agent_cloud,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tools,agent_tts,json,os,requests,sys,threading,typing,uuid | fn:send_rpc_response,send_acp_chunk,detect_workspace_mode,assemble_system_prompt,handle_acp_prompt,main
@@ -94,7 +100,7 @@
 [shell:setup/q2bu.sh] sum:==========================================
 [shell:setup/qwen38d.sh] sum:==============================================================================
 [shell:setup/tini.sh] sum:==============================================================================
-[markdown:skills/Readme.md] title:Py-Agent Skills
+[markdown:skills/Readme.md] title:Skills & Directives
 [markdown:skills/hindsight.md] title:HINDSIGHT: RETROSPECTIVE & LESSON COMPILER
 [markdown:skills/meta/brainstorm.md] title:[SKILL] brainstorm ---> brainstorm, lateral, creative, perspective, future, trends, macro
 [markdown:skills/meta/follow-up.md] title:[SKILL] follow-up ---> follow-up, followup, question, mechanics, practical, compare
@@ -115,27 +121,27 @@
 [markdown:skills/on-demand/ponytail-py.md] title:[SKILL] Ponytail-Py ---> ponytail-py, senior python dev, yagni, minimal python, pythonic simplicity
 [markdown:skills/on-demand/ponytail.md] title:[SKILL] Ponytail ---> ponytail, lazy senior dev, yagni, minimal code, simplify code
 [markdown:skills/on-demand/pysmol.md] title:[SKILL] PySmol ---> pysmol, smol, smolagents, codeagent, python-loop, batch-code, in-memory-python, code-first
-[markdown:skills/profiles/custom/archive/claude.md] title:claude
-[markdown:skills/profiles/custom/archive/cloud-fast.md] title:cloud-fast
-[markdown:skills/profiles/custom/archive/cloud-reasoning.md] title:cloud-reasoning
-[markdown:skills/profiles/custom/archive/deepseek.md] title:deepseek
-[markdown:skills/profiles/custom/archive/gemini.md] title:gemini
-[markdown:skills/profiles/custom/archive/hermes.md] title:hermes
-[markdown:skills/profiles/custom/archive/pi.md] title:pi
-[markdown:skills/profiles/custom/cloud.md] title:cloud
-[markdown:skills/profiles/custom/deepseek.md] title:deepseek
-[markdown:skills/profiles/custom/katcoder.md] title:katcoder
-[markdown:skills/profiles/custom/lfm2.md] title:lfm2
-[markdown:skills/profiles/custom/lingtiny.md] title:lingtiny
-[markdown:skills/profiles/custom/minicpm.md] title:minicpm
-[markdown:skills/profiles/custom/nexn25.md] title:nexn25
-[markdown:skills/profiles/custom/occamy.md] title:occamy
-[markdown:skills/profiles/custom/ornith.md] title:ornith
-[markdown:skills/profiles/custom/q2bu.md] title:q2bu
-[markdown:skills/profiles/custom/qwen38d.md] title:qwen38d
-[markdown:skills/profiles/custom/sysadmin.md] title:sysadmin
-[markdown:skills/profiles/custom/tielcoder.md] title:tielcoder
-[markdown:skills/profiles/custom/tini-cybersec.md] title:tini-cybersec
+[markdown:skills/profiles/archive/claude.md] title:claude
+[markdown:skills/profiles/archive/cloud-fast.md] title:cloud-fast
+[markdown:skills/profiles/archive/cloud-reasoning.md] title:cloud-reasoning
+[markdown:skills/profiles/archive/deepseek.md] title:deepseek
+[markdown:skills/profiles/archive/gemini.md] title:gemini
+[markdown:skills/profiles/archive/hermes.md] title:hermes
+[markdown:skills/profiles/archive/pi.md] title:pi
+[markdown:skills/profiles/cloud.md] title:cloud
+[markdown:skills/profiles/deepseek.md] title:deepseek
+[markdown:skills/profiles/katcoder.md] title:katcoder
+[markdown:skills/profiles/lfm2.md] title:lfm2
+[markdown:skills/profiles/lingtiny.md] title:lingtiny
+[markdown:skills/profiles/minicpm.md] title:minicpm
+[markdown:skills/profiles/nexn25.md] title:nexn25
+[markdown:skills/profiles/occamy.md] title:occamy
+[markdown:skills/profiles/ornith.md] title:ornith
+[markdown:skills/profiles/q2bu.md] title:q2bu
+[markdown:skills/profiles/qwen38d.md] title:qwen38d
+[markdown:skills/profiles/sysadmin.md] title:sysadmin
+[markdown:skills/profiles/tielcoder.md] title:tielcoder
+[markdown:skills/profiles/tini-cybersec.md] title:tini-cybersec
 [markdown:skills/system/aur-audit.md] title:AUR PRE-INSTALL SECURITY AUDIT SKILL
 [markdown:skills/system/mysys.md] title:SYSTEM ARCHITECTURE BLUEPRINT
 [markdown:skills/system/security-audit.md] title:SYSTEM SECURITY AUDIT DIRECTIVES

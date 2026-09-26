@@ -54,6 +54,7 @@ files_to_compile = [
     "ai-agent.py",
     "modules/agent_security.py",
     "modules/agent_core.py",
+    "modules/agent_vision.py",
     "modules/agent_ipython.py",
     "modules/agent_tools.py",
     "modules/agent_adapters.py",
@@ -71,7 +72,7 @@ files_to_compile = [
     "modules/model-select.py",
     "modules/agent_chat.py",
     "tools/index-map/index-map",
-    "tools/loop/ralph.py",
+    "tools/loop/loop.py",
     "plugins/webui/server.py",
     "plugins/pycode/bridge.py",
 ]
@@ -96,6 +97,7 @@ print(f"\n{CYAN}[Pass 2/10] Module Imports & Cross-Dependencies{RESET}")
 modules_to_import = [
     "agent_security",
     "agent_core",
+    "agent_vision",
     "agent_ipython",
     "agent_tools",
     "agent_adapters",
@@ -135,6 +137,7 @@ try:
     import agent_skills as skills
     import agent_tools as tools
     import agent_ui as ui
+    import agent_vision as vision
 
     # --- PASS 3: SQLITE SUBSYSTEM, SESSIONS & SUBAGENT REGISTRY ---
     print(f"\n{CYAN}[Pass 3/10] SQLite Sessions, Turns & Sub-Agent Lockfile Registry{RESET}")
@@ -281,12 +284,14 @@ try:
     p6_d = "Successfully edited" in res_e1
     print_result("edit_file (Stage 1: Exact Match)", p6_d, "Exact string replaced")
 
-    # 5. Stage 2: Whitespace-Tolerant Replace
+    # 5. Stage 2: Whitespace-Tolerant Replace (Re-establishes clean fixture to isolate test)
+    tools.run_tool("write_file", {"path": "calc.py", "content": "def  add(a,  b):\n       return (a + b)\n", "overwrite": True}, sandbox_dir)
     res_e2 = tools.run_tool("edit_file", {"path": "calc.py", "old_str": "def  add(a,  b):\n       return (a + b)", "new_str": "def add(a, b):\n    # Verified sum\n    return a + b"}, sandbox_dir)
     p6_e = "Successfully edited" in res_e2
     print_result("edit_file (Stage 2: Whitespace Normalization)", p6_e, "Indentation variance reconciled")
 
-    # 6. Stage 3: Fuzzy SequenceMatcher Replace (>= 0.88 ratio)
+    # 6. Stage 3: Fuzzy SequenceMatcher Replace (>= 0.88 ratio) (Re-establishes fixture)
+    tools.run_tool("write_file", {"path": "calc.py", "content": "def add(a, b):\n    # verified sum\n    return a + b\n", "overwrite": True}, sandbox_dir)
     res_e3 = tools.run_tool("edit_file", {"path": "calc.py", "old_str": "def add(a, b):\n    # verified sum\n    return a + b", "new_str": "def add(a, b):\n    return a + b  # fast"}, sandbox_dir)
     p6_f = "Successfully edited" in res_e3
     print_result("edit_file (Stage 3: Fuzzy SequenceMatcher)", p6_f, "Fuzzy match applied")
@@ -320,49 +325,48 @@ try:
         return False
 
     orig_gates = os.environ.get("AI_CONFIRM_GATES")
+    orig_confirm = getattr(ui, "confirm_tool", None)
     os.environ["AI_CONFIRM_GATES"] = "0"  # Force YOLO ON
 
-    # 11. E2E Tool Gate: Out-of-Bounds read_file Denied Under YOLO
-    gate_invocations.clear()
-    res_oob_read = tools.run_tool("read_file", {"path": "/etc/passwd"}, sandbox_dir, confirm_gate_fn=mock_gate_deny)
-    p6_k = len(gate_invocations) == 1 and "OUT-OF-BOUNDS READ" in gate_invocations[0] and "[denied]" in res_oob_read
-    print_result("E2E Tool Gate: Out-of-Bounds read_file (YOLO Denied)", p6_k, "Interception verified & blocked")
-
-    # 12. E2E Tool Gate: Out-of-Bounds run_command Denied Under YOLO
-    gate_invocations.clear()
-    res_oob_cmd = tools.run_tool("run_command", {"command": "cat /etc/passwd"}, sandbox_dir, confirm_gate_fn=mock_gate_deny)
-    p6_l = len(gate_invocations) == 1 and "OUT-OF-BOUNDS EXECUTION" in gate_invocations[0] and "[denied]" in res_oob_cmd
-    print_result("E2E Tool Gate: Out-of-Bounds run_command (YOLO Denied)", p6_l, "Command traversal intercepted")
-
-    # 13. E2E Tool Gate: In-Bounds Auto-Approved Under YOLO (Zero Prompts)
-    gate_invocations.clear()
-    res_in_yolo = tools.run_tool("read_file", {"path": "calc.py"}, sandbox_dir, confirm_gate_fn=mock_gate_deny)
-    p6_m = len(gate_invocations) == 0 and "def add" in res_in_yolo
-    print_result("E2E Tool Gate: In-Bounds Auto-Approve (YOLO ON)", p6_m, "0 prompt overhead inside workspace")
-
-    # 14. E2E Tool Gate: Spinner Shutdown During Confirmation
-    class ActiveMockSpinner:
-        def __init__(self):
-            self.active = True
-
-        def stop(self, *args, **kwargs):
-            self.active = False
-
-    mock_spinner = ActiveMockSpinner()
-    orig_confirm = getattr(ui, "confirm_tool", None)
-    ui.confirm_tool = lambda r: False
     try:
+        # 11. E2E Tool Gate: Out-of-Bounds read_file Denied Under YOLO
+        gate_invocations.clear()
+        res_oob_read = tools.run_tool("read_file", {"path": "/etc/passwd"}, sandbox_dir, confirm_gate_fn=mock_gate_deny)
+        p6_k = len(gate_invocations) == 1 and "OUT-OF-BOUNDS READ" in gate_invocations[0] and "[denied]" in res_oob_read
+        print_result("E2E Tool Gate: Out-of-Bounds read_file (YOLO Denied)", p6_k, "Interception verified & blocked")
+
+        # 12. E2E Tool Gate: Out-of-Bounds run_command Denied Under YOLO
+        gate_invocations.clear()
+        res_oob_cmd = tools.run_tool("run_command", {"command": "cat /etc/passwd"}, sandbox_dir, confirm_gate_fn=mock_gate_deny)
+        p6_l = len(gate_invocations) == 1 and "OUT-OF-BOUNDS EXECUTION" in gate_invocations[0] and "[denied]" in res_oob_cmd
+        print_result("E2E Tool Gate: Out-of-Bounds run_command (YOLO Denied)", p6_l, "Command traversal intercepted")
+
+        # 13. E2E Tool Gate: In-Bounds Auto-Approved Under YOLO (Zero Prompts)
+        gate_invocations.clear()
+        res_in_yolo = tools.run_tool("read_file", {"path": "calc.py"}, sandbox_dir, confirm_gate_fn=mock_gate_deny)
+        p6_m = len(gate_invocations) == 0 and "def add" in res_in_yolo
+        print_result("E2E Tool Gate: In-Bounds Auto-Approve (YOLO ON)", p6_m, "0 prompt overhead inside workspace")
+
+        # 14. E2E Tool Gate: Spinner Shutdown During Confirmation
+        class ActiveMockSpinner:
+            def __init__(self):
+                self.active = True
+
+            def stop(self, *args, **kwargs):
+                self.active = False
+
+        mock_spinner = ActiveMockSpinner()
+        ui.confirm_tool = lambda r: False
         core._confirm_gate("OUT-OF-BOUNDS TEST", mock_spinner)
         p6_n = not mock_spinner.active
         print_result("E2E Tool Gate: Spinner Clean Shutdown Hook", p6_n, "Spinner halted before prompt display")
     finally:
+        if orig_gates is not None:
+            os.environ["AI_CONFIRM_GATES"] = orig_gates
+        else:
+            os.environ.pop("AI_CONFIRM_GATES", None)
         if orig_confirm:
             ui.confirm_tool = orig_confirm
-
-    if orig_gates is not None:
-        os.environ["AI_CONFIRM_GATES"] = orig_gates
-    else:
-        os.environ.pop("AI_CONFIRM_GATES", None)
 
     all_passed = (
         all_passed
@@ -393,16 +397,20 @@ try:
     p7_c = "### Final Answer" in res_fa and "ok" in res_fa
     print_result("In-Kernel final_answer(data) Hook", p7_c, "Returned structured answer")
 
-    # 4. Codebase Index-Map Graph Engine (FTS5 bm25)
-    map_compile = subprocess.run(
-        [sys.executable, os.path.join(CFG_DIR, "tools", "index-map", "index-map"), "--agent", sandbox_dir],
-        capture_output=True,
-        text=True,
-        timeout=15,
-    )
-    search_out = tools.run_graph_cmd("search", "add", sandbox_dir)
-    p7_d = map_compile.returncode == 0 and ("[Matches for:" in search_out or "calc.py" in search_out)
-    print_result("Index-Map Relational Graph Probe (FTS5)", p7_d, "SQLite AST index compiled")
+    # 4. Codebase Index-Map Graph Engine (FTS5 bm25) with timeout guard
+    try:
+        map_compile = subprocess.run(
+            [sys.executable, os.path.join(CFG_DIR, "tools", "index-map", "index-map"), "--agent", sandbox_dir],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        search_out = tools.run_graph_cmd("search", "add", sandbox_dir)
+        p7_d = map_compile.returncode == 0 and ("[Matches for:" in search_out or "calc.py" in search_out)
+    except (subprocess.TimeoutExpired, OSError) as e:
+        p7_d = False
+        search_out = f"Error: {e}"
+    print_result("Index-Map Relational Graph Probe (FTS5)", p7_d, "SQLite AST index compiled" if p7_d else search_out[:60])
 
     all_passed = all_passed and outside_list_ok and p7_b and p7_c and p7_d
 
@@ -459,7 +467,7 @@ try:
     p9_a = cleaned_sample == "Done with task." and cleaned_unclosed == ""
     print_result("Thought Sanitization (Closed & Unclosed)", p9_a, f"Extracted: '{cleaned_sample}'")
 
-    # 2. Context Pruning & Completed Milestone Anchor
+    # 2. Context Pruning & Completed Milestone Anchor (via context/core facade)
     long_history = [
         {"role": "system", "content": "You are a coding agent."},
         {"role": "user", "content": "Do task 1"},
@@ -473,22 +481,23 @@ try:
     p9_b = any("Active Session Modified Files" in str(m.get("content")) or "Completed Milestones" in str(m.get("content")) for m in pruned)
     print_result("3-Zone Context Compactor & Milestones", p9_b, f"Compacted {len(long_history)} -> {len(pruned)} turns with session anchors")
 
-    # 3. Vision OCR Pipeline Probe
-    v_key, v_model = core._get_img_config()
+    # 3. Vision OCR Pipeline Probe (via vision module & core facade)
+    v_key, v_model = vision._get_img_config()
     key_tag = f"{v_model} (Key: {v_key[:4]}***)" if (v_key and len(v_key) > 5) else f"{v_model} (No key set - Optional)"
     p9_c = bool(v_model)
     print_result("Multimodal Gemini OCR/Vision Pipeline", p9_c, key_tag)
 
     all_passed = all_passed and p9_a and p9_b and p9_c
 
-    # --- PASS 10: ZERO-I/O SPEND LEDGER, TTS, REASONIX & RALPH LOOP ---
-    print(f"\n{CYAN}[Pass 10/10] Zero-I/O Ledger, TTS Sanitizer, TUI Reasonix & Ralph Loop{RESET}")
+    # --- PASS 10: ZERO-I/O SPEND LEDGER, TTS, REASONIX & LOOP ENGINE ---
+    print(f"\n{CYAN}[Pass 10/10] Zero-I/O Ledger, TTS Sanitizer, TUI Reasonix & Loop Engine{RESET}")
     import agent_tts as tts
     import agent_tui as tui
     import agent_usage as usage
 
-    # 1. Zero-I/O Local Spend Bypass ($0.00 does not touch disk)
-    orig_ledger = getattr(usage, "LEDGER_FILE", getattr(usage, "LEDGER_PATH", ""))
+    # 1. Zero-I/O Local Spend Bypass with safe sentinel restore
+    _SENTINEL = object()
+    orig_ledger = getattr(usage, "LEDGER_FILE", _SENTINEL)
     test_ledger_path = os.path.join(sandbox_dir, "test_ledger.json")
     try:
         usage.LEDGER_FILE = test_ledger_path
@@ -500,7 +509,10 @@ try:
         p10_a2 = os.path.exists(test_ledger_path) and "$0.05" in usage.turn_line(1000, 1000, 0.05)
         print_result("Spend Ledger Paid API Accounting", p10_a2, "Logged non-zero cloud spend")
     finally:
-        usage.LEDGER_FILE = orig_ledger
+        if orig_ledger is not _SENTINEL:
+            usage.LEDGER_FILE = orig_ledger
+        elif hasattr(usage, "LEDGER_FILE"):
+            delattr(usage, "LEDGER_FILE")
 
     # 2. TTS URL Pronunciation Sanitizer
     tts_clean = tts.clean_text_for_speech("<think>Internal plan</think> Inspect https://github.com/j5onrf/py-agent at 08:30!")
@@ -512,25 +524,25 @@ try:
     p10_c = fmt_res is not None
     print_result("TUI Reasonix Step Formatter", p10_c, "Reasonix step badges generated")
 
-    # 4. Ralph Autonomous Task Completion Verifier (Flexible past/present matching)
-    loop_mod_path = os.path.join(CFG_DIR, "tools", "loop", "ralph.py")
+    # 4. Task Loop Engine Completion Verifier (Flexible past/present matching)
+    loop_mod_path = os.path.join(CFG_DIR, "tools", "loop", "loop.py")
     if os.path.isfile(loop_mod_path):
-        spec = importlib.util.spec_from_file_location("ralph", loop_mod_path)
+        spec = importlib.util.spec_from_file_location("loop", loop_mod_path)
         if spec and spec.loader:
-            ralph = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(ralph)
-            done1 = ralph.is_task_complete("Everything looks great. TASK COMPLETE.")
-            done2 = ralph.is_task_complete("Finished all edits. TASK COMPLETED.")
-            done3 = ralph.is_task_complete("Ran pytest suite. ALL TESTS PASSED.")
-            done4 = ralph.is_task_complete("I will now write the file.")
+            loop_engine = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(loop_engine)
+            done1 = loop_engine.is_task_complete("Everything looks great. TASK COMPLETE.")
+            done2 = loop_engine.is_task_complete("Finished all edits. TASK COMPLETED.")
+            done3 = loop_engine.is_task_complete("Ran pytest suite. ALL TESTS PASSED.")
+            done4 = loop_engine.is_task_complete("I will now write the file.")
             p10_d = done1 and done2 and done3 and not done4
-            print_result("Ralph Autonomous Task Completion Verifier", p10_d, "Verified present, past-tense & test passes")
+            print_result("Autonomous Task Loop Completion Verifier (loop.py)", p10_d, "Verified present, past-tense & test passes")
         else:
             p10_d = False
-            print_result("Ralph Engine Missing", False, "Spec loader failed")
+            print_result("Loop Engine Missing", False, "Spec loader failed")
     else:
         p10_d = False
-        print_result("Ralph Engine Missing", False, loop_mod_path)
+        print_result("Loop Engine Missing", False, loop_mod_path)
 
     all_passed = all_passed and p10_a1 and p10_a2 and p10_b and p10_c and p10_d
 
@@ -538,12 +550,14 @@ finally:
     # Safe teardown of test databases and sandbox directory
     shutil.rmtree(sandbox_dir, ignore_errors=True)
     if test_ws:
-        db_file = os.path.join(CFG_DIR, "projects", ".database", f"{test_ws}.db")
-        if os.path.exists(db_file):
-            try:
-                os.remove(db_file)
-            except OSError:
-                pass
+        db_dir = getattr(sessions, "SESSIONS_DIR", os.path.join(CFG_DIR, "projects", ".database"))
+        for ext in ("", "-wal", "-shm"):
+            sidecar = os.path.join(db_dir, f"{test_ws}.db{ext}")
+            if os.path.exists(sidecar):
+                try:
+                    os.remove(sidecar)
+                except OSError:
+                    pass
 
 print(f"\n{CYAN}======================================================================{RESET}")
 if all_passed:

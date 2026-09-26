@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified library & executable for static, dynamic, universal YAML, and on-demand skills [Production Ready]"""
+"""Unified library & executable for static, dynamic, universal YAML, and on-demand skills [Hardened Production Ready]"""
 
 import json
 import os
@@ -16,16 +16,26 @@ import agent_ui as ui
 PAGER_STRIP_RE: re.Pattern = re.compile(r'\|\s*(leaf|mdcat|cat|glow|view)\b.*$', re.IGNORECASE)
 RE_METADATA_LINE: re.Pattern = re.compile(r'^\w+:\s')
 RE_SKILL_SPLIT: re.Pattern = re.compile(r"[-_/]")
-RE_SKILL_BLOCK: re.Pattern = re.compile(r"### Loaded On-Demand Skill:\s*([^\n]+)\n([\s\S]*?)(?=\n\n### Loaded On-Demand Skill:|\Z)")
+RE_SKILL_BLOCK: re.Pattern = re.compile(
+    r"### Loaded On-Demand Skill(?: \[(\w+)\])?:\s*([^\n]+)\n([\s\S]*?)(?=\n\n### Loaded On-Demand Skill|\Z)"
+)
+
+DANGEROUS_ENV_SUBSTRINGS = ("API_KEY", "TOKEN", "SECRET", "PASSWORD", "AUTH", "CREDENTIAL")
 
 
 def ensure_mysys_exists(skills_dir: str, cfg_dir: str) -> None:
     target = os.path.join(skills_dir, "system", "mysys.md")
     if not os.path.exists(target):
-        try:
-            subprocess.run([sys.executable, os.path.join(cfg_dir, "tools", "generate-profile")], check=False)
-        except (OSError, subprocess.SubprocessError) as e:
-            sys.stderr.write(f"\033[1;31m[sys] Failed to generate profile: {e}\033[0m\n")
+        gen_tool = os.path.join(cfg_dir, "tools", "generate-profile")
+        if os.path.isfile(gen_tool):
+            try:
+                res = subprocess.run([sys.executable, gen_tool], check=False, capture_output=True, text=True)
+                if res.returncode != 0:
+                    sys.stderr.write(
+                        f"\033[1;31m[sys] generate-profile failed (exit {res.returncode}): {res.stderr.strip()}\033[0m\n"
+                    )
+            except (OSError, subprocess.SubprocessError) as e:
+                sys.stderr.write(f"\033[1;31m[sys] Failed to launch generate-profile: {e}\033[0m\n")
 
 
 def parse_frontmatter(raw_text: str) -> tuple[dict[str, Any], str]:
@@ -74,31 +84,45 @@ def parse_frontmatter(raw_text: str) -> tuple[dict[str, Any], str]:
 
 
 def find_skill_file(base_dir: str, skill_name: str) -> str | None:
-    """Locates target skill across standard flat files, on-demand directories, and nested SKILL.md structures."""
-    clean = skill_name.lstrip("-").lower()
+    """Locates target skill across standard flat files, on-demand directories, and nested SKILL.md structures.
+
+    Strictly confines path resolution within base_dir to eliminate path traversal.
+    """
+    if not skill_name or not base_dir:
+        return None
+
+    clean = skill_name.lstrip("-").strip().lower()
+    # Reject directory traversal, absolute paths, or escaping syntax
+    if os.path.isabs(clean) or ".." in clean or clean.startswith(("/", "\\", "~")):
+        return None
+
+    base_real = os.path.realpath(base_dir)
+    if not os.path.isdir(base_real):
+        return None
 
     # O(1) Fast-Path Lookups
     candidates = [
-        os.path.join(base_dir, "on-demand", f"{clean}.md"),
-        os.path.join(base_dir, "profiles", "custom", f"{clean}.md"),
-        os.path.join(base_dir, "profiles", f"{clean}.md"),
-        os.path.join(base_dir, f"{clean}.md"),
-        os.path.join(base_dir, "system", f"{clean}.md"),
-        os.path.join(base_dir, clean, "SKILL.md"),
-        os.path.join(base_dir, clean, "skill.md"),
-        os.path.join(base_dir, "on-demand", clean, f"{clean}.md"),
-        os.path.join(base_dir, "on-demand", clean, "SKILL.md"),
+        os.path.join(base_real, "on-demand", f"{clean}.md"),
+        os.path.join(base_real, "profiles", "custom", f"{clean}.md"),
+        os.path.join(base_real, "profiles", f"{clean}.md"),
+        os.path.join(base_real, f"{clean}.md"),
+        os.path.join(base_real, "system", f"{clean}.md"),
+        os.path.join(base_real, clean, "SKILL.md"),
+        os.path.join(base_real, clean, "skill.md"),
+        os.path.join(base_real, "on-demand", clean, f"{clean}.md"),
+        os.path.join(base_real, "on-demand", clean, "SKILL.md"),
     ]
     for cand in candidates:
-        if os.path.isfile(cand):
-            return cand
+        cand_real = os.path.realpath(cand)
+        if cand_real.startswith(base_real + os.sep) and os.path.isfile(cand_real):
+            return cand_real
 
-    # Fallback directory scan (bounded depth with in-place dir pruning)
+    # Bounded fallback directory scan
     clean_target = os.path.basename(clean)
     target_fnames = {f"{clean_target}.md", "skill.md"}
 
-    for root, dirs, files in os.walk(base_dir):
-        rel_depth = root[len(base_dir):].count(os.sep)
+    for root, dirs, files in os.walk(base_real):
+        rel_depth = root[len(base_real):].count(os.sep)
         if rel_depth > 4:
             dirs[:] = []
             continue
@@ -107,14 +131,18 @@ def find_skill_file(base_dir: str, skill_name: str) -> str | None:
         if root_base == clean_target:
             for f in files:
                 if f.lower() in ("skill.md", f"{clean_target}.md"):
-                    return os.path.join(root, f)
+                    cand_path = os.path.realpath(os.path.join(root, f))
+                    if cand_path.startswith(base_real + os.sep):
+                        return cand_path
 
         for f in files:
             f_l = f.lower()
             if f_l in target_fnames:
                 if f_l == "skill.md" and root_base != clean_target:
                     continue
-                return os.path.join(root, f)
+                cand_path = os.path.realpath(os.path.join(root, f))
+                if cand_path.startswith(base_real + os.sep):
+                    return cand_path
 
     return None
 
@@ -144,7 +172,8 @@ def load_skill_content(skills_str: str, skills_dir: str, cfg_dir: str) -> str:
                                     agent_core.save_state("yolo_mode", str(v).lower() in ("true", "1", "yes", "on"))
                             elif k_l in ("reasoning_budget", "thinking_budget", "budget"):
                                 try:
-                                    b_val = max(0, int(v))
+                                    # Clamp budget to safe bounds [0, 32000]
+                                    b_val = min(max(0, int(v)), 32000)
                                     agent_core.save_state("reasoning_budget", b_val)
                                 except (ValueError, TypeError):
                                     pass
@@ -156,9 +185,13 @@ def load_skill_content(skills_str: str, skills_dir: str, cfg_dir: str) -> str:
                                     agent_core.save_state("ipython_mode", str(v).lower() in ("true", "1", "yes", "on"))
 
                         adp_val = meta.get("adapters") or meta.get("adp") or meta.get("adapter")
-                        agent_core.save_state("adapters_active", str(adp_val).lower() in ("true", "1", "yes", "on") if adp_val is not None else False)
-                    except Exception as e:
-                        sys.stderr.write(f"\033[2m[sys] Skill state update failed: {e}\033[0m\n")
+                        agent_core.save_state(
+                            "adapters_active",
+                            str(adp_val).lower() in ("true", "1", "yes", "on") if adp_val is not None else False
+                        )
+                    except (ImportError, AttributeError) as e:
+                        if os.environ.get("AI_DEBUG") == "1":
+                            sys.stderr.write(f"\033[2m[sys] Skill state update failed: {e}\033[0m\n")
 
                 contents.append(body or raw)
             except (OSError, UnicodeDecodeError) as e:
@@ -172,11 +205,27 @@ def _exec_tool_cmd(cmd: str, interactive: bool = False) -> str:
         if not sanitized:
             return "__ABORT_TURN__"
         workspace = os.environ.get("AI_WORKSPACE_PATH") or os.getcwd()
-        env = {**os.environ, "AI_CONTEXT_RUN": "1"}
+
+        # Security check: validate command against zero-trust boundary
+        try:
+            import agent_security as security
+            if sec_err := security.check_command(workspace, sanitized):
+                sys.stderr.write(f"\033[1;31m[security] Context command blocked: {sec_err}\033[0m\n")
+                return "__ABORT_TURN__"
+        except ImportError:
+            pass
+
+        # Scrub sensitive credentials from child process environment
+        safe_env = {
+            k: v for k, v in os.environ.items()
+            if not any(d in k.upper() for d in DANGEROUS_ENV_SUBSTRINGS)
+        }
+        safe_env["AI_CONTEXT_RUN"] = "1"
+
         if interactive:
-            subprocess.run(sanitized, shell=True, cwd=workspace, env=env)
+            subprocess.run(sanitized, shell=True, cwd=workspace, env=safe_env)
             return "__ABORT_TURN__"
-        res = subprocess.run(sanitized, shell=True, capture_output=True, text=True, timeout=180, cwd=workspace, env=env)
+        res = subprocess.run(sanitized, shell=True, capture_output=True, text=True, timeout=180, cwd=workspace, env=safe_env)
         out = ((res.stdout or "") + (("\n" + res.stderr) if res.stderr else "")).strip()
         return f"{out}\n" if out else "Action executed successfully.\n"
     except subprocess.TimeoutExpired:
@@ -203,6 +252,7 @@ EXCLUDED_CONTEXT_TOOLS = (
     "agent_tui.py",
     "agent_ui.py",
     "agent_core.py",
+    "agent_vision.py",
     "agent_cloud.py",
     "agent_usage.py",
     "agent_tui_async.py",
@@ -227,10 +277,26 @@ def get_system_context(
             tool = entry.get("cmd", "").replace("[TOOL]", "").strip()
             if tool.startswith("ai ") or "ai init" in tool or any(ex in tool for ex in EXCLUDED_CONTEXT_TOOLS):
                 continue
-            if any(k in tool for k in ("read -p", "less", "fzf")):
-                return run_interactive_tool(tool)
-            if " --s" not in tool and not ui.confirm_tool(tool):
+
+            # Check confirmation gate BEFORE running any command
+            if " --s" not in tool and ui and not ui.confirm_tool(tool):
                 return ""
+
+            # Robust argv[0] interactive detection
+            tool_tokens = [t.strip() for t in re.split(r"[;&|]+", tool) if t.strip()]
+            first_binary = ""
+            if tool_tokens:
+                parts = tool_tokens[0].split()
+                if parts:
+                    first_binary = os.path.basename(parts[0]).lower()
+
+            is_interactive = (
+                "read -p" in tool
+                or first_binary in ("less", "fzf", "vim", "nvim", "nano", "view")
+                or any(k in tool_tokens for k in ("less", "fzf"))
+            )
+            if is_interactive:
+                return run_interactive_tool(tool)
 
             if "system" in tool.lower():
                 ensure_mysys_exists(skills_dir, cfg_dir)
@@ -280,8 +346,9 @@ def load_skill_blueprints(base_skills_dir: str, stop_words: set[str] | frozenset
                         folder_name = os.path.basename(root)
 
                         if meta and ("name" in meta or "description" in meta):
-                            skill_name = meta.get("name") or (folder_name if f.lower() == "skill.md" else os.path.splitext(f)[0])
-                            desc = meta.get("description", "")
+                            raw_name = meta.get("name") or (folder_name if f.lower() == "skill.md" else os.path.splitext(f)[0])
+                            skill_name = str(raw_name)
+                            desc = str(meta.get("description", ""))
                             intents = list(set(
                                 RE_SKILL_SPLIT.split(skill_name.lower()) +
                                 RE_SKILL_SPLIT.split(folder_name.lower()) +
@@ -305,6 +372,7 @@ def load_skill_blueprints(base_skills_dir: str, stop_words: set[str] | frozenset
                         seen_names.add(clean_name)
 
                         clean_desc = desc.replace("\n", " ").strip() if desc else "No description provided."
+                        cat = "personality" if "personality" in path.lower() else ("code" if "code" in path.lower() else "system")
 
                         blueprints.append({
                             "name": clean_name,
@@ -312,10 +380,12 @@ def load_skill_blueprints(base_skills_dir: str, stop_words: set[str] | frozenset
                             "rel_path": os.path.relpath(path, base_skills_dir),
                             "desc": clean_desc,
                             "intents": intents,
-                            "tokens": context.tokenize(" ".join(intents), stop_words)
+                            "tokens": context.tokenize(" ".join(intents), stop_words),
+                            "cat": cat,
                         })
-                    except Exception:
-                        pass
+                    except (OSError, UnicodeDecodeError, ValueError, AttributeError) as e:
+                        if os.environ.get("AI_DEBUG") == "1":
+                            sys.stderr.write(f"\033[2m[sys] Skipping skill '{path}': {e}\033[0m\n")
     return blueprints
 
 
@@ -326,7 +396,7 @@ def run_skill_selector(
     stop_words: set[str] | frozenset[str],
     chat_history: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], str | None]:
-    """Interactive arrow-key skill loading overlay across all skill subdirectories."""
+    """Interactive arrow-key skill loading overlay across all global and workspace skill subdirectories."""
     if chat_history is not None:
         hist: list[dict[str, Any]] = list(chat_history)
     else:
@@ -346,7 +416,12 @@ def run_skill_selector(
 
     parts = raw_cmd.strip().split(maxsplit=1)
     search_query = parts[1].strip() if len(parts) > 1 else ""
+
     skill_list = load_skill_blueprints(base_skills_dir, stop_words)
+    if workspace and os.path.isdir(os.path.join(workspace, ".agent", "skills")):
+        ws_skills = load_skill_blueprints(os.path.join(workspace, ".agent", "skills"), stop_words)
+        skill_list.extend(ws_skills)
+
     current_idx = 0
     sys.stderr.write("\033[?25l")
     sys.stderr.flush()
@@ -401,20 +476,20 @@ def run_skill_selector(
 
                         sys_c = hist[0]["content"] if hist else ""
                         raw_blocks = RE_SKILL_BLOCK.findall(sys_c)
-                        cat = "personality" if "personality" in sel["path"] else ("code" if "code" in sel["path"] else "system")
+                        cat = sel.get("cat") or ("personality" if "personality" in sel["path"] else ("code" if "code" in sel["path"] else "system"))
 
                         active_skills = []
-                        for s_n, s_b in raw_blocks:
-                            s_cat = "personality" if any(p in s_n for p in ("caveman", "pirate", "personality")) else "other"
-                            if s_cat != cat and s_n != sel["name"]:
-                                active_skills.append((s_n, s_b))
+                        for s_cat, s_n, s_b in raw_blocks:
+                            parsed_s_cat = s_cat.lower() if s_cat else ("personality" if any(p in s_n.lower() for p in ("caveman", "pirate")) else "system")
+                            if parsed_s_cat != cat and s_n != sel["name"]:
+                                active_skills.append((parsed_s_cat, s_n, s_b))
 
-                        active_skills.append((sel["name"], body))
+                        active_skills.append((cat, sel["name"], body))
                         if len(active_skills) > 3:
                             active_skills = active_skills[-3:]
 
-                        base_p = sys_c.split("### Loaded On-Demand Skill:")[0].strip()
-                        new_blocks = "\n\n".join(f"### Loaded On-Demand Skill: {n}\n{b}" for n, b in active_skills)
+                        base_p = sys_c.split("### Loaded On-Demand Skill")[0].strip()
+                        new_blocks = "\n\n".join(f"### Loaded On-Demand Skill [{c}]: {n}\n{b}" for c, n, b in active_skills)
                         hist[0]["content"] = f"{base_p}\n\n{new_blocks}\n" if base_p else f"{new_blocks}\n"
 
                         s_name = sel["name"].replace(" ", "-")
@@ -450,8 +525,17 @@ def run_skill_selector(
 if __name__ == "__main__":
     CFG_DIR = os.path.expanduser("~/.config/py-agent")
     stop_words = getattr(context, "STOP_WORDS", {"is", "what", "it", "do", "any", "i", "have", "the", "a", "an", "on", "to", "for", "me", "you", "my", "your", "we", "us", "are", "about", "in", "how"})
-    if len(sys.argv) < 3:
-        sys.argv.extend(["", ""])
-    hist, _ = run_skill_selector(sys.argv[1], sys.argv[2], os.path.join(CFG_DIR, "skills"), stop_words)
+
+    if len(sys.argv) == 2:
+        ws = os.environ.get("AI_WORKSPACE_PATH") or os.getcwd()
+        cmd = sys.argv[1]
+    elif len(sys.argv) >= 3:
+        ws = sys.argv[1]
+        cmd = sys.argv[2]
+    else:
+        ws = os.environ.get("AI_WORKSPACE_PATH") or os.getcwd()
+        cmd = ""
+
+    hist, _ = run_skill_selector(ws, cmd, os.path.join(CFG_DIR, "skills"), stop_words)
     if hist:
         print(json.dumps(hist))

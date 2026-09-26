@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Native Tool Engine - Handles file editing, search, commands, & graph intelligence [Production Ready]"""
+"""Native Tool Engine - Handles file editing, search, commands, & graph intelligence [Hardened Production Ready]"""
 
 import ast
 import difflib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import urllib.parse
@@ -37,7 +38,7 @@ READONLY_INSPECTION_SUBCOMMANDS = security.READONLY_INSPECTION_SUBCOMMANDS
 FORBIDDEN_SYS_DIRS = security.FORBIDDEN_SYS_DIRS
 RE_ROOT_SANDBOX = security.RE_ROOT_SANDBOX
 
-# In-Memory Session State
+# In-Memory Session State (Strictly workspace-relative paths)
 _SESSION_READ_FILES: set[str] = set()
 _SESSION_MODIFIED_FILES: set[str] = set()
 
@@ -48,7 +49,7 @@ def get_modified_files() -> list[str]:
 
 
 def get_read_files() -> list[str]:
-    """Returns sorted list of paths read in the active session."""
+    """Returns sorted list of relative paths read in the active session."""
     return sorted(_SESSION_READ_FILES)
 
 
@@ -66,6 +67,16 @@ def _invalidate_module_cache(file_path: str) -> None:
             sys.modules.pop(mod_name, None)
 
 
+def _get_int_env(key: str, default: int) -> int:
+    val = os.environ.get(key)
+    if val is None or not str(val).strip():
+        return default
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return default
+
+
 # Complete 12-Tool Suite
 EDIT_TOOLS: list[dict[str, Any]] = [
     {
@@ -77,7 +88,7 @@ EDIT_TOOLS: list[dict[str, Any]] = [
                 "type": "object",
                 "properties": p,
                 "required": r,
-                "additionalProperties": False
+                "additionalProperties": False,
             },
         },
     }
@@ -123,7 +134,7 @@ EDIT_TOOLS: list[dict[str, Any]] = [
             "Search for text or regex pattern across workspace files. Returns matching files, line numbers, and previews without shell execution.",
             {
                 "pattern": {"type": "string", "description": "Text string or regular expression to search for."},
-                "path": {"type": "string", "description": "Relative directory or file path to search within. Defaults to '.' (workspace root)."}
+                "path": {"type": "string", "description": "Relative directory or file path to search within. Defaults to '.' (workspace root)."},
             },
             ["pattern"],
         ),
@@ -255,7 +266,13 @@ def _search_codebase(pattern: str, search_root: str, workspace: str, max_results
             dirs[:] = [d for d in dirs if d not in EXCLUDED_SEARCH_DIRS and not d.startswith(".")]
             for f in files:
                 if os.path.splitext(f)[1].lower() not in BINARY_EXTENSIONS and not f.startswith("."):
-                    scan_files.append(os.path.join(root, f))
+                    fp = os.path.join(root, f)
+                    try:
+                        # Cap individual search files at 2 MB to prevent scanning huge artifacts
+                        if os.path.getsize(fp) <= 2 * 1024 * 1024:
+                            scan_files.append(fp)
+                    except OSError:
+                        pass
 
     for fpath in scan_files:
         files_searched += 1
@@ -277,7 +294,8 @@ def _search_codebase(pattern: str, search_root: str, workspace: str, max_results
     if not matches:
         return f"[search_code] No matches found for pattern '{pattern}' across {files_searched} files."
 
-    res = f"### Code Search: '{pattern}' ({len(matches)} matches in {files_searched} files):\n" + "\n".join(matches)
+    matched_files_count = len({m.split(":", 1)[0] for m in matches})
+    res = f"### Code Search: '{pattern}' ({len(matches)} matches in {matched_files_count} files, {files_searched} scanned):\n" + "\n".join(matches)
     if len(matches) >= max_results:
         res += f"\n\n... [Showing first {max_results} matches. Narrow pattern or search specific subdirectories for more]"
     return res
@@ -365,22 +383,23 @@ def _resilient_replace(original: str, old_str: str, new_str: str) -> tuple[str |
     if old_len == 0:
         return None, "Parameter 'old_str' contains no non-whitespace content."
 
-    # Stage 2: Whitespace-normalized comparison with exact non-blank line alignment
+    # Pre-index non-blank lines and original indices once (O(N) setup)
+    non_blank_orig: list[str] = []
+    non_blank_indices: list[int] = []
+    for idx, line in enumerate(orig_lines):
+        s = line.strip()
+        if s:
+            non_blank_orig.append(re.sub(r"\s+", " ", s))
+            non_blank_indices.append(idx)
+
+    # Stage 2: Whitespace-normalized sliding window comparison
     matches = []
-    for i in range(len(orig_lines)):
-        window_lines = []
-        window_raw_indices = []
-        for j in range(i, len(orig_lines)):
-            line_str = orig_lines[j]
-            if line_str.strip():
-                window_lines.append(re.sub(r"\s+", " ", line_str.strip()))
-                window_raw_indices.append(j)
-                if len(window_lines) == old_len:
-                    break
-        if window_lines == norm_old:
-            start_idx = window_raw_indices[0]
-            end_idx = window_raw_indices[-1] + 1
-            matches.append((start_idx, end_idx))
+    if len(non_blank_orig) >= old_len:
+        for i in range(len(non_blank_orig) - old_len + 1):
+            if non_blank_orig[i : i + old_len] == norm_old:
+                start_idx = non_blank_indices[i]
+                end_idx = non_blank_indices[i + old_len - 1] + 1
+                matches.append((start_idx, end_idx))
 
     if len(matches) == 1:
         start_idx, end_idx = matches[0]
@@ -407,31 +426,42 @@ def _resilient_replace(original: str, old_str: str, new_str: str) -> tuple[str |
     elif len(matches) > 1:
         return None, f"Whitespace-normalized old_str matched {len(matches)} locations. Include more surrounding lines to make it unique."
 
-    # Stage 3: Fuzzy matching over windows with exactly old_len non-blank lines
+    # Stage 3: Fast SequenceMatcher fuzzy matching with indent alignment
     best_ratio = 0.0
     best_window = None
     old_block_str = "\n".join(norm_old)
 
-    for i in range(len(orig_lines)):
-        window_lines = []
-        window_raw_indices = []
-        for j in range(i, len(orig_lines)):
-            line_str = orig_lines[j]
-            if line_str.strip():
-                window_lines.append(re.sub(r"\s+", " ", line_str.strip()))
-                window_raw_indices.append(j)
-                if len(window_lines) == old_len:
-                    break
-        if len(window_lines) == old_len:
-            cand_block_str = "\n".join(window_lines)
-            ratio = difflib.SequenceMatcher(None, old_block_str, cand_block_str).ratio()
-            if ratio > best_ratio:
-                best_ratio = ratio
-                best_window = (window_raw_indices[0], window_raw_indices[-1] + 1)
+    if len(non_blank_orig) >= old_len:
+        for i in range(len(non_blank_orig) - old_len + 1):
+            cand_block_str = "\n".join(non_blank_orig[i : i + old_len])
+            # Quick ratio heuristic before full SequenceMatcher calculation
+            if difflib.SequenceMatcher(None, old_block_str, cand_block_str).quick_ratio() >= 0.85:
+                ratio = difflib.SequenceMatcher(None, old_block_str, cand_block_str).ratio()
+                if ratio > best_ratio:
+                    best_ratio = ratio
+                    best_window = (non_blank_indices[i], non_blank_indices[i + old_len - 1] + 1)
 
     if best_ratio >= 0.88 and best_window is not None:
         start_idx, end_idx = best_window
-        reconstructed = "".join(orig_lines[:start_idx]) + clean_new + ("\n" if not clean_new.endswith("\n") else "") + "".join(orig_lines[end_idx:])
+        orig_first_line = orig_lines[start_idx]
+        orig_indent_len = len(orig_first_line) - len(orig_first_line.lstrip(" "))
+        old_first_line = old_lines[0]
+        old_indent_len = len(old_first_line) - len(old_first_line.lstrip(" "))
+        indent_delta = orig_indent_len - old_indent_len
+
+        new_lines_raw = clean_new.splitlines()
+        adjusted_new_lines = []
+        for nl in new_lines_raw:
+            if not nl.strip():
+                adjusted_new_lines.append("\n")
+            elif indent_delta > 0:
+                adjusted_new_lines.append(" " * indent_delta + nl + "\n")
+            elif indent_delta < 0 and nl.startswith(" " * abs(indent_delta)):
+                adjusted_new_lines.append(nl[abs(indent_delta):] + "\n")
+            else:
+                adjusted_new_lines.append(nl + "\n")
+
+        reconstructed = "".join(orig_lines[:start_idx]) + "".join(adjusted_new_lines) + "".join(orig_lines[end_idx:])
         return reconstructed, None
 
     return None, "Target old_str not found in file (even with whitespace tolerance and fuzzy matching). Use read_file to inspect exact lines."
@@ -491,9 +521,13 @@ def run_tool(
     full = _safe_path(workspace, raw_path)
 
     def _in_bounds_gate(reason: str) -> bool:
-        if confirm_gate_fn and os.environ.get("AI_CONFIRM_GATES", "1") == "1":
+        env_val = os.environ.get("AI_CONFIRM_GATES", "1").strip().lower()
+        enabled = env_val not in ("0", "false", "no", "off", "")
+        if confirm_gate_fn and enabled:
             return confirm_gate_fn(reason)
-        return True
+        if not enabled:
+            return True
+        return security.authorize(reason, is_security_event=False)
 
     def _security_gate(reason: str) -> bool:
         if confirm_gate_fn:
@@ -508,7 +542,7 @@ def run_tool(
         if not _in_bounds_gate(f"delegate sub-task: '{goal[:80]}'"):
             return "[denied] User declined sub-agent delegation."
 
-        current_depth = int(os.environ.get("AI_SUBAGENT_DEPTH", "0"))
+        current_depth = _get_int_env("AI_SUBAGENT_DEPTH", 0)
         if current_depth >= 1:
             return "[error] Sub-agents cannot recursively delegate tasks. Execute the tools directly."
 
@@ -607,7 +641,8 @@ def run_tool(
         elif not _in_bounds_gate(f"read file {raw_path}"):
             return f"[denied] User declined read of '{raw_path}'."
 
-        _SESSION_READ_FILES.add(full)
+        rel_f = os.path.relpath(full, workspace)
+        _SESSION_READ_FILES.add(rel_f)
 
         try:
             with open(full, "r", encoding="utf-8", errors="replace") as f:
@@ -618,15 +653,17 @@ def run_tool(
             total_lines = len(lines)
 
             if l_start is not None or l_end is not None:
-                start_idx = max(0, (int(l_start) - 1) if l_start else 0)
-                end_idx = min(total_lines, int(l_end) if l_end else total_lines)
+                try:
+                    start_idx = max(0, (int(str(l_start).strip()) - 1) if l_start else 0)
+                    end_idx = min(total_lines, int(str(l_end).strip()) if l_end else total_lines)
+                except (ValueError, TypeError):
+                    return f"[error] Parameters 'line_start' and 'line_end' must be valid integers (got line_start={l_start!r}, line_end={l_end!r})."
                 sliced = lines[start_idx:end_idx]
                 content = "".join(sliced)
                 prefix = f"### File: {raw_path} (Lines {start_idx + 1}-{end_idx} of {total_lines})\n"
                 res_out = prefix + content
             else:
-                max_ctx = int(os.environ.get("AI_MAX_TOKENS", 8192))
-                # Proportional line ceiling: 250 (<=16k), 1,000 (32k), 2,000 (64k), 4,000 (128k)
+                max_ctx = _get_int_env("AI_MAX_TOKENS", 8192)
                 if max_ctx <= 16384:
                     skel_limit = 250
                 elif max_ctx <= 32768:
@@ -639,7 +676,6 @@ def run_tool(
                 if total_lines > skel_limit:
                     res_out = _generate_ast_skeleton("".join(lines), raw_path)
                 else:
-                    # Dynamically allow reading up to 40% of context window in a single call
                     char_cap = max(20000, int(max_ctx * 3.5 * 0.40))
                     full_content = "".join(lines)
                     if len(full_content) > char_cap:
@@ -678,8 +714,13 @@ def run_tool(
             return "[error] Parameter 'old_str' cannot be empty."
 
         try:
-            with open(full, "r", encoding="utf-8", errors="replace") as f:
-                original = f.read()
+            mtime_before = os.path.getmtime(full)
+            # Read strictly as UTF-8 to prevent data corruption on non-UTF-8 content
+            try:
+                with open(full, "r", encoding="utf-8", errors="strict") as f:
+                    original = f.read()
+            except UnicodeDecodeError:
+                return f"[error] Cannot edit '{raw_path}': File is not valid UTF-8. Only UTF-8 text files can be edited."
 
             new_content, err_msg = _resilient_replace(original, old_str, new_str)
             if err_msg or new_content is None:
@@ -695,6 +736,11 @@ def run_tool(
                     json.loads(new_content)
                 except (json.JSONDecodeError, TypeError, ValueError) as e:
                     return f"[error] Edit blocked. Resulting JSON syntax error: {e}."
+
+            # Guard against concurrent disk modification
+            mtime_now = os.path.getmtime(full)
+            if mtime_now != mtime_before:
+                return f"[error] Conflict detected: '{raw_path}' was modified on disk by another process after it was read. Re-read the file before editing."
 
             if sys.stdout.isatty() and not _is_calm():
                 if diff := "\n".join(
@@ -712,11 +758,15 @@ def run_tool(
                         "\n",
                     )
 
-            with open(full, "w", encoding="utf-8") as f:
+            # Atomic write via temp file
+            tmp_target = f"{full}.tmp.{os.getpid()}"
+            with open(tmp_target, "w", encoding="utf-8") as f:
                 f.write(new_content)
+            os.replace(tmp_target, full)
 
             rel_f = os.path.relpath(full, workspace)
             _SESSION_MODIFIED_FILES.add(rel_f)
+            _SESSION_READ_FILES.add(rel_f)
             _invalidate_module_cache(full)
 
             return f"Successfully edited {raw_path} (replaced {len(old_str)} chars with {len(new_str)} chars)."
@@ -727,7 +777,6 @@ def run_tool(
         content = args.get("content", "")
         is_overwrite = bool(args.get("overwrite", False) or args.get("force", False))
 
-        # Check existing file length and block overwrite unless overwrite=True
         if os.path.exists(full) and not is_overwrite:
             try:
                 with open(full, "r", encoding="utf-8", errors="replace") as f:
@@ -737,7 +786,6 @@ def run_tool(
             except OSError as e:
                 return f"[error] File '{raw_path}' already exists, but reading it failed: {e}. Pass overwrite=true to force overwrite."
 
-        # Security and in-bounds gates evaluated BEFORE inspecting content or printing diffs
         if _is_outside_workspace(workspace, full):
             if not _security_gate(f"OUT-OF-BOUNDS WRITE: {full}"):
                 return f"[denied] User declined write to '{raw_path}' outside workspace."
@@ -778,10 +826,13 @@ def run_tool(
 
         try:
             os.makedirs(os.path.dirname(full) or workspace, exist_ok=True)
-            with open(full, "w", encoding="utf-8") as f:
+            tmp_target = f"{full}.tmp.{os.getpid()}"
+            with open(tmp_target, "w", encoding="utf-8") as f:
                 f.write(content)
-            _SESSION_READ_FILES.add(full)
+            os.replace(tmp_target, full)
+
             rel_f = os.path.relpath(full, workspace)
+            _SESSION_READ_FILES.add(rel_f)
             _SESSION_MODIFIED_FILES.add(rel_f)
             _invalidate_module_cache(full)
             return f"wrote {len(content)} chars to {raw_path}"
@@ -825,7 +876,17 @@ def run_tool(
             req = urllib.request.Request(f"https://generativelanguage.googleapis.com/v1beta/models/{gnd_model}:generateContent", data=json.dumps(payload).encode(), headers=headers, method="POST")
             with urllib.request.urlopen(req, timeout=15) as resp:
                 data = json.loads(resp.read().decode())
-            res = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+
+            candidates = data.get("candidates") or []
+            if not candidates:
+                reason = (data.get("promptFeedback") or {}).get("blockReason", "no candidates returned")
+                return f"[error] Web search returned no candidates ({reason})."
+
+            parts = (candidates[0].get("content") or {}).get("parts") or []
+            if not parts:
+                return "[error] Web search returned empty content parts."
+
+            res = parts[0].get("text", "")
             out = res.strip() or "(No search results found)"
             if print_output_fn:
                 print_output_fn(out)
@@ -845,7 +906,16 @@ def run_tool(
 
         shell = os.environ.get("SHELL") or "/bin/sh"
         try:
-            res = subprocess.run([shell, "-c", cmd], cwd=workspace, capture_output=True, text=True, timeout=300)
+            # If command lacks shell metacharacters/redirection, execute directly
+            if not any(ch in cmd for ch in ("|", "&", ";", ">", "<", "$", "`", "\n", "*", "?", "~")):
+                argv = shlex.split(cmd)
+                if argv:
+                    res = subprocess.run(argv, cwd=workspace, capture_output=True, text=True, timeout=300, stdin=subprocess.DEVNULL)
+                else:
+                    return "[error] Empty command"
+            else:
+                res = subprocess.run([shell, "-c", cmd], cwd=workspace, capture_output=True, text=True, timeout=300, stdin=subprocess.DEVNULL)
+
             out = ((res.stdout or "") + (("\n" + res.stderr) if res.stderr else "")).strip()[:10000]
             if print_output_fn:
                 print_output_fn(out)

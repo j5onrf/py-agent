@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.39] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production Ready]"""
+"""Py Agent [j5onrf] [v0.9.9.41] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production Ready]"""
 
 import json
 import os
@@ -8,6 +8,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 from contextlib import closing
 from typing import Any
@@ -61,9 +62,9 @@ except ImportError:
     pass
 
 try:
+    import agent_commands as commands
     import agent_context as context
     import agent_core as core
-    import agent_ipython as ipython
     import agent_memories as memories
     import agent_sessions as sessions
     import agent_skills as skills
@@ -84,7 +85,7 @@ def _show_transient_status(tag: str) -> None:
     global _transient_cmd_count
     sys.stdout.write(f"  \033[2m[{tag}]\033[0m\n\n")
     sys.stdout.flush()
-    _transient_cmd_count += 3
+    _transient_cmd_count += 2
 
 
 _flash_status = _show_transient_status
@@ -123,7 +124,11 @@ def ensure_clean_agent_dir(workspace_path: str) -> None:
     if not (ws_name := os.path.basename(workspace_path)):
         return
     agent_dir = os.path.join(workspace_path, ".agent")
-    os.makedirs(os.path.join(agent_dir, "memory"), exist_ok=True)
+    try:
+        os.makedirs(os.path.join(agent_dir, "memory"), exist_ok=True)
+    except OSError:
+        return
+
     targets = [
         f"index-map-{ws_name}.txt",
         f"index-map-memory-{ws_name}.db",
@@ -154,13 +159,11 @@ def _sweep_dead_session_locks() -> None:
                 continue
             os.kill(pid, 0)
         except ProcessLookupError:
-            # Process strictly dead (ESRCH), safe to sweep lockfile
             try:
                 os.remove(os.path.join(sess_dir, f))
             except OSError:
                 pass
         except (PermissionError, ValueError):
-            # Process alive under another user (PermissionError) or filename malformed
             pass
 
 
@@ -177,18 +180,34 @@ def clean_exit(safe_name: str | None = None) -> None:
 
 
 def _launch_surface(script_path: str, is_agent: bool, ws_path: str, skill: str, history: list, args: list[str] | None = None) -> None:
-    """Launches secondary surfaces (TUI, PyCode, WebUI) with state continuity."""
+    """Launches secondary surfaces (TUI, PyCode, WebUI) with state continuity and E2BIG protection."""
     if not os.path.exists(script_path):
         ui._console.print(f"[red][sys] Launcher script not found: {script_path}[/red]\n")
         return
+
+    hist_file = None
+    try:
+        hist_data = json.dumps(history)
+        if len(hist_data) > 65536:
+            with tempfile.NamedTemporaryFile("w", delete=False, prefix="ai_hist_", suffix=".json", encoding="utf-8") as tf:
+                tf.write(hist_data)
+                hist_file = tf.name
+    except Exception:
+        hist_data = ""
+
     env = {
         **os.environ,
         "AI_IS_AGENT": "1" if is_agent else "0",
         "AI_WORKSPACE_PATH": ws_path,
         "AI_ACTIVE_SKILL": skill,
         "AI_CONFIRM_GATES": os.environ.get("AI_CONFIRM_GATES", "1"),
-        "AI_SESSION_HISTORY": json.dumps(history)
     }
+    if hist_file:
+        env["AI_SESSION_HISTORY_FILE"] = hist_file
+        env["AI_SESSION_HISTORY"] = ""
+    else:
+        env["AI_SESSION_HISTORY"] = hist_data
+
     cmd = [sys.executable, script_path] if script_path.endswith(".py") else ["/bin/bash", script_path] + (args or [])
     try:
         subprocess.run(cmd, env=env)
@@ -197,28 +216,12 @@ def _launch_surface(script_path: str, is_agent: bool, ws_path: str, skill: str, 
         ui._console.print("[green][sys] Resumed CLI session.[/green]\n")
     except Exception as e:
         ui._console.print(f"[red][sys] Launch failed: {e}[/red]\n")
-
-
-def _update_workspace_config(cfg_file: str, updates: dict[str, Any]) -> None:
-    """Atomically updates settings inside .agent/config.json with cleanup on error."""
-    if not os.path.exists(cfg_file):
-        return
-    tmp = f"{cfg_file}.tmp"
-    try:
-        data = {}
-        with open(cfg_file, "r", encoding="utf-8") as cf:
-            data = json.load(cf)
-        data.update(updates)
-        with open(tmp, "w", encoding="utf-8") as cf:
-            json.dump(data, cf, indent=2)
-        os.replace(tmp, cfg_file)
-    except (OSError, json.JSONDecodeError):
-        if os.path.exists(tmp):
+    finally:
+        if hist_file and os.path.exists(hist_file):
             try:
-                os.remove(tmp)
+                os.remove(hist_file)
             except OSError:
                 pass
-        ui._console.print("[dim yellow][sys] Failed to persist workspace config.[/dim yellow]")
 
 
 def run_interactive_chat(args: list[str]) -> None:
@@ -266,10 +269,12 @@ def run_interactive_chat(args: list[str]) -> None:
             except (OSError, json.JSONDecodeError):
                 pass
 
-    # 2. CLI Profile Overrides
+    # 2. CLI Profile Overrides & Query Token Cleansing
+    profile_args = set()
     for arg in args:
         if arg.startswith("-") and arg not in ("--talk", "--talk-chat"):
             selected_profile = arg.lstrip("-").lower()
+            profile_args.add(arg)
 
     # 3. Persona & Prompt Initialization
     if is_agent:
@@ -316,9 +321,14 @@ def run_interactive_chat(args: list[str]) -> None:
             txt_p = os.path.join(agent_dir, f"index-map-{ws_name}.txt")
             db_p = os.path.join(agent_dir, f"index-map-memory-{ws_name}.db")
 
+            imap_bin = os.path.join(CFG_DIR, "tools", "index-map", "index-map")
             if not os.path.isfile(txt_p) or not os.path.isfile(db_p):
-                subprocess.run([sys.executable, f"{CFG_DIR}/tools/index-map/index-map", "--agent", workspace_path], capture_output=True)
-                ui._console.print("[dim][sys] Map enabled: compiled index-map.[/dim]")
+                if os.path.isfile(imap_bin):
+                    res_map = subprocess.run([sys.executable, imap_bin, "--agent", workspace_path], capture_output=True, text=True)
+                    if res_map.returncode == 0:
+                        ui._console.print("[dim][sys] Map enabled: compiled index-map.[/dim]")
+                    else:
+                        ui._console.print(f"[dim yellow][sys] Map compilation failed (rc={res_map.returncode}): {res_map.stderr.strip()[:100]}[/dim yellow]")
 
             map_path = next((p for p in (txt_p, os.path.join(workspace_path, f"index-map-{ws_name}.txt")) if os.path.exists(p)), None)
             if map_path:
@@ -337,7 +347,6 @@ def run_interactive_chat(args: list[str]) -> None:
         active_system_prompt = skill_content or BASE_PROMPT_CHAT
         os.environ["AI_ACTIVE_SKILL"] = clean_name
 
-    # Zero-overhead check: if 0 bytes or missing, never opens or reads file
     inst_p = os.path.join(SKILLS_DIR, "system_instructions.md")
     if os.path.isfile(inst_p) and os.path.getsize(inst_p) > 0:
         try:
@@ -348,7 +357,9 @@ def run_interactive_chat(args: list[str]) -> None:
         except OSError:
             pass
 
-    pending_query = " ".join(args[1:]) if len(args) > 1 else None
+    pending_args = [a for a in args[1:] if a not in profile_args]
+    pending_query = " ".join(pending_args) if pending_args else None
+
     if pending_query and ("CODEBASE INDEX MAP" in pending_query or "index-map" in pending_query):
         if use_map and "### CODESPACE MAP:" not in active_system_prompt:
             active_system_prompt += f"\n\n### CODESPACE MAP:\n{pending_query}"
@@ -394,411 +405,42 @@ def run_interactive_chat(args: list[str]) -> None:
 
                 if not query:
                     continue
-                q_lower = query.lower().strip()
-                if q_lower in ("exit", "quit", "q"):
-                    clean_exit(safe_name if is_agent else None)
 
-                if q_lower.rstrip(".") in ("stop speech", "stop talking", "kill tts"):
-                    try:
-                        tts.stop_tts()
-                    except Exception:
-                        pass
-                    subprocess.run("killall -9 pw-play koko 2>/dev/null || true", shell=True)
+                # Delegate to modular command dispatcher
+                ctx = commands.SessionContext(
+                    workspace_path=workspace_path,
+                    home_dir=home_dir,
+                    safe_name=safe_name,
+                    cfg_file=cfg_file,
+                    is_agent=is_agent,
+                    chat_history=chat_history,
+                    active_system_prompt=active_system_prompt,
+                    clean_name=clean_name,
+                    use_map=use_map,
+                    memory_active=memory_active,
+                    is_yolo=is_yolo,
+                    reasoning_active=reasoning_active,
+                    reasoning_budget=reasoning_budget,
+                    show_stats=show_stats,
+                    flash_status=_flash_status,
+                    launch_surface_fn=_launch_surface,
+                    clean_exit_fn=clean_exit,
+                )
+
+                handled, new_query = commands.dispatch_command(query, ctx)
+
+                # Sync back mutated states
+                use_map = ctx.use_map
+                memory_active = ctx.memory_active
+                is_yolo = ctx.is_yolo
+                reasoning_active = ctx.reasoning_active
+                reasoning_budget = ctx.reasoning_budget
+                show_stats = ctx.show_stats
+
+                if handled:
                     continue
-
-                parts = query.split()
-                cmd = parts[0].lower() if parts else ""
-
-                if cmd in ("/m", "/map", "/graph"):
-                    use_map = not use_map
-                    core.save_state("use_map", use_map)
-                    os.environ["AI_USE_MAP"] = "1" if use_map else "0"
-                    _update_workspace_config(cfg_file, {"map": use_map})
-
-                    if use_map:
-                        agent_dir = os.path.join(workspace_path, ".agent")
-                        txt_p = next((p for p in (os.path.join(agent_dir, f"index-map-{os.path.basename(workspace_path)}.txt"), os.path.join(workspace_path, f"index-map-{os.path.basename(workspace_path)}.txt")) if os.path.exists(p)), None)
-                        if txt_p:
-                            try:
-                                with open(txt_p, "r", encoding="utf-8") as mf:
-                                    new_map = mf.read().strip()
-                                has_map = False
-                                for msg in chat_history:
-                                    if "### CODESPACE MAP:" in msg["content"]:
-                                        msg["content"] = msg["content"].split("### CODESPACE MAP:")[0] + f"### CODESPACE MAP:\n{new_map}"
-                                        has_map = True
-                                if not has_map:
-                                    chat_history[0]["content"] += f"\n\n### CODESPACE MAP:\n{new_map}"
-                            except Exception:
-                                pass
-                    else:
-                        for msg in chat_history:
-                            if "### CODESPACE MAP:" in msg["content"]:
-                                msg["content"] = msg["content"].split("### CODESPACE MAP:")[0].strip()
-                    _flash_status(f"map: {'on' if use_map else 'off'}")
-                    continue
-
-                if cmd in ("/mem", "/memory"):
-                    sub_parts = query.split(maxsplit=2)
-                    sub_action = sub_parts[1].lower() if len(sub_parts) > 1 else ""
-
-                    if sub_action in ("save", "add", "set", "new"):
-                        if len(sub_parts) < 3:
-                            ui._console.print("[dim yellow][sys] Usage: /mem save <title>[: <content>]  (e.g. /mem save db: Use SQLite WAL mode)[/dim yellow]\n")
-                            continue
-                        raw_payload = sub_parts[2]
-                        m_title, m_content = raw_payload.split(":", 1) if ":" in raw_payload else (raw_payload.split("|", 1) if "|" in raw_payload else (raw_payload, raw_payload))
-                        ok, res_path = memories.save_memory_file(workspace_path, m_title.strip(), m_content.strip())
-                        if ok:
-                            ui._console.print(f"[green][sys] Saved memory: [bold]{os.path.basename(res_path)}[/bold][/green]\n")
-                        else:
-                            ui._console.print(f"[red][sys] {res_path}[/red]\n")
-                        continue
-
-                    if sub_action in ("list", "ls", "show"):
-                        items = memories.list_memories(workspace_path)
-                        if not items:
-                            ui._console.print("[dim yellow][sys] No memory files found in .agent/memory/[/dim yellow]\n")
-                        else:
-                            ui._console.print(f"[cyan]### Active Memory Files ({len(items)}):[/cyan]")
-                            for it in items:
-                                ui._console.print(f"  • [bold green]{it['filename']}[/bold green] [{it['type']}]: {it['title']} [dim]({it['content'][:60]}...)[/dim]")
-                            ui._console.print()
-                        continue
-
-                    memory_active = not memory_active
-                    core.save_state("memory_active", memory_active)
-                    _update_workspace_config(cfg_file, {"memory": memory_active})
-                    _flash_status(f"mem: {'on' if memory_active else 'off'}")
-                    continue
-
-                if cmd in ("/gnd", "/ground"):
-                    if len(parts) > 1:
-                        sub = parts[1].lower()
-                        if sub in ("off", "disable", "false", "0"):
-                            core.save_state("grounding_active", False)
-                            gnd_active, g_bud = False, 0
-                        elif sub in ("on", "enable", "true"):
-                            core.save_state("grounding_active", True)
-                            g_bud = core.get_state("grounding_budget", 700)
-                            gnd_active = True
-                        elif sub.isdigit():
-                            g_bud = max(0, int(sub))
-                            gnd_active = g_bud > 0
-                            core.save_state("grounding_active", gnd_active)
-                            core.save_state("grounding_budget", g_bud)
-                        else:
-                            gnd_active = not core.get_state("grounding_active", False)
-                            g_bud = core.get_state("grounding_budget", 700)
-                    else:
-                        gnd_active = not core.get_state("grounding_active", False)
-                        g_bud = core.get_state("grounding_budget", 700)
-                        core.save_state("grounding_active", gnd_active)
-                    _flash_status(f"gnd: {g_bud if gnd_active else 'off'}")
-                    continue
-
-                if cmd in ("/v", "/voice"):
-                    is_auto = len(parts) > 1 and parts[1].lower() == "auto"
-                    active, auto_mode = voice.toggle_voice_bridge(auto_toggle=is_auto)
-                    _flash_status(f"voice: {'auto' if auto_mode else ('on' if active else 'off')}")
-                    continue
-
-                if cmd in ("/tts", "/talk", "/tol"):
-                    if len(parts) > 1:
-                        arg = parts[1].lower().replace("x", "")
-                        if arg in ("def", "default", "reset"):
-                            sp = tts.set_tts_speed(1.15)
-                            _flash_status(f"tts: reset {sp}x")
-                        else:
-                            try:
-                                val = float(arg)
-                                sp = tts.set_tts_speed(val)
-                                if not tts.is_tts_enabled():
-                                    tts.toggle_tts(True)
-                                _flash_status(f"tts: {sp}x")
-                            except ValueError:
-                                pass
-                    else:
-                        active = tts.toggle_tts()
-                        cur_speed = tts.get_tts_speed() if hasattr(tts, "get_tts_speed") else 1.15
-                        _flash_status(f"tts: {cur_speed if active else 'off'}")
-                    continue
-
-                if cmd in ("/adp", "/adapter", "/adapters"):
-                    cur_adp = core.get_state("adapters_active", False)
-                    new_adp = not cur_adp
-                    core.save_state("adapters_active", new_adp)
-                    _update_workspace_config(cfg_file, {"adapters": new_adp})
-                    _flash_status(f"adp: {'on' if new_adp else 'off'}")
-                    continue
-
-                if cmd in ("/py", "/ipython"):
-                    if len(parts) > 1:
-                        if not ipython.is_ipython_enabled():
-                            ipython.toggle_ipython_mode(True)
-                        os.environ["AI_IPYTHON_MODE"] = "1"
-                        query = query.split(maxsplit=1)[1]
-                    else:
-                        active = ipython.toggle_ipython_mode()
-                        os.environ["AI_IPYTHON_MODE"] = "1" if active else "0"
-                        _update_workspace_config(cfg_file, {"py": active})
-                        _flash_status(f"py: {'on' if active else 'off'}")
-                        continue
-
-                if cmd in ("/task", "/loop", "/ralph"):
-                    task_text = query.split(maxsplit=1)[1] if len(parts) > 1 else ""
-                    loop_script = os.path.join(CFG_DIR, "tools", "loop", "loop.py")
-                    if not os.path.exists(loop_script):
-                        loop_script = os.path.join(CFG_DIR, "tools", "loop", "ralph.py")
-                    subprocess.run([sys.executable, loop_script, task_text], cwd=workspace_path, env={**os.environ, "AI_WORKSPACE_PATH": workspace_path})
-                    continue
-
-                if cmd in ("/hindsight", "/hs"):
-                    user_turns = [m for m in chat_history if m.get("role") == "user" and not m.get("content", "").startswith("[System Directive - Hindsight")]
-                    if not user_turns:
-                        ui._console.print("[dim yellow][sys] No conversation turns to audit yet.[/dim yellow]\n")
-                        continue
-
-                    ui._console.print("[cyan][sys] Running Hindsight retrospective audit...[/cyan]\n")
-                    hs_skill = skills.load_skill_content("hindsight", SKILLS_DIR, CFG_DIR)
-                    audit_prompt = (
-                        "[System Directive - Hindsight Retrospective]: Review the conversation history above. "
-                        "Identify any durable technical rules, tool quirks, command fixes, or project decisions settled in this session. "
-                        "For each durable lesson, call save_memory(title='<short-slug>', content='<actionable rule>') immediately. "
-                        "If no new durable lessons occurred, reply with: '✓ Hindsight: No durable lessons required; session was nominal.'"
-                    )
-                    temp_history = list(chat_history)
-                    if hs_skill:
-                        temp_history[0] = {"role": "system", "content": temp_history[0]["content"] + "\n\n" + hs_skill}
-                    temp_history.append({"role": "user", "content": audit_prompt})
-
-                    ans = core.stream_response(temp_history, prefix="Agent:", show_stats=show_stats, thinking_budget=reasoning_budget if reasoning_active else 0, is_agent=is_agent)
-                    if ans:
-                        clean_ans = re.sub(r"<think>[\s\S]*?</think>", "", ans).strip()
-                        chat_history.append({"role": "assistant", "content": clean_ans or ans})
-                        m_cnt = memories.get_memory_count(workspace_path)
-                        ui._console.print(f"\n[green][sys] Hindsight complete. Active memories: {m_cnt} files.[/green]\n")
-                    continue
-
-                if cmd in ("/help", "/h"):
-                    ui.show_help()
-                    continue
-
-                if cmd == "/tui":
-                    ui._console.print("[dim yellow][sys] Suspending chat. Launching TUI...[/dim yellow]")
-                    _launch_surface(f"{CFG_DIR}/modules/agent_tui.py", is_agent, workspace_path, clean_name or "chat", chat_history)
-                    continue
-
-                if cmd in ("/webui", "/web"):
-                    ui._console.print("[dim yellow][sys] Suspending CLI. Launching Py-Agent WebUI...[/dim yellow]")
-                    _launch_surface(os.path.join(CFG_DIR, "plugins", "webui", "launch.sh"), is_agent, workspace_path, clean_name or "chat", chat_history)
-                    continue
-
-                if cmd in ("/pycode", "/pyc"):
-                    is_web = len(parts) > 1 and parts[1].lower() in ("web", "--web", "browser")
-                    ui._console.print(f"[dim yellow][sys] Suspending CLI. Launching PyCode {'Browser WebUI' if is_web else 'Desktop App'}...[/dim yellow]")
-                    _launch_surface(os.path.join(CFG_DIR, "plugins", "pycode", "launch.sh"), is_agent, workspace_path, clean_name or "chat", chat_history, args=["web"] if is_web else [])
-                    continue
-
-                if cmd in ("/box", "/box-style", "/boxstyle"):
-                    cur_box = core.get_state("box_style", 2)
-                    val = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() and 1 <= int(parts[1]) <= 8 else (cur_box % 8) + 1
-                    core.save_state("box_style", val)
-                    _flash_status(f"box: #{val}")
-                    continue
-
-                if cmd in ("/calm", "/zen"):
-                    cur_calm = core.get_state("calm_mode", False)
-                    new_calm = not cur_calm
-                    core.save_state("calm_mode", new_calm)
-                    _update_workspace_config(cfg_file, {"calm": new_calm})
-                    _show_transient_status(f"calm: {'on' if new_calm else 'off'}")
-                    continue
-
-                if cmd in ("/md"):
-                    new_md = not (os.environ.get("AI_RENDER_MARKDOWN", "1") == "1")
-                    os.environ["AI_RENDER_MARKDOWN"] = "1" if new_md else "0"
-                    core.save_state("render_markdown", new_md)
-                    _show_transient_status(f"md: {'on' if new_md else 'off'}")
-                    continue
-
-                if cmd in ("/g", "/yolo"):
-                    if is_agent:
-                        new_yolo = not (os.environ.get("AI_CONFIRM_GATES", "1") == "0")
-                        os.environ["AI_CONFIRM_GATES"] = "0" if new_yolo else "1"
-                        core.save_state("yolo_mode", new_yolo)
-                        _update_workspace_config(cfg_file, {"yolo": new_yolo})
-                        _show_transient_status(f"yolo: {'on' if new_yolo else 'off'}")
-                    else:
-                        _show_transient_status("yolo: disabled in chat")
-                    continue
-
-                if cmd in ("/t", "/thinking"):
-                    if len(parts) > 1:
-                        sub = parts[1].lower()
-                        if sub in ("hide", "off", "mute", "quiet"):
-                            os.environ["AI_SHOW_THINKING"] = "0"
-                            core.save_state("show_thinking", False)
-                            _show_transient_status("thinking: hidden")
-                        elif sub in ("show", "on", "visible"):
-                            os.environ["AI_SHOW_THINKING"] = "1"
-                            core.save_state("show_thinking", True)
-                            _show_transient_status("thinking: visible")
-                        elif sub.isdigit():
-                            reasoning_budget = max(0, int(sub))
-                            reasoning_active = reasoning_budget > 0
-                            core.save_state("reasoning_active", reasoning_active)
-                            core.save_state("reasoning_budget", reasoning_budget)
-                            _show_transient_status(f"thinking: {reasoning_budget if reasoning_active else 'off'}")
-                    else:
-                        reasoning_active = not reasoning_active
-                        core.save_state("reasoning_active", reasoning_active)
-                        _show_transient_status(f"thinking: {reasoning_budget if reasoning_active else 'off'}")
-
-                    _update_workspace_config(cfg_file, {"reasoning": reasoning_active, "reasoning_budget": reasoning_budget})
-                    continue
-
-                if cmd == "/stats":
-                    show_stats = not show_stats
-                    core.save_state("show_stats", show_stats)
-                    _show_transient_status(f"stats: {'on' if show_stats else 'off'}")
-                    continue
-
-                if cmd in ("/sync", "/re"):
-                    sys.stdout.write("\033[2m[sys] Syncing index-map...\033[0m\r")
-                    sys.stdout.flush()
-                    subprocess.run([sys.executable, f"{CFG_DIR}/tools/index-map/index-map", "--agent", workspace_path])
-                    agent_dir = os.path.join(workspace_path, ".agent")
-                    txt_p = next((p for p in (os.path.join(agent_dir, f"index-map-{os.path.basename(workspace_path)}.txt"), os.path.join(workspace_path, f"index-map-{os.path.basename(workspace_path)}.txt")) if os.path.exists(p)), None)
-                    if txt_p:
-                        try:
-                            with open(txt_p, "r", encoding="utf-8") as mf:
-                                new_map = mf.read().strip()
-                            has_map = False
-                            for msg in chat_history:
-                                if "### CODESPACE MAP:" in msg["content"]:
-                                    msg["content"] = msg["content"].split("### CODESPACE MAP:")[0] + f"### CODESPACE MAP:\n{new_map}"
-                                    has_map = True
-                            if not has_map:
-                                chat_history[0]["content"] += f"\n\n### CODESPACE MAP:\n{new_map}"
-                            _flash_status("map: synced")
-                        except Exception as e:
-                            ui._console.print(f"\r\x1b[2K[red][sys] Sync failed: {e}[/red]\n")
-                    continue
-
-                if q_lower in ("/clear", "/c"):
-                    chat_history = [{"role": "system", "content": active_system_prompt}]
-                    if is_agent:
-                        chat_history.append({"role": "assistant", "content": "Agent: Workspace loaded. Awaiting instructions."})
-                    _flash_status("chat: cleared")
-                    continue
-
-                if q_lower in ("/reset", "/r"):
-                    chat_history = [{"role": "system", "content": active_system_prompt}]
-                    if is_agent:
-                        chat_history.append({"role": "assistant", "content": "Agent: Workspace loaded. Awaiting instructions."})
-                    agent_dir, db_p = os.path.join(workspace_path, ".agent"), os.path.join(SESSIONS_DIR, f"{safe_name}.db")
-                    if os.path.exists(agent_dir):
-                        shutil.rmtree(agent_dir, ignore_errors=True)
-                    if os.path.exists(db_p):
-                        try:
-                            os.remove(db_p)
-                        except OSError:
-                            pass
-                    sessions.clear_turns(safe_name)
-                    memories.clear_memories(workspace_path)
-                    _flash_status("workspace: reset")
-                    continue
-
-                if cmd in ("/compact", "/com", "/cpt"):
-                    before_toks = sum(core.get_accurate_token_count(m.get("content") or "") for m in chat_history)
-                    chat_history = core.prune_history(chat_history)
-                    after_toks = sum(core.get_accurate_token_count(m.get("content") or "") for m in chat_history)
-                    saved = max(0, before_toks - after_toks)
-                    pct = (saved / before_toks * 100) if before_toks > 0 else 0
-                    ui._console.print(f"[green][sys] Context compacted: {before_toks} → {after_toks} tokens (saved {saved}t / -{pct:.1f}%).[/green]\n")
-                    continue
-
-                if cmd == "/tok":
-                    core.show_memory_status(chat_history, max_context=int(os.environ.get("AI_MAX_TOKENS", 8192)), server_url="http://localhost:8080")
-                    continue
-
-                if cmd in ("file", "/file"):
-                    if len(parts) < 2:
-                        ui._console.print("[dim yellow][sys] Usage: file <path> (e.g. file src/main.py)[/dim yellow]\n")
-                        continue
-                    raw_f = query.split(maxsplit=1)[1].strip().strip('\'"')
-                    ws_real = os.path.realpath(workspace_path)
-                    cand_p = os.path.expanduser(raw_f) if os.path.isabs(os.path.expanduser(raw_f)) else os.path.join(workspace_path, raw_f)
-                    full_p = os.path.realpath(cand_p)
-
-                    # 1. Boundary containment check: must be inside workspace or home directory workspace
-                    home_real = os.path.realpath(home_dir)
-                    if not (full_p == ws_real or full_p.startswith(ws_real + os.sep) or ws_real == home_real):
-                        ui._console.print(f"[red][sys] Access denied: '{raw_f}' is outside the workspace.[/red]\n")
-                        continue
-
-                    if not os.path.isfile(full_p):
-                        ui._console.print(f"[red][sys] File not found: {raw_f}[/red]\n")
-                        continue
-
-                    # 2. Sensitive credential files protection
-                    base_f = os.path.basename(full_p).lower()
-                    if base_f in (".env", ".env.example", ".last_cloud_key.txt") or any(full_p.endswith(ext) for ext in (".pem", ".key", ".p12", ".pfx", "id_rsa", "id_ed25519")):
-                        ui._console.print(f"[red][sys] Access denied: Sensitive credential file '{base_f}'.[/red]\n")
-                        continue
-
-                    # 3. Binary file protection
-                    if any(full_p.endswith(ext) for ext in (".db", ".sqlite", ".bin", ".png", ".jpg", ".jpeg", ".zip", ".tar", ".gz", ".pyc", ".so", ".dylib")):
-                        ui._console.print(f"[red][sys] Cannot load binary file: {raw_f}[/red]\n")
-                        continue
-
-                    # 4. Size protection cap (max 250 KB / ~60k tokens to prevent context blowup)
-                    try:
-                        f_size = os.path.getsize(full_p)
-                        if f_size > 250 * 1024:
-                            ui._console.print(f"[red][sys] File too large ({f_size // 1024} KB > 250 KB limit). Use read_file slices.[/red]\n")
-                            continue
-                        with open(full_p, "r", encoding="utf-8", errors="replace") as f:
-                            f_content = f.read()
-                        rel_name = os.path.relpath(full_p, workspace_path) if full_p.startswith(ws_real) else os.path.basename(full_p)
-                        lines_cnt = len(f_content.splitlines())
-                        file_entry = f"### File Context: {rel_name} ({lines_cnt} lines)\n```\n{f_content}\n```"
-                        chat_history.append({"role": "user", "content": f"[System Context]: User manually loaded file '{rel_name}' into context.\n\n{file_entry}"})
-                        chat_history.append({"role": "assistant", "content": f"Loaded '{rel_name}' ({lines_cnt} lines) into active context."})
-                        _flash_status(f"file: {rel_name} ({lines_cnt} lines)")
-                    except OSError as e:
-                        ui._console.print(f"[red][sys] Failed to read file: {e}[/red]\n")
-                    continue
-
-            if query.startswith(("/", "-")) and query.split()[0] in ("/skill", "/s"):
-                parts = query.split(maxsplit=1)
-                sub_cmd = parts[1].strip().lower() if len(parts) > 1 else ""
-                if sub_cmd in ("off", "clear", "reset", "none", "remove"):
-                    chat_history[0]["content"] = active_system_prompt
-                    os.environ["AI_ACTIVE_SKILL"] = clean_name or "chat"
-                    _flash_status(f"skill: {clean_name or 'chat'}")
-                    continue
-
-                chat_history, loaded_name = skills.run_skill_selector(safe_name, query, SKILLS_DIR, STOP_WORDS, chat_history)
-                if loaded_name:
-                    os.environ["AI_ACTIVE_SKILL"] = f"{clean_name} {loaded_name}"
-                continue
-
-            if query.startswith("-save"):
-                tag = query.replace("-save", "").strip() or "checkpoint"
-                sessions.save_checkpoint(safe_name, tag, chat_history)
-                _flash_status(f"checkpoint: {tag}")
-                continue
-
-            if query in ("-load", "-timeline"):
-                try:
-                    if restored_hist := sessions.rollback_checkpoint(safe_name):
-                        chat_history = restored_hist
-                        ui._console.print(f"[green][session-mgr] Restored session ({len(chat_history) - 1} turns loaded).[/green]\n")
-                except Exception as e:
-                    ui._console.print(f"[red]Error loading session: {e}[/red]")
-                continue
+                if new_query:
+                    query = new_query
 
             # Cleanly wipe ephemeral slash commands above when real prompt is submitted
             _clear_transient_status(query)
@@ -832,11 +474,23 @@ def run_interactive_chat(args: list[str]) -> None:
             if ans := core.stream_response(chat_history, prefix="Agent:" if is_agent else "AI:", show_stats=show_stats, thinking_budget=reasoning_budget if reasoning_active else 0, is_agent=is_agent):
                 clean_ans = RE_THINK_TAGS.sub("", ans).strip()
                 chat_history.append({"role": "assistant", "content": clean_ans or ans})
-                tts.speak_response(clean_ans or ans)
+
+                try:
+                    tts.speak_response(clean_ans or ans)
+                except Exception as e:
+                    if os.environ.get("AI_DEBUG") == "1":
+                        sys.stderr.write(f"\r\n[debug] TTS playback error: {e}\r\n")
+
                 if not show_stats:
                     print()
+
                 if is_agent:
-                    sessions.log_turn(safe_name, query, ans)
+                    try:
+                        sessions.log_turn(safe_name, query, ans)
+                    except Exception as e:
+                        if os.environ.get("AI_DEBUG") == "1":
+                            sys.stderr.write(f"\r\n[debug] Failed to log turn to SQLite: {e}\r\n")
+
                     if match := RE_AUTO_RUN.search(ans):
                         try:
                             readline.set_startup_hook(lambda: readline.insert_text(match.group(1).strip()))
@@ -844,16 +498,17 @@ def run_interactive_chat(args: list[str]) -> None:
                             pass
 
                     agent_dir = os.path.join(workspace_path, ".agent")
-                    os.makedirs(agent_dir, exist_ok=True)
-                    hist_file = os.path.join(agent_dir, "history.md")
                     try:
+                        os.makedirs(agent_dir, exist_ok=True)
+                        hist_file = os.path.join(agent_dir, "history.md")
                         mode = "a" if os.path.exists(hist_file) else "w"
                         with open(hist_file, mode, encoding="utf-8") as hf:
                             if mode == "w":
                                 hf.write(f"# Workspace History: {os.path.basename(workspace_path)}\n\n")
                             hf.write(f"## [{time.strftime('%Y-%m-%d %H:%M')}] User:\n{query}\n\n### Agent:\n{ans}\n\n---\n\n")
-                    except OSError:
-                        pass
+                    except OSError as e:
+                        if os.environ.get("AI_DEBUG") == "1":
+                            sys.stderr.write(f"\r\n[debug] Failed to write history.md: {e}\r\n")
     except KeyboardInterrupt:
         clean_exit(safe_name if is_agent else None)
 
@@ -861,15 +516,19 @@ def run_interactive_chat(args: list[str]) -> None:
 def run_direct_query(args: list[str]) -> None:
     """Executes instant single-turn CLI prompt without interactive session loop."""
     query_parts = args[1:]
-    query = " ".join(query_parts).strip()
-    if query.lower() in ("/help", "/h", "help", "--help", "-h"):
-        ui.show_help()
-        sys.exit(0)
-
     skill_content = ""
     if query_parts and query_parts[-1].startswith("-"):
         skill_content = skills.load_skill_content(query_parts[-1].lstrip("-").lower(), SKILLS_DIR, CFG_DIR)
-        query = " ".join(query_parts[:-1]).strip()
+        query_parts = query_parts[:-1]
+
+    query = " ".join(query_parts).strip()
+    if not query:
+        ui._console.print("[dim yellow][sys] Usage: ai --talk <prompt> [-skill][/dim yellow]")
+        sys.exit(0)
+
+    if query.lower() in ("/help", "/h", "help", "--help", "-h"):
+        ui.show_help()
+        sys.exit(0)
 
     sys_ctx = skills.get_system_context(query, CONTEXT_FILE, STOP_WORDS, SKILLS_DIR, CFG_DIR)
     if sys_ctx == "__ABORT_TURN__":

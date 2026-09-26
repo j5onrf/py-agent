@@ -3,8 +3,8 @@
 Built to be lightweight, auditable by a single developer, and private by design.
 
 * **Zero-Trust Containment:** Out-of-bounds workspace access, mutating system actions (`systemctl`), and package managers (`sudo`, `pacman`, `pip`) always require interactive `[Y/n]` confirmation.
-* **Isolated Secrets:** Credentials exist solely in `~/.config/py-agent/.env` and are never logged, exported, or leaked in prompts.
-* **Standalone Architecture:** 100% standard library Python orchestration with zero background embedding servers, zero tracking services.
+* **Isolated Secrets:** Credentials exist solely in `~/.config/py-agent/.env` with `0o600` permissions and are never logged, exported, or leaked into prompts or query strings.
+* **Standalone Architecture:** 100% standard library Python orchestration with zero background embedding servers and zero tracking services.
 
 ---
 
@@ -24,12 +24,18 @@ Built to be lightweight, auditable by a single developer, and private by design.
               ┌───────────────┘                 └──────────────┐
               ▼                                                ▼
 ┌───────────────────────────┐                    ┌───────────────────────────┐
-│ modules/agent_core.py     │                    │ modules/agent_tui.py      │
-│ (Streaming, Turn Engine)  │◄───────────────────┤ (Textual TUI, uvloop)     │
+│ modules/agent_commands.py │                    │ modules/agent_tui.py      │
+│ (Command Registry & Router│                    │ (Textual TUI, uvloop)     │
 └─────────────┬─────────────┘                    └─────────────┬─────────────┘
               │                                                │
-   ┌──────────┼──────────────┬──────────────┬──────────────┐   │
-   ▼          ▼              ▼              ▼              ▼   ▼
+              ▼                                                │
+┌───────────────────────────┐                                  │
+│ modules/agent_core.py     │◄─────────────────────────────────┘
+│ (Streaming, Turn Engine)  │
+└─────────────┬─────────────┘
+              │
+   ┌──────────┼──────────────┬──────────────┬──────────────┐
+   ▼          ▼              ▼              ▼              ▼
 ┌───────────┐ ┌──────────┐ ┌────────────┐ ┌───────────┐ ┌─────────────┐
 │ Adapters  │ │ Sandbox  │ │ Security   │ │ Skills    │ │ SQLite DBs  │
 │ (/adp for │ │ Kernel   │ │ Kernel     │ │ & Context │ │ (Sessions & │
@@ -65,25 +71,34 @@ Workspace capabilities (`/map`, `/mem`, `/yolo`, SQLite checkpoints) are univers
 
 ### Technical Implementation
 
-1. **Universal Workspace Modularity (`agent_skills.py`):**
+1. **Modular Command Dispatching (`agent_commands.py`):**
+   - Decouples 25+ interactive slash actions (`/m`, `/mem`, `/t`, `/tts`, `/adp`, `/g`, etc.), file context loaders, and secondary surface launchers from the main CLI loop into an isolated registry.
+   - Preserves state continuity across sessions via a structured `SessionContext` without polluting the core REPL driver.
+
+2. **Universal Workspace Modularity (`agent_skills.py` & `agent_context.py`):**
    - Any model tier can enable or disable `/map` (Codebase Index-Map & AST graph) and `/mem` (Git-native OKF Markdown memory) independently in `ai init` or via CLI toggles.
    - Frontmatter defaults define recommended baselines, but runtime hotkeys (`m`, `d`, `p`, `a`, `Tab`) always take precedence and persist to `<workspace>/.agent/config.json`.
+   - `agent_context.py` houses the 3-Zone Context Compactor (`prune_history`) and Jaccard intent engine, pruning middle turns while preserving system prompts and completed milestone anchors.
 
-2. **Dynamic Schema Slicing (`agent_core.py`):**
+3. **Decoupled Multimodal Vision Engine (`agent_vision.py`):**
+   - Offloads image attachment pre-processing, diagrams, error screenshots, and UI mockups to Gemini Flash Lite vision for text-only local models.
+   - Hardened with strict SSRF defense (blocking private, link-local, loopback, and metadata subnets), a 15 MB payload bound, header-based API key authentication (`x-goog-api-key`), and canonical workspace path containment.
+
+4. **Dynamic Schema Slicing (`agent_core.py`):**
    - `ipython_mode == False`: Restricts schema to `tools.SMOL_TOOLS` (6 discrete atomic tools: `read_file`, `edit_file`, `write_file`, `search_code`, `list_dir`, `run_command`).
    - `ipython_mode == True`: Injects `IPYTHON_TOOL` (`exec_python`) alongside native tools.
    - `use_map == True`: Slices in the AST symbol graph tools (`read_symbol`, `trace_symbol`, `blast_radius`, `find_symbol`, `architecture_overview`, `delegate_task`) regardless of model size.
 
-3. **Zero-Trust Security Enforcement (`agent_security.py`):**
-   - Centralizes path resolution, container prefix healing (`/workspace/`), forbidden system directory blacklists (`/etc`, `/usr`), and command security (`sudo`, `pacman`, `systemctl`).
+5. **Zero-Trust Security Enforcement (`agent_security.py`):**
+   - Centralizes semantic path resolution with `os.path.commonpath`, container prefix healing (`/workspace/`), forbidden system directory blacklists (`/etc`, `/usr`), and shell command inspection.
    - Implements a non-bypassable authorization gate: in-bounds workspace operations auto-approve under YOLO mode, but out-of-bounds access and mutating system commands strictly ignore YOLO mode and always prompt for `[y/N]` confirmation.
 
-4. **Opt-In Out-of-Band Adapters (`agent_adapters.py`):**
-   - **Opt-in only:** Disabled by default across the runtime. Enabled explicitly per profile via `adapters: true` (recommended for Sub-27B SLMs) or toggled on-the-fly with `/adp`.
+6. **Opt-In Out-of-Band Adapters (`agent_adapters.py`):**
+   - **Opt-in only:** Disabled by default across the runtime. Enabled explicitly per profile via `adapters: true` (recommended for Sub-27B SLMs) or toggled on the fly with `/adp`.
    - Large models (27B+) do not use adapters by default, relying on native schema compliance.
    - When active on small models, it normalizes parameter aliases (`file` -> `path`, `cmd` -> `command`), repairs unclosed JSON brackets, and rescues markdown-wrapped tool calls out-of-band without polluting base system prompts.
 
-5. **Deterministic Diffing (`agent_tools.py`):**
+7. **Deterministic Diffing (`agent_tools.py`):**
    - `_resilient_replace` handles diff execution in 3 stages: Exact -> Whitespace-Normalized -> 88% Fuzzy Match.
    - Validates changes with `ast.parse` prior to writing, catching syntax regressions at the runtime boundary.
 
@@ -94,10 +109,12 @@ Workspace capabilities (`/map`, `/mem`, `/yolo`, SQLite checkpoints) are univers
 ```console
 1. Shell & Entry Tier
    ├── ai-hook.sh               - Zero-lag shell hook, auto-teleportation, and command-not-found intent handler
-   └── ai-agent.py              - CLI entrypoint, single-pass config resolution, REPL loop & direct query router
+   ├── ai-agent.py              - CLI entrypoint, single-pass config resolution, REPL loop & direct query router
+   └── agent_commands.py        - Modular command dispatcher, 25+ slash action handlers & surface router
 
 2. Execution & Streaming Engine
-   ├── agent_core.py            - SSE parser, token calculation, fallback cascade, unclosed-think sanitization
+   ├── agent_core.py            - SSE parser, token tracking, fallback cascade, unclosed-think sanitization
+   ├── agent_vision.py          - Multimodal vision pipeline, Gemini Flash Lite OCR, SSRF defense & 15 MB bounds
    └── agent_adapters.py        - Universal Sub-27B tool adapters (/adp), AST extractors & self-healing JSON parser
 
 3. Sandboxing, Tools & Safety
@@ -108,21 +125,21 @@ Workspace capabilities (`/map`, `/mem`, `/yolo`, SQLite checkpoints) are univers
 
 4. Concurrency, UI & IPC
    ├── agent_tui.py             - Textual full-screen reactive workspace with live tools and self-healing /adp support
-   ├── agent_tui_async.py       - uvloop event loop, /tmp/*.sock sub-agent socket hub, live OKF memory directory watcher
+   ├── agent_tui_async.py       - uvloop event loop, private .run/*.sock sub-agent socket hub, live OKF memory watcher
    └── agent_ui.py              - Terminal renderers, InlineSpinner, box themes, interactive profile selector (a: Adp)
 
 5. Memory, Knowledge & Storage
    ├── agent_memories.py        - Git-native Open Knowledge Format (OKF) Markdown memory manager (.agent/memory/*.md)
    ├── agent_sessions.py        - SQLite session checkpoints (-save / -load), turn logger, projects/.database/ isolation
-   ├── agent_context.py         - Jaccard semantic intent router for instant terminal shortcuts (ai-context.md)
-   └── agent_usage.py           - Unified spend ledger, high-resolution generation timer & speed tracker
+   ├── agent_context.py         - 3-zone context compactor (prune_history) & Jaccard semantic intent router
+   └── agent_usage.py           - Unified spend ledger, dynamic model_pricing.json override, timer & speed tracker
 
 6. Cloud Providers & Auxiliary Services
    ├── agent_cloud.py           - Single-pass top-down .env cascade engine (Custom HF, Gemini, OpenRouter, DeepSeek)
    ├── model-select.py          - Streamlined interactive TUI model selector, context budget manager & .env key synchronizer
-   ├── agent_voice.py           - Low-latency HTTPS voice bridge (:9999) with Wayland virtual typing (wtype --)
-   ├── agent_tts.py             - Zero-lag neural Kokoro text-to-speech module (OMP-tuned pw-play + koko execution)
-   └── chat                     - Standalone analytical recommendation engine for /f, /tk, /b, and /a directives
+   ├── agent_voice.py           - Token-authenticated HTTPS voice bridge (:9999) with Wayland virtual typing (wtype --)
+   ├── agent_tts.py             - Zero-lag neural Kokoro text-to-speech module (process-group tracked pw-play execution)
+   └── agent_chat.py            - Standalone analytical recommendation engine for /f, /tk, /b, and /a directives
 ```
 
 ---
@@ -136,21 +153,22 @@ A comprehensive map of all upstream foundations, architectural roots, and second
 | System | Upstream Roots & Inspiration | Purpose & Architecture |
 | :--- | :--- | :--- |
 | **Codebase Graph** | [Graphify](https://github.com/Graphify-Labs/graphify) + [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) | Standard-library Python AST parsing (`ast.NodeVisitor`) coupled with SQLite `fts5` virtual table indexing for sub-millisecond symbol queries (`index-map`). |
-| **Task Loop Engine** | [Ralph Wiggum](https://github.com/ghuntley/how-to-ralph-wiggum) | Self-directed task loop (`ralph.py`) that reads specifications (`TASK.md`), decomposes execution steps, and retries on failure states until pass verification. |
+| **Task Loop Engine** | [Ralph Wiggum](https://github.com/ghuntley/how-to-ralph-wiggum) | Self-directed task loop (`loop.py`) that reads specifications (`TASK.md`)... |
 | **Kernel Harness** | [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent) + [NVIDIA NOOA](https://github.com/NVIDIA-NeMo/labs-OO-Agents) | Stateful in-memory IPython REPL with bounded object representations (`preview()`), 30s `SIGALRM` execution alarm, and model-callable `memory`/`graph` APIs (`/py`). |
 | **Code-First Batching** | [Hugging Face smolagents](https://github.com/huggingface/smolagents) | Enables models to execute multi-file batch loops in Python RAM and conclude with a clean `final_answer(data)` completion signal. |
 | **Surgical File Edits** | [SmallCoder](https://github.com/Doorman11991/smallcode) | 3-stage resilient replacement (`edit_file`) tolerant of whitespace/indentation variances, with overwrite protection on `write_file`. |
-| **Context Compaction** | [Pi Coding Agent](https://pi.dev) | 3-zone context compactor (`prune_history`) that condenses middle turns while preserving completed milestone anchors and modified file tracking. |
+| **Context Compaction** | [Pi Coding Agent](https://pi.dev) | 3-zone context compactor (`agent_context.py`) that condenses middle turns while preserving completed milestone anchors and modified file tracking. |
 | **Cognitive Stepping** | [Reasonix](https://github.com/esengine/deepseek-reasonix) | Real-time cognitive transition extraction and streaming step badges inside thinking traces (`/t`). |
 | **Multi-Agent State** | [Vercel Eve](https://github.com/vercel/eve) + [herdr](https://github.com/ogulcancelik/herdr) | Process-isolated sub-agent PID lockfile tracking with checkpoint rollback (`-save` / `-load`) and in-kernel `delegate()` sandboxing. |
 | **Adapter Healing** | [Unsloth AI](https://github.com/unslothai/unsloth) | Self-healing tool format adapters (`agent_adapters.py`) resolving Hermes XML, DSML, Mistral, and raw planning JSON out-of-band for ≤27B models (`/adp`). |
 
 ## Auxiliary Subsystems & Services
 
+* **Automated Code Review (`opencr`):** Integrated Alibaba [Open Code Review](https://github.com/alibaba/open-code-review) plugin (`run-review`) providing in-place single-file and directory audits with live tool telemetry, `--concurrency` rate-limit protection, and dynamic reasoning budgets.
 * **Live Web Grounding (`/gnd`):** Dual-mode factual web search using the official Gemini Grounding Search tool with automatic keyless DuckDuckGo fallback across CLI, TUI, and Web surfaces.
-* **Multimodal Vision OCR (`describe_image_gemini`):** Cloud pre-processor utilizing Gemini Flash Lite vision to transcribe images, diagrams, error screenshots, and UI mockups into structured text descriptions for text-only local models.
-* **Low-Latency Voice Bridge (`/v [auto]`):** Standalone HTTPS server on port `9999` with Gemini speech-to-text and Wayland virtual typing (`wtype --`) directly into the CLI or PyCode editor.
-* **Local Kokoro Audio (`/tts`):** Zero-lag neural text-to-speech reader using local `koko` via PipeWire (`pw-play`), automatically filtering code blocks and thinking traces.
+* **Multimodal Vision OCR (`agent_vision.py`):** Standalone cloud pre-processor utilizing Gemini Flash Lite vision to transcribe images, diagrams, error screenshots, and UI mockups into structured text descriptions for text-only local models, guarded against SSRF and out-of-bounds traversal.
+* **Token-Authenticated Voice Bridge (`/v [auto]`):** Standalone HTTPS server on port `9999` with Gemini speech-to-text, token-authenticated endpoints (`.voice_token`), and native Wayland virtual typing (`wtype --`).
+* **Process-Group Kokoro Audio (`/tts`):** Zero-lag neural text-to-speech reader using local `koko` via PipeWire (`pw-play`), featuring immediate audio preemption and process-group signal containment.
 * **System Administration Suite:** Integrated diagnostics in `tools/agentic/system/` including real-time hardware inspection (`system-health`), automated log triage (`log-checker`), AUR package auditing (`aur-audit`), and dynamic security auditing (`security-audit`).
 
 ## Architectural Advantages
@@ -172,6 +190,8 @@ A comprehensive map of all upstream foundations, architectural roots, and second
 | Core Module | Capability | Description |
 | :--- | :--- | :--- |
 | **Engine** | **Zero-Daemon** | 0% idle CPU/RAM usage. Native Python standard-library execution. |
+| **Dispatcher** | **Modular Action Router** | `modules/agent_commands.py` decouples 25+ slash actions, file inspection, and surface handoffs from the main loop. |
+| **Vision** | **Multimodal OCR & Vision** | `modules/agent_vision.py` preprocesses images via Gemini Flash Lite with SSRF defense, 15 MB bounds, and containment for text-only models. |
 | **Providers** | **Active Provider** | Direct `.env` configuration: Custom Endpoints / HF, Gemini, OpenRouter, OpenAI, Claude, Grok, or Local GGUF. |
 | **Multi-Agent** | **Subagents** | Vercel Eve-style sub-agents with herdr multiplexing (`-save`/`-load`) + in-kernel `delegate("goal")` sandboxes. |
 | **Safety** | **Zero-Trust Kernel** | `modules/agent_security.py` enforces mandatory non-bypassable `[y/N]` confirmation for out-of-bounds workspace paths, mutating system actions (`systemctl`), and package managers (`sudo`, `pacman`, `pip`) even in YOLO mode. |
@@ -179,6 +199,6 @@ A comprehensive map of all upstream foundations, architectural roots, and second
 | **Resilience** | **Self-Healing Tools** | Unsloth-inspired JSON argument healer re-serializing valid schemas to prevent server `HTTP 500` errors. |
 | **Optimization** | **Token-Slasher** | Custom `tools/` and `skills/` integration built for minimal token consumption. |
 | **Grounding** | **Web Search Engine** | Real-time factual search retrieval (`/gnd`) with Gemini Grounding and DuckDuckGo safety fallback in CLI, TUI & WEB/PYC. |
-| **Voice-to-Text** | **Tablet/Phone Bridge** | Zero-latency HTTPS voice bridge with Gemini cloud transcription and native Wayland virtual typing (`wtype --`) directly into PyCode IDE and CLI (`/v [auto]`). |
+| **Voice-to-Text** | **Tablet/Phone Bridge** | HTTPS voice bridge with Gemini cloud transcription and native Wayland virtual typing (`wtype --`) directly into PyCode IDE and CLI (`/v [auto]`). |
 | **Text-to-Speech** | **Neural Kokoro TTS** | Local PipeWire audio reader (`/tts`) using `koko` with silent code/thinking filtering and concise status announcements. |
 

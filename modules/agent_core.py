@@ -1,33 +1,41 @@
 #!/usr/bin/env python3
-"""Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [Production Ready]"""
+"""Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [Hardened Production Ready]"""
 
-import base64
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
-import urllib.parse
-import urllib.request as urlreq
+import uuid
 from typing import Any
 
 import agent_adapters as adapters
 import agent_cloud
+import agent_context as context
+from agent_context import (
+    estimate_token_count,
+    get_accurate_token_count,
+    prune_history,
+    show_memory_status,
+)
 import agent_ipython as ipython
 import agent_security as security
 import agent_tools as tools
 import agent_ui as ui
+import agent_vision as vision
+from agent_vision import (
+    _get_img_config,
+    describe_image_gemini,
+    preprocess_multimodal_messages,
+)
 import requests
-from rich.box import ROUNDED
-from rich.console import Console, Group
-from rich.panel import Panel
-from rich.text import Text
+from rich.console import Console
 
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
 STATE_FILE: str = os.path.join(CFG_DIR, ".state.json")
-SESSIONS_DIR: str = os.path.join(CFG_DIR, "projects", ".database")
 
 
 def _get_console(stderr: bool = False) -> Console:
@@ -35,28 +43,47 @@ def _get_console(stderr: bool = False) -> Console:
     return Console(stderr=stderr, width=cols)
 
 
-_console, _console_err, _session = _get_console(False), _get_console(True), requests.Session()
+_console, _console_err = _get_console(False), _get_console(True)
+
+# Thread-local HTTP session storage for safe concurrency
+_local_session = threading.local()
+
+
+def _get_session() -> requests.Session:
+    if not hasattr(_local_session, "session"):
+        s = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=1)
+        s.mount("http://", adapter)
+        s.mount("https://", adapter)
+        _local_session.session = s
+    return _local_session.session
+
+
+_orig_excepthook = sys.excepthook
 
 
 def _clean_sigint_handler(exctype, value, tb):
-    if issubclass(exctype, KeyboardInterrupt):
+    if isinstance(exctype, type) and issubclass(exctype, KeyboardInterrupt):
         raw_err = getattr(sys, "__stderr__", sys.stderr)
         try:
             raw_err.write("\r\033[0m\033[?25h\x1b[2K\033[90m[sys] Interrupted.\033[0m\r\n")
             raw_err.flush()
         except Exception:
             pass
-        sys.exit(130)
-    sys.__excepthook__(exctype, value, tb)
+        return
+    if _orig_excepthook and _orig_excepthook is not _clean_sigint_handler:
+        _orig_excepthook(exctype, value, tb)
+    else:
+        sys.__excepthook__(exctype, value, tb)
 
 
 sys.excepthook = _clean_sigint_handler
 
 RE_THINKING_TITLE = re.compile(r"^\s*Thinking Process:\s*", re.IGNORECASE)
 RE_FINAL_ANSWER = re.compile(r"^\s*Final Answer:\s*", re.IGNORECASE)
+RE_FINAL_ANSWER_SENTINEL = re.compile(r"^\s*#{0,3}\s*Final Answer\b", re.IGNORECASE | re.MULTILINE)
 RE_MULTIPLE_NEWLINES = re.compile(r"\n{2,}")
 RE_TOOL_CALL_BLOCK = re.compile(r"<\|tool_call_start\|>.*?<\|tool_call_end\|>", re.DOTALL)
-RE_ATTACHED_IMAGE = re.compile(r'\[(?:Attached\s+)?(?:image|file)[^\]]*?saved\s+at:\s*([^\]]+)\]', re.IGNORECASE)
 
 TOOL_VERBS: dict[str, str] = getattr(tools, "TOOL_VERBS", {})
 
@@ -75,182 +102,77 @@ except ImportError:
     usage_log = None
     speed_test = None
 
+_state_lock = threading.Lock()
 _state_cache: dict[str, Any] = {}
 _state_mtime: float = 0.0
 
 
-def _get_img_config() -> tuple[str, str]:
-    """Retrieves vision model and API key from environment or .env files."""
-    k = os.environ.get("IMG_VOICE", "") or os.environ.get("IMG_KEY", "") or os.environ.get("GEM_VOICE", "")
-    m = os.environ.get("IMG_MODEL", "") or os.environ.get("GEM_MODEL", "") or "gemini-3.5-flash-lite"
-    if not k:
-        for p in (os.path.join(CFG_DIR, ".env"), os.path.expanduser("~/.config/local-ai/.env"), ".env"):
-            if os.path.isfile(p):
-                try:
-                    with open(p, "r", encoding="utf-8") as f:
-                        for l in f:
-                            if (s := l.strip()) and not s.startswith("#"):
-                                if (s.startswith("IMG_VOICE=") or s.startswith("IMG_KEY=") or s.startswith("GEM_VOICE=")) and not k:
-                                    k = s.split("=", 1)[1].strip().strip("'\"")
-                                if (s.startswith("IMG_MODEL=") or s.startswith("GEM_MODEL=")) and not os.environ.get("IMG_MODEL"):
-                                    m = s.split("=", 1)[1].strip().strip("'\"")
-                except Exception:
-                    pass
-    return k.strip(), m.strip() or "gemini-3.5-flash-lite"
-
-
-def describe_image_gemini(target: Any) -> str:
-    """Pre-processes images via Gemini Flash Lite vision for text-only local models."""
-    key, model = _get_img_config()
-    if not key:
-        return "[Error: IMG_VOICE not configured in .env for vision]"
-    mime, b64 = "image/png", ""
+def _get_int_env(key: str, default: int) -> int:
+    val = os.environ.get(key)
+    if val is None or not str(val).strip():
+        return default
     try:
-        if isinstance(target, dict):
-            src = target.get("source", {}) if isinstance(target.get("source"), dict) else {}
-            b64 = src.get("data") or target.get("data") or target.get("blob") or ""
-            mime = src.get("media_type") or target.get("mimeType") or target.get("mime_type") or "image/png"
-            if not b64 and (u := (target.get("image_url", {}).get("url") if isinstance(target.get("image_url"), dict) else target.get("image_url")) or target.get("url") or target.get("path") or src.get("url")):
-                return describe_image_gemini(str(u))
-        elif isinstance(target, str):
-            c = target.strip().strip("'\"").strip()
-            if c.startswith("data:image/"):
-                h, b64 = c.split(",", 1)
-                mime = h.split(";")[0].replace("data:", "")
-            elif c.startswith(("http://", "https://")):
-                url = c.replace("github.com/", "raw.githubusercontent.com/").replace("/blob/", "/") if ("github.com/" in c and "/blob/" in c) else c
-                req = urlreq.Request(url, headers={"User-Agent": "Mozilla/5.0 Chrome/130.0.0.0 Safari/537.36", "Accept": "image/*,*/*;q=0.8"})
-                with urlreq.urlopen(req, timeout=15) as resp:
-                    b64, ct = base64.b64encode(resp.read()).decode("utf-8"), resp.headers.get_content_type()
-                    mime = ct if ct and ct.startswith("image/") else ("image/jpeg" if any(x in url.lower() for x in (".jpg", ".jpeg")) else ("image/webp" if ".webp" in url.lower() else "image/png"))
-            else:
-                p = urllib.parse.unquote(c[7:]) if c.startswith("file://") else c
-                ws = os.path.realpath(os.environ.get("AI_WORKSPACE_PATH", os.getcwd()))
-                home = os.path.realpath(os.path.expanduser("~"))
-
-                # Strict boundary validation: prevent arbitrary file read / path traversal
-                cand_paths = []
-                if not os.path.isabs(p) and not p.startswith("~"):
-                    cand_paths.append(os.path.realpath(os.path.join(ws, p)))
-                else:
-                    cand_paths.append(os.path.realpath(os.path.expanduser(p)))
-
-                rf = None
-                for cand in cand_paths:
-                    if os.path.isfile(cand):
-                        # Ensure resolved path is strictly within workspace boundary (or home workspace)
-                        if cand == ws or cand.startswith(ws + os.sep) or ws == home:
-                            rf = cand
-                            break
-
-                if rf:
-                    ext = os.path.splitext(rf)[1].lower()
-                    mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".svg": "image/svg+xml"}.get(ext, "image/png")
-                    with open(rf, "rb") as f:
-                        b64 = base64.b64encode(f.read()).decode("utf-8")
-                elif len(c) > 100 and not any(c.startswith(x) for x in ("/", "~", ".", "file:")):
-                    b64 = c
-                else:
-                    return f"[Error: Image file access denied or not found at '{target}']"
-    except Exception as e:
-        return f"[Error loading image: {e}]"
-
-    if not b64:
-        return "[Error: Empty image payload]"
-
-    sys_p = "Provide a comprehensive, accurate, and objective description of the image. Transcribe any visible text, code, terminal logs, error messages, line numbers, or data verbatim with exact formatting. Describe all visual subjects, objects, UI layouts, diagrams, charts, colors, and scenes in clear, precise detail."
-    payload = {"contents": [{"parts": [{"text": sys_p}, {"inline_data": {"mime_type": mime, "data": b64}}]}], "generationConfig": {"temperature": 0.1, "maxOutputTokens": 2048}}
-    try:
-        req = urlreq.Request(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST")
-        with urlreq.urlopen(req, timeout=20) as resp:
-            data = json.loads(resp.read().decode())
-        parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-        return "".join(p.get("text", "") for p in parts if "text" in p).strip() or "[No visual elements detected]"
-    except Exception as e:
-        return f"[Vision Exception: {e}]"
-
-
-def preprocess_multimodal_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Inspects messages for attached images and runs Gemini OCR/Vision pre-processing."""
-    processed, (_, model) = [], _get_img_config()
-    for msg in messages:
-        c = msg.get("content")
-        if isinstance(c, str):
-            if paths := RE_ATTACHED_IMAGE.findall(c):
-                va = [f"[Visual Analysis ({model})]:\n{describe_image_gemini(p.strip().strip('\'\"'))}" for p in paths]
-                txt = RE_ATTACHED_IMAGE.sub("", c).strip()
-                processed.append({**msg, "content": "\n\n".join(va + ([f"User Question: {txt}"] if txt else []))})
-            else:
-                processed.append(msg)
-        elif isinstance(c, list):
-            tp, va = [], []
-            for it in c:
-                if isinstance(it, str):
-                    if paths := RE_ATTACHED_IMAGE.findall(it):
-                        va.extend(f"[Visual Analysis ({model})]:\n{describe_image_gemini(p.strip().strip('\'\"'))}" for p in paths)
-                        if clean := RE_ATTACHED_IMAGE.sub("", it).strip():
-                            tp.append(clean)
-                    else:
-                        tp.append(it)
-                elif isinstance(it, dict):
-                    if it.get("type") == "text":
-                        raw = it.get("text", "")
-                        if paths := RE_ATTACHED_IMAGE.findall(raw):
-                            va.extend(f"[Visual Analysis ({model})]:\n{describe_image_gemini(p.strip().strip('\'\"'))}" for p in paths)
-                            if clean := RE_ATTACHED_IMAGE.sub("", raw).strip():
-                                tp.append(clean)
-                        elif raw:
-                            tp.append(raw)
-                    else:
-                        res = describe_image_gemini(it)
-                        if not res.startswith("[Error: Empty image"):
-                            va.append(f"[Visual Analysis ({model})]:\n{res}")
-            user_txt = "\n".join(t.strip() for t in tp if t.strip())
-            processed.append({**msg, "content": "\n\n".join(va + ([f"User Question: {user_txt}"] if (user_txt and va) else ([user_txt] if user_txt else [])))})
-        else:
-            processed.append(msg)
-    return processed
+        return int(val)
+    except (ValueError, TypeError):
+        return default
 
 
 def _heal_tool_args(raw: Any) -> dict[str, Any]:
     """Heals malformed JSON tool arguments via modular adapter or safe decode."""
+    if isinstance(raw, dict):
+        return raw
     if get_state("adapters_active", False):
         return adapters.heal_json_args(raw) if isinstance(raw, str) else (raw or {})
     try:
-        return json.loads(raw) if isinstance(raw, str) else (raw or {})
-    except Exception:
-        return {}
+        parsed = json.loads(raw) if isinstance(raw, str) else (raw or {})
+        return parsed if isinstance(parsed, dict) else {"value": parsed}
+    except Exception as e:
+        if os.environ.get("AI_DEBUG") == "1":
+            sys.stderr.write(f"[debug] Failed to parse tool arguments: {e} (raw={raw!r})\n")
+        return {"_parse_error": str(e), "_raw_args": str(raw)}
 
 
 def get_state(key: str = "", default: Any = None) -> Any:
     global _state_cache, _state_mtime
-    try:
-        if os.path.exists(STATE_FILE):
-            mtime = os.path.getmtime(STATE_FILE)
-            if mtime != _state_mtime or not _state_cache:
-                with open(STATE_FILE, "r", encoding="utf-8") as f:
-                    _state_cache = json.load(f)
-                _state_mtime = mtime
-    except (OSError, json.JSONDecodeError):
-        pass
-    merged = {**DEFAULTS, **_state_cache}
-    return merged.get(key, default) if key else merged
+    with _state_lock:
+        try:
+            if os.path.exists(STATE_FILE):
+                mtime = os.path.getmtime(STATE_FILE)
+                if mtime != _state_mtime or not _state_cache:
+                    with open(STATE_FILE, "r", encoding="utf-8") as f:
+                        _state_cache = json.load(f)
+                    _state_mtime = mtime
+        except (OSError, json.JSONDecodeError):
+            pass
+        merged = {**DEFAULTS, **_state_cache}
+        return merged.get(key, default) if key else merged
 
 
 def save_state(key: str, value: Any) -> None:
     global _state_cache, _state_mtime
-    st = get_state()
-    st[key] = value
-    tmp = f"{STATE_FILE}.tmp"
-    try:
-        os.makedirs(CFG_DIR, exist_ok=True)
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(st, f, indent=2)
-        os.replace(tmp, STATE_FILE)
-        _state_cache, _state_mtime = st, os.path.getmtime(STATE_FILE)
-    except OSError:
-        if os.path.exists(tmp):
-            os.remove(tmp)
+    with _state_lock:
+        try:
+            if os.path.exists(STATE_FILE):
+                with open(STATE_FILE, "r", encoding="utf-8") as f:
+                    _state_cache = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            pass
+        st = {**DEFAULTS, **_state_cache}
+        st[key] = value
+        tmp = f"{STATE_FILE}.tmp.{os.getpid()}.{threading.get_ident()}"
+        try:
+            os.makedirs(CFG_DIR, exist_ok=True)
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(st, f, indent=2)
+            os.replace(tmp, STATE_FILE)
+            _state_cache = st
+            _state_mtime = os.path.getmtime(STATE_FILE)
+        except OSError:
+            if os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
 
 
 def workspace_safe_name(workspace_path: str, home_dir: str = "") -> str:
@@ -260,7 +182,7 @@ def workspace_safe_name(workspace_path: str, home_dir: str = "") -> str:
 
 def is_calm_cli() -> bool:
     """Strict gate: Calm mode only runs in interactive CLI terminals (never in TUI, WebUI, PyCode, or subagents)."""
-    if os.environ.get("AI_SURFACE") == "1" or os.environ.get("TEXTUAL") or int(os.environ.get("AI_SUBAGENT_DEPTH", "0")) >= 1:
+    if os.environ.get("AI_SURFACE") == "1" or os.environ.get("TEXTUAL") or _get_int_env("AI_SUBAGENT_DEPTH", 0) >= 1:
         return False
     if not (sys.stdout.isatty() and sys.stderr.isatty()):
         return False
@@ -279,6 +201,8 @@ def run_mod(module_name: str, *args: str) -> str:
                 return f"[error: {e}]"
     return ""
 
+
+# ── 1. Streaming Rich Streamer ───────────────────────────────────────────────
 
 class RichStreamer:
     def __init__(self, prefix: str = "", active: bool = True, spinner: Any = None) -> None:
@@ -339,7 +263,7 @@ class RichStreamer:
             self.phase = "ANSWER"
 
         if self.phase == "THINKING":
-            tok = RE_MULTIPLE_NEWLINES.sub("\n", RE_THINKING_TITLE.sub("", token.replace("\\n", "\n")))
+            tok = RE_MULTIPLE_NEWLINES.sub("\n", RE_THINKING_TITLE.sub("", token))
             if self.acc_think.endswith("\n") and tok.startswith("\n"):
                 tok = tok.lstrip("\r\n")
             self.acc_think += tok
@@ -356,7 +280,7 @@ class RichStreamer:
                     except OSError:
                         pass
         else:
-            tok = RE_FINAL_ANSWER.sub("", token.replace("\\n", "\n"))
+            tok = RE_FINAL_ANSWER.sub("", token)
             if not self.ans_started:
                 tok = tok.lstrip("\r\n\t ")
                 if not tok:
@@ -411,7 +335,7 @@ def _log_turn_usage(model: str, in_tok: int, out_tok: int, cost: float, show_sta
     try:
         usage_log.record(model, in_tok, out_tok, cost)
         if show_stats and sys.stdout.isatty():
-            ctx_max = int(os.environ.get("AI_MAX_TOKENS", 8192)) if ctx_used is not None else None
+            ctx_max = _get_int_env("AI_MAX_TOKENS", 8192) if ctx_used is not None else None
             print(usage_log.turn_line(in_tok, out_tok, cost, ctx_used, ctx_max, cached_tok=cached_tok))
             print()
     except Exception:
@@ -453,18 +377,20 @@ def _print_tool_output(spinner: Any, text: str) -> None:
     if sys.stdout.isatty() and text.strip():
         if spinner:
             spinner.stop()
-        # Copy-safe 4-space indent (no unicode pipes to corrupt pasted code)
+        # Copy-safe 4-space indent; disable markup to prevent bracketed logs ([Errno 2]) from crashing Rich
         clean_lines = text.strip().splitlines()
         preview = clean_lines[:15]
         for line in preview:
-            _console_err.print(f"    {line}")
+            _console_err.print(f"    {line}", markup=False, highlight=False)
         if len(clean_lines) > 15:
-            _console_err.print(f"    [dim]... ({len(clean_lines) - 15} more lines)[/dim]")
+            _console_err.print(f"    ... ({len(clean_lines) - 15} more lines)", style="dim")
 
 
 def _run_edit_tool(name: str, args: dict[str, Any], workspace: str, spinner: Any = None) -> str:
     return tools.run_tool(name, args, workspace, confirm_gate_fn=lambda r: _confirm_gate(r, spinner), print_output_fn=lambda t: _print_tool_output(spinner, t))
 
+
+# ── 2. Autonomous Agentic Turn Engine ────────────────────────────────────────
 
 def agentic_turn(
     messages: list[dict[str, Any]],
@@ -475,6 +401,7 @@ def agentic_turn(
     spinner: Any,
     show_stats: bool | None = None,
     is_agent: bool = False,
+    prefix: str | None = None,
 ) -> str | None:
     if show_stats is None:
         show_stats = bool(get_state("show_stats", True))
@@ -482,11 +409,12 @@ def agentic_turn(
     workspace = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
     is_local = "localhost" in url or "127.0.0.1" in url or body.get("model") == "local-model"
     resolved_model, streamer, res = None, None, None
-    max_ctx = int(os.environ.get("AI_MAX_TOKENS", 8192))
+    max_ctx = _get_int_env("AI_MAX_TOKENS", 8192)
     is_calm = is_calm_cli()
 
     consecutive_tool_failures = 0
     tools_disabled = False
+    ans_text = ""
 
     def _calc_msg_tokens(msg_list: list[dict[str, Any]]) -> int:
         total = 0
@@ -497,6 +425,8 @@ def agentic_turn(
                 total += get_accurate_token_count(fn.get("name", ""))
                 total += get_accurate_token_count(fn.get("arguments", ""))
         return total
+
+    session = _get_session()
 
     for _round in range(10):
         curr_tok = _calc_msg_tokens(messages)
@@ -535,7 +465,7 @@ def agentic_turn(
             else:
                 active_tools = list(tools.SMOL_TOOLS)
 
-            if int(os.environ.get("AI_SUBAGENT_DEPTH", "0")) >= 1:
+            if _get_int_env("AI_SUBAGENT_DEPTH", 0) >= 1:
                 active_tools = [t for t in active_tools if t.get("function", {}).get("name") != "delegate_task"]
 
             if use_gnd and hasattr(tools, "WEB_TOOL"):
@@ -551,7 +481,7 @@ def agentic_turn(
             user_msg_count = len([m for m in messages if m.get("role") == "user"])
             spinner.start("Preloading..." if (_round == 0 and user_msg_count <= 1) else "Working...")
         try:
-            res = _session.post(url, json=body_tools, headers={"Content-Type": "application/json", "User-Agent": "py-agent", **headers}, timeout=timeout, stream=True)
+            res = session.post(url, json=body_tools, headers={"Content-Type": "application/json", "User-Agent": "py-agent", **headers}, timeout=timeout, stream=True)
             if res.status_code != 200:
                 err_text = res.text[:200].replace("\n", " ").strip()
                 if res.status_code == 400 and ("exceed" in err_text.lower() or "context" in err_text.lower()):
@@ -617,7 +547,8 @@ def agentic_turn(
                         if first_chunk:
                             first_chunk = False
                             if not is_calm:
-                                streamer = RichStreamer(prefix="Agent:" if is_agent else "AI:", spinner=spinner)
+                                stream_pfx = prefix or ("Agent:" if is_agent else "AI:")
+                                streamer = RichStreamer(prefix=stream_pfx, spinner=spinner)
                                 streamer.start()
                             if speed_test and show_stats:
                                 speed_test.start()
@@ -634,7 +565,12 @@ def agentic_turn(
 
                     for tc in delta.get("tool_calls", []):
                         idx = tc.get("index", 0)
-                        tc_entry = tool_calls_map.setdefault(idx, {"id": tc.get("id", ""), "type": "function", "function": {"name": tc.get("function", {}).get("name", ""), "arguments": ""}})
+                        tc_entry = tool_calls_map.setdefault(
+                            idx,
+                            {"id": tc.get("id", ""), "type": "function", "function": {"name": tc.get("function", {}).get("name", ""), "arguments": ""}}
+                        )
+                        if tc.get("id"):
+                            tc_entry["id"] = tc["id"]
                         if tc.get("function", {}).get("name"):
                             tc_entry["function"]["name"] = tc["function"]["name"]
                         for k in ("thought_signature", "thoughtSignature", "extra_content", "provider_specific_fields"):
@@ -674,12 +610,12 @@ def agentic_turn(
                     spinner.stop(leave_on_screen=is_calm)
 
                 if is_calm and ans_text:
-                    p_prefix = "Agent: " if is_agent else "AI: "
+                    p_prefix = prefix or ("Agent: " if is_agent else "AI: ")
                     clean_reply = re.sub(r"<think>[\s\S]*?(?:</think>|$)", "", ans_text).strip()
                     if clean_reply:
-                        _console.print(f"[bold green]{p_prefix}[/bold green]{clean_reply}")
+                        _console.print(f"[bold green]{p_prefix}[/bold green]", end="")
+                        _console.print(clean_reply, markup=False, highlight=False)
 
-                # Output stats cleanly together ONLY at the end of the full turn
                 if speed_test and show_stats and not first_chunk:
                     speed_test.end(actual_out_tokens=out_tok, is_local=is_local, resolved_model=final_model, active_model=body.get("model"))
 
@@ -701,7 +637,7 @@ def agentic_turn(
                 return ans_text if ans_text else "(No response generated)"
 
             healed_calls = []
-            for tc in calls:
+            for call_idx, tc in enumerate(calls):
                 raw_fname = tc.get("function", {}).get("name", "")
                 raw_args = tc.get("function", {}).get("arguments") or ""
                 if adapters_on:
@@ -716,8 +652,9 @@ def agentic_turn(
                     or (tc.get("extra_content", {}).get("google", {}).get("thought_signature") if isinstance(tc.get("extra_content"), dict) else None)
                     or "skip_thought_signature_validator"
                 )
+                unique_cid = tc.get("id") or f"call_{int(time.time())}_{call_idx}_{uuid.uuid4().hex[:6]}"
                 healed_calls.append({
-                    "id": tc.get("id") or f"call_{int(time.time())}",
+                    "id": unique_cid,
                     "type": "function",
                     "function": {
                         "name": fname,
@@ -730,13 +667,12 @@ def agentic_turn(
             clean_ans_text = re.sub(r"<think>[\s\S]*?(?:</think>|$)", "", ans_text).strip()
             messages.append({"role": "assistant", "content": clean_ans_text or "", "tool_calls": healed_calls})
 
-            for tc in healed_calls:
+            for call_idx, tc in enumerate(healed_calls):
                 fname = tc.get("function", {}).get("name", "")
                 args = json.loads(tc.get("function", {}).get("arguments", "{}"))
                 brief = str(args.get("code") or args.get("symbol") or args.get("path") or args.get("command") or args.get("pattern") or args.get("goal") or "")[:100].replace("\n", " ")
                 verb = TOOL_VERBS.get(fname, "working")
 
-                # Cleanly clear spinner before printing tool action header (verbose mode only)
                 if not is_calm and spinner and getattr(spinner, "active", False):
                     spinner.stop()
 
@@ -751,7 +687,6 @@ def agentic_turn(
                 except Exception as e:
                     result = f"[tool error] {e}"
 
-                # Stop spinner after tool finishes (verbose mode only)
                 if not is_calm and spinner and getattr(spinner, "active", False):
                     spinner.stop()
 
@@ -759,8 +694,6 @@ def agentic_turn(
                     elapsed = max(0.01, time.time() - t_start)
                     _console_err.print(f"  [green]✔[/green] [dim]Done ({elapsed:.1f}s)[/dim]")
 
-                # Adaptive scratchpad threshold: uses ~35% of total context budget before offloading
-                # (~12k chars on 8k ctx; ~40k chars on 32k ctx)
                 scratch_threshold = max(12000, int(max_ctx * 3.5 * 0.35))
 
                 if len(result) > scratch_threshold:
@@ -784,14 +717,29 @@ def agentic_turn(
 
                 messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": fname, "content": pruned_result})
 
-                if "[denied]" in result:
-                    messages.append({"role": "user", "content": "[System Notice]: Action was explicitly declined by the user. Do not retry or attempt alternative workarounds for this resource."})
+                # Check for explicit user decline; backfill unexecuted parallel calls to maintain schema consistency
+                if str(result).strip().startswith("[denied]"):
+                    for rem_tc in healed_calls[call_idx + 1:]:
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": rem_tc.get("id", ""),
+                            "name": rem_tc.get("function", {}).get("name", ""),
+                            "content": "[cancelled: prior action declined by user]",
+                        })
+                    messages.append({
+                        "role": "user",
+                        "content": "[System Notice]: Action was explicitly declined by the user. Do not retry or attempt alternative workarounds for this resource.",
+                    })
                     return "[denied] Action cancelled by user."
 
-                if fname == "exec_python" and ("### Final Answer" in result or "Final Answer" in result):
-                    messages.append({"role": "user", "content": "[System Directive]: final_answer() was received. Output your concise summary to the user now. Do not call any further tools."})
+                # Line-anchored check for Final Answer in exec_python tool output
+                if fname == "exec_python" and RE_FINAL_ANSWER_SENTINEL.search(result):
+                    messages.append({
+                        "role": "user",
+                        "content": "[System Directive]: final_answer() was received. Output your concise summary to the user now. Do not call any further tools.",
+                    })
                     tools_disabled = True
-                    body.pop("tools", None)
+                    body_tools.pop("tools", None)
 
                 if result.startswith("[error") or result.startswith("[tool error"):
                     consecutive_tool_failures += 1
@@ -839,8 +787,11 @@ def agentic_turn(
 
     if spinner:
         spinner.stop(leave_on_screen=False)
-    return None
+    sys.stderr.write("\r\033[1;33m[sys] Agent loop limit reached (10 rounds exhausted without final answer).\033[0m\r\n")
+    return ans_text or "(Agent loop limit reached)"
 
+
+# ── 3. High-Level Stream Entrypoint ──────────────────────────────────────────
 
 def stream_response(
     messages: list[dict[str, Any]],
@@ -853,9 +804,9 @@ def stream_response(
     if show_stats is None:
         show_stats = bool(get_state("show_stats", True))
 
-    is_sub = int(os.environ.get("AI_SUBAGENT_DEPTH", "0")) >= 1
+    is_sub = _get_int_env("AI_SUBAGENT_DEPTH", 0) >= 1
     is_calm = is_calm_cli()
-    max_ctx = int(os.environ.get("AI_MAX_TOKENS", 8192))
+    max_ctx = _get_int_env("AI_MAX_TOKENS", 8192)
     initial_toks = sum(get_accurate_token_count(m.get("content") or "") for m in messages)
 
     spinner = None if is_sub else (ui.CalmBoatSpinner(tokens_used=initial_toks, max_tokens=max_ctx) if is_calm else ui.InlineSpinner())
@@ -884,7 +835,17 @@ def stream_response(
         if "localhost" in url or "127.0.0.1" in url or body.get("model") == "local-model":
             body = {**body, "max_tokens": 2048, **think_kwargs}
 
-        ans = agentic_turn(messages, url, headers, body, timeout, spinner, show_stats, is_agent=is_agent)
+        ans = agentic_turn(
+            messages,
+            url,
+            headers,
+            body,
+            timeout,
+            spinner,
+            show_stats,
+            is_agent=is_agent,
+            prefix=prefix,
+        )
         if spinner:
             spinner.stop(leave_on_screen=False)
         return ans
@@ -896,112 +857,3 @@ def stream_response(
                 pass
         sys.stderr.write("\r\x1b[2K\033[90m[sys] Interrupted.\033[0m\r\n")
         return None
-
-
-def get_accurate_token_count(text: Any, server_url: str = "http://localhost:8080") -> int:
-    return max(1, (len(text if isinstance(text, str) else str(text)) * 10) // 36) if text else 0
-
-
-def show_memory_status(messages: list[dict[str, Any]], max_context: int = 8192, server_url: str = "http://localhost:8080") -> None:
-    # 1. Grab true server context ceiling (e.g. 16384 on Nex, 8192 on Hermes)
-    try:
-        with urlreq.urlopen(f"{server_url.rstrip('/')}/props", timeout=0.15) as r:
-            max_context = json.loads(r.read()).get("default_generation_settings", {}).get("n_ctx", max_context)
-    except Exception:
-        max_context = int(os.environ.get("AI_MAX_TOKENS", max_context))
-
-    # 2. Add the ~760 active tool schema tokens to message content
-    total_toks = sum(get_accurate_token_count(m.get("content") or "", server_url) for m in messages) + 760
-    pct = (total_toks / max_context) * 100
-    bar = "█" * int(min(20, pct / 5)) + "░" * (20 - int(min(20, pct / 5)))
-    color = "green" if pct < 70 else "yellow" if pct < 90 else "red"
-
-    _console.print(Panel(
-        Group(
-            Text.assemble(("Context Window: ", "dim"), (f"{total_toks}", f"bold {color}"), (f"/{max_context} tokens ", "dim"), (f"({pct:.1f}%)", f"bold {color}")),
-            Text(f"[{bar}]", style=color)
-        ),
-        title="Memory & Context Status", title_align="left", border_style="bright_black", box=ROUNDED, expand=False
-    ))
-
-
-def prune_history(history: list[dict[str, Any]], max_tokens: int | None = None) -> list[dict[str, Any]]:
-    """3-Zone Context Compactor with SmolCoder Active Session Working Anchor"""
-    if len(history) <= 4:
-        return history
-
-    limit = max_tokens or int(os.environ.get("AI_MAX_TOKENS", 8192))
-    sys_msg = history[0]
-
-    # Select recent tail (at least 4 messages), walking backward to ensure we never start
-    # on an orphaned tool message whose assistant tool_calls message was moved to middle
-    tail_idx = max(1, len(history) - 4)
-    while tail_idx > 1 and history[tail_idx].get("role") == "tool":
-        tail_idx -= 1
-
-    recent_tail = history[tail_idx:]
-    middle_msgs = history[1:tail_idx]
-
-    completed_actions = []
-    compacted_middle = []
-
-    for msg in middle_msgs:
-        role = msg.get("role")
-        content = str(msg.get("content") or "")
-
-        if role == "tool":
-            fname = msg.get("name", "tool")
-            line_count = len(content.splitlines())
-
-            if "Successfully edited" in content:
-                if m := re.search(r"Successfully edited\s+(\S+)", content):
-                    completed_actions.append(f"Edited {m.group(1)}")
-                summary = f"[{fname}: applied targeted edit]"
-            elif "wrote" in content and "chars to" in content:
-                if m := re.search(r"wrote \d+ chars to\s+(\S+)", content):
-                    completed_actions.append(f"Created {m.group(1)}")
-                summary = f"[{fname}: created file]"
-            elif "(exit 0" in content:
-                completed_actions.append("Passed shell verification")
-                summary = f"[{fname}: command passed (exit 0)]"
-            elif "### File:" in content or line_count > 10:
-                summary = f"[{fname}: {line_count} lines processed successfully]"
-            elif "(exit" in content:
-                first_err = content.splitlines()[0] if content else "error"
-                summary = f"[{fname}: {first_err[:120]}]"
-            else:
-                summary = content if len(content) <= 150 else content[:120] + "... [snipped]"
-
-            compacted_middle.append({"role": "assistant", "content": summary})
-        elif role == "assistant":
-            clean_msg = {k: v for k, v in msg.items() if k != "tool_calls"}
-            clean_c = re.sub(r"<think>[\s\S]*?(?:</think>|$)", "", str(clean_msg.get("content") or "")).strip()
-            if clean_c:
-                compacted_middle.append({**clean_msg, "content": clean_c})
-        else:
-            compacted_middle.append(msg)
-
-    anchors = []
-    if mod_files := tools.get_modified_files():
-        anchors.append(f"[Active Session Modified Files: {', '.join(mod_files)}]")
-    if completed_actions:
-        deduped = list(dict.fromkeys(completed_actions))[-6:]
-        anchors.append("[Completed Milestones]:\n" + "\n".join(f"✓ {act}" for act in deduped))
-
-    anchor_msg = {"role": "system", "content": "\n\n".join(anchors)} if anchors else None
-
-    assembled = [sys_msg] + ([anchor_msg] if anchor_msg else [])
-    curr_tokens = sum(get_accurate_token_count(m.get("content", "")) for m in assembled)
-    tail_tokens = sum(get_accurate_token_count(m.get("content") or "") for m in recent_tail)
-
-    budget_for_middle = max(500, limit - tail_tokens - curr_tokens)
-    selected_middle = []
-
-    for m in reversed(compacted_middle):
-        toks = get_accurate_token_count(m.get("content") or "")
-        if curr_tokens + toks > budget_for_middle and selected_middle:
-            break
-        selected_middle.append(m)
-        curr_tokens += toks
-
-    return assembled + list(reversed(selected_middle)) + recent_tail

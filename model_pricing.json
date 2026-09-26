@@ -1,0 +1,25 @@
+# ==============================================================================
+# Py-Agent Model Pricing Configuration (USD per 1,000,000 tokens)
+#
+# FORMAT: "model-key": [input_price_usd, output_price_usd]
+# Matches by longest prefix/substring (e.g., 'gpt-4o-mini' beats 'gpt-4o').
+# Lines starting with '#' or '//' are ignored.
+# Free models ($0.00) or local models do not need to be listed.
+# ==============================================================================
+{
+  "claude-3-7-sonnet": [3.00, 15.00],
+  "claude-3-5-sonnet": [3.00, 15.00],
+  "claude-3-5-haiku": [0.80, 4.00],
+  "gpt-4o-mini": [0.15, 0.60],
+  "gpt-4o": [2.50, 10.00],
+  "o3-mini": [1.10, 4.40],
+  "o1-mini": [1.10, 4.40],
+  "o1": [15.00, 60.00],
+  "deepseek-reasoner": [0.55, 2.19],
+  "deepseek-chat": [0.14, 0.28],
+  "gemini-2.5-flash": [0.10, 0.40],
+  "gemini-2.0-flash": [0.10, 0.40],
+  "gemini-2.5-pro": [1.25, 5.00],
+  "llama-3.3-70b": [0.35, 0.40],
+  "qwen-2.5-72b": [0.35, 0.40]
+}
