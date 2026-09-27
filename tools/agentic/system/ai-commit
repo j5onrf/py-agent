@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # ai-commit - High-Speed Minimalist Git Commit Generator
 
-set -eo pipefail
+set -euo pipefail
+
+trap 'echo -e "\n[aborted]" >&2; exit 130' INT
 
 # 1. Verify Git Repository
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -9,34 +11,44 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     exit 1
 fi
 
-# 2. Extract Staged Files Safely
-staged_files=$(git diff --cached --name-only 2>/dev/null || true)
-if [[ -z "${staged_files//[[:space:]]/}" ]]; then
-    echo "[info] No staged changes found. Run 'git add <files>' first." >&2
+# 2. Extract Only the Last 3 Staged Files
+mapfile -t target_files < <(git diff --cached --name-only | tail -n 3)
+if [[ ${#target_files[@]} -eq 0 ]]; then
+    echo "[info] No staged changes found. Run 'git add' first." >&2
     exit 0
 fi
-
-last_file=$(tail -n 1 <<< "$staged_files")
-base_file=$(basename "$last_file")
-fallback_msg="Update $base_file and related components"
 
 # 3. Model Server Pre-Flight Check (Local :8080 or Cloud Keys)
 CFG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/py-agent"
 server_online=0
 
-if curl -s -m 0.25 "http://127.0.0.1:8080/v1/models" >/dev/null 2>&1; then
+if curl -s -m 0.5 "http://127.0.0.1:8080/v1/models" >/dev/null 2>&1; then
     server_online=1
-elif grep -E -q '^(GEMINI_API_KEY|OPENROUTER_API_KEY|CUSTOM[0-9]*_API_KEY|CUSTOM[0-9]*_KEY)=.+[a-zA-Z0-9]' "$CFG_DIR/.env" 2>/dev/null; then
+elif grep -E -q '^(GEMINI_API_KEY|OPENROUTER_API_KEY|CUSTOM_API_KEY|CUSTOM2_API_KEY)=.+[a-zA-Z0-9]' "$CFG_DIR/.env" 2>/dev/null; then
     server_online=1
 fi
 
+base_file=$(basename "${target_files[-1]}" 2>/dev/null || echo "files")
+fallback_msg="Update $base_file and related components"
+
 if [[ "$server_online" -eq 0 ]]; then
-    echo -e "\033[90m[warn] Server offline (:8080). Using file fallback.\033[0m" >&2
+    echo -e "\n\033[90m[warn] Server offline (:8080). Using file fallback.\033[0m\n" >&2
     message="$fallback_msg"
 else
-    # 4. Context Extraction
-    stats=$(git diff --cached --name-status 2>/dev/null | tail -n 5 || true)
-    changes=$(git diff --cached -U0 2>/dev/null | grep -E '^\+[^+]|^\-[^-]' | head -n 8 || true)
+    # 4. Ultra-Compact Context: Only status + max 8 diff lines across the 3 files
+    stats=$(git diff --cached --name-status -- "${target_files[@]}" || true)
+    changes=$(git diff --cached -U0 -- "${target_files[@]}" \
+        ':(exclude)*lock*' ':(exclude)*.svg' ':(exclude)*.png' ':(exclude)*.jpg' ':(exclude)*.gif' \
+        | awk '
+        /^\+[^+]/ || /^-[^-]/ {
+            val = substr($0, 2)
+            sub(/^[ \t]+/, "", val)
+            if (val != "" && val !~ /^(#|\/\/|\/\*|\*)/) {
+                print $0
+                count++
+                if (count >= 8) { exit }
+            }
+        }' || true)
 
     SYSTEM_PROMPT="Write a 4-8 word imperative git commit message. No quotes, explanations, markdown, or trailing period."
     USER_PROMPT="Files:
@@ -48,8 +60,8 @@ $changes"
     raw_message=""
     printf "\033[90m[generating commit...]\033[0m" >&2
 
-    # Fast-Path: Local llama-server (:8080)
-    if curl -s -m 0.25 "http://127.0.0.1:8080/v1/models" >/dev/null 2>&1; then
+    # 5. Direct Local HTTP Fast-Path (< 2s total round-trip on CPU)
+    if curl -s -m 0.5 "http://127.0.0.1:8080/v1/models" >/dev/null 2>&1; then
         payload=$(python3 -c '
 import json, sys
 sys_p, usr_p = sys.argv[1], sys.argv[2]
@@ -65,7 +77,7 @@ print(json.dumps({
 }))' "$SYSTEM_PROMPT" "$USER_PROMPT" 2>/dev/null || echo "")
 
         if [[ -n "$payload" ]]; then
-            resp=$(curl -s -m 6.0 -H "Content-Type: application/json" -d "$payload" "http://127.0.0.1:8080/v1/chat/completions" 2>/dev/null || echo "")
+            resp=$(curl -s -m 6 -H "Content-Type: application/json" -d "$payload" "http://127.0.0.1:8080/v1/chat/completions" 2>/dev/null || echo "")
             raw_message=$(echo "$resp" | python3 -c '
 import json, sys
 try:
@@ -76,7 +88,7 @@ except Exception:
         fi
     fi
 
-    # Fallback to py-agent CLI
+    # Fallback to py-agent CLI if local server was busy or returned empty
     if [[ -z "$raw_message" ]]; then
         _AI_SCRIPT_PATH="${CFG_DIR}/ai-agent.py"
         _AI_PYTHON_BIN=$(command -v python3 2>/dev/null || echo "python3")
@@ -88,13 +100,24 @@ $USER_PROMPT"
 
     printf "\r\033[2K" >&2
 
-    # Sanitize Output
+    # 6. Sanitize Output: Strip ANSI escape sequences & model prefixes
     message=$(echo "$raw_message" | sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g')
     message=$(echo "$message" | sed -E 's/^(AI|Agent):\s*//')
+
+    # 7. Strip stray <think> blocks
     message=$(echo "$message" | perl -0777 -pe 's/<think>.*?<\/think>//gs' 2>/dev/null || echo "$message")
     message=$(echo "$message" | perl -0777 -pe 's/<think>.*//gs' 2>/dev/null || echo "$message")
-    message=$(echo "$message" | sed -E -e 's/^[Cc]ommit [Mm]essage:?\s*//' -e 's/^[-*]\s*//' -e 's/^[`"'\''\s]+//' -e 's/[`"'\''\s\.]+$//' | awk 'NF {print; exit}' || echo "")
 
+    # 8. Clean First Line (POSIX [:space:] prevents stripping trailing 's')
+    message=$(echo "$message" | sed -E \
+        -e 's/^[Cc]ommit [Mm]essage:?\s*//' \
+        -e 's/^[-*]\s*//' \
+        -e 's/^[`"'\''[:space:]]+//' \
+        -e 's/[`"'\''[:space:]\.]+$//' \
+        -e 's/^[[:space:]]+//; s/[[:space:]]+$//' \
+        | awk 'NF {print; exit}' || echo "")
+
+    # 9. Format Capitalization & Word Bounds
     if [[ -n "$message" ]]; then
         word_count=$(echo "$message" | wc -w)
         if [[ $word_count -gt 8 ]]; then
@@ -108,10 +131,10 @@ $USER_PROMPT"
     fi
 fi
 
-# Strip trailing newlines so Readline won't auto-submit
+# Strip trailing newline
 message=$(echo "$message" | tr -d '\r\n')
 
-# 5. Interactive Prompt
+# 10. Interactive Input Prompt
 user_message=""
 if [ -t 0 ]; then
     read -e -i "$message" -p "commit: " user_message
@@ -120,8 +143,6 @@ elif [ -c /dev/tty ]; then
 else
     user_message="$message"
 fi
-
-user_message=$(echo "$user_message" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
 
 if [[ -z "$user_message" ]]; then
     echo "[error] Commit message cannot be empty. Aborted." >&2
