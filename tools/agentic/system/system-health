@@ -2,65 +2,95 @@
 # system-health - Context-Aware Real-time Hardware Inspector
 
 set -euo pipefail
+export LC_ALL=C
 
-# --- Configuration Paths ---
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/py-agent"
 [[ -d "$CONFIG_DIR" ]] || CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/local-ai"
 MYSYS_FILE="${CONFIG_DIR}/skills/system/mysys.md"
 
-# 1. Real-time CPU Temperature & Frequency
+# 1. Real-time CPU Temperature (Prioritize Package id 0 / Tctl) & Frequency
 CPU_TEMP="N/A"
 HWMON_PATH=$(grep -l -E "coretemp|k10temp|zenpower" /sys/class/hwmon/hwmon*/name 2>/dev/null | head -n 1 || true)
 if [[ -n "$HWMON_PATH" ]]; then
     HWMON_DIR=$(dirname "$HWMON_PATH")
-    # Prioritize Package temp if available, otherwise first input
-    for temp_file in "$HWMON_DIR"/temp*_input; do
-        if [[ -f "$temp_file" ]]; then
-            RAW_TEMP=$(cat "$temp_file" 2>/dev/null || echo "0")
-            if [[ "$RAW_TEMP" -gt 0 ]]; then
-                CPU_TEMP="$((RAW_TEMP / 1000))"
-                break
+    # Check for prioritized label
+    for lbl_file in "$HWMON_DIR"/temp*_label; do
+        if [[ -f "$lbl_file" ]]; then
+            lbl=$(cat "$lbl_file" 2>/dev/null || true)
+            if [[ "$lbl" =~ (Package id 0|Tctl|Tdie) ]]; then
+                input_file="${lbl_file%_label}_input"
+                if [[ -f "$input_file" ]]; then
+                    raw=$(cat "$input_file" 2>/dev/null | tr -cd '0-9' || true)
+                    if [[ -n "$raw" ]] && (( raw > 0 )); then
+                        CPU_TEMP="$((raw / 1000))"
+                        break
+                    fi
+                fi
             fi
         fi
     done
+
+    # Fallback to first available temp*_input
+    if [[ "$CPU_TEMP" == "N/A" ]]; then
+        for temp_file in "$HWMON_DIR"/temp*_input; do
+            if [[ -f "$temp_file" ]]; then
+                raw=$(cat "$temp_file" 2>/dev/null | tr -cd '0-9' || true)
+                if [[ -n "$raw" ]] && (( raw > 0 )); then
+                    CPU_TEMP="$((raw / 1000))"
+                    break
+                fi
+            fi
+        done
+    fi
 fi
 
 if [[ "$CPU_TEMP" == "N/A" && -f "/sys/class/thermal/thermal_zone0/temp" ]]; then
-    RAW_TEMP=$(cat "/sys/class/thermal/thermal_zone0/temp" 2>/dev/null || echo "0")
-    [[ "$RAW_TEMP" -gt 0 ]] && CPU_TEMP="$((RAW_TEMP / 1000))"
+    raw=$(cat "/sys/class/thermal/thermal_zone0/temp" 2>/dev/null | tr -cd '0-9' || true)
+    if [[ -n "$raw" ]] && (( raw > 0 )); then
+        CPU_TEMP="$((raw / 1000))"
+    fi
 fi
 
 CPU_FREQ="N/A"
 if [[ -f "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq" ]]; then
-    RAW_FREQ=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq 2>/dev/null || echo "0")
-    [[ "$RAW_FREQ" -gt 0 ]] && CPU_FREQ="$((RAW_FREQ / 1000)) MHz"
+    raw=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq 2>/dev/null | tr -cd '0-9' || true)
+    if [[ -n "$raw" ]] && (( raw > 0 )); then
+        CPU_FREQ="$((raw / 1000)) MHz"
+    fi
 fi
 
 # 2. Real-time Load Averages
 LOAD_AVG="N/A"
 if [[ -f "/proc/loadavg" ]]; then
-    LOAD_AVG=$(awk '{print $1" (1m), "$2" (5m), "$3" (15m)"}' /proc/loadavg)
+    LOAD_AVG=$(awk '{print $1" (1m), "$2" (5m), "$3" (15m)"}' /proc/loadavg 2>/dev/null || echo "N/A")
 fi
 
-# 3. Real-time RAM & ZRAM/Swap Utilization (Single-pass proc read)
+# 3. Real-time RAM & Swap (Clean while-read parser avoiding eval)
 FREE_RAM="N/A"
 USED_RAM_PCT="N/A"
 SWAP_USAGE="N/A"
-if [[ -f "/proc/meminfo" ]]; then
-    eval "$(awk '
-        /^MemTotal:/ {print "MEM_TOTAL=" $2}
-        /^MemAvailable:/ {print "MEM_AVAIL=" $2}
-        /^SwapTotal:/ {print "SWAP_TOTAL=" $2}
-        /^SwapFree:/ {print "SWAP_FREE=" $2}
-    ' /proc/meminfo)"
+MEM_TOTAL=0
+MEM_AVAIL=0
+SWAP_TOTAL=0
+SWAP_FREE=0
 
-    if [[ -n "${MEM_TOTAL:-}" && -n "${MEM_AVAIL:-}" && "$MEM_TOTAL" -gt 0 ]]; then
+if [[ -f "/proc/meminfo" ]]; then
+    while read -r k v _; do
+        case "$k" in
+            MemTotal:)     MEM_TOTAL="${v//[^0-9]/}" ;;
+            MemAvailable:) MEM_AVAIL="${v//[^0-9]/}" ;;
+            SwapTotal:)    SWAP_TOTAL="${v//[^0-9]/}" ;;
+            SwapFree:)     SWAP_FREE="${v//[^0-9]/}" ;;
+        esac
+    done < /proc/meminfo
+
+    if (( MEM_TOTAL > 0 )); then
         MEM_USED=$((MEM_TOTAL - MEM_AVAIL))
         FREE_RAM="$((MEM_AVAIL / 1024)) MB"
         USED_RAM_PCT="$(( (MEM_USED * 100) / MEM_TOTAL ))%"
     fi
 
-    if [[ -n "${SWAP_TOTAL:-}" && -n "${SWAP_FREE:-}" && "$SWAP_TOTAL" -gt 0 ]]; then
+    if (( SWAP_TOTAL > 0 )); then
         SWAP_USED=$((SWAP_TOTAL - SWAP_FREE))
         SWAP_PCT="$(( (SWAP_USED * 100) / SWAP_TOTAL ))%"
         SWAP_USAGE="$((SWAP_USED / 1024)) MB / $((SWAP_TOTAL / 1024)) MB ($SWAP_PCT)"
@@ -69,27 +99,34 @@ if [[ -f "/proc/meminfo" ]]; then
     fi
 fi
 
-# 4. Root Storage Capacity
+# 4. Root Storage Capacity (POSIX format avoids column wrapping)
 DISK_FREE="N/A"
 DISK_PCT="N/A"
 if command -v df >/dev/null 2>&1; then
-    read -r _ _ _ DISK_FREE DISK_PCT _ < <(df -h / | tail -n 1)
+    df_out=$(df -Pk / 2>/dev/null | awk 'NR==2 {printf "%.1fG|%s\n", $4/1048576, $5}' || true)
+    if [[ -n "$df_out" ]]; then
+        DISK_FREE=$(cut -d'|' -f1 <<< "$df_out")
+        DISK_PCT=$(cut -d'|' -f2 <<< "$df_out")
+    fi
 fi
 
-# 5. Top Resource Consumers
+# 5. Top Resource Consumers (Safe column extraction with self-PID exclusion)
 TOP_CPU_PROC="N/A"
 TOP_MEM_PROC="N/A"
 if command -v ps >/dev/null 2>&1; then
-    TOP_CPU_PROC=$(ps -eo pcpu,comm --sort=-pcpu 2>/dev/null | awk '$2 !~ /^(ps|grep|awk|system-health|comm|%CPU|COMMAND)$/ {print $2" ("$1"%)"; exit}')
-    TOP_MEM_PROC=$(ps -eo pmem,comm --sort=-pmem 2>/dev/null | awk '$2 !~ /^(ps|grep|awk|system-health|comm|%MEM|COMMAND)$/ {print $2" ("$1"%)"; exit}')
-    TOP_CPU_PROC="${TOP_CPU_PROC:-N/A}"
-    TOP_MEM_PROC="${TOP_MEM_PROC:-N/A}"
+    TOP_CPU_PROC=$(ps -eo pid,pcpu,comm --sort=-pcpu 2>/dev/null | awk -v p1=$$ -v p2=$PPID '
+        NR>1 && $1 != p1 && $1 != p2 && $3 !~ /^(ps|awk|comm)$/ {print $3" ("$2"%)"; exit}
+    ' || echo "N/A")
+    TOP_MEM_PROC=$(ps -eo pid,pmem,comm --sort=-pmem 2>/dev/null | awk -v p1=$$ -v p2=$PPID '
+        NR>1 && $1 != p1 && $1 != p2 && $3 !~ /^(ps|awk|comm)$/ {print $3" ("$2"%)"; exit}
+    ' || echo "N/A")
 fi
 
 # 6. Systemd Failed Services Audit
 FAILED_UNITS=0
 if command -v systemctl >/dev/null 2>&1; then
-    FAILED_UNITS=$(systemctl list-units --failed --no-legend --plain 2>/dev/null | grep -c -v "^$" || true)
+    raw_failed=$(systemctl list-units --failed --no-legend --plain 2>/dev/null | awk 'NF {c++} END {print c+0}')
+    FAILED_UNITS="${raw_failed:-0}"
 fi
 
 # 7. Hardware Profile Alignment Check
@@ -100,24 +137,39 @@ if [[ -f "$MYSYS_FILE" ]]; then
     ACTIVE_KERNEL=$(uname -r)
     if [[ -n "$STATIC_KERNEL" && "$ACTIVE_KERNEL" != *"$STATIC_KERNEL"* ]]; then
         PROFILE_ALIGNMENT="MISALIGNED"
-        PROFILE_DETAILS="Kernel updated! Active is '$ACTIVE_KERNEL', but static profile specifies '$STATIC_KERNEL'. Run 'generate profile' to update."
+        PROFILE_DETAILS="Kernel updated! Active is '$ACTIVE_KERNEL', but static profile specifies '$STATIC_KERNEL'. Run 'generate-profile' to update."
     fi
 fi
 
-# 8. Posture Assessment
+# 8. Posture Assessment & Threshold Alerts
 POSTURE="SECURE"
-WARNINGS=""
-if [[ "$FAILED_UNITS" -gt 0 ]]; then
+WARNINGS=()
+
+if (( FAILED_UNITS > 0 )); then
     POSTURE="WARNING"
-    WARNINGS="${WARNINGS}* Failed Services: $FAILED_UNITS systemd unit(s) failed.\n"
+    WARNINGS+=("* Failed Services: $FAILED_UNITS systemd unit(s) failed.")
 fi
 if [[ "$PROFILE_ALIGNMENT" == "MISALIGNED" ]]; then
     POSTURE="WARNING"
-    WARNINGS="${WARNINGS}* Profile Alignment: $PROFILE_DETAILS\n"
+    WARNINGS+=("* Profile Alignment: $PROFILE_DETAILS")
+fi
+if [[ "$CPU_TEMP" =~ ^[0-9]+$ ]] && (( CPU_TEMP >= 85 )); then
+    POSTURE="WARNING"
+    WARNINGS+=("* Thermal Alert: CPU temperature is high (${CPU_TEMP}°C).")
+fi
+if [[ "${USED_RAM_PCT%\%}" =~ ^[0-9]+$ ]] && (( ${USED_RAM_PCT%\%} >= 90 )); then
+    POSTURE="WARNING"
+    WARNINGS+=("* Memory Pressure: RAM utilization exceeds 90% ($USED_RAM_PCT).")
+fi
+if [[ "${DISK_PCT%\%}" =~ ^[0-9]+$ ]] && (( ${DISK_PCT%\%} >= 90 )); then
+    POSTURE="WARNING"
+    WARNINGS+=("* Storage Alert: Root partition is nearly full ($DISK_PCT).")
 fi
 
-# 9. Context-Aware Emission
-if [[ "${AI_CONTEXT_RUN:-0}" == "1" ]]; then
+WARNINGS_TEXT=$(printf '%s\n' "${WARNINGS[@]:-None (All metrics within healthy boundaries)}")
+
+# 9. Context-Aware Output
+if [[ "${AI_CONTEXT_RUN:-0}" != "0" ]]; then
     cat <<EOF
 SYSTEM HEALTH STATUS: $POSTURE
 Live Load Averages: $LOAD_AVG
@@ -129,12 +181,14 @@ Top Memory Consumer: $TOP_MEM_PROC
 Root Storage Available: $DISK_FREE free (Partition is $DISK_PCT utilized)
 Failed Systemd Units: $FAILED_UNITS
 System Alignment State: $PROFILE_ALIGNMENT
-Alignment Details: $PROFILE_DETAILS
+Active Warnings:
+$WARNINGS_TEXT
 EOF
 else
     cat <<EOF
 🏥 SYSTEM HEALTH POSTURE: $POSTURE
-* **Active Resource Warnings**: ${WARNINGS:-None (All metrics within healthy boundaries)}
+* **Active Resource Warnings**:
+$WARNINGS_TEXT
 * **Top System Consumers**: CPU: $TOP_CPU_PROC | RAM: $TOP_MEM_PROC
 * **Healthy Metrics**: Total RAM ($USED_RAM_PCT used), Swap/ZRAM ($SWAP_USAGE), disk ($DISK_PCT used), temperature (${CPU_TEMP}°C), systemd services ($FAILED_UNITS failed).
 

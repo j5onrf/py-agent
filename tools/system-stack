@@ -1,38 +1,24 @@
 #!/usr/bin/env python3
-"""system-stack - Interactive TUI for System Health, Security & Diagnostics"""
+"""system-stack - Interactive TUI for System Health, Security & Diagnostics [Hardened Production Ready]"""
 
 import os
+import re
 import select
 import shutil
 import subprocess
 import sys
 import termios
+import time
 import tty
-
-# --- TTY Stream Acquisition ---
-def _get_tty_streams():
-    try:
-        t_in = open("/dev/tty", "r")
-    except OSError:
-        t_in = sys.stdin
-    try:
-        t_out = open("/dev/tty", "w")
-    except OSError:
-        t_out = sys.stdout
-    return t_in, t_out
-
-
-tty_in, tty_out = _get_tty_streams()
+from typing import Any
 
 # --- Rich Import & Detection ---
 try:
     from rich.console import Console
     from rich.markdown import Markdown
     HAS_RICH = True
-    console = Console(file=tty_out, force_terminal=True)
 except ImportError:
     HAS_RICH = False
-    console = None
 
 # --- Path Configurations ---
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
@@ -108,48 +94,85 @@ STACK_ITEMS = [
     },
 ]
 
+_DRIFT_CACHE: tuple[float, str, str] | None = None
+
 
 def check_mysys_drift() -> tuple[str, str]:
+    """Caches blueprint verification based on mtime and compares version components numerically."""
+    global _DRIFT_CACHE
     if not os.path.isfile(MYSYS_FILE):
-        return "\033[1;31mMISSING\033[0m", "Run 'generate profile' to initialize"
+        return "\033[1;31mMISSING\033[0m", "Run option 9 to generate blueprint"
+
+    try:
+        mtime = os.path.getmtime(MYSYS_FILE)
+    except OSError:
+        mtime = 0.0
+
+    if _DRIFT_CACHE is not None and _DRIFT_CACHE[0] == mtime:
+        return _DRIFT_CACHE[1], _DRIFT_CACHE[2]
 
     active_kernel = os.uname().release
     static_kernel = ""
     try:
-        with open(MYSYS_FILE, "r", encoding="utf-8") as f:
+        with open(MYSYS_FILE, "r", encoding="utf-8", errors="replace") as f:
             for line in f:
                 if "Linux Kernel" in line and "`" in line:
-                    static_kernel = line.split("`")[1].strip()
-                    break
-    except OSError:
+                    parts = line.split("`")
+                    if len(parts) >= 3:
+                        static_kernel = parts[1].strip()
+                        break
+    except Exception:
         pass
 
-    if static_kernel and static_kernel.split()[0] not in active_kernel:
-        return "\033[1;33mMISALIGNED\033[0m", f"Active ({active_kernel}) != Profile ({static_kernel})"
-    return "\033[1;32mNOMINAL\033[0m", f"Kernel {active_kernel} matches blueprint"
+    if static_kernel:
+        s_base = re.split(r"[-_\s]", static_kernel)[0]
+        a_base = re.split(r"[-_\s]", active_kernel)[0]
+        s_parts = s_base.split(".")
+        a_parts = a_base.split(".")
+
+        # Numeric major and minor component comparison eliminates prefix false-positives
+        if len(s_parts) >= 2 and len(a_parts) >= 2:
+            if s_parts[:2] != a_parts[:2]:
+                res = ("\033[1;33mMISALIGNED\033[0m", f"Active ({active_kernel}) != Profile ({static_kernel})")
+                _DRIFT_CACHE = (mtime, res[0], res[1])
+                return res
+
+    res = ("\033[1;32mNOMINAL\033[0m", f"Kernel {active_kernel} matches blueprint")
+    _DRIFT_CACHE = (mtime, res[0], res[1])
+    return res
 
 
-def get_key_non_blocking(timeout: float = 0.5) -> str | None:
-    fd = tty_in.fileno()
-    old_settings = termios.tcgetattr(fd)
+def get_key_non_blocking(tty_in_fd: int, timeout: float = 0.5) -> str | None:
+    """Non-blocking single-key reader with robust CSI escape parsing for remote terminals."""
     try:
-        tty.setraw(fd)
-        rlist, _, _ = select.select([fd], [], [], timeout)
+        old_settings = termios.tcgetattr(tty_in_fd)
+    except Exception:
+        return None
+
+    try:
+        tty.setraw(tty_in_fd)
+        rlist, _, _ = select.select([tty_in_fd], [], [], timeout)
         if not rlist:
             return None
 
-        ch_bytes = os.read(fd, 1)
+        ch_bytes = os.read(tty_in_fd, 1)
         if not ch_bytes:
             return None
 
         if ch_bytes == b"\x03":
-            return "esc"
+            return "ctrl_c"
 
         ch = ch_bytes.decode("utf-8", errors="ignore")
         if ch == "\x1b":
-            rlist_seq, _, _ = select.select([fd], [], [], 0.05)
+            rlist_seq, _, _ = select.select([tty_in_fd], [], [], 0.12)
             if rlist_seq:
-                seq = os.read(fd, 2).decode("utf-8", errors="ignore")
+                seq_bytes = b""
+                while len(seq_bytes) < 2:
+                    more = os.read(tty_in_fd, 2 - len(seq_bytes))
+                    if not more:
+                        break
+                    seq_bytes += more
+                seq = seq_bytes.decode("utf-8", errors="ignore")
                 if seq in ("[A", "OA"):
                     return "up"
                 elif seq in ("[B", "OB"):
@@ -171,12 +194,15 @@ def get_key_non_blocking(timeout: float = 0.5) -> str | None:
             return ch
         return ch
     finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        try:
+            termios.tcsetattr(tty_in_fd, termios.TCSADRAIN, old_settings)
+        except Exception:
+            pass
 
 
-def pause_terminal():
+def pause_terminal(tty_in_fd: int, tty_out):
     try:
-        termios.tcflush(tty_in.fileno(), termios.TCIFLUSH)
+        termios.tcflush(tty_in_fd, termios.TCIFLUSH)
     except Exception:
         pass
 
@@ -184,12 +210,12 @@ def pause_terminal():
     tty_out.flush()
 
     while True:
-        k = get_key_non_blocking(timeout=0.2)
-        if k is not None and k in ("enter", "esc", "backspace", "space", "q", "\r", "\n"):
+        k = get_key_non_blocking(tty_in_fd, timeout=0.2)
+        if k is not None and k in ("enter", "esc", "backspace", "space", "q", "ctrl_c"):
             break
 
 
-def draw_menu(selected: int):
+def draw_menu(selected: int, tty_out):
     tty_out.write("\x1b[H\x1b[2J")
     amber = "\033[38;2;230;120;60m"
     reset = "\033[0m"
@@ -202,9 +228,12 @@ def draw_menu(selected: int):
     term_cols = shutil.get_terminal_size((80, 24)).columns
     box_width = min(max(term_cols - 6, 74), 98)
 
+    clean_tools_dir = TOOLS_DIR.replace(os.path.expanduser("~"), "~")
+
     tty_out.write(
         f"\r\n   {bold}SYSTEM & HEALTH ORCHESTRATOR{reset}  {dim}[Arch / CachyOS]{reset}\r\n"
         f"   {dim}Blueprint Alignment: [{align_status}{dim}] {align_desc}{reset}\r\n"
+        f"   {dim}Active Tool Suite:   {clean_tools_dir}{reset}\r\n"
         f"   {dim}{'─' * box_width}{reset}\r\n\r\n"
     )
 
@@ -222,102 +251,180 @@ def draw_menu(selected: int):
         tty_out.write(f"        {dim}{item['desc']}{reset}\r\n\r\n")
 
     exit_idx = len(STACK_ITEMS)
-    tty_out.write(
-        f"{'   ' + amber + '❯' + reset + ' ' + bold if selected == exit_idx else '     '}"
-        f"✕  Exit Orchestrator{reset}\r\n"
-    )
+    is_exit_selected = selected == exit_idx
+    prefix_exit = f"   {amber}❯{reset} {bold}" if is_exit_selected else "     "
+    tty_out.write(f"{prefix_exit}✕  Exit Orchestrator{reset}\r\n")
     tty_out.write(f"\r\n   {dim}{'─' * box_width}{reset}\r\n")
     tty_out.write(f"   {dim}Use ▲/▼, j/k, or numbers to navigate, Enter to run, Esc/q to exit.{reset}\r\n")
     tty_out.flush()
 
 
-def run_target(item: dict):
+def run_target(item: dict, tty_in, tty_out, console):
     tty_out.write("\x1b[?25h\x1b[H\x1b[2J")
     tty_out.flush()
 
     cmd = item["cmd"]
+    in_fd = tty_in.fileno()
 
     if cmd == "view_mysys":
         if os.path.isfile(MYSYS_FILE):
-            with open(MYSYS_FILE, "r", encoding="utf-8") as f:
-                content = f.read()
-            if HAS_RICH:
-                console.print(Markdown(content))
-            else:
-                tty_out.write(content + "\n")
-            pause_terminal()
+            try:
+                with open(MYSYS_FILE, "r", encoding="utf-8", errors="replace") as f:
+                    content = f.read()
+                if HAS_RICH and console:
+                    console.print(Markdown(content))
+                else:
+                    tty_out.write(content + "\n")
+            except Exception as e:
+                tty_out.write(f"\033[1;31mError reading blueprint: {e}\033[0m\n")
+            pause_terminal(in_fd, tty_out)
         else:
             tty_out.write("\033[1;31mBlueprint file not found. Run option 9 to generate.\033[0m\n")
-            pause_terminal()
+            pause_terminal(in_fd, tty_out)
 
     elif cmd == "interactive_aur":
         tty_out.write("\033[1;36m==> Enter AUR package name to audit: \033[0m")
         tty_out.flush()
-        pkg = tty_in.readline().strip()
+
+        pkg_chars = []
+        while True:
+            k = get_key_non_blocking(in_fd, timeout=60.0)
+            if k is None or k in ("esc", "ctrl_c", "q"):
+                pkg_chars = []
+                break
+            elif k == "enter":
+                break
+            elif k == "backspace":
+                if pkg_chars:
+                    pkg_chars.pop()
+                    tty_out.write("\b \b")
+                    tty_out.flush()
+            elif len(k) == 1 and len(pkg_chars) < 64 and k.isprintable():
+                pkg_chars.append(k)
+                tty_out.write(k)
+                tty_out.flush()
+
+        tty_out.write("\n")
+        tty_out.flush()
+        pkg = "".join(pkg_chars).strip()
+
         if pkg:
-            aur_bin = os.path.join(TOOLS_DIR, "aur-audit")
-            if os.path.isfile(aur_bin):
-                subprocess.run([aur_bin, pkg], stdin=tty_in, stdout=tty_out, stderr=tty_out)
+            if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_@.+-]*$", pkg):
+                tty_out.write(f"\033[1;31mInvalid package name format: '{pkg}'\033[0m\n")
             else:
-                tty_out.write(f"\033[1;31mTool not found: {aur_bin}\033[0m\n")
-        pause_terminal()
+                aur_bin = os.path.join(TOOLS_DIR, "aur-audit")
+                if os.access(aur_bin, os.X_OK):
+                    try:
+                        subprocess.run([aur_bin, pkg], stdin=subprocess.DEVNULL, stdout=tty_out, stderr=tty_out, timeout=300)
+                    except subprocess.TimeoutExpired:
+                        tty_out.write("\033[1;31mAUR audit timed out after 300s\033[0m\n")
+                    except Exception as e:
+                        tty_out.write(f"\033[1;31mExecution error: {e}\033[0m\n")
+                else:
+                    tty_out.write(f"\033[1;31mTool missing or not executable: {aur_bin}\033[0m\n")
+        pause_terminal(in_fd, tty_out)
 
     else:
-        if isinstance(cmd, list) and os.path.isfile(cmd[0]):
-            if item.get("markdown") and HAS_RICH:
-                res = subprocess.run(cmd, capture_output=True, text=True)
-                output = (res.stdout or res.stderr or "").strip()
-                if output:
-                    console.print(Markdown(output))
+        if isinstance(cmd, list) and len(cmd) > 0:
+            target_bin = cmd[0]
+            if os.access(target_bin, os.X_OK):
+                try:
+                    if item.get("markdown") and HAS_RICH and console:
+                        res = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180)
+                        output = (res.stdout or "").strip()
+                        if output:
+                            console.print(Markdown(output))
+                        if res.returncode != 0:
+                            tty_out.write(f"\n\033[1;31m[exit code {res.returncode}]\033[0m\n")
+                            if res.stderr:
+                                tty_out.write(f"\033[90m{res.stderr.strip()}\033[0m\n")
+                    else:
+                        res = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=tty_out, stderr=tty_out, timeout=180)
+                        if res.returncode != 0:
+                            tty_out.write(f"\n\033[1;31m[exit code {res.returncode}]\033[0m\n")
+                except subprocess.TimeoutExpired:
+                    tty_out.write(f"\033[1;31m{item['name']} timed out after 180s\033[0m\n")
+                except Exception as e:
+                    tty_out.write(f"\033[1;31mExecution error: {e}\033[0m\n")
             else:
-                subprocess.run(cmd, stdin=tty_in, stdout=tty_out, stderr=tty_out)
-            pause_terminal()
-        else:
-            tty_out.write(f"\033[1;31mCommand not found: {cmd}\033[0m\n")
-            pause_terminal()
+                tty_out.write(f"\033[1;31mCommand missing or not executable: {target_bin}\033[0m\n")
+            pause_terminal(in_fd, tty_out)
 
 
 def main():
+    # Stream Acquisition
+    try:
+        tty_in = open("/dev/tty", "r")
+    except OSError:
+        tty_in = sys.stdin
+    try:
+        tty_out = open("/dev/tty", "w")
+    except OSError:
+        tty_out = sys.stdout
+
+    console_instance = Console(file=tty_out, force_terminal=True) if HAS_RICH and getattr(tty_out, "isatty", lambda: False)() else None
+
+    in_fd = tty_in.fileno()
+    orig_termios = None
+    if getattr(tty_in, "isatty", lambda: False)():
+        try:
+            orig_termios = termios.tcgetattr(in_fd)
+        except Exception:
+            orig_termios = None
+
     selected = 0
     total_options = len(STACK_ITEMS) + 1
-
-    tty_out.write("\x1b[?25l")
-    tty_out.flush()
+    dirty = True
 
     try:
         while True:
-            draw_menu(selected)
-            key = get_key_non_blocking(timeout=1.0)
+            if dirty:
+                draw_menu(selected, tty_out)
+                dirty = False
+
+            key = get_key_non_blocking(in_fd, timeout=0.5)
 
             if key is None:
                 continue
             elif key in ("up", "k"):
                 selected = (selected - 1) % total_options
+                dirty = True
             elif key in ("down", "j"):
                 selected = (selected + 1) % total_options
+                dirty = True
             elif key.isdigit():
                 digit_val = int(key)
                 if 1 <= digit_val <= len(STACK_ITEMS):
                     selected = digit_val - 1
-                    run_target(STACK_ITEMS[selected])
+                    run_target(STACK_ITEMS[selected], tty_in, tty_out, console_instance)
+                    dirty = True
             elif key == "enter":
                 if selected < len(STACK_ITEMS):
-                    run_target(STACK_ITEMS[selected])
+                    run_target(STACK_ITEMS[selected], tty_in, tty_out, console_instance)
+                    dirty = True
                 else:
                     break
-            elif key in ("q", "esc"):
+            elif key in ("q", "esc", "ctrl_c"):
                 break
     finally:
+        if orig_termios:
+            try:
+                termios.tcsetattr(in_fd, termios.TCSADRAIN, orig_termios)
+            except Exception:
+                pass
         tty_out.write("\x1b[?25h\x1b[H\x1b[2J")
         tty_out.flush()
-        os.system("stty sane 2>/dev/null")
+        if tty_in is not sys.stdin:
+            with contextlib.suppress(Exception):
+                tty_in.close()
+        if tty_out is not sys.stdout:
+            with contextlib.suppress(Exception):
+                tty_out.close()
 
 
 if __name__ == "__main__":
+    import contextlib
     try:
         main()
     except KeyboardInterrupt:
-        sys.stdout.write("\x1b[?25h")
-        sys.stdout.flush()
-        os.system("stty sane 2>/dev/null")
         sys.exit(0)

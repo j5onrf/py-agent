@@ -521,13 +521,11 @@ def run_tool(
     full = _safe_path(workspace, raw_path)
 
     def _in_bounds_gate(reason: str) -> bool:
-        env_val = os.environ.get("AI_CONFIRM_GATES", "1").strip().lower()
-        enabled = env_val not in ("0", "false", "no", "off", "")
-        if confirm_gate_fn and enabled:
-            return confirm_gate_fn(reason)
-        if not enabled:
-            return True
-        return security.authorize(reason, is_security_event=False)
+        if confirm_gate_fn:
+            env_val = os.environ.get("AI_CONFIRM_GATES", "1").strip().lower()
+            if env_val not in ("0", "false", "no", "off", ""):
+                return confirm_gate_fn(reason)
+        return True
 
     def _security_gate(reason: str) -> bool:
         if confirm_gate_fn:

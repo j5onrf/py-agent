@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Context Search, Indexing & Compaction Engine [Production Ready]
+"""Context Search, Indexing & Compaction Engine [Hardened Production Ready]
 
 Handles Jaccard semantic intent matching, accurate token counting heuristics,
 context window monitoring, and the 3-Zone Context Compactor.
@@ -253,7 +253,7 @@ def prune_history(history: list[dict[str, Any]], max_tokens: int | None = None) 
     """3-Zone Context Compactor: Preserves system prompt, active session anchors, and recent tail.
 
     Safely walks backward to ensure tool responses are never orphaned from their
-    initiating assistant tool_calls message.
+    initiating assistant tool_calls message, with lower-bound clamping.
     """
     if len(history) <= 4:
         return history
@@ -266,6 +266,13 @@ def prune_history(history: list[dict[str, Any]], max_tokens: int | None = None) 
     tail_idx = max(1, len(history) - 4)
     while tail_idx > 1 and history[tail_idx].get("role") == "tool":
         tail_idx -= 1
+
+    # Clamping guard: if walking backward pushed tail_idx to 1, advance past the tools
+    # so middle_msgs is not empty and recent_tail has valid content
+    if tail_idx == 1 and len(history) > 3:
+        tail_idx = 2
+        while tail_idx < len(history) - 1 and history[tail_idx].get("role") == "tool":
+            tail_idx += 1
 
     recent_tail = history[tail_idx:]
     middle_msgs = history[1:tail_idx]

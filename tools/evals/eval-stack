@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py-Agent Full-Stack Agentic & Tool-Calling Benchmark Suite [Decision-Grade Edition]"""
+"""Py-Agent Full-Stack Agentic & Tool-Calling Benchmark Suite [Hardened Decision-Grade Edition]"""
 
 import contextlib
 import io
@@ -15,6 +15,7 @@ import termios
 import threading
 import time
 import tty
+from typing import Any
 
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
 MODULES_DIR = os.path.join(CFG_DIR, "modules")
@@ -45,51 +46,66 @@ except ImportError as e:
 
 console = Console()
 
+RE_SECRET = re.compile(
+    r"(?:sk-[a-zA-Z0-9_\-]{8}|ghp_[a-zA-Z0-9]{8}|xox[baprs]-[a-zA-Z0-9]{8}|Bearer\s+[a-zA-Z0-9_\-\.]{8})[a-zA-Z0-9_\-\.]*",
+    re.IGNORECASE,
+)
+
 
 class MinimalSpinner:
     def __init__(self):
         self.label = "Working..."
-        self.running = False
+        self.stop_event = threading.Event()
         self.thread = None
         self.chars = ["-", "\\", "|", "/"]
         self.target_stream = getattr(sys, "__stderr__", sys.stderr)
+        self._lock = threading.RLock()  # Re-entrant lock prevents self-deadlock on stop()
 
     def start(self, label: str = "Working..."):
-        self.label = label
-        self.running = True
-        self.start_time = time.time()
-        self.thread = threading.Thread(target=self._spin, daemon=True)
-        self.thread.start()
+        with self._lock:
+            self.stop()
+            self.label = label
+            self.stop_event = threading.Event()  # Fresh event per run prevents resurrected threads
+            self.start_time = time.time()
+            self.thread = threading.Thread(target=self._spin, daemon=True)
+            self.thread.start()
 
     def _spin(self):
         i = 0
-        try:
-            self.target_stream.write("\033[?25l")
-            self.target_stream.flush()
-        except OSError:
-            pass
-
-        while self.running:
-            elapsed = time.time() - self.start_time
+        is_tty = getattr(self.target_stream, "isatty", lambda: False)()
+        if is_tty:
             try:
-                self.target_stream.write(
-                    f"\r\033[1;36m[{self.chars[i % len(self.chars)]}]\033[0m {self.label} \033[2m{elapsed:.1f}s\033[0m"
-                )
+                self.target_stream.write("\033[?25l")
                 self.target_stream.flush()
             except OSError:
                 pass
+
+        while not self.stop_event.is_set():
+            if is_tty:
+                elapsed = time.time() - self.start_time
+                try:
+                    self.target_stream.write(
+                        f"\r\033[1;36m[{self.chars[i % len(self.chars)]}]\033[0m {self.label} \033[2m{elapsed:.1f}s\033[0m"
+                    )
+                    self.target_stream.flush()
+                except OSError:
+                    pass
             i += 1
-            time.sleep(0.08)
+            if self.stop_event.wait(0.08):
+                break
 
     def stop(self):
-        self.running = False
-        if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=0.2)
-        try:
-            self.target_stream.write("\r\033[2K\r\033[?25h")
-            self.target_stream.flush()
-        except OSError:
-            pass
+        with self._lock:
+            self.stop_event.set()
+            t, self.thread = self.thread, None
+            if t and t.is_alive():
+                t.join(timeout=1.0)
+            if getattr(self.target_stream, "isatty", lambda: False)():
+                try:
+                    self.target_stream.write("\r\033[2K\r\033[?25h")
+                    self.target_stream.flush()
+                except OSError:
+                    pass
 
 
 def _safe_read(path: str) -> str:
@@ -102,6 +118,89 @@ def _safe_read(path: str) -> str:
     return ""
 
 
+def _write_fixture(ws: str, fname: str, content: str) -> None:
+    target = os.path.join(ws, fname)
+    with open(target, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
+def _verify_python_script(script_path: str, cwd: str, timeout: int = 15) -> bool:
+    safe_env = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "HOME": cwd,
+        "PYTHONPATH": cwd,
+    }
+    try:
+        res = subprocess.run(
+            [sys.executable, script_path],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            stdin=subprocess.DEVNULL,
+            env=safe_env,
+        )
+        return res.returncode == 0
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+
+
+def _verify_ag01(ws: str, out: Any) -> bool:
+    fa = getattr(ipython, "_final_answer_val", None)
+    if fa is not None:
+        try:
+            if int(fa) == 2318:
+                return True
+        except (ValueError, TypeError):
+            pass
+    return bool(re.search(r"\b2318\b", str(out)))
+
+
+def _verify_ag02(ws: str, out: Any) -> bool:
+    cfg_p = os.path.join(ws, "config.json")
+    if not os.path.isfile(cfg_p):
+        return False
+    try:
+        data = json.loads(_safe_read(cfg_p) or "{}")
+        return data.get("version") == 2
+    except Exception:
+        return False
+
+
+def _verify_ag03(ws: str, out: Any) -> bool:
+    calc_p = os.path.join(ws, "calc.py")
+    return "return a * b" in _safe_read(calc_p) and _verify_python_script(calc_p, ws, timeout=15)
+
+
+def _verify_ag04(ws: str, out: Any) -> bool:
+    return (
+        "NEW_KEY" in _safe_read(os.path.join(ws, "mod_a.py"))
+        and "NEW_KEY" in _safe_read(os.path.join(ws, "mod_b.py"))
+    )
+
+
+def _verify_ag05(ws: str, out: Any) -> bool:
+    return (
+        os.path.isfile(os.path.join(ws, "done.txt"))
+        and "PROCESSED" in _safe_read(os.path.join(ws, "done.txt"))
+    )
+
+
+def _verify_ag06(ws: str, out: Any) -> bool:
+    return "Welcome, {name}!" in _safe_read(os.path.join(ws, "format_test.py"))
+
+
+def _verify_ag07(ws: str, out: Any) -> bool:
+    fa = getattr(ipython, "_final_answer_val", None)
+    if fa is not None:
+        try:
+            if int(fa) == 60:
+                return True
+        except (ValueError, TypeError):
+            pass
+    return bool(re.search(r"\b60\b", str(out)))
+
+
 AGENTIC_BENCHMARKS = [
     {
         "id": "AG-01",
@@ -110,7 +209,7 @@ AGENTIC_BENCHMARKS = [
         "requires_ipython": True,
         "par_turns": 2,
         "prompt": "Calculate the sum of all multiples of 3 or 5 below 100 in-memory using exec_python. Call final_answer with the integer result and finish.",
-        "verify_fn": lambda ws, out: "2318" in str(out) or "2318" in str(getattr(ipython, "_final_answer_val", ""))
+        "verify_fn": _verify_ag01,
     },
     {
         "id": "AG-02",
@@ -118,24 +217,20 @@ AGENTIC_BENCHMARKS = [
         "tools_tested": "write_file (overwrite)",
         "par_turns": 4,
         "prompt": "1. Use write_file to create 'config.json' with {\"version\": 1}.\n2. Rewrite 'config.json' with overwrite=true to {\"version\": 2, \"status\": \"ready\"}.\n3. Conclude immediately with your task complete marker.",
-        "verify_fn": lambda ws, out: (
-            os.path.isfile(os.path.join(ws, "config.json"))
-            and json.loads(_safe_read(os.path.join(ws, "config.json")) or "{}").get("version") == 2
-        )
+        "verify_fn": _verify_ag02,
     },
     {
         "id": "AG-03",
         "name": "Surgical Edit & Test",
         "tools_tested": "read_file, edit_file, run_command",
         "par_turns": 6,
-        "setup_fn": lambda ws: open(os.path.join(ws, "calc.py"), "w").write(
-            "def multiply(a, b):\n    return a + b\n\nif __name__ == '__main__':\n    assert multiply(3, 4) == 12, 'Test failed'\n    print('PASSED')\n"
+        "setup_fn": lambda ws: _write_fixture(
+            ws,
+            "calc.py",
+            "def multiply(a, b):\n    return a + b\n\nif __name__ == '__main__':\n    assert multiply(3, 4) == 12, 'Test failed'\n    print('PASSED')\n",
         ),
         "prompt": "The file 'calc.py' has a bug where multiply(a, b) returns a + b instead of a * b. Inspect it with read_file, fix the formula using edit_file, verify it with run_command('python calc.py'), and finish with your task complete marker.",
-        "verify_fn": lambda ws, out: (
-            "return a * b" in _safe_read(os.path.join(ws, "calc.py"))
-            and subprocess.run([sys.executable, os.path.join(ws, "calc.py")], cwd=ws, capture_output=True).returncode == 0
-        )
+        "verify_fn": _verify_ag03,
     },
     {
         "id": "AG-04",
@@ -143,14 +238,11 @@ AGENTIC_BENCHMARKS = [
         "tools_tested": "search_code, edit_file",
         "par_turns": 8,
         "setup_fn": lambda ws: (
-            open(os.path.join(ws, "mod_a.py"), "w").write("API_KEY = 'OLD_KEY'\n"),
-            open(os.path.join(ws, "mod_b.py"), "w").write("TARGET = 'OLD_KEY'\n")
+            _write_fixture(ws, "mod_a.py", "API_KEY = 'OLD_KEY'\n"),
+            _write_fixture(ws, "mod_b.py", "TARGET = 'OLD_KEY'\n"),
         ),
         "prompt": "Search for 'OLD_KEY' across all files using search_code. Replace 'OLD_KEY' with 'NEW_KEY' in every matched file using edit_file. Finish with your task complete marker.",
-        "verify_fn": lambda ws, out: (
-            "NEW_KEY" in _safe_read(os.path.join(ws, "mod_a.py"))
-            and "NEW_KEY" in _safe_read(os.path.join(ws, "mod_b.py"))
-        )
+        "verify_fn": _verify_ag04,
     },
     {
         "id": "AG-05",
@@ -158,21 +250,20 @@ AGENTIC_BENCHMARKS = [
         "tools_tested": "write_file, exit_discipline",
         "par_turns": 2,
         "prompt": "Create a file named 'done.txt' containing 'PROCESSED'. Once written, STOP immediately and output: 'Task complete: done.txt created'",
-        "verify_fn": lambda ws, out: (
-            os.path.isfile(os.path.join(ws, "done.txt"))
-            and "PROCESSED" in _safe_read(os.path.join(ws, "done.txt"))
-        )
+        "verify_fn": _verify_ag05,
     },
     {
         "id": "AG-06",
         "name": "Whitespace-Tolerant Edit",
         "tools_tested": "edit_file (resilient match)",
         "par_turns": 6,
-        "setup_fn": lambda ws: open(os.path.join(ws, "format_test.py"), "w").write(
-            "def greet(name):\n  # 2-space indentation\n  msg = f'Hello, {name}'\n  return msg\n"
+        "setup_fn": lambda ws: _write_fixture(
+            ws,
+            "format_test.py",
+            "def greet(name):\n  # 2-space indentation\n  msg = f'Hello, {name}'\n  return msg\n",
         ),
         "prompt": "In 'format_test.py', replace `msg = f'Hello, {name}'` with `msg = f'Welcome, {name}!'` using edit_file. Preserve file syntax and complete the task.",
-        "verify_fn": lambda ws, out: "Welcome, {name}!" in _safe_read(os.path.join(ws, "format_test.py"))
+        "verify_fn": _verify_ag06,
     },
     {
         "id": "AG-07",
@@ -181,13 +272,13 @@ AGENTIC_BENCHMARKS = [
         "requires_ipython": True,
         "par_turns": 2,
         "setup_fn": lambda ws: (
-            open(os.path.join(ws, "a.txt"), "w").write("10\n"),
-            open(os.path.join(ws, "b.txt"), "w").write("20\n"),
-            open(os.path.join(ws, "c.txt"), "w").write("30\n")
+            _write_fixture(ws, "a.txt", "10\n"),
+            _write_fixture(ws, "b.txt", "20\n"),
+            _write_fixture(ws, "c.txt", "30\n"),
         ),
         "prompt": "Using exec_python, write a single Python loop to read 'a.txt', 'b.txt', and 'c.txt', sum their integer contents, and return the total (60) via final_answer(60).",
-        "verify_fn": lambda ws, out: "60" in str(out) or "60" in str(getattr(ipython, "_final_answer_val", ""))
-    }
+        "verify_fn": _verify_ag07,
+    },
 ]
 
 
@@ -203,13 +294,20 @@ def list_available_profiles() -> list[tuple[str, str]]:
                     full = os.path.join(root, f)
                     rel = os.path.relpath(full, profiles_dir)
                     prof_key = os.path.splitext(rel)[0]
-                    lbl = f"Custom {os.path.basename(prof_key).title()}" if prof_key.startswith("custom/") else prof_key.replace("/pro", " Pro").title()
+                    lbl = (
+                        f"Custom {os.path.basename(prof_key).title()}"
+                        if prof_key.startswith("custom/")
+                        else prof_key.replace("/pro", " Pro").title()
+                    )
                     found.append((prof_key, lbl))
     return found
 
 
 def select_profile_interactive(profiles: list[tuple[str, str]], default_key: str = "custom/base") -> str:
-    current_idx = next((i for i, (k, _) in enumerate(profiles) if k == default_key or k in ("custom/lingtiny", "custom/nexn25")), 0)
+    current_idx = next(
+        (i for i, (k, _) in enumerate(profiles) if k == default_key or k in ("custom/lingtiny", "custom/nexn25")),
+        0,
+    )
     num_opts = len(profiles)
     last_lines = 0
 
@@ -220,7 +318,7 @@ def select_profile_interactive(profiles: list[tuple[str, str]], default_key: str
         tty_in = None
         tty_fd = sys.stdin.fileno() if sys.stdin.isatty() else None
 
-    def _get_k():
+    def _get_k() -> str | None:
         if tty_fd is not None:
             try:
                 old = termios.tcgetattr(tty_fd)
@@ -228,14 +326,16 @@ def select_profile_interactive(profiles: list[tuple[str, str]], default_key: str
                     tty.setraw(tty_fd)
                     termios.tcflush(tty_fd, termios.TCIFLUSH)
                     b = os.read(tty_fd, 1)
+                    if not b:
+                        return None
                     if b == b"\x1b" and select.select([tty_fd], [], [], 0.05)[0]:
                         b += os.read(tty_fd, 2)
                     return b.decode("utf-8", errors="ignore")
                 finally:
                     termios.tcsetattr(tty_fd, termios.TCSADRAIN, old)
             except Exception:
-                pass
-        return ""
+                return None
+        return None
 
     try:
         sys.stderr.write("\033[?25l")
@@ -244,21 +344,30 @@ def select_profile_interactive(profiles: list[tuple[str, str]], default_key: str
                 sys.stderr.write(f"\033[{last_lines}A\r\033[J")
 
             lines_count = 2
-            sys.stderr.write("\n\033[1;36mSelect Profile to Benchmark:\033[0m \033[2m(Up/Down navigate, 1-9 select, Enter run, Esc default)\033[0m\n")
+            sys.stderr.write(
+                "\n\033[1;36mSelect Profile to Benchmark:\033[0m \033[2m(Up/Down navigate, 1-9 select, Enter run, Esc default, q abort)\033[0m\n"
+            )
 
             for idx, (k, lbl) in enumerate(profiles):
                 marker = " *" if k in (default_key, "custom/lingtiny", "custom/nexn25") else ""
-                prefix = f"\033[1;33m  > {idx+1:2d}. {lbl:<22}\033[0m \033[90m({k})\033[0m{marker}\n" if idx == current_idx else f"\033[37m    {idx+1:2d}. {lbl:<22}\033[0m \033[2m({k})\033[0m{marker}\n"
+                prefix = (
+                    f"\033[1;33m  > {idx+1:2d}. {lbl:<22}\033[0m \033[90m({k})\033[0m{marker}\n"
+                    if idx == current_idx
+                    else f"\033[37m    {idx+1:2d}. {lbl:<22}\033[0m \033[2m({k})\033[0m{marker}\n"
+                )
                 sys.stderr.write(prefix)
                 lines_count += 1
 
-            sys.stderr.write(f"\n\033[2m:: Enter run [{profiles[current_idx][1]}]  Esc: default\033[0m\n")
+            sys.stderr.write(f"\n\033[2m:: Enter run [{profiles[current_idx][1]}]  Esc: default  q: abort\033[0m\n")
             lines_count += 2
             sys.stderr.flush()
 
             last_lines = lines_count
             key = _get_k()
 
+            if key is None:
+                current_idx = next((i for i, (k, _) in enumerate(profiles) if k == default_key), 0)
+                break
             if key in ("\x1b[A", "k", "K"):
                 current_idx = (current_idx - 1 + num_opts) % num_opts
             elif key in ("\x1b[B", "j", "J"):
@@ -266,9 +375,15 @@ def select_profile_interactive(profiles: list[tuple[str, str]], default_key: str
             elif key.isdigit() and 1 <= int(key) <= num_opts:
                 current_idx = int(key) - 1
                 break
-            elif key in ("\r", "\n", ""):
+            elif key in ("\r", "\n"):
                 break
-            elif key in ("\x03", "\x1b", "q", "Q"):
+            elif key == "\x03":
+                sys.stderr.write(f"\033[{last_lines}A\r\033[J\nBenchmark cancelled by user.\n")
+                sys.exit(130)
+            elif key in ("q", "Q"):
+                sys.stderr.write(f"\033[{last_lines}A\r\033[J\nBenchmark aborted.\n")
+                sys.exit(0)
+            elif key == "\x1b":
                 current_idx = next((i for i, (k, _) in enumerate(profiles) if k == default_key), 0)
                 break
 
@@ -291,7 +406,9 @@ def resolve_dynamic_profile(cli_profile_arg: str | None = None) -> tuple[str, st
         clean_arg = cli_profile_arg.lstrip("-")
         if content := skills.load_skill_content(clean_arg, skills_dir, CFG_DIR):
             return clean_arg, content
-        if not clean_arg.startswith("custom/") and (content := skills.load_skill_content(f"custom/{clean_arg}", skills_dir, CFG_DIR)):
+        if not clean_arg.startswith("custom/") and (
+            content := skills.load_skill_content(f"custom/{clean_arg}", skills_dir, CFG_DIR)
+        ):
             return f"custom/{clean_arg}", content
 
     if active_env := os.environ.get("AI_ACTIVE_SKILL"):
@@ -317,7 +434,10 @@ def resolve_dynamic_profile(cli_profile_arg: str | None = None) -> tuple[str, st
             return chosen_key, content
 
     default_prof = "custom/base"
-    content = skills.load_skill_content(default_prof, skills_dir, CFG_DIR) or "You are an autonomous AI software engineer."
+    content = (
+        skills.load_skill_content(default_prof, skills_dir, CFG_DIR)
+        or "You are an autonomous AI software engineer."
+    )
     return default_prof, content
 
 
@@ -327,10 +447,19 @@ def get_current_model_info() -> tuple[str, str]:
     return ui.get_local_model_name(), "http://127.0.0.1:8080"
 
 
-def _log_failure_trace(bench: dict, model_name: str, profile_name: str, messages: list, captured_stdout: str, sandbox_dir: str):
+def _log_failure_trace(
+    bench: dict,
+    model_name: str,
+    profile_name: str,
+    messages: list,
+    captured_stdout: str,
+    sandbox_dir: str,
+):
     try:
         os.makedirs(os.path.dirname(FAILURES_LOG), exist_ok=True)
-        with open(FAILURES_LOG, "a", encoding="utf-8") as f:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+        fd = os.open(FAILURES_LOG, flags, 0o600)
+        with open(fd, "a", encoding="utf-8", errors="replace") as f:
             f.write(f"\n{'='*80}\n")
             f.write(f"FAILED TEST: {bench['id']} - {bench['name']}\n")
             f.write(f"MODEL: {model_name} | PROFILE: {profile_name}\n")
@@ -338,40 +467,71 @@ def _log_failure_trace(bench: dict, model_name: str, profile_name: str, messages
             f.write(f"{'='*80}\n\n")
             f.write("--- MESSAGE / TOOL CALL HISTORY ---\n")
             for m in messages:
-                role = m.get("role", "unknown").upper()
-                content = m.get("content", "")
-                f.write(f"[{role}]:\n{content}\n\n")
+                role = str(m.get("role", "unknown")).upper()
+                content = str(m.get("content", ""))
+                masked_content = RE_SECRET.sub("[REDACTED]", content)
+                f.write(f"[{role}]:\n{masked_content}\n\n")
+                if "tool_calls" in m:
+                    try:
+                        raw_tc = json.dumps(m["tool_calls"], indent=2, default=str)
+                        masked_tc = RE_SECRET.sub("[REDACTED]", raw_tc)
+                    except Exception as je:
+                        masked_tc = f"<unserializable: {je}>"
+                    f.write(f"[TOOL_CALLS]: {masked_tc}\n\n")
             f.write("--- CAPTURED AGENT TURNS & STDERR ---\n")
-            f.write(captured_stdout + "\n")
+            f.write(RE_SECRET.sub("[REDACTED]", captured_stdout) + "\n")
     except Exception:
         pass
 
 
-def run_single_agentic_test(bench: dict, model_name: str, profile_prompt: str) -> tuple[bool, float, int, int, str]:
+def run_single_agentic_test(
+    bench: dict, model_name: str, profile_prompt: str
+) -> tuple[bool, float, int, int, str]:
     orig_cwd = os.getcwd()
-    sandbox_dir = tempfile.mkdtemp(prefix="agent_eval_")
     orig_ws = os.environ.get("AI_WORKSPACE_PATH")
-    os.environ["AI_WORKSPACE_PATH"] = sandbox_dir
-    os.environ["AI_CONFIRM_GATES"] = "0"
-
-    tools.clear_session_tracking()
-
-    if "setup_fn" in bench:
-        bench["setup_fn"](sandbox_dir)
-
-    messages = [
-        {"role": "system", "content": profile_prompt},
-        {"role": "user", "content": bench["prompt"]}
-    ]
-
-    configs = cloud.get_active_configs(messages)
-    if not configs:
-        configs = [("http://localhost:8080/v1/chat/completions", {}, {"messages": messages, "stream": True}, 180)]
-    url, headers, body, timeout = configs[0]
+    orig_gates = os.environ.get("AI_CONFIRM_GATES")
+    sandbox_dir = tempfile.mkdtemp(prefix="agent_eval_")
 
     t0 = time.time()
+    turn_count = 0
+    total_tokens = 0
+    messages = []
     sink = io.StringIO()
+
     try:
+        os.chdir(sandbox_dir)
+        os.environ["AI_WORKSPACE_PATH"] = sandbox_dir
+        os.environ["AI_CONFIRM_GATES"] = "0"
+
+        tools.clear_session_tracking()
+
+        # Reset in-memory IPython state completely between benchmarks
+        if hasattr(ipython, "_final_answer_val"):
+            ipython._final_answer_val = None
+        g = getattr(ipython, "_shell_globals", None)
+        if isinstance(g, dict):
+            g.clear()
+        shell = getattr(ipython, "_shell_instance", None)
+        if shell is not None and hasattr(shell, "reset"):
+            with contextlib.suppress(Exception):
+                shell.reset()
+
+        if "setup_fn" in bench:
+            bench["setup_fn"](sandbox_dir)
+
+        messages.extend([
+            {"role": "system", "content": profile_prompt},
+            {"role": "user", "content": bench["prompt"]},
+        ])
+
+        configs = cloud.get_active_configs(messages)
+        if not configs:
+            configs = [("http://localhost:8080/v1/chat/completions", {}, {"messages": messages, "stream": True}, 180)]
+        url, headers, body, timeout = configs[0]
+
+        if "max_tokens" not in body:
+            body["max_tokens"] = 2048
+
         with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
             response = core.agentic_turn(
                 messages,
@@ -383,35 +543,61 @@ def run_single_agentic_test(bench: dict, model_name: str, profile_prompt: str) -
                 show_stats=False,
                 is_agent=True,
             )
+
         elapsed = time.time() - t0
         turn_count = len([m for m in messages if m.get("role") in ("assistant", "tool")])
-        total_tokens = sum(core.get_accurate_token_count(m.get("content") or "") for m in messages)
-        passed = bench["verify_fn"](sandbox_dir, response or "")
+
+        for m in messages:
+            total_tokens += core.get_accurate_token_count(m.get("content") or "")
+            for tc in m.get("tool_calls", []):
+                fn = tc.get("function", {})
+                total_tokens += core.get_accurate_token_count(fn.get("name", ""))
+                total_tokens += core.get_accurate_token_count(fn.get("arguments", ""))
+
+        passed = False
+        try:
+            passed = bool(bench["verify_fn"](sandbox_dir, response or ""))
+        except Exception as ve:
+            passed = False
+            sink.write(f"\n[verify_fn exception]: {ve}\n")
+
         if not passed:
             _log_failure_trace(bench, model_name, profile_prompt, messages, sink.getvalue(), sandbox_dir)
+
         par_val = bench.get("par_turns", turn_count)
         detail = f"{elapsed:.2f}s ({turn_count}/{par_val}t)" if passed else "State verification failed"
         return passed, elapsed, turn_count, total_tokens, detail
     except Exception as e:
-        return False, time.time() - t0, 0, 0, f"Exception: {str(e)[:30]}"
+        elapsed = time.time() - t0
+        turn_count = len([m for m in messages if m.get("role") in ("assistant", "tool")])
+        _log_failure_trace(bench, model_name, profile_prompt, messages, f"{sink.getvalue()}\n[Exception]: {e}", sandbox_dir)
+        return False, elapsed, turn_count, total_tokens, f"Exception: {str(e)[:30]}"
     finally:
-        os.chdir(orig_cwd)
+        with contextlib.suppress(OSError):
+            os.chdir(orig_cwd)
         shutil.rmtree(sandbox_dir, ignore_errors=True)
-        if orig_ws:
+        if orig_ws is not None:
             os.environ["AI_WORKSPACE_PATH"] = orig_ws
         else:
             os.environ.pop("AI_WORKSPACE_PATH", None)
+
+        if orig_gates is not None:
+            os.environ["AI_CONFIRM_GATES"] = orig_gates
+        else:
+            os.environ.pop("AI_CONFIRM_GATES", None)
 
 
 def main():
     cli_arg = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else None
     prof_name, profile_content = resolve_dynamic_profile(cli_arg)
 
-    console.print(Panel(
-        "[bold cyan]Py-Agent Full-Stack Agentic & Tool-Calling Benchmark Suite[/bold cyan]\n"
-        "[dim]Decision-grade evaluation: Par efficiency, token economy, tool resilience, and execution speed[/dim]",
-        border_style="cyan"
-    ))
+    console.print(
+        Panel(
+            "[bold cyan]Py-Agent Full-Stack Agentic & Tool-Calling Benchmark Suite[/bold cyan]\n"
+            "[dim]Decision-grade evaluation: Par efficiency, token economy, tool resilience, and execution speed[/dim]",
+            border_style="cyan",
+        )
+    )
 
     if os.path.isfile(FAILURES_LOG):
         with contextlib.suppress(OSError):
@@ -437,7 +623,15 @@ def main():
     try:
         for idx, bench in enumerate(AGENTIC_BENCHMARKS, start=1):
             if bench.get("requires_ipython") and not is_py_enabled:
-                results.append((bench["id"], bench["name"], bench["tools_tested"], "[yellow]SKIP[/yellow]", "ipython: OFF", "-", "-"))
+                results.append((
+                    bench["id"],
+                    bench["name"],
+                    bench["tools_tested"],
+                    "[yellow]SKIP[/yellow]",
+                    "ipython: OFF",
+                    "-",
+                    "-",
+                ))
                 console.print(f"  [-] SKIP : [bold]{bench['id']}[/bold] {bench['name']:<33} (Skipped: /py disabled)")
                 continue
 
@@ -461,8 +655,19 @@ def main():
 
             tps = (toks / elapsed) if elapsed > 0 else 0
             turn_metrics = f"{turns}t (Par {par})" if passed else "FAILED"
-            results.append((bench["id"], bench["name"], bench["tools_tested"], status_str, turn_metrics, f"{toks:,}t", f"{tps:.1f} t/s"))
-            console.print(f"  {'[green]OK[/green]' if passed else '[red]XX[/red]'} {status_str} : [bold]{bench['id']}[/bold] {bench['name']:<33} {detail:<20} @ [cyan]{tps:.1f} t/s[/cyan]")
+            results.append((
+                bench["id"],
+                bench["name"],
+                bench["tools_tested"],
+                status_str,
+                turn_metrics,
+                f"{toks:,}t",
+                f"{tps:.1f} t/s",
+            ))
+            console.print(
+                f"  {'[green]OK[/green]' if passed else '[red]XX[/red]'} {status_str} : "
+                f"[bold]{bench['id']}[/bold] {bench['name']:<33} {detail:<20} @ [cyan]{tps:.1f} t/s[/cyan]"
+            )
     finally:
         spinner.stop()
 
@@ -473,7 +678,17 @@ def main():
 
     speed_score = min(100.0, (avg_tps / 50.0) * 100.0)
     agent_index = (accuracy * 0.50) + (min(100.0, par_eff) * 0.35) + (speed_score * 0.15)
-    grade = "A+" if agent_index >= 95 else "A" if agent_index >= 88 else "B" if agent_index >= 75 else "C" if agent_index >= 60 else "F"
+    grade = (
+        "A+"
+        if agent_index >= 95
+        else "A"
+        if agent_index >= 88
+        else "B"
+        if agent_index >= 75
+        else "C"
+        if agent_index >= 60
+        else "F"
+    )
 
     table = Table(title=f"\nAgentic Stack Benchmark: {model_name} [{prof_name}]", border_style="bright_black")
     table.add_column("ID", style="cyan", justify="left")
@@ -490,14 +705,31 @@ def main():
     console.print(table)
 
     summary_text = Text()
-    summary_text.append(f"Pass Rate:        {passed_count}/{evaluated_count} ({accuracy:.1f}%)\n", style="bold green" if accuracy >= 80 else "bold red")
-    summary_text.append(f"Par Efficiency:   {par_eff:.1f}% ({total_actual_turns} actual turns / {total_par_turns} par target)\n", style="cyan")
+    summary_text.append(
+        f"Pass Rate:        {passed_count}/{evaluated_count} ({accuracy:.1f}%)\n",
+        style="bold green" if accuracy >= 80 else "bold red",
+    )
+    summary_text.append(
+        f"Par Efficiency:   {par_eff:.1f}% ({total_actual_turns} actual turns / {total_par_turns} par target)\n",
+        style="cyan",
+    )
     summary_text.append(f"Token Economy:    {total_tokens:,} total tokens (~{toks_per_turn:.0f} tokens/turn)\n", style="dim")
-    summary_text.append(f"Effective Speed:  {avg_tps:.1f} tokens/second (Total elapsed: {total_time:.2f}s)\n", style="dim")
+    summary_text.append(
+        f"Effective Speed:  {avg_tps:.1f} tokens/second (Total elapsed: {total_time:.2f}s)\n", style="dim"
+    )
     summary_text.append(f"\nAgent Performance Index: {agent_index:.1f}/100 [Grade: {grade}]", style="bold yellow")
 
-    console.print(Panel(summary_text, title="Conclusive Benchmark Evaluation", border_style="green" if accuracy == 100 else "yellow", box=ROUNDED))
+    console.print(
+        Panel(
+            summary_text,
+            title="Conclusive Benchmark Evaluation",
+            border_style="green" if accuracy == 100 else "yellow",
+            box=ROUNDED,
+        )
+    )
 
+    # Atomic history logging with tempfile cleanup guard
+    tmp_log = None
     try:
         os.makedirs(os.path.dirname(RESULTS_LOG), exist_ok=True)
         record = {
@@ -515,13 +747,26 @@ def main():
         }
         history = []
         if os.path.isfile(RESULTS_LOG):
-            with open(RESULTS_LOG, "r") as rf:
-                history = json.load(rf)
+            try:
+                with open(RESULTS_LOG, "r", encoding="utf-8") as rf:
+                    loaded = json.load(rf)
+                    if isinstance(loaded, list):
+                        history = loaded
+            except (json.JSONDecodeError, OSError):
+                history = []
+
         history.append(record)
-        with open(RESULTS_LOG, "w") as wf:
+        tmp_log = f"{RESULTS_LOG}.tmp.{os.getpid()}"
+        with open(tmp_log, "w", encoding="utf-8") as wf:
             json.dump(history[-30:], wf, indent=2)
+        os.replace(tmp_log, RESULTS_LOG)
+        tmp_log = None
     except Exception:
         pass
+    finally:
+        if tmp_log and os.path.exists(tmp_log):
+            with contextlib.suppress(OSError):
+                os.remove(tmp_log)
 
 
 if __name__ == "__main__":

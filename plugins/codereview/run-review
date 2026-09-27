@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Open Code Review (ocr) Runner - Universal Provider, Speed & Reasoning Engine"""
+"""Open Code Review (ocr) Runner - Universal Provider, Speed & Robust Reasoning Engine"""
 
 import json
 import os
 import re
-import readline
+import shutil
 import subprocess
 import sys
 import threading
 import time
+from typing import Any
 
 try:
     from rich.console import Console
@@ -20,6 +21,15 @@ except ImportError:
 ENV_FILE = os.path.expanduser("~/.config/py-agent/.env")
 BG_DIRECTIVES = os.path.expanduser("~/.config/py-agent/plugins/codereview/codereview.md")
 SPINNER_FRAMES = ("✦ [∿ · ·]", "✦ [· ∿ ·]", "✦ [· · ∿]", "✦ [· ∿ ·]")
+
+RE_PLACEHOLDER = re.compile(
+    r"^(x+|todo|changeme|replace.?me|<.*>|your_?\w*|<api-key>)$",
+    re.IGNORECASE,
+)
+RE_RATE_LIMIT = re.compile(
+    r"\b429\b|rate.?limit|rejected by provider",
+    re.IGNORECASE,
+)
 
 
 class TelemetrySpinner:
@@ -34,6 +44,12 @@ class TelemetrySpinner:
         with self._lock:
             self.message = msg
 
+    def write_error(self, err_msg: str):
+        """Thread-safe stderr output that clears the active spinner line first."""
+        with self._lock:
+            sys.stderr.write(f"\r\033[K\033[1;31m[error] {err_msg}\033[0m\n")
+            sys.stderr.flush()
+
     def _spin(self):
         idx = 0
         while self.active:
@@ -44,18 +60,23 @@ class TelemetrySpinner:
             else:
                 elapsed_str = f"{elapsed:.1f}s"
 
-            frame = SPINNER_FRAMES[idx % len(SPINNER_FRAMES)]
             with self._lock:
                 msg = self.message
 
-            max_msg_len = max(20, os.get_terminal_size().columns - 35)
+            try:
+                term_cols = os.get_terminal_size().columns
+            except OSError:
+                term_cols = 80
+            max_msg_len = max(20, term_cols - 35)
             if len(msg) > max_msg_len:
                 msg = msg[:max_msg_len - 3] + "..."
 
-            sys.stderr.write(
-                f"\r\033[K\033[1;32m{frame}\033[0m \033[36m{msg}\033[0m \033[2m({elapsed_str})\033[0m"
-            )
-            sys.stderr.flush()
+            frame = SPINNER_FRAMES[idx % len(SPINNER_FRAMES)]
+            with self._lock:
+                sys.stderr.write(
+                    f"\r\033[K\033[1;32m{frame}\033[0m \033[36m{msg}\033[0m \033[2m({elapsed_str})\033[0m"
+                )
+                sys.stderr.flush()
             idx += 1
             time.sleep(0.08)
 
@@ -78,11 +99,12 @@ class TelemetrySpinner:
         else:
             elapsed_str = f"{elapsed:.1f}s"
 
-        if self.thread:
-            self.thread.join(timeout=0.2)
-        sys.stderr.write(f"\r\033[K\033[1;32m✔ {done_msg}\033[0m \033[2m({elapsed_str})\033[0m\n\n")
-        sys.stderr.write("\033[?25h")
-        sys.stderr.flush()
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=0.3)
+        with self._lock:
+            sys.stderr.write(f"\r\033[K\033[1;32m✔ {done_msg}\033[0m \033[2m({elapsed_str})\033[0m\n\n")
+            sys.stderr.write("\033[?25h")
+            sys.stderr.flush()
 
 
 def load_env() -> tuple[dict[str, str], set[str]]:
@@ -92,18 +114,14 @@ def load_env() -> tuple[dict[str, str], set[str]]:
         with open(ENV_FILE, "r", encoding="utf-8") as f:
             for line in f:
                 s = line.strip()
-                if not s or "=" not in s:
+                if not s or s.startswith("#") or "=" not in s:
                     continue
-                is_commented = s.startswith("#")
-                raw = s.lstrip("#").strip()
-                if "=" in raw:
-                    k, v = raw.split("=", 1)
-                    k = k.strip()
-                    val = v.strip().strip('"').strip("'")
-                    if not is_commented and not any(sub in val.lower() for sub in ("your", "here", "api-key")):
-                        active_keys.add(k)
-                    if k not in env or not is_commented:
-                        env[k] = val
+                k, v = s.split("=", 1)
+                k = k.strip()
+                val = v.strip().strip('"').strip("'")
+                if val and not RE_PLACEHOLDER.search(val):
+                    active_keys.add(k)
+                env[k] = val
     return env, active_keys
 
 
@@ -136,7 +154,7 @@ def build_reasoning_payload(budget_val: str) -> tuple[dict[str, Any], str]:
     return tiers.get(val, tiers["medium"])
 
 
-def sync_ocr_config(env: dict[str, str], active_keys: set[str], reasoning_input: str) -> tuple[str, str, str, str]:
+def sync_ocr_config(env: dict[str, str], active_keys: set[str], reasoning_input: str) -> tuple[str, str, str, str, str]:
     extra_body, budget_desc = build_reasoning_payload(reasoning_input)
 
     if "CUSTOM_API_KEY" in active_keys:
@@ -166,21 +184,22 @@ def sync_ocr_config(env: dict[str, str], active_keys: set[str], reasoning_input:
         provider = "OpenRouter"
         default_concurrency = "2"
     else:
-        api_key = "not-needed"
+        api_key = ""
         model = "local-model"
         base_url = "http://127.0.0.1:8080/v1"
         provider = "Local (:8080)"
         default_concurrency = "1"
 
-    concurrency = env.get("OCR_CONCURRENCY", default_concurrency)
+    concurrency_raw = str(env.get("OCR_CONCURRENCY", default_concurrency) or "").strip()
+    concurrency = concurrency_raw if re.fullmatch(r"[1-9]\d?", concurrency_raw) else default_concurrency
 
+    # Sync static parameters
     subprocess.run(["ocr", "config", "set", "llm.use_anthropic", "false"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
     subprocess.run(["ocr", "config", "set", "llm.url", base_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-    subprocess.run(["ocr", "config", "set", "llm.auth_token", api_key], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
     subprocess.run(["ocr", "config", "set", "llm.model", model], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
     subprocess.run(["ocr", "config", "set", "llm.extra_body", json.dumps(extra_body)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 
-    return provider, model, concurrency, budget_desc
+    return provider, model, concurrency, budget_desc, api_key
 
 
 def parse_action(line: str) -> str | None:
@@ -210,6 +229,10 @@ def parse_action(line: str) -> str | None:
 
 
 def main():
+    if not shutil.which("ocr"):
+        print("\033[1;31m[error] `ocr` executable not found in PATH. Install with: npm i -g @alibaba-group/open-code-review\033[0m")
+        sys.exit(1)
+
     cur_dir = os.getcwd()
     target_input = sys.argv[1].strip() if len(sys.argv) > 1 else ""
     reasoning_arg = sys.argv[2].strip() if len(sys.argv) > 2 else ""
@@ -244,37 +267,35 @@ def main():
     is_file = os.path.isfile(target_path)
     target_dir = os.path.dirname(target_path) if is_file else target_path
 
-    # Resolve Git root to compute relative paths accurately
-    git_res = subprocess.run(
-        ["git", "-C", target_dir, "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
-    )
+    # Safe Git root resolution
+    repo_root = None
+    if shutil.which("git"):
+        try:
+            git_res = subprocess.run(
+                ["git", "-C", target_dir, "rev-parse", "--show-toplevel"],
+                capture_output=True,
+                text=True,
+            )
+            if git_res.returncode == 0:
+                repo_root = git_res.stdout.strip()
+        except OSError:
+            pass
 
-    if git_res.returncode == 0:
-        repo_root = git_res.stdout.strip()
+    if repo_root:
         os.chdir(repo_root)
         rel_target = os.path.relpath(target_path, repo_root)
     else:
-        repo_root = None
         os.chdir(target_dir)
         rel_target = os.path.basename(target_path) if is_file else "."
 
-    provider, model, concurrency, budget_desc = sync_ocr_config(env, active_keys, reasoning_choice)
+    provider, model, concurrency, budget_desc, api_key = sync_ocr_config(env, active_keys, reasoning_choice)
 
     home = os.path.expanduser("~")
     display_target = target_path.replace(home, "~", 1) if target_path.startswith(home) else target_path
 
-    # Scale timeout based on requested reasoning depth (up to 60m for max)
-    choice_low = reasoning_choice.lower()
-    if choice_low in ("max", "8192") or (choice_low.isdigit() and int(choice_low) >= 6000):
+    timeout_mins = str(env.get("OCR_TIMEOUT", "60")).strip()
+    if not timeout_mins.isdigit() or int(timeout_mins) <= 0:
         timeout_mins = "60"
-    elif choice_low in ("high", "4096") or (choice_low.isdigit() and int(choice_low) >= 3500):
-        timeout_mins = "30"
-    elif choice_low in ("medium", "2500", "def", "default") or (choice_low.isdigit() and int(choice_low) >= 1500):
-        timeout_mins = "25"
-    else:
-        timeout_mins = "15"
 
     print(f"\n\033[1;36m[review]\033[0m Target: \033[1;33m{display_target}\033[0m")
     print(f"\033[1;36m[review]\033[0m Engine: \033[1;32m{provider}\033[0m \033[2m({model})\033[0m")
@@ -282,66 +303,90 @@ def main():
 
     timeout_flag = ["--timeout", timeout_mins]
 
-    if is_file:
+    # Target-Aware Dispatch:
+    # 1. 'ocr scan' audits files/directories without diffs (does NOT support --background-file)
+    # 2. 'ocr review' audits uncommitted git changes at repo root (supports --background-file)
+    is_specific_target = is_file or (rel_target != ".")
+
+    if is_specific_target:
         cmd = ["ocr", "scan", "--path", rel_target, "--concurrency", concurrency] + timeout_flag
     else:
-        is_git = repo_root is not None
-        has_diff = is_git and bool(subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True).stdout.strip())
-
-        bg_flag = ["--background-file", BG_DIRECTIVES] if (has_diff and os.path.isfile(BG_DIRECTIVES)) else []
+        has_diff = False
+        if repo_root and shutil.which("git"):
+            try:
+                has_diff = bool(subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True).stdout.strip())
+            except OSError:
+                pass
         if has_diff:
+            bg_flag = ["--background-file", BG_DIRECTIVES] if os.path.isfile(BG_DIRECTIVES) else []
             cmd = ["ocr", "review", "--concurrency", concurrency] + bg_flag + timeout_flag
         else:
-            path_arg = ["--path", rel_target] if rel_target != "." else []
-            cmd = ["ocr", "scan", "--concurrency", concurrency] + path_arg + timeout_flag
+            cmd = ["ocr", "scan", "--concurrency", concurrency] + timeout_flag
 
     spinner = TelemetrySpinner(f"Starting review with {provider}...")
     spinner.start()
 
-    report_lines = []
+    report_lines: list[str] = []
+    log_lines: list[str] = []
     proc = None
+
+    # Pass API key via environment variable rather than exposing in process argv
+    child_env = {**os.environ}
+    if api_key:
+        child_env["OCR_LLM_TOKEN"] = api_key
 
     try:
         proc = subprocess.Popen(
             cmd,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
+            env=child_env,
         )
 
         for line in proc.stdout:
             raw = line.strip()
             if raw.startswith("[ocr]"):
+                log_lines.append(line)
                 action = parse_action(raw)
                 if action:
                     spinner.update(action)
-                if "429" in raw or "rate limited" in raw.lower() or "rejected by provider" in raw.lower():
-                    sys.stderr.write(f"\r\033[K\033[1;31m[error] {raw}\033[0m\n")
-                    sys.stderr.flush()
+                if RE_RATE_LIMIT.search(raw):
+                    spinner.update("Rate limited by provider, waiting for retry...")
             else:
                 report_lines.append(line)
 
-        proc.wait()
+        # Enforce wall-clock safety ceiling (+30s buffer for process shutdown)
+        proc.wait(timeout=int(timeout_mins) * 60 + 30)
+
+    except subprocess.TimeoutExpired:
+        if proc:
+            proc.kill()
+        spinner.stop("Timed out")
+        print(f"\n\033[1;31m[error] Review exceeded {timeout_mins}m safety limit and was terminated.\033[0m")
+        sys.exit(124)
     except KeyboardInterrupt:
         if proc:
             proc.kill()
         spinner.stop("Cancelled")
-        print("\n\033[1;33m[review] Scan cancelled.\033[0m")
+        print("\n\033[1;33m[review] Scan cancelled by user.\033[0m")
         sys.exit(130)
     finally:
+        spinner.stop("Finished")
         sys.stderr.write("\033[?25h")
         sys.stderr.flush()
 
     if proc and proc.returncode != 0:
-        spinner.stop("Failed")
         print(f"\033[1;31m[error] ocr finished with exit code {proc.returncode}:\033[0m")
         err_msg = "".join(report_lines).strip()
         if err_msg:
             print(err_msg)
+        elif log_lines:
+            print("\033[2m--- ocr diagnostics ---\033[0m")
+            print("".join(log_lines[-20:]).strip())
         sys.exit(proc.returncode)
-
-    spinner.stop("Review complete")
 
     report_text = "".join(report_lines).strip()
     if report_text:

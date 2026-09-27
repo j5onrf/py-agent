@@ -1,15 +1,74 @@
 #!/usr/bin/env bash
 # syscheck - Composite System Triage & Diagnostics Orchestrator
 set -euo pipefail
+export LC_ALL=C
 
-SYS_TOOLS_DIR="$(dirname "$0")"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SYS_TOOLS_DIR="$(dirname "$SCRIPT_PATH")"
 
-echo "# COMPOSITE SYSTEM TRIAGE & INCIDENT REPORT"
-echo ""
+STAGE_TIMEOUT="${SYSCHECK_TIMEOUT:-90}"
+TOOLS=("system-health" "log-checker" "update-inspector")
+FAILED=()
 
-# Run all 3 diagnostics in order
-"$SYS_TOOLS_DIR/system-health"
-echo -e "\n---\n"
-"$SYS_TOOLS_DIR/log-checker"
-echo -e "\n---\n"
-"$SYS_TOOLS_DIR/update-inspector"
+usage() {
+    echo "Usage: syscheck [--all|-a] [--kernel|-k] [--timeout SECONDS] [-h|--help]"
+    echo "Runs composite health, journal log, and update inspection."
+    exit 0
+}
+
+PASSTHROUGH_ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            usage
+            ;;
+        --timeout)
+            if [[ -n "${2:-}" && "$2" =~ ^[0-9]+$ ]]; then
+                STAGE_TIMEOUT="$2"
+                shift 2
+            else
+                echo "[error] --timeout requires an integer argument." >&2
+                exit 1
+            fi
+            ;;
+        *)
+            PASSTHROUGH_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+printf "# COMPOSITE SYSTEM TRIAGE & INCIDENT REPORT\n\n"
+printf "> host: %s | generated: %s | stages: %s\n\n" \
+    "$(hostname 2>/dev/null || echo "localhost")" \
+    "$(date -Iseconds 2>/dev/null || date "+%Y-%m-%d %H:%M:%S")" \
+    "$(IFS=', '; echo "${TOOLS[*]}")"
+
+for tool in "${TOOLS[@]}"; do
+    printf -- '--------------------------------------------------------------------------------\n'
+    bin="$SYS_TOOLS_DIR/$tool"
+    if [[ ! -x "$bin" ]]; then
+        printf "### ⚠️  %s: SKIPPED (missing or non-executable at %s)\n\n" "$tool" "$bin"
+        FAILED+=("$tool(missing)")
+        continue
+    fi
+
+    printf "### ▶ %s\n\n" "$tool"
+    
+    # Isolate failures so one stage aborting does not cancel the rest of the report
+    set +e
+    if ! timeout "$STAGE_TIMEOUT" "$bin" "${PASSTHROUGH_ARGS[@]}"; then
+        rc=$?
+        set -e
+        printf "\n### ⚠️  %s: FAILED (exit code: %d)\n\n" "$tool" "$rc"
+        FAILED+=("$tool($rc)")
+    else
+        set -e
+        printf "\n"
+    fi
+done
+
+if (( ${#FAILED[@]} > 0 )); then
+    printf "\n> **[syscheck alert]** INCOMPLETE REPORT: Failed stages: %s\n" "${FAILED[*]}"
+    exit 1
+fi

@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
-# AI Log Triage & Diagnostics v2.5.0 (Zero-Config / High-Precision)
+# AI Log Triage & Diagnostics (Zero-Config / High-Precision)
 
 set -euo pipefail
+export LC_ALL=C
 
-# --- Configuration & State Paths ---
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/py-agent"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/py-agent"
 CURSOR_FILE="${CACHE_DIR}/log-checker.cursor"
+LOCK_FILE="${CACHE_DIR}/log-checker.lock"
 
 MYSYS_FILE="${CONFIG_DIR}/skills/system/mysys.md"
 [[ -f "$MYSYS_FILE" ]] || MYSYS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/local-ai/skills/system/mysys.md"
 
-mkdir -p "$CACHE_DIR"
+if ! mkdir -p "$CACHE_DIR" 2>/dev/null; then
+    CURSOR_FILE="/dev/null"
+fi
 
-# --- CLI Options ---
 MODE="incremental"
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -32,144 +34,113 @@ while [[ $# -gt 0 ]]; do
             ;;
         --help|-h)
             echo "Usage: log-checker [--all|-a] [--kernel|-k] [--reset|-r]"
-            echo "  --all     Inspect entire current boot (bypasses cursor)"
+            echo "  --all     Inspect full current boot (warnings & errors, newest 100)"
             echo "  --kernel  Show high-priority kernel and driver messages only"
             echo "  --reset   Reset cursor bookmark"
             exit 0
             ;;
         *)
-            shift
+            echo "Error: Unrecognized option '$1'. Use --help for usage." >&2
+            exit 1
             ;;
     esac
 done
 
-echo "# ACTIVE SYSTEM DIAGNOSTICS & LOG TRIAGE"
-echo ""
-echo "> **Directives for AI:**"
-echo "> 1. Analyze high-severity events first: failed units, kernel/DRM/GPU panics, and coredumps."
-echo "> 2. Filter out desktop background noise (e.g. GTK CSS warnings, xdg-desktop-portal idle inhibitions, or tracker-miner notices)."
-echo "> 3. If 'NO NEW EVENTS RECORDED' is reported, confirm cleanly that the system is quiet and previous errors are mitigated."
-echo "> 4. Identify the root cause in 2 sentences max, followed by an exact, verified recovery action or terminal command."
-echo "> 5. Use semantic, compact Markdown styled for terminal output."
-echo ""
-echo "---"
-echo ""
-
-# ==========================================
-# SECTION 1: SYSTEMD FAILED UNITS
-# ==========================================
-if command -v systemctl >/dev/null 2>&1; then
-    sys_failed=$(systemctl --failed --no-legend --no-pager 2>/dev/null || true)
-    usr_failed=$(systemctl --user --failed --no-legend --no-pager 2>/dev/null || true)
-
-    if [[ -n "$sys_failed" || -n "$usr_failed" ]]; then
-        echo "## FAILED SYSTEMD SERVICES"
-        echo '```text'
-        [[ -n "$sys_failed" ]] && echo "[System Units]:" && echo "$sys_failed"
-        [[ -n "$usr_failed" ]] && echo "[User Units]:" && echo "$usr_failed"
-        echo '```'
-        echo ""
-        echo "---"
-        echo ""
-    fi
-fi
-
-# ==========================================
-# SECTION 2: RECENT COREDUMPS (SIGSEGV / SIGABRT)
-# ==========================================
-if command -v coredumpctl >/dev/null 2>&1; then
-    recent_dumps=$(coredumpctl list --no-legend --no-pager -n 3 2>/dev/null || true)
-    if [[ -n "$recent_dumps" ]]; then
-        echo "## RECENT PROCESS CRASHES & COREDUMPS"
-        echo '```text'
-        echo "$recent_dumps"
-        echo '```'
-        echo ""
-        echo "---"
-        echo ""
-    fi
-fi
-
-# ==========================================
-# SECTION 3: KERNEL & DRIVER ERRORS (Hardware / DRM / GPU / OOM)
-# ==========================================
-if command -v journalctl >/dev/null 2>&1; then
-    kerrors=$(journalctl -k -b 0 -p err..emerg --no-pager -n 25 2>/dev/null || true)
-    if [[ -n "$kerrors" ]]; then
-        echo "## KERNEL & DRIVER ALERTS (Ring 0 / GPU / Memory)"
-        echo '```text'
-        echo "$kerrors"
-        echo '```'
-        echo ""
-        echo "---"
-        echo ""
-    fi
-fi
-
-# ==========================================
-# SECTION 4: DYNAMIC SYSTEM EVENTS (Incremental / Windowed)
-# ==========================================
-if command -v journalctl >/dev/null 2>&1; then
-    new_logs=""
-
-    if [[ "$MODE" == "kernel" ]]; then
-        echo "## KERNEL EVENTS (Current Boot - Last 50)"
-        echo '```text'
-        journalctl -k -b 0 -n 50 --no-pager 2>/dev/null || true
-        echo '```'
-    elif [[ "$MODE" == "all" ]]; then
-        echo "## FULL BOOT EVENTS (Errors & Warnings - Last 60)"
-        echo '```text'
-        journalctl -b 0 -p warning..emerg -n 60 --no-pager 2>/dev/null || true
-        echo '```'
-    else
-        # Incremental cursor-tracked mode
-        if [[ ! -f "$CURSOR_FILE" ]]; then
-            new_logs=$(journalctl -b 0 --since "30 minutes ago" --cursor-file="$CURSOR_FILE" -n 50 2>/dev/null || true)
-        else
-            new_logs=$(journalctl -b 0 --cursor-file="$CURSOR_FILE" -n 50 2>/dev/null || true)
-        fi
-
-        if [[ -n "$new_logs" ]]; then
-            echo "## NEW SYSTEM EVENTS"
-            echo '```text'
-            echo "$new_logs"
-            echo '```'
-        else
-            echo "## NO NEW EVENTS RECORDED (System is Quiet)"
-            echo "No new system errors or warnings recorded since the last check."
-            echo ""
-            echo "### LAST RECORDED CONTEXT (Tail 5)"
-            echo '```text'
-            journalctl -b 0 -n 5 --no-pager 2>/dev/null || true
-            echo '```'
-        fi
-    fi
-else
-    echo "## DIAGNOSTIC ERROR"
-    echo "*Error: journalctl utility not found on this system.*"
-fi
-
-echo ""
-echo "---"
-echo ""
-
-# ==========================================
-# SECTION 5: PRIVILEGE AUDIT & SYSTEM PROFILE
-# ==========================================
+# Early Privilege Pre-Flight
+JOURNAL_READABLE=1
 if command -v journalctl >/dev/null 2>&1; then
     if ! journalctl -b 0 -n 1 >/dev/null 2>&1; then
-        echo "## PRIVILEGE RESTRICTION NOTICE"
-        echo "⚠️ **Notice:** User cannot read system-level journal logs (restricted to user-space)."
-        echo "To view full hardware & daemon journals, add user to group: \`sudo usermod -aG systemd-journal $USER\`"
-        echo ""
-        echo "---"
-        echo ""
+        JOURNAL_READABLE=0
     fi
 fi
 
+printf "# ACTIVE SYSTEM DIAGNOSTICS & LOG TRIAGE\n\n"
+printf "> **Directives for AI:**\n"
+printf "> 1. Analyze high-severity events first: failed units, kernel panics, and coredumps.\n"
+printf "> 2. Filter desktop background noise (GTK warnings, portal inhibitions).\n"
+printf "> 3. Identify root cause in 2 sentences max, followed by exact terminal recovery actions.\n\n---\n\n"
+
+if (( JOURNAL_READABLE == 0 )); then
+    user_name="${USER:-$(id -un)}"
+    printf "## ⚠️ PRIVILEGE RESTRICTION NOTICE\n"
+    printf "User is not authorized to read full system-level journal logs.\n"
+    printf "To view full logs, add user to journal group: \`sudo usermod -aG systemd-journal %s\` (requires re-login).\n\n---\n\n" "$user_name"
+fi
+
+# SECTION 1: SYSTEMD FAILED UNITS
+if command -v systemctl >/dev/null 2>&1; then
+    sys_failed=$(systemctl --failed --no-legend --no-pager 2>/dev/null) || sys_failed=""
+    usr_failed=$(systemctl --user --failed --no-legend --no-pager 2>/dev/null) || usr_failed=""
+
+    if [[ -n "$sys_failed" || -n "$usr_failed" ]]; then
+        printf "## FAILED SYSTEMD SERVICES\n\`\`\`text\n"
+        [[ -n "$sys_failed" ]] && printf "[System Units]:\n%s\n" "$sys_failed"
+        [[ -n "$usr_failed" ]] && printf "[User Units]:\n%s\n" "$usr_failed"
+        printf "\`\`\`\n\n---\n\n"
+    fi
+fi
+
+# SECTION 2: RECENT COREDUMPS (Last 24 Hours)
+if command -v coredumpctl >/dev/null 2>&1; then
+    recent_dumps=$(coredumpctl list --since "-24 hours" --no-legend --no-pager -n 5 2>/dev/null) || recent_dumps=""
+    if [[ -n "$recent_dumps" ]]; then
+        printf "## RECENT PROCESS CRASHES & COREDUMPS (Last 24h)\n\`\`\`text\n%s\n\`\`\`\n\n---\n\n" "$recent_dumps"
+    fi
+fi
+
+# SECTION 3: KERNEL & DRIVER ERRORS
+if command -v journalctl >/dev/null 2>&1 && (( JOURNAL_READABLE == 1 )); then
+    kerrors=$(journalctl -k -b 0 -p err..emerg --no-pager -n 30 2>/dev/null) || kerrors=""
+    if [[ -n "$kerrors" ]]; then
+        printf "## KERNEL & DRIVER ALERTS (Ring 0 / GPU / Hardware)\n\`\`\`text\n%s\n\`\`\`\n\n---\n\n" "$kerrors"
+    fi
+fi
+
+# SECTION 4: DYNAMIC SYSTEM EVENTS
+if command -v journalctl >/dev/null 2>&1; then
+    if [[ "$MODE" == "kernel" ]]; then
+        printf "## KERNEL EVENTS (Current Boot - Last 50)\n\`\`\`text\n"
+        journalctl -k -b 0 -n 50 --no-pager 2>/dev/null || printf "[No kernel logs accessible]\n"
+        printf "\`\`\`\n"
+    elif [[ "$MODE" == "all" ]]; then
+        printf "## CURRENT BOOT (Errors & Warnings - Newest 100)\n\`\`\`text\n"
+        journalctl -b 0 -p warning..emerg -n 100 --no-pager 2>/dev/null || printf "[Logs inaccessible]\n"
+        printf "\`\`\`\n"
+    else
+        # Incremental Cursor Execution with Flock Synchronization
+        exec 9>>"$LOCK_FILE"
+        flock -x 9 2>/dev/null || true
+
+        rc=0
+        if [[ ! -f "$CURSOR_FILE" || ! -s "$CURSOR_FILE" ]]; then
+            new_logs=$(journalctl -b 0 -p warning..emerg --since "30 minutes ago" --cursor-file="$CURSOR_FILE" -n 80 2>/dev/null) || rc=$?
+        else
+            new_logs=$(journalctl -b 0 -p warning..emerg --cursor-file="$CURSOR_FILE" -n 80 2>/dev/null) || rc=$?
+        fi
+
+        [[ "$new_logs" =~ ^[[:space:]]*--[[:space:]]No[[:space:]]entries[[:space:]]--[[:space:]]*$ ]] && new_logs=""
+
+        if (( rc != 0 )); then
+            printf "## DIAGNOSTIC NOTE\n*Unable to read journal events (exit code %d).*\n" "$rc"
+        elif [[ -n "$new_logs" ]]; then
+            printf "## NEW SYSTEM EVENTS\n\`\`\`text\n%s\n\`\`\`\n" "$new_logs"
+        else
+            printf "## NO NEW EVENTS RECORDED (System is Quiet)\n"
+            printf "No new system errors or warnings recorded since the last check.\n\n"
+            printf "### LAST RECORDED CONTEXT (Tail 5)\n\`\`\`text\n"
+            journalctl -b 0 -n 5 --no-pager 2>/dev/null || printf "[Logs quiet]\n"
+            printf "\`\`\`\n"
+        fi
+
+        flock -u 9 2>/dev/null || true
+    fi
+fi
+
+printf "\n---\n\n"
+
+# SECTION 5: SYSTEM PROFILE INJECTION (Safely Fenced as Untrusted Data)
 if [[ -f "$MYSYS_FILE" ]]; then
-    echo "## SYSTEM ARCHITECTURE PROFILE"
-    cat "$MYSYS_FILE"
-    echo ""
+    printf "## SYSTEM ARCHITECTURE PROFILE (HOST SPEC)\n\`\`\`markdown\n"
+    head -c 16384 "$MYSYS_FILE"
+    printf "\n\`\`\`\n"
 fi
