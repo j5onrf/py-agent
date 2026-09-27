@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# model-select-local.py - Hardened Local Offline Model Selector with Auto-CPU Control
+# model-select-local.py - Hardened Local Offline Model Selector with Auto-CPU Control & RAM Monitor
 
 import asyncio
 import atexit
@@ -10,16 +10,21 @@ import shutil
 import subprocess
 import sys
 import termios
-import time
 import tty
 
-MODELS_DIR = "/home/user/models"
-SERV_DIR = "/home/user/models/serv"
-STATE_FILE = "/tmp/cpu_mode_state"
+MODELS_DIR = "/home/j5/models"
+SERV_DIR = "/home/j5/models/serv"
+
+# Secure per-user state path (fixes symlink/TOCTOU vector in /tmp)
+STATE_DIR = os.path.join(
+    os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state")),
+    "model-select",
+)
+STATE_FILE = os.path.join(STATE_DIR, "cpu_mode")
 
 LOCAL_MODELS = [
     {
-        "name": "MiniCPM5-2B (DSpark ON/Off)",
+        "name": "MiniCPM5-2B (DSpark Off)",
         "alias": "MiniCPM5-2B-DSpark",
         "file": "MiniCPM5-2B-Q4_K_M.gguf",
         "script": "Mini2Bs.sh",
@@ -52,7 +57,7 @@ LOCAL_MODELS = [
         "name": "Nex-N2.5-mini-APEX-I-Compact (16.5gb)",
         "alias": "Nex-N2.5-mini",
         "file": "Nex-N2.5-mini-APEX-I-Compact.gguf",
-        "script": "nex-n2.5.sh",
+        "script": "nexn25.sh",
     },
     {
         "name": "Ornith-1.5-35B-A3B-APEX-I-Compact (16.5gb)",
@@ -81,7 +86,7 @@ LOCAL_MODELS = [
     {
         "name": "Qwen3.8-35B-A3B-Distill-MTP-APEX-I-MiniPlus-V2.1 (17.2gb)",
         "alias": "Qwen3.8-35B-Distill",
-        "file": "Qwen3.8-35B-A3B-Distill-MTP-APEX-I-MiniPlus-V2.1.gguf",
+        "file": "Qwen3.8-35B-A3B-Distill.APEX-I-MiniPlus-V2.1.gguf",
         "script": "qwen38d.sh",
     },
 ]
@@ -90,13 +95,113 @@ LOCAL_MODELS = [
 def cleanup_terminal():
     sys.stdout.write("\x1b[?25h\x1b[?1049l")
     sys.stdout.flush()
-    os.system("stty sane 2>/dev/null")
+    try:
+        os.system("stty sane 2>/dev/null")
+    except Exception:
+        pass
 
 
 atexit.register(cleanup_terminal)
 
 
-# --- HARDENED PROCESS DETECTION ---
+def write_cpu_state(state: str):
+    """Safely persist CPU governor state to a private user directory."""
+    try:
+        os.makedirs(STATE_DIR, mode=0o700, exist_ok=True)
+        fd = os.open(
+            STATE_FILE,
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
+            0o600,
+        )
+        with os.fdopen(fd, "w") as f:
+            f.write(state)
+    except Exception:
+        pass
+
+
+# --- SYSTEM MEMORY SAMPLER ---
+def get_memory_info() -> dict:
+    try:
+        mem = {}
+        with open("/proc/meminfo", "r") as f:
+            for line in f:
+                parts = line.split(":", 1)
+                if len(parts) == 2:
+                    mem[parts[0].strip()] = int(parts[1].strip().split()[0])
+
+        total_kb = mem.get("MemTotal", 0)
+        avail_kb = mem.get("MemAvailable", 0)
+        used_kb = max(0, total_kb - avail_kb)
+
+        swap_total_kb = mem.get("SwapTotal", 0)
+        swap_free_kb = mem.get("SwapFree", 0)
+        swap_used_kb = max(0, swap_total_kb - swap_free_kb)
+
+        total_gb = total_kb / (1024 * 1024)
+        used_gb = used_kb / (1024 * 1024)
+        avail_gb = avail_kb / (1024 * 1024)
+        pct = (used_kb / total_kb * 100) if total_kb > 0 else 0
+
+        return {
+            "total_gb": total_gb,
+            "used_gb": used_gb,
+            "avail_gb": avail_gb,
+            "pct": pct,
+            "swap_used_gb": swap_used_kb / (1024 * 1024),
+            "swap_total_gb": swap_total_kb / (1024 * 1024),
+        }
+    except Exception:
+        return {}
+
+
+def format_memory_bar(mem: dict, bar_width: int = 14) -> str:
+    if not mem:
+        return ""
+
+    pct = mem["pct"]
+    used = mem["used_gb"]
+    total = mem["total_gb"]
+    avail = mem["avail_gb"]
+
+    if pct < 70:
+        color = "\033[1;32m"  # Green
+    elif pct < 85:
+        color = "\033[38;2;230;120;60m"  # Amber
+    else:
+        color = "\033[1;31m"  # Red
+
+    reset = "\033[0m"
+    bold = "\033[1m"
+    dim = "\033[90m"
+
+    filled = int((pct / 100) * bar_width)
+    filled = max(0, min(bar_width, filled))
+    bar = f"{color}{'■' * filled}{dim}{'·' * (bar_width - filled)}{reset}"
+
+    msg = (
+        f"{dim}RAM:{reset} [{bar}] {bold}{color}{used:.1f}{reset}/{total:.1f} GB "
+        f"({color}{pct:.0f}%{reset})  {dim}Free:{reset} {bold}{avail:.1f} GB{reset}"
+    )
+
+    if mem.get("swap_used_gb", 0) > 0.1:
+        msg += f"  {dim}| Swap:{reset} \033[1;33m{mem['swap_used_gb']:.1f} GB{reset}"
+
+    return msg
+
+
+# --- PROCESS LIFECYCLE & SECURITY HELPERS ---
+def is_target_pid(pid: int, expected_comm: str) -> bool:
+    """Verify PID identity via /proc/<pid>/comm before issuing destructive signals."""
+    try:
+        comm_path = f"/proc/{pid}/comm"
+        if os.path.exists(comm_path):
+            with open(comm_path, "r") as f:
+                return f.read().strip() == expected_comm
+    except (FileNotFoundError, PermissionError, ProcessLookupError):
+        pass
+    return False
+
+
 def get_running_instances() -> list[dict]:
     instances = []
     if os.path.exists("/proc"):
@@ -158,14 +263,21 @@ def get_running_instances() -> list[dict]:
             pass
 
     try:
-        output = subprocess.check_output(["pgrep", "-af", "llama-server"], stderr=subprocess.DEVNULL).decode()
+        current_uid = str(os.getuid())
+        output = subprocess.check_output(
+            ["pgrep", "-u", current_uid, "-af", "llama-server"],
+            stderr=subprocess.DEVNULL,
+        ).decode()
         for line in output.splitlines():
             parts = line.strip().split()
             if not parts:
                 continue
             alias_m = re.search(r"--alias[=\s]+([^\s]+)", line)
             model_m = re.search(r"(?:-m|--model)[=\s]+([^\s]+)", line)
-            ggufs = [os.path.basename(m.group(0).strip("\"'")) for m in re.finditer(r"[^\s]+\.gguf", line, re.IGNORECASE)]
+            ggufs = [
+                os.path.basename(m.group(0).strip("\"'"))
+                for m in re.finditer(r"[^\s]+\.gguf", line, re.IGNORECASE)
+            ]
 
             instances.append({
                 "pid": int(parts[0]) if parts[0].isdigit() else 0,
@@ -191,11 +303,9 @@ def is_model_active(model_def: dict, instances: list[dict]) -> bool:
         if target_file and target_file in inst.get("all_ggufs", []):
             return True
         running_alias = (inst.get("alias") or "").strip()
-        if target_alias and running_alias:
-            if target_alias.lower() == running_alias.lower():
-                return True
-            if target_alias.replace("es", "").lower() == running_alias.replace("es", "").lower():
-                return True
+        # Exact case-insensitive match (fixes flawed "es" strip heuristic)
+        if target_alias and running_alias and target_alias.lower() == running_alias.lower():
+            return True
         for arg in inst.get("args", []):
             if target_file and target_file in arg:
                 return True
@@ -203,81 +313,91 @@ def is_model_active(model_def: dict, instances: list[dict]) -> bool:
     return False
 
 
-async def async_set_cpu_chill():
+async def async_set_cpu_mode(governor: str, max_freq: str, mode_name: str, notify_title: str) -> bool:
+    """Executes cpupower and verifies returncode before saving state or notifying."""
     try:
-        await asyncio.create_subprocess_exec(
-            "sudo", "-n", "cpupower", "frequency-set", "-g", "powersave", "--max", "3.0GHz",
+        proc = await asyncio.create_subprocess_exec(
+            "sudo", "-n", "cpupower", "frequency-set", "-g", governor, "--max", max_freq,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
-        with open(STATE_FILE, "w") as f:
-            f.write("chill")
-        if shutil.which("notify-send"):
-            await asyncio.create_subprocess_exec(
-                "notify-send", "CPU Mode", "LOCAL-AI CHILL (3.0 GHz) - Active",
-                "-u", "low", "-t", "1500", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
+        rc = await proc.wait()
+        if rc == 0:
+            write_cpu_state(mode_name)
+            if shutil.which("notify-send"):
+                proc_n = await asyncio.create_subprocess_exec(
+                    "notify-send", "CPU Mode", notify_title,
+                    "-u", "low", "-t", "1500", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
+                await proc_n.wait()
+            return True
+        return False
     except Exception:
-        pass
+        return False
 
 
-async def async_set_cpu_balanced():
-    try:
-        await asyncio.create_subprocess_exec(
-            "sudo", "-n", "cpupower", "frequency-set", "-g", "powersave", "--max", "5.2GHz",
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-        with open(STATE_FILE, "w") as f:
-            f.write("balanced")
-        if shutil.which("notify-send"):
-            await asyncio.create_subprocess_exec(
-                "notify-send", "CPU Mode", "BALANCED (Dynamic) - Restored",
-                "-u", "normal", "-t", "1500", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
-    except Exception:
-        pass
+async def async_set_cpu_chill() -> bool:
+    return await async_set_cpu_mode("powersave", "3.0GHz", "chill", "LOCAL-AI CHILL (3.0 GHz) - Active")
+
+
+async def async_set_cpu_balanced() -> bool:
+    return await async_set_cpu_mode("powersave", "5.2GHz", "balanced", "BALANCED (Dynamic) - Restored")
 
 
 async def async_stop_all_engines():
+    """Safely terminates engines without broad wildcards or PID-reuse escalation."""
+    current_uid = str(os.getuid())
     targets = ["llama-server", "llama-cli"]
+
     for target in targets:
         try:
-            pids = subprocess.check_output(["pgrep", "-x", target], stderr=subprocess.DEVNULL).decode().split()
+            output = subprocess.check_output(
+                ["pgrep", "-u", current_uid, "-x", target],
+                stderr=subprocess.DEVNULL,
+            ).decode()
+            pids = [int(p) for p in output.split() if p.isdigit()]
         except Exception:
             pids = []
 
-        if pids:
-            for pid in pids:
+        if not pids:
+            continue
+
+        # Phase 1: Graceful SIGTERM to verified processes
+        for pid in pids:
+            if is_target_pid(pid, target):
                 try:
-                    os.kill(int(pid), 15)
-                except Exception:
+                    os.kill(pid, 15)
+                except ProcessLookupError:
                     pass
 
-            for _ in range(20):
-                await asyncio.sleep(0.1)
-                try:
-                    subprocess.check_output(["pgrep", "-x", target], stderr=subprocess.DEVNULL)
-                except Exception:
-                    break
-            else:
-                for pid in pids:
+        # Phase 2: Wait up to 2 seconds for clean exit
+        for _ in range(20):
+            await asyncio.sleep(0.1)
+            alive = [p for p in pids if is_target_pid(p, target)]
+            if not alive:
+                break
+        else:
+            # Phase 3: Targeted SIGKILL ONLY on verified, surviving PIDs (prevents PID-reuse attack)
+            for pid in pids:
+                if is_target_pid(pid, target):
                     try:
-                        os.kill(int(pid), 9)
-                    except Exception:
+                        os.kill(pid, 9)
+                    except ProcessLookupError:
                         pass
 
+    # Flush cached pages cleanly
     try:
-        await asyncio.create_subprocess_exec("pkill", "-f", "AI ", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        await asyncio.create_subprocess_exec("pkill", "-f", "uvicorn", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        await asyncio.create_subprocess_exec("sync", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        proc_sync = await asyncio.create_subprocess_exec("sync", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        await proc_sync.wait()
     except Exception:
         pass
 
     if shutil.which("notify-send"):
         try:
-            await asyncio.create_subprocess_exec(
+            proc_n = await asyncio.create_subprocess_exec(
                 "notify-send", "AI Engine", "All Engines Stopped & Memory Flushed",
                 "-i", "system-shutdown", "-t", "1500", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
+            await proc_n.wait()
         except Exception:
             pass
 
@@ -310,7 +430,11 @@ async def async_get_key_with_timeout(timeout: float = 0.5) -> str | None:
     fd = sys.stdin.fileno()
 
     def _read_with_select():
-        old_settings = termios.tcgetattr(fd)
+        try:
+            old_settings = termios.tcgetattr(fd)
+        except (termios.error, OSError):
+            return None
+
         try:
             tty.setraw(fd)
             rlist, _, _ = select.select([fd], [], [], timeout)
@@ -341,33 +465,58 @@ async def async_get_key_with_timeout(timeout: float = 0.5) -> str | None:
             elif ch.lower() == "q":
                 return "q"
             return ch
+        except (termios.error, OSError, ValueError):
+            return None
         finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            try:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            except Exception:
+                pass
 
     return await asyncio.to_thread(_read_with_select)
 
 
-def draw_menu(selected: int, running_instances: list[dict], message: str = ""):
+def draw_menu(
+    selected: int,
+    running_instances: list[dict],
+    active_statuses: dict[str, bool],
+    message: str = "",
+    mem_info: dict = None,
+):
     sys.stdout.write("\x1b[H")
     amber = "\033[38;2;230;120;60m"
     green = "\033[1;32m"
+    red = "\033[1;31m"
     reset = "\033[0m"
     bold = "\033[1m"
     dim = "\033[90m"
 
+    if mem_info is None:
+        mem_info = get_memory_info()
+
     term_cols = shutil.get_terminal_size((80, 24)).columns
     box_width = min(max(term_cols - 6, 60), 88)
 
-    sys.stdout.write(
-        f"\r\x1b[K\n   {bold}⚡ LOCAL-AI OFFLINE WORKSPACE{reset}\n   {dim}{'─' * box_width}{reset}\n"
-    )
+    sys.stdout.write(f"\r\x1b[K\n   {bold}⚡ LOCAL-AI OFFLINE WORKSPACE{reset}\n")
+    sys.stdout.write(f"\r\x1b[K   {format_memory_bar(mem_info)}\n")
+    sys.stdout.write(f"\r\x1b[K   {dim}{'─' * box_width}{reset}\n")
 
     for i, model in enumerate(LOCAL_MODELS):
-        is_active = is_model_active(model, running_instances)
+        is_active = active_statuses.get(model["alias"], False)
+        exists_on_disk = model.get("file_exists", True)
+
         prefix = f"   {amber}❯{reset}  {bold}" if i == selected else "      "
         name_text = model["name"]
-        status_tag = f"{green}{bold}[● LOADED]{reset}" if is_active else ""
-        status_len = 10 if is_active else 0
+
+        if is_active:
+            status_tag = f"{green}{bold}[● LOADED]{reset}"
+            status_len = 10
+        elif not exists_on_disk:
+            status_tag = f"{red}{dim}[NOT FOUND]{reset}"
+            status_len = 11
+        else:
+            status_tag = ""
+            status_len = 0
 
         visible_left = 6 + len(name_text)
         pad_len = max(2, box_width - visible_left - status_len)
@@ -385,7 +534,6 @@ def draw_menu(selected: int, running_instances: list[dict], message: str = ""):
         f"\r\x1b[K{'   ' + amber + '❯' + reset + '  ' + bold if selected == exit_idx else '      '}✕   Close Settings{reset}\n"
     )
 
-    # Active model file path banner
     selected_file = LOCAL_MODELS[selected]["file"] if selected < len(LOCAL_MODELS) else "System memory control"
     sys.stdout.write(f"\r\x1b[K   {dim}{'─' * box_width}{reset}\n")
     sys.stdout.write(f"\r\x1b[K   {dim}Target:{reset} {selected_file[:box_width-12]}\n")
@@ -397,29 +545,47 @@ def draw_menu(selected: int, running_instances: list[dict], message: str = ""):
 
 
 async def async_main():
+    # Guard against non-TTY invocation (pipes, CI, background)
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        sys.stderr.write("Error: model-select-local requires an interactive TTY.\n")
+        sys.exit(1)
+
+    # Use MODELS_DIR to validate file presence on startup
+    for m in LOCAL_MODELS:
+        m["file_exists"] = os.path.isfile(os.path.join(MODELS_DIR, m["file"]))
+
     selected = 0
     total_options = len(LOCAL_MODELS) + 2
     message = ""
     last_state_hash = None
 
-    # Switch to clean alternate screen buffer (zero scrollback pollution)
+    # Switch to clean alternate screen buffer
     sys.stdout.write("\x1b[?1049h\x1b[?25l")
     sys.stdout.flush()
 
-    if not os.path.exists(STATE_FILE):
-        try:
-            with open(STATE_FILE, "w") as f:
-                f.write("balanced")
-        except Exception:
-            pass
+    write_cpu_state("balanced")
 
     try:
         while True:
-            running_instances = get_running_instances()
-            current_hash = (selected, message, [(m["alias"], is_model_active(m, running_instances)) for m in LOCAL_MODELS])
+            # Asynchronous non-blocking proc and meminfo reading
+            running_instances, mem_info = await asyncio.gather(
+                asyncio.to_thread(get_running_instances),
+                asyncio.to_thread(get_memory_info),
+            )
+
+            # Build pre-computed active map to eliminate redundant loops
+            active_statuses = {m["alias"]: is_model_active(m, running_instances) for m in LOCAL_MODELS}
+            mem_snapshot = round(mem_info.get("used_gb", 0), 1)
+
+            current_hash = (
+                selected,
+                message,
+                mem_snapshot,
+                tuple(active_statuses.items()),
+            )
 
             if current_hash != last_state_hash:
-                draw_menu(selected, running_instances, message)
+                draw_menu(selected, running_instances, active_statuses, message, mem_info)
                 last_state_hash = current_hash
                 message = ""
 
@@ -441,32 +607,33 @@ async def async_main():
                         continue
 
                     message = f"\033[1;33m↺ Releasing current server and flushing RAM pages...\033[0m"
-                    draw_menu(selected, running_instances, message)
+                    draw_menu(selected, running_instances, active_statuses, message, mem_info)
 
                     await async_stop_all_engines()
-                    await async_set_cpu_chill()
+                    chill_ok = await async_set_cpu_chill()
 
                     if launch_local_server(target_model["script"]):
                         verified = False
                         for _ in range(25):
                             await asyncio.sleep(0.2)
-                            fresh_instances = get_running_instances()
+                            fresh_instances = await asyncio.to_thread(get_running_instances)
                             if is_model_active(target_model, fresh_instances):
                                 verified = True
                                 running_instances = fresh_instances
                                 break
 
+                        throttle_note = "" if chill_ok else " (CPU throttle skipped: sudo required)"
                         if verified:
-                            message = f"\033[1;32m✓ Initialized {target_model['name']} on Port 8080.\033[0m"
+                            message = f"\033[1;32m✓ Initialized {target_model['name']} on Port 8080.{throttle_note}\033[0m"
                         else:
-                            message = f"\033[1;33m⚠ Script executed, verifying backend startup in background...\033[0m"
+                            message = f"\033[1;33m⚠ Script executed, verifying backend startup in background...{throttle_note}\033[0m"
                     else:
                         message = f"\033[1;31m✗ Failed to execute {target_model['script']} (Check {SERV_DIR}).\033[0m"
                     last_state_hash = None
 
                 elif selected == len(LOCAL_MODELS):
                     message = "\033[1;33m↺ Shutting down active local engines...\033[0m"
-                    draw_menu(selected, running_instances, message)
+                    draw_menu(selected, running_instances, active_statuses, message, mem_info)
 
                     await async_stop_all_engines()
                     await async_set_cpu_balanced()

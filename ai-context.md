@@ -90,7 +90,7 @@ ai init ~/.config/py-agent/projects/session-test ---> session test, projects ses
 ~/.config/py-agent/tools/subsec/hyprstate/gitcom ---> hyprstate gitcom, gitcom
 ```
 
-## 5 System & Health
+## 5. System & Health
 
 ```properties
 # --- System Profile ---
