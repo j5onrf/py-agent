@@ -1,25 +1,37 @@
 #!/usr/bin/env python3
-"""Interactive & Direct Project Creator for Py-Agent with ai-context.md [Hardened TTY]"""
+"""Interactive & Direct Project Creator for Py-Agent with ai-context.md [Hardened Production Ready]"""
 
+import contextlib
+import fcntl
 import os
 import re
 import signal
+import subprocess
 import sys
 
-# 1. Neutralize background subshell TTY signals
-for sig in (getattr(signal, "SIGTTIN", None), getattr(signal, "SIGTTOU", None)):
+# 1. Neutralize background subshell TTY signals safely
+for sig_name in ("SIGTTIN", "SIGTTOU"):
+    sig = getattr(signal, sig_name, None)
     if sig:
-        try:
+        with contextlib.suppress(Exception):
             signal.signal(sig, signal.SIG_IGN)
-        except Exception:
-            pass
 
-# 2. Force terminal into sane canonical mode
-os.system("stty sane 2>/dev/null")
+# 2. Reset terminal state cleanly if running interactively
+if sys.stdin.isatty():
+    with contextlib.suppress(Exception):
+        subprocess.run(["stty", "sane"], stderr=subprocess.DEVNULL, check=False)
 
-CFG_DIR = os.path.expanduser("~/.config/py-agent")
+# 3. Canonical path resolution
+_xdg = os.environ.get("XDG_CONFIG_HOME")
+if _xdg and os.path.isabs(_xdg):
+    CFG_ROOT = os.path.realpath(_xdg)
+else:
+    CFG_ROOT = os.path.realpath(os.path.expanduser("~/.config"))
+
+CFG_DIR = os.path.join(CFG_ROOT, "py-agent")
 PROJECTS_DIR = os.path.join(CFG_DIR, "projects")
 CONTEXT_FILE = os.path.join(CFG_DIR, "ai-context.md")
+
 RE_SAFE_NAME = re.compile(r"[^a-zA-Z0-9_\-]")
 TRIGGER_ALIASES = frozenset({"newp", "newproject", "new-project", "new", "project", "$1"})
 
@@ -34,50 +46,62 @@ def prompt_tty(msg: str) -> str:
             if not line:
                 raise EOFError
             return line.strip()
-    except Exception:
-        # Fallback to standard input if /dev/tty is unavailable
+    except OSError:
+        # Fallback to standard input if /dev/tty is unavailable (e.g. non-controlling tty)
         return input(msg).strip()
 
 
-def add_to_context_file(slug: str, intents_str: str) -> bool:
-    """Inserts workspace shortcut under Section 3 (# --- Workspaces ---) in ai-context.md."""
+import tempfile
+
+def add_to_context_file(slug: str, intents_str: str) -> tuple[bool, str]:
+    """Inserts workspace shortcut under Section 2 (# --- Workspaces ---) in ai-context.md atomically."""
     if not os.path.isfile(CONTEXT_FILE):
-        return False
+        return False, "missing"
 
     entry_line = f"ai init ~/.config/py-agent/projects/{slug} ---> {intents_str}"
+    lock_file = os.path.join(tempfile.gettempdir(), f"pyagent_context_{os.getuid()}.lock")
 
     try:
-        with open(CONTEXT_FILE, "r", encoding="utf-8") as f:
-            content = f.read()
+        with open(lock_file, "w", encoding="utf-8") as lf:
+            fcntl.flock(lf, fcntl.LOCK_EX)
+            try:
+                with open(CONTEXT_FILE, "r", encoding="utf-8") as f:
+                    content = f.read()
 
-        # Prevent duplicate entries
-        if f"projects/{slug} " in content or f"projects/{slug} --->" in content or f"projects/{slug}\n" in content:
-            return False
+                # Anchored duplicate check prevents false-positive prefix collisions
+                if re.search(rf"^\s*ai\s+init\s+\S*projects/{re.escape(slug)}(?:\s+|--->|\n|$)", content, re.M):
+                    return False, "duplicate"
 
-        target_marker = "# --- Workspaces ---"
-        if target_marker in content:
-            parts = content.split(target_marker, 1)
-            updated_content = f"{parts[0]}{target_marker}\n{entry_line}{parts[1]}"
-        elif "## 3. Projects" in content:
-            parts = content.split("## 3. Projects", 1)
-            updated_content = f"{parts[0]}## 3. Projects\n\n# --- Workspaces ---\n{entry_line}{parts[1]}"
-        else:
-            updated_content = f"{content.rstrip()}\n\n{entry_line}\n"
+                target_marker = "# --- Workspaces ---"
+                if target_marker in content:
+                    parts = content.split(target_marker, 1)
+                    updated_content = f"{parts[0]}{target_marker}\n{entry_line}{parts[1]}"
+                elif m := re.search(r"^##\s*\d+\.?\s*Projects\b", content, re.M):
+                    idx = m.end()
+                    updated_content = f"{content[:idx]}\n\n# --- Workspaces ---\n{entry_line}{content[idx:]}"
+                else:
+                    updated_content = f"{content.rstrip()}\n\n{entry_line}\n"
 
-        with open(CONTEXT_FILE, "w", encoding="utf-8") as f:
-            f.write(updated_content)
-        return True
+                tmp_path = f"{CONTEXT_FILE}.tmp.{os.getpid()}"
+                with open(tmp_path, "w", encoding="utf-8") as tf:
+                    tf.write(updated_content)
+                    tf.flush()
+                    os.fsync(tf.fileno())
+
+                os.replace(tmp_path, CONTEXT_FILE)
+                return True, "added"
+            finally:
+                fcntl.flock(lf, fcntl.LOCK_UN)
     except OSError as e:
-        print(f"\033[1;31m[error] Failed to update ai-context.md: {e}\033[0m")
-        return False
+        return False, f"error: {e}"
 
 
 def main() -> None:
-    valid_args = [
-        a.strip()
-        for a in sys.argv[1:]
-        if a.strip() and not a.startswith("-") and a.strip().lower() not in TRIGGER_ALIASES
-    ]
+    args = [a.strip() for a in sys.argv[1:] if a.strip() and not a.startswith("-")]
+    # Strip only leading invocation trigger token coming from shell aliases
+    if args and args[0].lower() in TRIGGER_ALIASES:
+        args = args[1:]
+    valid_args = args
 
     # 1. Project Name Input
     raw_name = ""
@@ -86,7 +110,10 @@ def main() -> None:
     if valid_args:
         raw_name = valid_args[0].strip()
         slug = RE_SAFE_NAME.sub("-", raw_name.lower()).strip("-")
-        print(f"\033[1;36m[new-project]\033[0m Project name: \033[1m{raw_name}\033[0m")
+        if not slug:
+            print(f"\033[1;31m[error] Invalid project name: '{raw_name}'. Use alphanumeric characters or dashes.\033[0m")
+            sys.exit(1)
+        print(f"\033[1;36m[new-project]\033[0m Project name: \033[1m{slug}\033[0m")
     else:
         while not slug:
             try:
@@ -114,9 +141,14 @@ def main() -> None:
             print("\n\033[1;33mCancelled.\033[0m")
             sys.exit(0)
 
-    # Clean and format intents
+    # Sanitize and format intents (scrubbing newlines, delimiters, and control characters)
     if raw_intents:
-        clean_intents = [i.strip(" []'\"") for i in raw_intents.split(",") if i.strip(" []'\"")]
+        sanitized_raw = raw_intents.replace("\r", " ").replace("\n", " ").replace("--->", " ")
+        clean_intents = []
+        for item in sanitized_raw.split(","):
+            cleaned = re.sub(r"[^a-zA-Z0-9_\-\s]", "", item).strip()
+            if cleaned and cleaned not in clean_intents:
+                clean_intents.append(cleaned)
         intents_str = ", ".join(clean_intents) if clean_intents else slug
         primary_intent = clean_intents[0] if clean_intents else slug
     else:
@@ -126,6 +158,9 @@ def main() -> None:
     # 3. Create Clean Workspace Directory
     target_dir = os.path.join(PROJECTS_DIR, slug)
     if os.path.exists(target_dir):
+        if not os.path.isdir(target_dir):
+            print(f"\033[1;31m[error] A non-directory file already exists at: {target_dir}\033[0m")
+            sys.exit(1)
         print(f"\n\033[1;33m[!] Workspace directory already exists:\033[0m {target_dir}")
     else:
         try:
@@ -135,11 +170,16 @@ def main() -> None:
             print(f"\033[1;31m[error] Failed to create directory: {e}\033[0m")
             sys.exit(1)
 
-    # 4. Register in ai-context.md
-    if add_to_context_file(slug, intents_str):
+    # 4. Register in ai-context.md with Granular Status Handling
+    success, status = add_to_context_file(slug, intents_str)
+    if success:
         print(f"\033[1;32mAdded to ai-context.md:\033[0m \033[36mai init ~/.config/py-agent/projects/{slug}\033[0m \033[2m--->\033[0m \033[33m{intents_str}\033[0m")
-    else:
+    elif status == "duplicate":
         print(f"\033[2m[info] Shortcut already exists in ai-context.md\033[0m")
+    elif status == "missing":
+        print(f"\033[1;33m[warn] {CONTEXT_FILE} not found; shortcut not registered.\033[0m")
+    else:
+        print(f"\033[1;31m[error] Could not register shortcut: {status}\033[0m")
 
     # 5. Launch Instructions
     print(f"\n\033[2mLaunch workspace now:\033[0m \033[1;36mai init {target_dir}\033[0m")

@@ -317,7 +317,7 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
 
     if "overwrite" in cleaned:
         ov = cleaned["overwrite"]
-        cleaned["overwrite"] = str(ov).lower() in ("true", "1", "yes", "on") if not isinstance(ov, bool) else ov
+        cleaned["overwrite"] = ov.lower() in ("true", "1", "yes", "on") if isinstance(ov, str) else bool(ov)
 
     return cleaned
 

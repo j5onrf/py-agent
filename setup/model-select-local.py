@@ -15,7 +15,6 @@ import tty
 MODELS_DIR = "/home/j5/models"
 SERV_DIR = "/home/j5/models/serv"
 
-# Secure per-user state path (fixes symlink/TOCTOU vector in /tmp)
 STATE_DIR = os.path.join(
     os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state")),
     "model-select",
@@ -91,10 +90,17 @@ LOCAL_MODELS = [
     },
 ]
 
+ORIGINAL_TERMIOS = None
+
 
 def cleanup_terminal():
     sys.stdout.write("\x1b[?25h\x1b[?1049l")
     sys.stdout.flush()
+    if ORIGINAL_TERMIOS is not None and sys.stdin.isatty():
+        try:
+            termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, ORIGINAL_TERMIOS)
+        except Exception:
+            pass
     try:
         os.system("stty sane 2>/dev/null")
     except Exception:
@@ -105,7 +111,6 @@ atexit.register(cleanup_terminal)
 
 
 def write_cpu_state(state: str):
-    """Safely persist CPU governor state to a private user directory."""
     try:
         os.makedirs(STATE_DIR, mode=0o700, exist_ok=True)
         fd = os.open(
@@ -119,7 +124,6 @@ def write_cpu_state(state: str):
         pass
 
 
-# --- SYSTEM MEMORY SAMPLER ---
 def get_memory_info() -> dict:
     try:
         mem = {}
@@ -164,11 +168,11 @@ def format_memory_bar(mem: dict, bar_width: int = 14) -> str:
     avail = mem["avail_gb"]
 
     if pct < 70:
-        color = "\033[1;32m"  # Green
+        color = "\033[1;32m"
     elif pct < 85:
-        color = "\033[38;2;230;120;60m"  # Amber
+        color = "\033[38;2;230;120;60m"
     else:
-        color = "\033[1;31m"  # Red
+        color = "\033[1;31m"
 
     reset = "\033[0m"
     bold = "\033[1m"
@@ -189,9 +193,7 @@ def format_memory_bar(mem: dict, bar_width: int = 14) -> str:
     return msg
 
 
-# --- PROCESS LIFECYCLE & SECURITY HELPERS ---
 def is_target_pid(pid: int, expected_comm: str) -> bool:
-    """Verify PID identity via /proc/<pid>/comm before issuing destructive signals."""
     try:
         comm_path = f"/proc/{pid}/comm"
         if os.path.exists(comm_path):
@@ -303,7 +305,6 @@ def is_model_active(model_def: dict, instances: list[dict]) -> bool:
         if target_file and target_file in inst.get("all_ggufs", []):
             return True
         running_alias = (inst.get("alias") or "").strip()
-        # Exact case-insensitive match (fixes flawed "es" strip heuristic)
         if target_alias and running_alias and target_alias.lower() == running_alias.lower():
             return True
         for arg in inst.get("args", []):
@@ -314,7 +315,6 @@ def is_model_active(model_def: dict, instances: list[dict]) -> bool:
 
 
 async def async_set_cpu_mode(governor: str, max_freq: str, mode_name: str, notify_title: str) -> bool:
-    """Executes cpupower and verifies returncode before saving state or notifying."""
     try:
         proc = await asyncio.create_subprocess_exec(
             "sudo", "-n", "cpupower", "frequency-set", "-g", governor, "--max", max_freq,
@@ -344,7 +344,6 @@ async def async_set_cpu_balanced() -> bool:
 
 
 async def async_stop_all_engines():
-    """Safely terminates engines without broad wildcards or PID-reuse escalation."""
     current_uid = str(os.getuid())
     targets = ["llama-server", "llama-cli"]
 
@@ -361,7 +360,6 @@ async def async_stop_all_engines():
         if not pids:
             continue
 
-        # Phase 1: Graceful SIGTERM to verified processes
         for pid in pids:
             if is_target_pid(pid, target):
                 try:
@@ -369,14 +367,12 @@ async def async_stop_all_engines():
                 except ProcessLookupError:
                     pass
 
-        # Phase 2: Wait up to 2 seconds for clean exit
         for _ in range(20):
             await asyncio.sleep(0.1)
             alive = [p for p in pids if is_target_pid(p, target)]
             if not alive:
                 break
         else:
-            # Phase 3: Targeted SIGKILL ONLY on verified, surviving PIDs (prevents PID-reuse attack)
             for pid in pids:
                 if is_target_pid(pid, target):
                     try:
@@ -384,7 +380,6 @@ async def async_stop_all_engines():
                     except ProcessLookupError:
                         pass
 
-    # Flush cached pages cleanly
     try:
         proc_sync = await asyncio.create_subprocess_exec("sync", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         await proc_sync.wait()
@@ -429,51 +424,35 @@ def launch_local_server(script_name: str) -> bool:
 async def async_get_key_with_timeout(timeout: float = 0.5) -> str | None:
     fd = sys.stdin.fileno()
 
-    def _read_with_select():
+    def _read():
         try:
-            old_settings = termios.tcgetattr(fd)
-        except (termios.error, OSError):
-            return None
-
-        try:
-            tty.setraw(fd)
             rlist, _, _ = select.select([fd], [], [], timeout)
             if not rlist:
                 return None
-
-            ch_bytes = os.read(fd, 1)
-            if not ch_bytes:
+            raw = os.read(fd, 32)
+            if not raw:
                 return None
-            ch = ch_bytes.decode("utf-8", errors="ignore")
-
-            if ch == "\x1b":
-                rlist_seq, _, _ = select.select([fd], [], [], 0.05)
-                if rlist_seq:
-                    seq_bytes = os.read(fd, 2)
-                    seq = seq_bytes.decode("utf-8", errors="ignore")
-                    if seq in ("[A", "OA"):
-                        return "up"
-                    elif seq in ("[B", "OB"):
-                        return "down"
-                    elif seq in ("[C", "OC"):
-                        return "right"
-                    elif seq in ("[D", "OD"):
-                        return "left"
-                return "esc"
-            elif ch in ("\r", "\n"):
-                return "enter"
-            elif ch.lower() == "q":
-                return "q"
-            return ch
-        except (termios.error, OSError, ValueError):
+            seq = raw.decode("utf-8", errors="ignore")
+        except Exception:
             return None
-        finally:
-            try:
-                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-            except Exception:
-                pass
 
-    return await asyncio.to_thread(_read_with_select)
+        if seq in ("\x1b[A", "\x1bOA") or seq.startswith("\x1b[A"):
+            return "up"
+        elif seq in ("\x1b[B", "\x1bOB") or seq.startswith("\x1b[B"):
+            return "down"
+        elif seq in ("\x1b[C", "\x1bOC") or seq.startswith("\x1b[C"):
+            return "right"
+        elif seq in ("\x1b[D", "\x1bOD") or seq.startswith("\x1b[D"):
+            return "left"
+        elif seq == "\x1b":
+            return "esc"
+        elif seq in ("\r", "\n"):
+            return "enter"
+        elif seq.lower() == "q":
+            return "q"
+        return seq
+
+    return await asyncio.to_thread(_read)
 
 
 def draw_menu(
@@ -545,12 +524,15 @@ def draw_menu(
 
 
 async def async_main():
-    # Guard against non-TTY invocation (pipes, CI, background)
+    global ORIGINAL_TERMIOS
+
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         sys.stderr.write("Error: model-select-local requires an interactive TTY.\n")
         sys.exit(1)
 
-    # Use MODELS_DIR to validate file presence on startup
+    ORIGINAL_TERMIOS = termios.tcgetattr(sys.stdin.fileno())
+    tty.setcbreak(sys.stdin.fileno())
+
     for m in LOCAL_MODELS:
         m["file_exists"] = os.path.isfile(os.path.join(MODELS_DIR, m["file"]))
 
@@ -559,7 +541,6 @@ async def async_main():
     message = ""
     last_state_hash = None
 
-    # Switch to clean alternate screen buffer
     sys.stdout.write("\x1b[?1049h\x1b[?25l")
     sys.stdout.flush()
 
@@ -567,13 +548,11 @@ async def async_main():
 
     try:
         while True:
-            # Asynchronous non-blocking proc and meminfo reading
             running_instances, mem_info = await asyncio.gather(
                 asyncio.to_thread(get_running_instances),
                 asyncio.to_thread(get_memory_info),
             )
 
-            # Build pre-computed active map to eliminate redundant loops
             active_statuses = {m["alias"]: is_model_active(m, running_instances) for m in LOCAL_MODELS}
             mem_snapshot = round(mem_info.get("used_gb", 0), 1)
 
