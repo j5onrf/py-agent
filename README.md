@@ -115,8 +115,8 @@
 <h2 align="center">Benchmark & Efficiency</h2>
 
 <p align="center">
-  <sub>Decision-grade evaluation across 7-stage agentic challenges (<code>eval-stack</code>).<br>
-  Results scale with tuning: select a model foundation and optimize for your workload via profile directives, sampling flags, and <code>/adp</code>.</sub>
+  Decision-grade evaluation across 7-stage agentic challenges (<code>eval-stack</code>).<br>
+  <sub>Results scale with tuning: select a model foundation and optimize for your workload via profile directives, sampling flags, and <code>/adp</code>.</sub>
 </p>
 
 <div align="center">
