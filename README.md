@@ -44,7 +44,7 @@
   </table>
   
   <p>
-    <sub>* Recommended benchmark baselines &nbsp;•&nbsp; Run <code>model select</code> in your terminal to switch models</sub>
+    * Benchmark baselines &nbsp;•&nbsp; Run <code>model select</code> in your terminal to switch models
   </p>
 
   <p>
