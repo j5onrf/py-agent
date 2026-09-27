@@ -546,7 +546,8 @@ def agentic_turn(
 
                         if first_chunk:
                             first_chunk = False
-                            if not is_calm:
+                            is_sub = _get_int_env("AI_SUBAGENT_DEPTH", 0) >= 1
+                            if not is_calm and not is_sub:
                                 stream_pfx = prefix or ("Agent:" if is_agent else "AI:")
                                 streamer = RichStreamer(prefix=stream_pfx, spinner=spinner)
                                 streamer.start()

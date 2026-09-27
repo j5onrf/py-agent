@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 import traceback
 from collections.abc import Callable
 from typing import Any
@@ -139,17 +140,72 @@ class GraphSDK:
         return tools.run_graph_cmd("architecture", "", self.workspace) if tools else "Tools unavailable."
 
 
+# ── Sub-Agent Delegation ──────────────────────────────────────────────────────
+
 def delegate(goal: str, workspace: str = ".") -> str:
+    """Spawns an isolated sub-agent worker with parent context awareness."""
+    global _is_executing_cell
+    was_executing = _is_executing_cell
+    _is_executing_cell = False
+
+    has_alarm = hasattr(signal, "alarm") and threading.current_thread() is threading.main_thread()
+    old_alarm = signal.alarm(0) if has_alarm else 0
+
+    orig_out, orig_err = sys.stdout, sys.stderr
+    sys.stdout, sys.stderr = getattr(sys, "__stdout__", sys.stdout), getattr(sys, "__stderr__", sys.stderr)
+
     try:
         ws_real = os.path.realpath(workspace)
+        current_depth = int(os.environ.get("AI_SUBAGENT_DEPTH", "0"))
+        if current_depth >= 1:
+            return "[error] Sub-agents cannot recursively delegate tasks. Execute tools directly."
+
+        context_additions = []
+        if getattr(tools, "get_read_files", None):
+            if read_files := tools.get_read_files():
+                context_additions.append(f"Recently inspected files: {', '.join(read_files[:10])}")
+        if getattr(tools, "get_modified_files", None):
+            if mod_files := tools.get_modified_files():
+                context_additions.append(f"Modified files: {', '.join(mod_files[:10])}")
+        if memories:
+            if mem_ctx := memories.get_memory_context(ws_real):
+                context_additions.append(f"Workspace memory directives:\n{mem_ctx[:1000]}")
+
+        context_str = ("\n\n### Seeded Parent Context:\n" + "\n".join(context_additions)) if context_additions else ""
+
         sub_history = [
-            {"role": "system", "content": f"You are an isolated sub-agent in '{ws_real}'. Goal: {goal}. Execute tools, then output concise report."},
+            {
+                "role": "system",
+                "content": (
+                    f"You are an isolated sub-agent developer worker in workspace '{ws_real}'.{context_str}\n"
+                    f"Goal: {goal}\n"
+                    "Execute direct tools (read_file, edit_file, write_file, search_code, run_command) directly to accomplish the goal. "
+                    "Do not invoke exec_python or delegate.\n"
+                    "When finished, return ONLY a concise factual summary report."
+                ),
+            },
             {"role": "user", "content": f"Execute sub-task: {goal}"},
         ]
-        ans = core.stream_response(sub_history, prefix="SubAgent:", show_stats=False, thinking_budget=0, is_agent=True) if core else None
-        return (ans or "Sub-agent completed task.").strip()
+
+        os.environ["AI_SUBAGENT_DEPTH"] = str(current_depth + 1)
+        try:
+            ans = core.stream_response(
+                sub_history,
+                prefix="SubAgent:",
+                show_stats=False,
+                thinking_budget=0,
+                is_agent=True,
+            ) if core else None
+            return (ans or "Sub-agent completed task with no output.").strip()
+        finally:
+            os.environ["AI_SUBAGENT_DEPTH"] = str(current_depth)
     except Exception as e:
         return f"[error] Sub-agent delegation failed: {e}"
+    finally:
+        sys.stdout, sys.stderr = orig_out, orig_err
+        if has_alarm and old_alarm > 0:
+            signal.alarm(30)
+        _is_executing_cell = was_executing
 
 
 def _final_answer(val: Any) -> Any:
@@ -169,7 +225,6 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
     global _shell_globals, _shell_instance
     ws_real = os.path.realpath(workspace)
 
-    # Append workspace to sys.path to prevent shadowing stdlib modules
     if ws_real not in sys.path:
         sys.path.append(ws_real)
 
@@ -178,7 +233,6 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
 
     def _check_boundary(path_str: str, op_name: str) -> bool:
         if not security:
-            # Fail closed: reject out-of-workspace paths if security module is missing
             full = os.path.realpath(path_str if os.path.isabs(path_str) else os.path.join(ws_real, path_str))
             return full == ws_real or full.startswith(ws_real + os.sep)
 
@@ -305,9 +359,9 @@ def inspect_ast_safety(code: str, workspace: str, confirm_gate_fn: Callable[[str
 def run_cell(code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] | None = None) -> str:
     global _is_executing_cell, _final_answer_val
 
-    # Ensure single-cell execution synchronization
-    if not _cell_lock.acquire(blocking=True, timeout=35):
-        return "[error] Kernel busy: another cell is currently executing."
+    # Fast-reject re-entrant calls so sub-agents never deadlock
+    if not _cell_lock.acquire(blocking=False):
+        return "[error] Kernel busy: sub-agents cannot invoke exec_python while parent cell is executing. Use direct tools."
 
     ws_real = os.path.realpath(workspace)
     prev_cwd = os.getcwd()
