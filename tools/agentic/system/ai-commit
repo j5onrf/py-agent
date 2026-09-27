@@ -1,54 +1,42 @@
 #!/usr/bin/env bash
 # ai-commit - High-Speed Minimalist Git Commit Generator
 
-set -euo pipefail
-export LC_ALL=C
-
-trap 'printf "\n[aborted]\n" >&2; exit 130' INT
+set -eo pipefail
 
 # 1. Verify Git Repository
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    printf "[error] Not inside a git repository.\n" >&2
+    echo "[error] Not inside a git repository." >&2
     exit 1
 fi
 
-# 2. Extract Only the Last 3 Staged Files
-mapfile -t target_files < <(git diff --cached --name-only | tail -n 3)
-if [[ ${#target_files[@]} -eq 0 ]]; then
-    printf "[info] No staged changes found. Run 'git add' first.\n" >&2
+# 2. Extract Staged Files Safely
+staged_files=$(git diff --cached --name-only 2>/dev/null || true)
+if [[ -z "${staged_files//[[:space:]]/}" ]]; then
+    echo "[info] No staged changes found. Run 'git add <files>' first." >&2
     exit 0
 fi
 
-# 3. Model Server Pre-Flight Check
+last_file=$(tail -n 1 <<< "$staged_files")
+base_file=$(basename "$last_file")
+fallback_msg="Update $base_file and related components"
+
+# 3. Model Server Pre-Flight Check (Local :8080 or Cloud Keys)
 CFG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/py-agent"
 server_online=0
 
 if curl -s -m 0.25 "http://127.0.0.1:8080/v1/models" >/dev/null 2>&1; then
     server_online=1
-elif grep -E -q '^(GEMINI_API_KEY|OPENROUTER_API_KEY|CUSTOM_API_KEY)=.+[a-zA-Z0-9]' "$CFG_DIR/.env" 2>/dev/null; then
+elif grep -E -q '^(GEMINI_API_KEY|OPENROUTER_API_KEY|CUSTOM[0-9]*_API_KEY|CUSTOM[0-9]*_KEY)=.+[a-zA-Z0-9]' "$CFG_DIR/.env" 2>/dev/null; then
     server_online=1
 fi
 
-base_file=$(basename "${target_files[-1]}" 2>/dev/null || echo "files")
-fallback_msg="Update $base_file and related components"
-
 if [[ "$server_online" -eq 0 ]]; then
-    printf "\n\033[90m[warn] Server offline (:8080). Using file fallback.\033[0m\n" >&2
+    echo -e "\033[90m[warn] Server offline (:8080). Using file fallback.\033[0m" >&2
     message="$fallback_msg"
 else
-    stats=$(git diff --cached --name-status -- "${target_files[@]}" 2>/dev/null || true)
-    changes=$(git diff --cached -U0 -- "${target_files[@]}" \
-        ':(exclude)*lock*' ':(exclude)*.svg' ':(exclude)*.png' ':(exclude)*.jpg' ':(exclude)*.gif' \
-        2>/dev/null | awk '
-        /^\+[^+]/ || /^-[^-]/ {
-            val = substr($0, 2)
-            sub(/^[ \t]+/, "", val)
-            if (val != "" && val !~ /^(#|\/\/|\/\*|\*)/) {
-                print $0
-                count++
-                if (count >= 8) { exit }
-            }
-        }' || true)
+    # 4. Context Extraction
+    stats=$(git diff --cached --name-status 2>/dev/null | tail -n 5 || true)
+    changes=$(git diff --cached -U0 2>/dev/null | grep -E '^\+[^+]|^\-[^-]' | head -n 8 || true)
 
     SYSTEM_PROMPT="Write a 4-8 word imperative git commit message. No quotes, explanations, markdown, or trailing period."
     USER_PROMPT="Files:
@@ -60,7 +48,7 @@ $changes"
     raw_message=""
     printf "\033[90m[generating commit...]\033[0m" >&2
 
-    # Local HTTP Fast-Path
+    # Fast-Path: Local llama-server (:8080)
     if curl -s -m 0.25 "http://127.0.0.1:8080/v1/models" >/dev/null 2>&1; then
         payload=$(python3 -c '
 import json, sys
@@ -100,24 +88,17 @@ $USER_PROMPT"
 
     printf "\r\033[2K" >&2
 
-    # Sanitize output
+    # Sanitize Output
     message=$(echo "$raw_message" | sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g')
     message=$(echo "$message" | sed -E 's/^(AI|Agent):\s*//')
     message=$(echo "$message" | perl -0777 -pe 's/<think>.*?<\/think>//gs' 2>/dev/null || echo "$message")
     message=$(echo "$message" | perl -0777 -pe 's/<think>.*//gs' 2>/dev/null || echo "$message")
-
-    message=$(echo "$message" | sed -E \
-        -e 's/^[Cc]ommit [Mm]essage:?\s*//' \
-        -e 's/^[-*]\s*//' \
-        -e 's/^[`"'\''\s]+//' \
-        -e 's/[`"'\''\s\.]+$//' \
-        -e 's/^[[:space:]]+//; s/[[:space:]]+$//' \
-        | awk 'NF {print; exit}' || echo "")
+    message=$(echo "$message" | sed -E -e 's/^[Cc]ommit [Mm]essage:?\s*//' -e 's/^[-*]\s*//' -e 's/^[`"'\''\s]+//' -e 's/[`"'\''\s\.]+$//' | awk 'NF {print; exit}' || echo "")
 
     if [[ -n "$message" ]]; then
-        word_count=$(awk '{print NF}' <<< "$message")
-        if (( word_count > 8 )); then
-            message=$(awk '{for(i=1;i<=8;i++) printf "%s%s", $i, (i<8?" ":"\n")}' <<< "$message")
+        word_count=$(echo "$message" | wc -w)
+        if [[ $word_count -gt 8 ]]; then
+            message=$(echo "$message" | awk '{for(i=1;i<=8;i++) printf "%s%s", $i, (i<8?" ":"")}')
             message=$(echo "$message" | sed -E 's/\s+(in|to|for|with|and|or|the|a|an|of|by|from|on|at|as)$//I')
         fi
         first_char=$(echo "${message:0:1}" | tr '[:lower:]' '[:upper:]')
@@ -127,20 +108,24 @@ $USER_PROMPT"
     fi
 fi
 
-# Interactive Input with EOF Guard
+# Strip trailing newlines so Readline won't auto-submit
+message=$(echo "$message" | tr -d '\r\n')
+
+# 5. Interactive Prompt
 user_message=""
-if [[ -t 0 ]]; then
-    read -r -e -i "$message" -p "commit: " user_message || { printf "\n[aborted]\n" >&2; exit 1; }
-elif [[ -c /dev/tty ]]; then
-    read -r -e -i "$message" -p "commit: " user_message < /dev/tty || { printf "\n[aborted]\n" >&2; exit 1; }
+if [ -t 0 ]; then
+    read -e -i "$message" -p "commit: " user_message
+elif [ -c /dev/tty ]; then
+    read -e -i "$message" -p "commit: " user_message < /dev/tty
 else
     user_message="$message"
 fi
 
+user_message=$(echo "$user_message" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
 if [[ -z "$user_message" ]]; then
-    printf "[error] Commit message cannot be empty. Aborted.\n" >&2
+    echo "[error] Commit message cannot be empty. Aborted." >&2
     exit 1
 fi
 
-# Pass -- to prevent leading dashes from being parsed as git flags
-git commit -m "$user_message" --
+git commit -m "$user_message"

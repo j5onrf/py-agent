@@ -4,8 +4,9 @@
 
 set -euo pipefail
 
-TARGET_WS=6
+TARGET_WS=5
 TARGET_DIR="$HOME/.config/py-agent"
+SYSTEM_TOOLS_DIR="${TARGET_DIR}/tools/agentic/system"
 
 manage_app() {
     local target_ws="$1"
@@ -14,10 +15,8 @@ manage_app() {
 
     # Check if a window with this class is already open in Hyprland
     if hyprctl clients -j 2>/dev/null | jq -e ".[] | select(.class == \"${exact_class}\")" >/dev/null 2>&1; then
-        # Already open: Move the existing window to Workspace 5
         hyprctl dispatch movetoworkspacesilent "${target_ws},class:^(${exact_class})$" >/dev/null 2>&1 || true
     else
-        # Not open: Launch silently in background
         nohup bash -c "${launch_cmd}" >/dev/null 2>&1 &
     fi
 }
@@ -27,7 +26,8 @@ manage_app "${TARGET_WS}" "lazygit" "kitty --class lazygit --directory '${TARGET
 sleep 0.2
 
 # --- 2. Py Agent Terminal (Right on WS 5) ---
-INNER_CMD='cd "'"$TARGET_DIR"'"; if read -e -p "${PS1@P}" -i "ai-commit"; then history -s "$REPLY"; history -a; eval "$REPLY"; fi; exec bash'
+# Export system tools to PATH so 'ai-commit' is always resolvable
+INNER_CMD='cd "'"$TARGET_DIR"'"; export PATH="'"$SYSTEM_TOOLS_DIR"':$PATH"; if read -e -p "${PS1@P}" -i "ai-commit"; then history -s "$REPLY"; history -a; eval "$REPLY"; fi; exec bash'
 manage_app "${TARGET_WS}" "py-agent-terminal" "kitty --class py-agent-terminal --directory '${TARGET_DIR}' --title '~/.config/py-agent' bash -i -c '${INNER_CMD}'"
 
-echo "Workspace reset complete: State --GitCom (Workspace 5)"
+echo "Workspace reset complete: State --GitCom (Workspace ${TARGET_WS})"

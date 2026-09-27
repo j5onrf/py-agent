@@ -1,104 +1,146 @@
 #!/usr/bin/env python3
-# sysctl-aware system profiler for Py-Agent
+"""sysctl-aware system profiler for Py-Agent [Hardened Production Ready]"""
 
+import contextlib
 import glob
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
+from typing import Any
 
-# Target primary py-agent skills directory with local-ai fallback
-cfg_root = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+
+def clean_str(val: Any, max_len: int = 120) -> str:
+    """Sanitizes strings for safe AI prompt interpolation, stripping backticks and newlines."""
+    if val is None:
+        return "Unknown"
+    s = str(val).replace("`", "'").replace("\r", " ").replace("\n", " ")
+    s = re.sub(r"\s+", " ", s).strip()
+    return s[:max_len] if len(s) > max_len else (s or "Unknown")
+
+
+def read_sysfs(path: str, max_bytes: int = 4096) -> str | None:
+    """Safely reads system files without spawning shell processes."""
+    if os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                return f.read(max_bytes).strip()
+        except OSError:
+            pass
+    return None
+
+
+def run_cmd(args: list[str], timeout: int = 5) -> str | None:
+    """Runs a command with argument list and no shell."""
+    if not args or not shutil.which(args[0]):
+        return None
+    try:
+        res = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            stdin=subprocess.DEVNULL,
+        )
+        return res.stdout.strip() if res.returncode == 0 else None
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+
+
+# Target primary py-agent skills directory with canonical path validation
+xdg = os.environ.get("XDG_CONFIG_HOME")
+if xdg and os.path.isabs(xdg):
+    cfg_root = os.path.realpath(xdg)
+else:
+    cfg_root = os.path.realpath(os.path.expanduser("~/.config"))
+
 p_dir = os.path.join(cfg_root, "py-agent", "skills", "system")
 legacy_dir = os.path.join(cfg_root, "local-ai", "skills", "system")
-os.makedirs(p_dir, exist_ok=True)
+
+try:
+    os.makedirs(p_dir, mode=0o700, exist_ok=True)
+except OSError as e:
+    sys.stderr.write(f"\033[1;31mCannot create profile directory '{p_dir}': {e}\033[0m\n")
+    sys.exit(1)
+
 p_path = os.path.join(p_dir, "mysys.md")
 
 sys.stderr.write("Generating universal system profile...\n")
 sys.stderr.flush()
 
-def run(cmd: str) -> str:
-    try:
-        return subprocess.check_output(cmd, shell=True, text=True, stderr=subprocess.DEVNULL, timeout=5).strip()
-    except Exception:
-        return "Unknown"
-
 # 1. Hostname detection
 try:
-    hostname_str = socket.gethostname()
+    raw_hostname = socket.gethostname()
 except Exception:
-    hostname_str = run("hostname")
+    raw_hostname = read_sysfs("/proc/sys/kernel/hostname") or run_cmd(["hostname"]) or "Unknown"
+hostname_str = clean_str(raw_hostname, 64)
 
 # 2. OS and CPU detection (with Max Turbo Frequency)
 cpu_threads = os.cpu_count() or "Unknown"
 os_name, cpu = "Unknown Linux", "Unknown"
-if os.path.exists("/etc/os-release"):
-    with open("/etc/os-release") as f:
-        m = re.search(r'^PRETTY_NAME="?([^"\n]+)"?', f.read(), re.M)
-        if m:
-            os_name = m.group(1)
 
-if os.path.exists("/proc/cpuinfo"):
-    with open("/proc/cpuinfo") as f:
-        m = re.search(r'^model name\s*:\s*(.+)', f.read(), re.M)
-        if m:
-            cpu = m.group(1).strip()
+os_release = read_sysfs("/etc/os-release", 8192)
+if os_release:
+    m = re.search(r'^PRETTY_NAME="?([^"\n]+)"?', os_release, re.M)
+    if m:
+        os_name = m.group(1).strip()
+
+cpuinfo = read_sysfs("/proc/cpuinfo", 16384)
+if cpuinfo:
+    m = re.search(r'^model name\s*:\s*(.+)', cpuinfo, re.M)
+    if m:
+        cpu = m.group(1).strip()
 
 max_freq = ""
-max_freq_path = "/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq"
-if os.path.exists(max_freq_path):
+raw_max_freq = read_sysfs("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq")
+if raw_max_freq and raw_max_freq.isdigit():
     try:
-        with open(max_freq_path) as f:
-            max_freq = f" (Max: {float(f.read().strip()) / 1000000:.2f} GHz)"
-    except Exception:
+        max_freq = f" (Max: {float(raw_max_freq) / 1000000:.2f} GHz)"
+    except ValueError:
         pass
 
 # 3. Installed Memory & ZRAM Detection
 total_ram_str = "Unknown"
 zram_status = ""
-if os.path.exists("/proc/meminfo"):
-    try:
-        with open("/proc/meminfo") as f:
-            content = f.read()
-            m_ram = re.search(r'^MemTotal:\s+(\d+)\s+kB', content, re.M)
-            if m_ram:
-                ram_gb = float(m_ram.group(1)) / (1024 * 1024)
-                total_ram_str = f"{ram_gb:.1f} GB"
-            m_swap = re.search(r'^SwapTotal:\s+(\d+)\s+kB', content, re.M)
-            if m_swap and int(m_swap.group(1)) > 0:
-                swap_gb = float(m_swap.group(1)) / (1024 * 1024)
-                if os.path.exists("/dev/zram0") or "zram" in run("cat /proc/swaps"):
-                    zram_status = f" (ZRAM: {swap_gb:.1f} GB active)"
-                else:
-                    zram_status = f" (Swap: {swap_gb:.1f} GB)"
-    except Exception:
-        pass
+meminfo = read_sysfs("/proc/meminfo", 8192)
+if meminfo:
+    m_ram = re.search(r'^MemTotal:\s+(\d+)\s+kB', meminfo, re.M)
+    if m_ram:
+        ram_gib = float(m_ram.group(1)) / (1024 * 1024)
+        total_ram_str = f"{ram_gib:.1f} GiB"
+
+    m_swap = re.search(r'^SwapTotal:\s+(\d+)\s+kB', meminfo, re.M)
+    if m_swap and int(m_swap.group(1)) > 0:
+        swap_gib = float(m_swap.group(1)) / (1024 * 1024)
+        swaps_content = read_sysfs("/proc/swaps", 4096) or ""
+        if re.search(r"\S*zram\d+", swaps_content):
+            zram_status = f" (ZRAM: {swap_gib:.1f} GiB active)"
+        elif os.path.exists("/dev/zram0") and "zram" in swaps_content:
+            zram_status = f" (ZRAM: {swap_gib:.1f} GiB active)"
+        else:
+            zram_status = f" (Swap: {swap_gib:.1f} GiB)"
 
 # 4. Active Graphics Driver via DRM Sysfs
 drivers = []
-for path in glob.glob("/sys/class/drm/card*/device/driver"):
+for path in sorted(glob.glob("/sys/class/drm/card*/device/driver")):
     try:
         if os.path.islink(path):
             drv = os.path.basename(os.readlink(path))
-            if drv not in drivers:
+            if drv and drv not in drivers:
                 drivers.append(drv)
-    except Exception:
+    except OSError:
         pass
 driver = ", ".join(drivers) if drivers else "Unknown"
 
 # 5. Detect CachyOS/Arch x86-64 microarchitecture optimization level (v3/v4)
 arch_v = ""
-if os.path.exists("/etc/pacman.conf"):
-    try:
-        with open("/etc/pacman.conf") as f:
-            conf = f.read()
-            if "cachyos-v4" in conf:
-                arch_v = " (v4)"
-            elif "cachyos-v3" in conf:
-                arch_v = " (v3)"
-    except Exception:
-        pass
+pacman_conf = read_sysfs("/etc/pacman.conf", 32768)
+if pacman_conf:
+    mv = re.search(r"^\s*\[cachyos-v([34])\]", pacman_conf, re.M)
+    if mv:
+        arch_v = f" (v{mv.group(1)})"
 
 # 6. Display / Login Manager
 dm = "Unknown"
@@ -106,20 +148,23 @@ dm_symlink = "/etc/systemd/system/display-manager.service"
 if os.path.islink(dm_symlink):
     try:
         dm = os.path.basename(os.readlink(dm_symlink)).replace(".service", "")
-    except Exception:
+    except OSError:
         pass
 
-# 7. Accurate Bootloader Detection
+# 7. Bounded Bootloader Detection
 bootloader = "Unknown"
 loader_vars = glob.glob("/sys/firmware/efi/efivars/LoaderInfo-*")
-if loader_vars:
+if loader_vars and os.path.isfile(loader_vars[0]):
     try:
         with open(loader_vars[0], "rb") as f:
-            # First 4 bytes are EFI attributes; remainder is UTF-16LE
-            raw = f.read()[4:].decode("utf-16le", errors="ignore").strip("\x00 \n\r\t")
-            if raw:
-                bootloader = raw
-    except Exception:
+            raw_bytes = f.read(4 + 1024)
+            if len(raw_bytes) > 4:
+                raw_text = raw_bytes[4:].decode("utf-16le", errors="ignore").strip("\x00 \n\r\t")
+                first_line = raw_text.splitlines()[0].strip() if raw_text else ""
+                sanitized_loader = re.sub(r"[^A-Za-z0-9 .,_/-]", "", first_line)[:64]
+                if sanitized_loader:
+                    bootloader = sanitized_loader
+    except OSError:
         pass
 
 if bootloader == "Unknown":
@@ -134,111 +179,126 @@ if bootloader == "Unknown":
 boot_fstype = "Unknown"
 boot_options = "Unknown"
 boot_path = "Unknown"
-if os.path.exists("/proc/mounts"):
-    try:
-        with open("/proc/mounts") as f:
-            for line in f:
-                parts = line.split()
-                if len(parts) >= 4 and parts[1] in ["/boot", "/efi", "/boot/efi"]:
-                    if parts[2] in ["vfat", "msdos", "exfat"] or boot_fstype == "Unknown":
-                        boot_path = parts[1]
-                        boot_fstype = parts[2]
-                        boot_options = parts[3]
-    except Exception:
-        pass
+mounts = read_sysfs("/proc/mounts", 16384)
+if mounts:
+    candidates = []
+    for line in mounts.splitlines():
+        parts = line.split()
+        if len(parts) >= 4 and parts[1] in ("/boot", "/efi", "/boot/efi", "/esp"):
+            candidates.append((parts[1], parts[2], parts[3]))
+
+    esp_cand = next((c for c in candidates if c[1] in ("vfat", "msdos", "exfat")), None)
+    chosen = esp_cand or (candidates[0] if candidates else None)
+    if chosen:
+        boot_path, boot_fstype, boot_options = chosen
 
 # 9. GPU Hardware Identification
 gpu_list = []
-if os.path.exists("/usr/bin/lspci"):
-    try:
-        pci_output = run("lspci | grep -i -E 'vga|3d|display'")
-        if pci_output and pci_output != "Unknown":
-            for line in pci_output.splitlines():
-                parts = line.split(":")
-                if len(parts) >= 3:
-                    gpu_name = parts[2].strip()
-                    if gpu_name not in gpu_list:
-                        gpu_list.append(gpu_name)
-    except Exception:
-        pass
+lspci_bin = shutil.which("lspci") or next((p for p in ("/usr/bin/lspci", "/usr/sbin/lspci", "/bin/lspci") if os.path.isfile(p)), None)
+if lspci_bin:
+    pci_out = run_cmd([lspci_bin])
+    if pci_out:
+        for line in pci_out.splitlines():
+            if re.search(r"vga|3d|display", line, re.IGNORECASE):
+                m = re.match(r"^[0-9A-Fa-f:.]+\s+[^:]+:\s*(.+)$", line)
+                gpu_name = m.group(1).strip() if m else line.split(":")[-1].strip()
+                gpu_clean = clean_str(gpu_name, 80)
+                if gpu_clean and gpu_clean not in gpu_list:
+                    gpu_list.append(gpu_clean)
 gpu = " + ".join(gpu_list) if gpu_list else "Integrated Graphics"
 
 # 10. WM / Compositor Detection
-wm = os.environ.get("XDG_CURRENT_DESKTOP", "")
-if not wm or wm.lower() in ["standard window manager", "unknown"]:
-    known_wms = ["hyprland", "sway", "i3", "kwin", "gnome-shell", "xfwm4", "openbox"]
+WM_DISPLAY_NAMES = {
+    "hyprland": "Hyprland",
+    "sway": "Sway",
+    "i3": "i3",
+    "kwin": "KWin",
+    "kwin_wayland": "KWin (Wayland)",
+    "kwin_x11": "KWin (X11)",
+    "gnome-shell": "GNOME Shell",
+    "xfwm4": "Xfwm4",
+    "openbox": "Openbox",
+    "wayfire": "Wayfire",
+    "labwc": "labwc",
+    "bspwm": "bspwm",
+    "dwl": "dwl",
+    "dwm": "dwm",
+}
+
+wm = os.environ.get("XDG_CURRENT_DESKTOP") or os.environ.get("XDG_SESSION_DESKTOP") or ""
+if not wm or wm.lower() in ("standard window manager", "unknown"):
     try:
         for pid in os.listdir("/proc"):
             if pid.isdigit():
-                try:
-                    with open(os.path.join("/proc", pid, "comm"), "r") as f:
-                        comm = f.read().strip().lower()
-                        if comm in known_wms:
-                            wm = comm.capitalize()
-                            break
-                except Exception:
-                    pass
-    except Exception:
+                comm = read_sysfs(os.path.join("/proc", pid, "comm"), 64)
+                if comm and comm.lower() in WM_DISPLAY_NAMES:
+                    wm = WM_DISPLAY_NAMES[comm.lower()]
+                    break
+    except OSError:
         pass
 
-if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
-    wm = "Hyprland"
-elif "hyprland" in wm.lower():
+if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE") or "hyprland" in wm.lower():
     wm = "Hyprland"
 
 if not wm:
     wm = "Standard Window Manager"
 
-kernel_ver = run("uname -r")
-active_qdisc = run("sysctl -n net.core.default_qdisc")
-tcp_cc = run("sysctl -n net.ipv4.tcp_congestion_control")
+kernel_ver = os.uname().release
+active_qdisc = read_sysfs("/proc/sys/net/core/default_qdisc", 64) or "unknown"
+tcp_cc = read_sysfs("/proc/sys/net/ipv4/tcp_congestion_control", 64) or "unknown"
 
 # 11. Dynamic Rule Directives for AI System Prompts
+drv_tokens = {d.strip() for d in driver.split(",") if d.strip()}
 graphics_rules = ""
-if wm.lower() == "hyprland" or any(d in driver for d in ["xe", "amdgpu"]):
-    graphics_rules = f"The active graphics driver is **{driver}** running the **{wm}** Wayland compositor. Prioritize Wayland-native utilities (such as `hyprctl`, `grimblast`, `wl-copy`) and modern kernel driver configurations over deprecated X11 tools."
+if wm.lower() == "hyprland" or bool(drv_tokens & {"xe", "amdgpu", "i915", "nouveau"}):
+    graphics_rules = f"The active graphics driver is **{clean_str(driver)}** running the **{clean_str(wm)}** Wayland compositor. Prioritize Wayland-native utilities (such as `hyprctl`, `grimblast`, `wl-copy`) and modern kernel driver configurations over deprecated X11 tools."
 else:
-    graphics_rules = f"The active graphics driver is **{driver}** running the **{wm}** environment. Prioritize tools and commands native to this graphics and compositor setup."
+    graphics_rules = f"The active graphics driver is **{clean_str(driver)}** running the **{clean_str(wm)}** environment. Prioritize tools and commands native to this graphics and compositor setup."
 
 optimization_rules = ""
 if "cachyos" in kernel_ver.lower() or "v4" in arch_v or "v3" in arch_v:
-    optimization_rules = f"The host utilizes a performance-optimized kernel (`{kernel_ver}{arch_v}`). Always prioritize compiled-optimized packages, performance-tuned parameters, and modern scheduler suggestions (like Bore, EEVDF, or CachyOS optimizations)."
+    optimization_rules = f"The host utilizes a performance-optimized kernel (`{clean_str(kernel_ver)}{clean_str(arch_v)}`). Always prioritize compiled-optimized packages, performance-tuned parameters, and modern scheduler suggestions (like Bore, EEVDF, or CachyOS optimizations)."
 else:
     optimization_rules = "Prioritize standard package manager commands and standard execution runtimes appropriate for basic system hardware profiles."
 
 fs_rules = ""
-if boot_fstype in ["vfat", "msdos"]:
-    fs_rules = f"Your boot partition at `{boot_path}` utilizes a **{boot_fstype}** filesystem. NEVER suggest using `chmod` or `chown` on files or directories under `/boot` or `/efi`. If the current live **Boot Mount Options** contain `fmask=0077,dmask=0077`, the system is already secure! Inform the user that log errors related to mount permissions are purely historical entries from earlier in the boot sequence, and no action is required."
+if boot_fstype in ("vfat", "msdos"):
+    is_secure_mask = "fmask=0077" in boot_options and "dmask=0077" in boot_options
+    if is_secure_mask:
+        reassurance = "The current live **Boot Mount Options** contain `fmask=0077,dmask=0077` (system is already secure; log errors related to mount permissions are historical noise)."
+    else:
+        reassurance = f"Current mount options: `{clean_str(boot_options)}`. Ensure sensitive bootloader files are protected."
+    fs_rules = f"Your boot partition at `{clean_str(boot_path)}` utilizes a **{clean_str(boot_fstype)}** filesystem. NEVER suggest using `chmod` or `chown` on files under `{clean_str(boot_path)}`. {reassurance}"
 else:
-    fs_rules = f"Your boot partition at `{boot_path}` utilizes a **{boot_fstype}** filesystem. Apply standard security permission logic native to this layout."
+    fs_rules = f"Your boot partition at `{clean_str(boot_path)}` utilizes a **{clean_str(boot_fstype)}** filesystem. Apply standard security permission logic native to this layout."
 
 # Formulate Final Structured Profile
 profile = f"""# SYSTEM ARCHITECTURE BLUEPRINT
 Host Profile context for local AI shell executions.
 
 ## Host Environment Context
-* **Static Hostname**: `{hostname_str}`
-* **Operating System**: `{os_name}`
-* **Linux Kernel**: `{kernel_ver}{arch_v}`
-* **CPU Hardware**: `{cpu}{max_freq}`
-* **CPU Threads (Logical)**: `{cpu_threads}`
-* **Total Memory**: `{total_ram_str}{zram_status}`
-* **GPU Hardware**: `{gpu}`
-* **Active Driver**: `{driver}`
-* **Compositor / WM**: `{wm}`
-* **Login Manager**: `{dm}`
-* **Bootloader**: `{bootloader}`
-* **Active Qdisc**: `{active_qdisc}`
-* **TCP Congestion Control**: `{tcp_cc}`
-* **Boot Filesystem**: `{boot_fstype}`
-* **Boot Mount Options**: `{boot_options}`
+* **Static Hostname**: `{clean_str(hostname_str)}`
+* **Operating System**: `{clean_str(os_name)}`
+* **Linux Kernel**: `{clean_str(kernel_ver)}{clean_str(arch_v)}`
+* **CPU Hardware**: `{clean_str(cpu)}{clean_str(max_freq)}`
+* **CPU Threads (Logical)**: `{clean_str(cpu_threads)}`
+* **Total Memory**: `{clean_str(total_ram_str)}{clean_str(zram_status)}`
+* **GPU Hardware**: `{clean_str(gpu)}`
+* **Active Driver**: `{clean_str(driver)}`
+* **Compositor / WM**: `{clean_str(wm)}`
+* **Login Manager**: `{clean_str(dm)}`
+* **Bootloader**: `{clean_str(bootloader)}`
+* **Active Qdisc**: `{clean_str(active_qdisc)}`
+* **TCP Congestion Control**: `{clean_str(tcp_cc)}`
+* **Boot Filesystem**: `{clean_str(boot_fstype)}`
+* **Boot Mount Options**: `{clean_str(boot_options)}`
 
 ---
 
 ## AI System Rules & Guidelines
 
 ### 1. OS & Windowing Alignment
-All shell suggestions, scripts, and commands must strictly target **{os_name}** using the **{wm}** interface, **{dm}** display manager, and **{bootloader}** configurations. Avoid legacy alternative parameters unless explicitly requested.
+All shell suggestions, scripts, and commands must strictly target **{clean_str(os_name)}** using the **{clean_str(wm)}** interface, **{clean_str(dm)}** display manager, and **{clean_str(bootloader)}** configurations. Avoid legacy alternative parameters unless explicitly requested.
 
 ### 2. Pacman & Kernel Optimization
 {optimization_rules}
@@ -253,21 +313,30 @@ All shell suggestions, scripts, and commands must strictly target **{os_name}** 
 Suggest non-destructive terminal configurations and queries. Prioritize standard `systemd` logging and diagnosis (`journalctl`, `systemctl`) to investigate boot or active runtime issues.
 """
 
-# Save to primary destination
+# Atomic write with 0o600 permissions
+tmp_path = f"{p_path}.tmp.{os.getpid()}"
 try:
-    with open(p_path, "w", encoding="utf-8") as f:
+    with open(tmp_path, "w", encoding="utf-8") as f:
         f.write(profile)
+    os.chmod(tmp_path, 0o600)
+    os.replace(tmp_path, p_path)
     sys.stderr.write(f"Saved system profile successfully to {p_path}!\n")
 
     # Optional legacy fallback sync
     if os.path.isdir(legacy_dir):
         try:
-            with open(os.path.join(legacy_dir, "mysys.md"), "w", encoding="utf-8") as lf:
+            legacy_tmp = os.path.join(legacy_dir, f"mysys.md.tmp.{os.getpid()}")
+            with open(legacy_tmp, "w", encoding="utf-8") as lf:
                 lf.write(profile)
+            os.chmod(legacy_tmp, 0o600)
+            os.replace(legacy_tmp, os.path.join(legacy_dir, "mysys.md"))
         except Exception:
             pass
 
     sys.exit(0)
 except Exception as e:
-    sys.stderr.write(f"Failed to save system profile: {str(e)}\n")
+    if os.path.exists(tmp_path):
+        with contextlib.suppress(OSError):
+            os.remove(tmp_path)
+    sys.stderr.write(f"Failed to save system profile: {e}\n")
     sys.exit(1)

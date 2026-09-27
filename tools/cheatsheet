@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cheatsheet - High-Speed Markdown-Native Plugin & Shortcut Map Generator"""
+"""Cheatsheet - High-Speed Markdown-Native Plugin & Shortcut Map Generator [Production Ready]"""
 
 import os
 import re
@@ -14,10 +14,10 @@ if not os.path.exists(CONTEXT_FILE):
     sys.stderr.write(f"❌ Error: Context file not found at {CONTEXT_FILE}\n")
     sys.exit(1)
 
-SECTION_RE = re.compile(r"^##\s*(\d+)\.\s*(.+)$")
-URL_RE = re.compile(r"(https?://\S+)")
-
-print("# ∿ Py-Agent Cheatsheet\n\n| Category | Shortcuts / Triggers | Target Command |\n| :--- | :--- | :--- |")
+SECTION_RE = re.compile(r"^#{2,3}\s*(\d+)\.?\s*(.+)$")
+URL_RE = re.compile(r"^https?://\S+")
+COMMENT_DIVIDER_RE = re.compile(r"^#\s*-{3,}")
+MAX_CMD_LEN = 40
 
 try:
     with open(CONTEXT_FILE, "r", encoding="utf-8") as f:
@@ -26,38 +26,72 @@ except OSError as e:
     sys.stderr.write(f"❌ Error reading file: {e}\n")
     sys.exit(1)
 
-in_code_block = False
 current_section = "General"
+rows: list[str] = []
 
 for line in lines:
     s = line.strip()
-    if s.startswith("```"):
-        in_code_block = not in_code_block
+    if not s:
         continue
 
+    # Capture markdown section headers (tolerates missing dots and ### levels)
     if m := SECTION_RE.match(s):
-        current_section = f"{m.group(1)}. {m.group(2)}"
+        current_section = f"{m.group(1)}. {m.group(2).strip()}"
         continue
 
-    if not in_code_block or s.startswith("#") or "--->" not in s:
+    # Ignore separator comments and lines lacking the command delimiter
+    if "--->" not in s or COMMENT_DIVIDER_RE.match(s):
         continue
 
-    cmd, intents = s.split("--->", 1)
-    cmd = cmd.replace("[TOOL]", "").strip()
+    # Clean skill and tool prefixes
+    clean_line = s
+    if clean_line.startswith("# [SKILL]"):
+        clean_line = clean_line.replace("# [SKILL]", "").strip()
+    elif clean_line.startswith("#"):
+        # Skip pure comment lines that don't represent tool definitions
+        continue
+
+    cmd_raw, intents = clean_line.split("--->", 1)
+    cmd = cmd_raw.replace("[TOOL]", "").strip()
+
+    c_parts = cmd.split()
+    if not c_parts:
+        continue
 
     intent_list = [i.strip() for i in intents.split(",") if i.strip()]
-    shortcut_display = " · ".join(f"`{x}`" for x in intent_list[:3])
+    if not intent_list:
+        continue
 
-    if url_match := URL_RE.search(cmd):
-        cleaned_cmd = url_match.group(1).replace('"', "").replace("'", "")
+    # Format trigger shortcuts with truncation indicator
+    shortcut_items = [f"`{x.replace('`', '')}`" for x in intent_list[:3]]
+    shortcut_display = " · ".join(shortcut_items)
+    if len(intent_list) > 3:
+        shortcut_display += " …"
+
+    # Command target formatting
+    if URL_RE.match(c_parts[0]):
+        target = c_parts[0].rstrip(",.);)]}\"'")
     else:
-        c_parts = cmd.split()
         target = os.path.basename(c_parts[0]) + (
             " " + " ".join(c_parts[1:]) if len(c_parts) > 1 else ""
         )
-        cleaned_cmd = target[:38] + "..." if len(target) > 40 else target
 
-    clean_target = cleaned_cmd.replace("|", r"\|")
-    print(f"| **{current_section}** | {shortcut_display} | `{clean_target}` |")
+    if len(target) > MAX_CMD_LEN:
+        cleaned_cmd = f"{target[:MAX_CMD_LEN - 3]}..."
+    else:
+        cleaned_cmd = target
 
+    # Pipe-escape all markdown table cells to preserve table geometry
+    safe_section = current_section.replace("|", r"\|")
+    safe_shortcuts = shortcut_display.replace("|", r"\|")
+    safe_target = cleaned_cmd.replace("|", r"\|")
+
+    rows.append(f"| **{safe_section}** | {safe_shortcuts} | `{safe_target}` |")
+
+# Output complete, atomic Markdown table
+print("# ∿ Py-Agent Cheatsheet\n")
+print("| Category | Shortcuts / Triggers | Target Command |")
+print("| :--- | :--- | :--- |")
+for r in rows:
+    print(r)
 print()

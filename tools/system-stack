@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """system-stack - Interactive TUI for System Health, Security & Diagnostics [Hardened Production Ready]"""
 
+import contextlib
 import os
 import re
 import select
@@ -130,7 +131,7 @@ def check_mysys_drift() -> tuple[str, str]:
         s_parts = s_base.split(".")
         a_parts = a_base.split(".")
 
-        # Numeric major and minor component comparison eliminates prefix false-positives
+        # Numeric comparison on major/minor components eliminates version-prefix false positives
         if len(s_parts) >= 2 and len(a_parts) >= 2:
             if s_parts[:2] != a_parts[:2]:
                 res = ("\033[1;33mMISALIGNED\033[0m", f"Active ({active_kernel}) != Profile ({static_kernel})")
@@ -216,7 +217,8 @@ def pause_terminal(tty_in_fd: int, tty_out):
 
 
 def draw_menu(selected: int, tty_out):
-    tty_out.write("\x1b[H\x1b[2J")
+    # \x1b[H = cursor home, \x1b[2J = clear screen, \x1b[3J = clear scrollback buffer
+    tty_out.write("\x1b[H\x1b[2J\x1b[3J")
     amber = "\033[38;2;230;120;60m"
     reset = "\033[0m"
     bold = "\033[1m"
@@ -227,7 +229,6 @@ def draw_menu(selected: int, tty_out):
 
     term_cols = shutil.get_terminal_size((80, 24)).columns
     box_width = min(max(term_cols - 6, 74), 98)
-
     clean_tools_dir = TOOLS_DIR.replace(os.path.expanduser("~"), "~")
 
     tty_out.write(
@@ -237,6 +238,7 @@ def draw_menu(selected: int, tty_out):
         f"   {dim}{'─' * box_width}{reset}\r\n\r\n"
     )
 
+    # Fixed-height, non-moving menu items: every item has its permanent description & spacing
     for i, item in enumerate(STACK_ITEMS):
         is_selected = i == selected
         prefix = f"   {amber}❯{reset} {bold}" if is_selected else "     "
@@ -251,8 +253,7 @@ def draw_menu(selected: int, tty_out):
         tty_out.write(f"        {dim}{item['desc']}{reset}\r\n\r\n")
 
     exit_idx = len(STACK_ITEMS)
-    is_exit_selected = selected == exit_idx
-    prefix_exit = f"   {amber}❯{reset} {bold}" if is_exit_selected else "     "
+    prefix_exit = f"   {amber}❯{reset} {bold}" if selected == exit_idx else "     "
     tty_out.write(f"{prefix_exit}✕  Exit Orchestrator{reset}\r\n")
     tty_out.write(f"\r\n   {dim}{'─' * box_width}{reset}\r\n")
     tty_out.write(f"   {dim}Use ▲/▼, j/k, or numbers to navigate, Enter to run, Esc/q to exit.{reset}\r\n")
@@ -260,7 +261,8 @@ def draw_menu(selected: int, tty_out):
 
 
 def run_target(item: dict, tty_in, tty_out, console):
-    tty_out.write("\x1b[?25h\x1b[H\x1b[2J")
+    # Wipe viewport and scrollback buffer before launching target
+    tty_out.write("\x1b[?25h\x1b[H\x1b[2J\x1b[3J")
     tty_out.flush()
 
     cmd = item["cmd"]
@@ -352,7 +354,6 @@ def run_target(item: dict, tty_in, tty_out, console):
 
 
 def main():
-    # Stream Acquisition
     try:
         tty_in = open("/dev/tty", "r")
     except OSError:
@@ -377,6 +378,10 @@ def main():
     dirty = True
 
     try:
+        # Enter alternate screen buffer & hide cursor
+        tty_out.write("\x1b[?1049h\x1b[?25l")
+        tty_out.flush()
+
         while True:
             if dirty:
                 draw_menu(selected, tty_out)
@@ -412,7 +417,8 @@ def main():
                 termios.tcsetattr(in_fd, termios.TCSADRAIN, orig_termios)
             except Exception:
                 pass
-        tty_out.write("\x1b[?25h\x1b[H\x1b[2J")
+        # Exit alternate screen buffer & restore cursor
+        tty_out.write("\x1b[?25h\x1b[?1049l")
         tty_out.flush()
         if tty_in is not sys.stdin:
             with contextlib.suppress(Exception):
@@ -423,7 +429,6 @@ def main():
 
 
 if __name__ == "__main__":
-    import contextlib
     try:
         main()
     except KeyboardInterrupt:

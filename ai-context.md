@@ -30,7 +30,7 @@
 # --- Eval Model & Profile (Agentic Tool Benchmark) ---
 ~/.config/py-agent/tools/evals/eval-stack --->  eval stack, eval-stack
 # --- System Orchestrator TUI ---
-[TOOL] ~/.config/py-agent/tools/system-stack ---> system stack, sysstack
+[TOOL] ~/.config/py-agent/tools/system-stack ---> system stack, sysstack, syscheck
 ```
 
 ## 2. Projects
@@ -59,20 +59,10 @@ ai init ~/.config/py-agent/projects/session-test ---> session test, projects ses
 ```properties
 # --- PyCode Setup & Build ---
 ~/.config/py-agent/plugins/pycode/setup.sh ---> install-pycode, setup-pycode, setup pycode
-# --- Open Code Review Plugin ---
+# --- Open-Code-Review ---
 ~/.config/py-agent/plugins/codereview/run-review ---> codereview, opencr, openreview
 # --- Model Context Protocol (MCP) ---
 ~/.config/py-agent/plugins/mcp/mcp_client.py list ---> mcp list, mcp tools, mcpl
-~/.config/py-agent/plugins/mcp/mcp_client.py schemas ---> mcp schemas, mcp export
-# Fetch: fetch <url> — Fast standard URL markdown scraper. Example: fetch https://docs.python.org/3
-[TOOL] ~/.config/py-agent/plugins/mcp/mcp_client.py fetch ---> fetch, mcp fetch
-[TOOL] ~/.config/py-agent/plugins/mcp/mcp_client.py call sqlite query ---> mcp sqlite, query db
-# Context7: docs <libraryId> <query> — Injects official markdown API docs into context. Example: docs /vercel/next.js middleware
-[TOOL] ~/.config/py-agent/plugins/mcp/mcp_client.py docs ---> context7, get docs
-# Firecrawl Scrape: scrape <url> — Bypasses JS/anti-bot to extract clean markdown. Example: scrape https://react.dev/reference/react
-[TOOL] ~/.config/py-agent/plugins/mcp/mcp_client.py scrape ---> firecrawl scrape
-# Firecrawl Search: search <query> — Web search + markdown extraction in 1 step. Example: search llama.cpp metal performance
-[TOOL] ~/.config/py-agent/plugins/mcp/mcp_client.py search ---> firecrawl search
 ```
 
 ## 4. Apps (Tools & Utilities)
@@ -89,7 +79,7 @@ ai init ~/.config/py-agent/projects/session-test ---> session test, projects ses
 [TOOL] date "+Current System Date, Time: %-I %M %p on %A, %B %-d, %Y" ---> get date, get time
 # --- APPS Stopwatch ---
 ~/.config/py-agent/tools/subsec/apps/stopwatch/stopwatch.py ---> stopwatch app
-# --- APPS Media ---
+# --- APPS Tuiamp ---
 ~/.config/py-agent/tools/subsec/apps/media/media.py ---> tuiamp app, tuiamp
 # --- Email TUI ---
 ~/.config/py-agent/tools/email/email-agent ---> email agent
