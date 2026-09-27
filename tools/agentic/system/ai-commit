@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ai-commit - High-Speed Minimalist Git Commit Generator
 
-set -euo pipefail
+set -eo pipefail
 
 trap 'echo -e "\n[aborted]" >&2; exit 130' INT
 
@@ -22,7 +22,7 @@ fi
 CFG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/py-agent"
 server_online=0
 
-if curl -s -m 0.5 "http://127.0.0.1:8080/v1/models" >/dev/null 2>&1; then
+if curl -s -m 0.25 "http://127.0.0.1:8080/v1/models" >/dev/null 2>&1; then
     server_online=1
 elif grep -E -q '^(GEMINI_API_KEY|OPENROUTER_API_KEY|CUSTOM_API_KEY|CUSTOM2_API_KEY)=.+[a-zA-Z0-9]' "$CFG_DIR/.env" 2>/dev/null; then
     server_online=1
@@ -61,7 +61,7 @@ $changes"
     printf "\033[90m[generating commit...]\033[0m" >&2
 
     # 5. Direct Local HTTP Fast-Path (< 2s total round-trip on CPU)
-    if curl -s -m 0.5 "http://127.0.0.1:8080/v1/models" >/dev/null 2>&1; then
+    if curl -s -m 0.25 "http://127.0.0.1:8080/v1/models" >/dev/null 2>&1; then
         payload=$(python3 -c '
 import json, sys
 sys_p, usr_p = sys.argv[1], sys.argv[2]
@@ -131,8 +131,15 @@ $USER_PROMPT"
     fi
 fi
 
-# Strip trailing newline
+# Strip trailing newlines
 message=$(echo "$message" | tr -d '\r\n')
+
+# Display staged files summary above the prompt
+git diff --cached --stat
+echo ""
+
+# Flush any stray Enter keystrokes from the buffer so Readline waits for user input
+python3 -c 'import termios, sys; termios.tcflush(sys.stdin, termios.TCIFLUSH)' 2>/dev/null || true
 
 # 10. Interactive Input Prompt
 user_message=""
