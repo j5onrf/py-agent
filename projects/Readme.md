@@ -8,7 +8,7 @@ Autonomous local developer agent with OKF memory, in-memory Python, and codebase
 OK: Profile set to: Lingtiny [Yolo: ON] [Map: ON] [Mem: ON] [Py: ON] [Adp: ON]
 
  Map enabled: compiled index-map.
-╭─ ∿ Py Agent ─────────────────────────────────────────────╮
+╭─ ∿ ──────────────────────────────────────────────────────╮
 │     model:  Ling-3.0-tiny                                │
 │ directory:  ~/.config/py-agent/projects/ling-tiny        │
 │   profile:  lingtiny                                     │
@@ -26,6 +26,7 @@ OK: Profile set to: Lingtiny [Yolo: ON] [Map: ON] [Mem: ON] [Py: ON] [Adp: ON]
 -~~~-~~~-~\___/~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-
 
 Agent: Task complete: Sum is 311.
+
  [ think: 56 | ans: 18 | 74 tokens | 0.61s @ 121.31 t/s ]
  [ 767 in | 53 out | cch: 93% | ctx: 10.0% ]
  
@@ -44,7 +45,7 @@ Switch CLI box styles using `/box [1-7]` (or type `/box` to cycle). Selection pe
 * **Style #4:** Heavy Square
 * **Style #5:** Minimalist Line
 * **Style #6:** Dual-Chamber Inset
-* **Style #7:** Minimalist Glyph
+* **Style #7:** Minimalist Clean
 
 ---
 
