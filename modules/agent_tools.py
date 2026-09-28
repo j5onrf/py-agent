@@ -492,9 +492,11 @@ def run_tool(
     print_output_fn: Callable[[str], None] | None = None,
 ) -> str:
     if isinstance(args, dict):
-        for k in ("path", "command", "pattern", "symbol", "goal"):
+        for k in ("path", "pattern", "symbol", "goal"):
             if k in args and isinstance(args[k], str):
                 args[k] = args[k].strip().strip('\'"`\\\n\r\t ').strip()
+        if "command" in args and isinstance(args["command"], str):
+            args["command"] = args["command"].strip()
 
         if "path" not in args:
             for alt in ("file", "filename", "filepath", "target", "file_path"):
@@ -906,11 +908,14 @@ def run_tool(
         try:
             # If command lacks shell metacharacters/redirection, execute directly
             if not any(ch in cmd for ch in ("|", "&", ";", ">", "<", "$", "`", "\n", "*", "?", "~")):
-                argv = shlex.split(cmd)
+                try:
+                    argv = shlex.split(cmd)
+                except ValueError:
+                    argv = None
                 if argv:
                     res = subprocess.run(argv, cwd=workspace, capture_output=True, text=True, timeout=300, stdin=subprocess.DEVNULL)
                 else:
-                    return "[error] Empty command"
+                    res = subprocess.run([shell, "-c", cmd], cwd=workspace, capture_output=True, text=True, timeout=300, stdin=subprocess.DEVNULL)
             else:
                 res = subprocess.run([shell, "-c", cmd], cwd=workspace, capture_output=True, text=True, timeout=300, stdin=subprocess.DEVNULL)
 

@@ -86,8 +86,8 @@ ai init ~/.config/py-agent/projects/session-test ---> session test, projects ses
 # --- AI Commit ---
 ~/.config/py-agent/tools/agentic/system/ai-commit ---> ai-commit, gc, git commit
 # --- Hyprland State ---
-~/.config/py-agent/tools/subsec/hyprstate/work ---> hyprstate work, hyprwork
-~/.config/py-agent/tools/subsec/hyprstate/gitcom ---> hyprstate gitcom, gitcom
+~/.config/py-agent/tools/subsec/hyprstate/work ---> hyprstate work, hyprwork, hyprw
+~/.config/py-agent/tools/subsec/hyprstate/gitcom ---> hyprstate gitcom, gitcom, gitc
 ```
 
 ## 5. System & Health
@@ -101,11 +101,13 @@ ai init ~/.config/py-agent/projects/session-test ---> session test, projects ses
 # --- Log Checker ---
 [TOOL] ~/.config/py-agent/tools/agentic/system/log-checker ---> log checker, ailog
 # --- AUR Audit ---
-[TOOL] ~/.config/py-agent/tools/agentic/system/aur-audit ---> aur audit, audit package
+[TOOL] ~/.config/py-agent/tools/agentic/system/aur-audit ---> aur audit, aurp
 # --- Security Audit ---
 [TOOL] ~/.config/py-agent/tools/agentic/system/security-audit ---> security audit, secaud
 # --- System Optimizer ---
 [TOOL] ~/.config/py-agent/tools/agentic/system/system-optimizer ---> system optimizer, sysop
 # --- Update Inspector ---
-[TOOL] ~/.config/py-agent/tools/agentic/system/update-inspector ---> update inspector
+[TOOL] ~/.config/py-agent/tools/agentic/system/update-inspector ---> update inspector, upi
+# --- Omarchy Desktop Control Hub ---
+~/.config/py-agent/tools/omarchy ---> omarchy hub, oma
 ```

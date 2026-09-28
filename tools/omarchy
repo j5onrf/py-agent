@@ -1,0 +1,382 @@
+#!/usr/bin/env python3
+"""omarchy - Interactive TUI Hub for Omarchy Desktop Skills [Hardened Production Ready]"""
+
+import contextlib
+import os
+import re
+import select
+import shutil
+import subprocess
+import sys
+import termios
+import tty
+from typing import Any
+
+CFG_DIR = os.path.expanduser("~/.config/py-agent")
+AI_AGENT_PY = os.path.join(CFG_DIR, "ai-agent.py")
+SCREENSAVER_TXT = os.path.expanduser("~/.config/omarchy/branding/screensaver.txt")
+
+# Standard 16-color ANSI palette (dynamically mapped by the terminal's active theme)
+RESET = "\033[0m"
+BOLD = "\033[1m"
+DIM = "\033[90m"
+TEXT = "\033[37m"
+ACCENT = "\033[1;32m"
+WARN = "\033[1;33m"
+INFO = "\033[1;36m"
+ERROR = "\033[1;31m"
+
+BANNER_FALLBACK = [
+    "                 ▄▄▄",
+    " ▄█████▄    ▄███████████▄    ▄███████   ▄███████   ▄███████   ▄█   █▄    ▄█   █▄",
+    "███   ███  ███   ███   ███  ███   ███  ███   ███  ███   ███  ███   ███  ███   ███",
+    "███   ███  ███   ███   ███  ███   ███  ███   ███  ███   █▀   ███   ███  ███   ███",
+    "███   ███  ███   ███   ███ ▄███▄▄▄███ ▄███▄▄▄██▀  ███       ▄███▄▄▄███▄ ███▄▄▄███",
+    "███   ███  ███   ███   ███ ▀███▀▀▀███ ▀███▀▀▀▀    ███      ▀▀███▀▀▀███  ▀▀▀▀▀▀███",
+    "███   ███  ███   ███   ███  ███   ███ ██████████  ███   █▄   ███   ███  ▄██   ███",
+    "███   ███  ███   ███   ███  ███   ███  ███   ███  ███   ███  ███   ███  ███   ███",
+    " ▀█████▀    ▀█   ███   █▀   ███   █▀   ███   ███  ███████▀   ███   █▀    ▀█████▀",
+    "                                       ███   █▀",
+]
+
+
+def load_wordmark_banner() -> list[str]:
+    """Loads screensaver.txt directly from disk if available, with embedded fallback."""
+    if os.path.isfile(SCREENSAVER_TXT):
+        try:
+            with open(SCREENSAVER_TXT, "r", encoding="utf-8") as f:
+                lines = [l.rstrip("\r\n") for l in f if l.rstrip("\r\n")]
+            if len(lines) >= 8:
+                return lines
+        except Exception:
+            pass
+    return BANNER_FALLBACK
+
+
+OMARCHY_ITEMS = [
+    {
+        "skill": "omarchy",
+        "tag": "SYSTEM",
+        "name": "Desktop Reminders & System Control",
+        "targets": "omarchy reminder, nightlight, shell refresh, pkg add",
+        "desc": "Desktop reminders, nightlight toggle, shell restart, component refreshes",
+        "example": "remind me in 12m: pizza ready in the oven",
+    },
+    {
+        "skill": "hyprland",
+        "tag": "HYPRLAND",
+        "name": "Hyprland Configuration & Keybinds",
+        "targets": "~/.config/hypr/{bindings,monitors,looknfeel,input}.lua",
+        "desc": "Lua keybindings, display output scaling, borders, gaps, window rules",
+        "example": "rebind SUPER+W to launch web browser and reload hyprland",
+    },
+    {
+        "skill": "theming",
+        "tag": "THEME",
+        "name": "Themes, Wallpapers & Desktop Fonts",
+        "targets": "~/.config/omarchy/themes/<slug>/colors.toml, backgrounds/",
+        "desc": "Switch themes, cycle background wallpapers, custom color overrides, fonts",
+        "example": "set theme to catppuccin and cycle to next wallpaper",
+    },
+    {
+        "skill": "hooks",
+        "tag": "HOOKS",
+        "name": "System Automation Event Hooks",
+        "targets": "~/.config/omarchy/hooks/<event>.d/",
+        "desc": "Event hooks for theme-set, font-set, battery-low, post-boot, post-update",
+        "example": "create battery-low hook to notify and dim screen below 20%",
+    },
+    {
+        "skill": "plugins",
+        "tag": "PLUGINS",
+        "name": "Shell, Status Bar & Lockscreen",
+        "targets": "~/.config/omarchy/shell.json, omarchy-menu.jsonc",
+        "desc": "Quickshell widgets, status bar layout, screensaver and idle lock timers",
+        "example": "move clock widget to right section and set lock timer to 600s",
+    },
+    {
+        "skill": "capture",
+        "tag": "CAPTURE",
+        "name": "Screen Capture, Record & OCR Text",
+        "targets": "grim, slurp, LocalSend, Taildrop, OCR text grab",
+        "desc": "Interactive/region screenshots, screen recording with audio, OCR to clipboard",
+        "example": "take region screenshot and copy extracted OCR text to clipboard",
+    },
+    {
+        "skill": "diagnose-crash",
+        "tag": "CRASH",
+        "name": "Crash & Core Dump Triage",
+        "targets": "coredumpctl, journalctl, gdb debuginfod",
+        "desc": "Analyze SIGSEGV crashes, symbolize stack traces, diagnose OOM kills",
+        "example": "inspect latest hyprland crash dump and symbolize backtrace",
+    },
+    {
+        "skill": "reporting",
+        "tag": "REPORT",
+        "name": "Upstream Bug Reporting (GitHub)",
+        "targets": "gh issue search/create, basecamp/omarchy repository",
+        "desc": "Verify Omarchy scope, search existing reports, format structured issues",
+        "example": "search if recent quickshell crash was already reported upstream",
+    },
+    {
+        "skill": "contributing",
+        "tag": "DEBUGLOG",
+        "name": "System Diagnostics & PR Summary",
+        "targets": "omarchy debug --no-sudo --print, /tmp/omarchy-debug.log",
+        "desc": "Generate non-blocking debug reports and prepare pull request summaries",
+        "example": "collect omarchy debug report and verify system state",
+    },
+]
+
+
+def get_key_non_blocking(tty_in_fd: int, timeout: float = 0.5) -> str | None:
+    """Non-blocking single-key reader with robust CSI escape parsing."""
+    try:
+        old_settings = termios.tcgetattr(tty_in_fd)
+    except Exception:
+        return None
+
+    try:
+        tty.setraw(tty_in_fd)
+        rlist, _, _ = select.select([tty_in_fd], [], [], timeout)
+        if not rlist:
+            return None
+
+        ch_bytes = os.read(tty_in_fd, 1)
+        if not ch_bytes:
+            return None
+
+        if ch_bytes == b"\x03":
+            return "ctrl_c"
+
+        ch = ch_bytes.decode("utf-8", errors="ignore")
+        if ch == "\x1b":
+            rlist_seq, _, _ = select.select([tty_in_fd], [], [], 0.12)
+            if rlist_seq:
+                seq_bytes = b""
+                while len(seq_bytes) < 2:
+                    more = os.read(tty_in_fd, 2 - len(seq_bytes))
+                    if not more:
+                        break
+                    seq_bytes += more
+                seq = seq_bytes.decode("utf-8", errors="ignore")
+                if seq in ("[A", "OA"):
+                    return "up"
+                elif seq in ("[B", "OB"):
+                    return "down"
+                elif seq in ("[C", "OC"):
+                    return "right"
+                elif seq in ("[D", "OD"):
+                    return "left"
+            return "esc"
+        elif ch in ("\r", "\n"):
+            return "enter"
+        elif ch in ("\x7f", "\x08"):
+            return "backspace"
+        elif ch == " ":
+            return "space"
+        elif ch.lower() in ("q", "k", "j"):
+            return ch.lower()
+        elif ch.isdigit():
+            return ch
+        return ch
+    finally:
+        try:
+            termios.tcsetattr(tty_in_fd, termios.TCSADRAIN, old_settings)
+        except Exception:
+            pass
+
+
+def pause_terminal(tty_in_fd: int, tty_out):
+    try:
+        termios.tcflush(tty_in_fd, termios.TCIFLUSH)
+    except Exception:
+        pass
+
+    tty_out.write(f"\n{DIM}:: Press Enter to return to Omarchy Hub (or Esc/q)...{RESET}\n")
+    tty_out.flush()
+
+    while True:
+        k = get_key_non_blocking(tty_in_fd, timeout=0.2)
+        if k is not None and k in ("enter", "esc", "backspace", "space", "q", "ctrl_c"):
+            break
+
+
+def draw_menu(selected: int, tty_out):
+    tty_out.write("\x1b[H\x1b[2J\x1b[3J")
+
+    banner = load_wordmark_banner()
+    term_cols = shutil.get_terminal_size((80, 24)).columns
+    box_width = min(max(term_cols - 6, 84), 110)
+
+    tty_out.write("\r\n")
+    for line in banner:
+        tty_out.write(f"   {ACCENT}{line}{RESET}\r\n")
+
+    tty_out.write(f"\r\n   {DIM}{'─' * box_width}{RESET}\r\n\r\n")
+
+    for i, item in enumerate(OMARCHY_ITEMS):
+        is_selected = (i == selected)
+
+        if is_selected:
+            prefix = f"   {WARN}❯{RESET} "
+            num_tag = f"{BOLD}{WARN}{i + 1:1d}.{RESET}"
+            name_text = f"{BOLD}{ACCENT}{item['name']}{RESET}"
+            tag_str = f"{BOLD}{INFO}[{item['tag']}]{RESET}"
+        else:
+            prefix = "     "
+            num_tag = f"{DIM}{i + 1:1d}.{RESET}"
+            name_text = f"{TEXT}{item['name']}{RESET}"
+            tag_str = f"{DIM}[{item['tag']}]{RESET}"
+
+        visible_name = f"{i + 1:1d}. {item['name']}"
+        pad = max(2, box_width - len(visible_name) - len(item["tag"]) - 8)
+
+        tty_out.write(f"{prefix}{num_tag} {name_text}{' ' * pad}{tag_str}\r\n")
+
+    exit_idx = len(OMARCHY_ITEMS)
+    if selected == exit_idx:
+        prefix_exit = f"   {WARN}❯{RESET} "
+        exit_text = f"{BOLD}{ERROR}✕  Exit Hub{RESET}"
+    else:
+        prefix_exit = "     "
+        exit_text = f"{DIM}✕  Exit Hub{RESET}"
+
+    tty_out.write(f"\r\n{prefix_exit}{exit_text}\r\n")
+    tty_out.write(f"\r\n   {DIM}{'─' * box_width}{RESET}\r\n")
+    tty_out.write(f"   {DIM}Use ▲/▼, j/k, or 1-9 to navigate, Enter to select, Esc/q to exit.{RESET}\r\n")
+    tty_out.flush()
+
+
+def run_skill(item: dict, tty_in, tty_out, orig_termios):
+    in_fd = tty_in.fileno()
+
+    # Restore canonical line discipline so paste, arrows, and backspace work natively
+    if orig_termios:
+        try:
+            termios.tcsetattr(in_fd, termios.TCSADRAIN, orig_termios)
+        except Exception:
+            pass
+
+    tty_out.write("\x1b[?25h\x1b[H\x1b[2J\x1b[3J")
+    tty_out.flush()
+
+    tty_out.write(f"\r\n   {BOLD}{INFO}OMARCHY DIRECTIVE DISPATCHER{RESET}\r\n")
+    tty_out.write(f"   {DIM}Skill:{RESET}       {BOLD}{item['name']}{RESET}  {DIM}[{item['tag']}]{RESET}\r\n")
+    tty_out.write(f"   {DIM}Description:{RESET} {item['desc']}\r\n")
+    tty_out.write(f"   {DIM}Targets:{RESET}     {item['targets']}\r\n\r\n")
+    tty_out.write(f"   {DIM}Press Enter for default directive, or type/paste a custom task:{RESET}\r\n")
+    tty_out.write(f"   {DIM}Default:{RESET}     {WARN}\"{item['example']}\"{RESET}\r\n\r\n")
+    tty_out.write(f"   {BOLD}{ACCENT}❯ Directive{RESET}: ")
+    tty_out.flush()
+
+    try:
+        raw_line = tty_in.readline()
+        if raw_line is None or (raw_line == "" and not tty_in.isatty()):
+            return
+        directive = raw_line.strip() or item["example"]
+    except (KeyboardInterrupt, EOFError):
+        tty_out.write(f"\r\n   {DIM}Cancelled.{RESET}\r\n")
+        tty_out.flush()
+        return
+
+    if not os.path.isfile(AI_AGENT_PY):
+        tty_out.write(f"\r\n   {ERROR}Error: py-agent entrypoint not found at {AI_AGENT_PY}{RESET}\r\n")
+        pause_terminal(in_fd, tty_out)
+        return
+
+    tty_out.write(f"\r\n   {DIM}Dispatching agent with {INFO}-omarchy/{item['skill']}{RESET}...\r\n\r\n")
+    tty_out.flush()
+
+    cmd = [
+        sys.executable,
+        AI_AGENT_PY,
+        "--talk-chat",
+        f"-omarchy/{item['skill']}",
+        directive,
+    ]
+
+    try:
+        subprocess.run(cmd, stdin=tty_in, stdout=tty_out, stderr=tty_out)
+    except Exception as e:
+        tty_out.write(f"\r\n   {ERROR}Execution error: {e}{RESET}\r\n")
+
+    pause_terminal(in_fd, tty_out)
+
+
+def main():
+    try:
+        tty_in = open("/dev/tty", "r")
+    except OSError:
+        tty_in = sys.stdin
+    try:
+        tty_out = open("/dev/tty", "w")
+    except OSError:
+        tty_out = sys.stdout
+
+    in_fd = tty_in.fileno()
+    orig_termios = None
+    if getattr(tty_in, "isatty", lambda: False)():
+        try:
+            orig_termios = termios.tcgetattr(in_fd)
+        except Exception:
+            orig_termios = None
+
+    selected = 0
+    total_options = len(OMARCHY_ITEMS) + 1
+    dirty = True
+
+    try:
+        tty_out.write("\x1b[?1049h\x1b[?25l")
+        tty_out.flush()
+
+        while True:
+            if dirty:
+                draw_menu(selected, tty_out)
+                dirty = False
+
+            key = get_key_non_blocking(in_fd, timeout=0.5)
+
+            if key is None:
+                continue
+            elif key in ("up", "k"):
+                selected = (selected - 1) % total_options
+                dirty = True
+            elif key in ("down", "j"):
+                selected = (selected + 1) % total_options
+                dirty = True
+            elif key.isdigit():
+                digit_val = int(key)
+                if 1 <= digit_val <= len(OMARCHY_ITEMS):
+                    selected = digit_val - 1
+                    run_skill(OMARCHY_ITEMS[selected], tty_in, tty_out, orig_termios)
+                    dirty = True
+            elif key == "enter":
+                if selected < len(OMARCHY_ITEMS):
+                    run_skill(OMARCHY_ITEMS[selected], tty_in, tty_out, orig_termios)
+                    dirty = True
+                else:
+                    break
+            elif key in ("q", "esc", "ctrl_c"):
+                break
+    finally:
+        if orig_termios:
+            try:
+                termios.tcsetattr(in_fd, termios.TCSADRAIN, orig_termios)
+            except Exception:
+                pass
+        tty_out.write("\x1b[?25h\x1b[?1049l")
+        tty_out.flush()
+        if tty_in is not sys.stdin:
+            with contextlib.suppress(Exception):
+                tty_in.close()
+        if tty_out is not sys.stdout:
+            with contextlib.suppress(Exception):
+                tty_out.close()
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit(0)
