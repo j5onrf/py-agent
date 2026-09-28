@@ -31,6 +31,8 @@
 ~/.config/py-agent/tools/evals/eval-stack --->  eval stack, eval-stack
 # --- System Orchestrator TUI ---
 [TOOL] ~/.config/py-agent/tools/system-stack ---> system stack, sysstack, syscheck
+# --- Omarchy Desktop Control Hub ---
+~/.config/py-agent/tools/omarchy ---> omarchy hub, oma
 ```
 
 ## 2. Projects
@@ -108,6 +110,4 @@ ai init ~/.config/py-agent/projects/session-test ---> session test, projects ses
 [TOOL] ~/.config/py-agent/tools/agentic/system/system-optimizer ---> system optimizer, sysop
 # --- Update Inspector ---
 [TOOL] ~/.config/py-agent/tools/agentic/system/update-inspector ---> update inspector, upi
-# --- Omarchy Desktop Control Hub ---
-~/.config/py-agent/tools/omarchy ---> omarchy hub, oma
 ```
