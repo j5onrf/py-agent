@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.43] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production Ready]"""
+"""Py Agent [j5onrf] [v0.9.9.44] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production Ready]"""
 
 import json
 import os
@@ -96,7 +96,7 @@ def _clear_transient_status(query: str) -> None:
     global _transient_cmd_count
     if _transient_cmd_count > 0:
         try:
-            sys.stdout.write(f"\033[{_transient_cmd_count + 1}A\r\x1b[0J❯ {query}\n")
+            sys.stdout.write(f"\033[{_transient_cmd_count + 1}A\r\x1b[0J\n❯ {query}\n")
             sys.stdout.flush()
         except OSError:
             pass

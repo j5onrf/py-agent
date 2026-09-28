@@ -303,9 +303,9 @@ def list_available_profiles() -> list[tuple[str, str]]:
     return found
 
 
-def select_profile_interactive(profiles: list[tuple[str, str]], default_key: str = "custom/base") -> str:
+def select_profile_interactive(profiles: list[tuple[str, str]], default_key: str = "lingtiny") -> str:
     current_idx = next(
-        (i for i, (k, _) in enumerate(profiles) if k == default_key or k in ("custom/lingtiny", "custom/nexn25")),
+        (i for i, (k, _) in enumerate(profiles) if k == default_key or os.path.basename(k) == os.path.basename(default_key)),
         0,
     )
     num_opts = len(profiles)
@@ -411,34 +411,25 @@ def resolve_dynamic_profile(cli_profile_arg: str | None = None) -> tuple[str, st
         ):
             return f"custom/{clean_arg}", content
 
-    if active_env := os.environ.get("AI_ACTIVE_SKILL"):
-        first_skill = active_env.split()[0]
-        if content := skills.load_skill_content(first_skill, skills_dir, CFG_DIR):
-            return first_skill, content
-
-    ws_path = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
-    cfg_file = os.path.join(ws_path, ".agent", "config.json")
-    if os.path.isfile(cfg_file):
-        try:
-            with open(cfg_file, "r", encoding="utf-8") as cf:
-                if saved_prof := json.load(cf).get("profile", ""):
-                    if content := skills.load_skill_content(saved_prof, skills_dir, CFG_DIR):
-                        return saved_prof, content
-        except Exception:
-            pass
-
     profiles = list_available_profiles()
     if profiles and not os.environ.get("AI_CONTEXT_RUN"):
-        chosen_key = select_profile_interactive(profiles, "custom/base")
+        model_name, _ = get_current_model_info()
+        m_lower = model_name.lower()
+        def_key = "lingtiny"
+        for k, _ in profiles:
+            base_k = os.path.basename(k).lower()
+            if ("ling" in m_lower and "ling" in base_k) or \
+               ("kat" in m_lower and "kat" in base_k) or \
+               ("nex" in m_lower and "nex" in base_k) or \
+               ("qwen" in m_lower and ("qwen" in base_k or "q2b" in base_k)) or \
+               ("lfm" in m_lower and "lfm" in base_k) or \
+               ("cpm" in m_lower and "cpm" in base_k):
+                def_key = k
+                break
+
+        chosen_key = select_profile_interactive(profiles, def_key)
         if content := skills.load_skill_content(chosen_key, skills_dir, CFG_DIR):
             return chosen_key, content
-
-    default_prof = "custom/base"
-    content = (
-        skills.load_skill_content(default_prof, skills_dir, CFG_DIR)
-        or "You are an autonomous AI software engineer."
-    )
-    return default_prof, content
 
 
 def get_current_model_info() -> tuple[str, str]:
@@ -485,7 +476,7 @@ def _log_failure_trace(
 
 
 def run_single_agentic_test(
-    bench: dict, model_name: str, profile_prompt: str
+    bench: dict, model_name: str, profile_prompt: str, reasoning_budget: int = 0
 ) -> tuple[bool, float, int, int, str]:
     orig_cwd = os.getcwd()
     orig_ws = os.environ.get("AI_WORKSPACE_PATH")
@@ -531,6 +522,11 @@ def run_single_agentic_test(
 
         if "max_tokens" not in body:
             body["max_tokens"] = 2048
+
+        if reasoning_budget > 0:
+            body["thinking_budget_tokens"] = reasoning_budget
+            body["reasoning_budget"] = reasoning_budget
+            body["chat_template_kwargs"] = {"enable_thinking": True}
 
         with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
             response = core.agentic_turn(
@@ -591,6 +587,29 @@ def main():
     cli_arg = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else None
     prof_name, profile_content = resolve_dynamic_profile(cli_arg)
 
+    skills_dir = os.path.join(CFG_DIR, "skills")
+    prof_path = None
+    for cand in (
+        os.path.join(skills_dir, "profiles", f"{prof_name}.md"),
+        os.path.join(skills_dir, "profiles", f"{os.path.basename(prof_name)}.md"),
+        os.path.join(skills_dir, f"{prof_name}.md"),
+    ):
+        if os.path.isfile(cand):
+            prof_path = cand
+            break
+
+    raw_text = _safe_read(prof_path) if prof_path else profile_content
+    meta, body_prompt = skills.parse_frontmatter(raw_text)
+    system_prompt = body_prompt or profile_content
+
+    adapters_on = str(meta.get("adapters", meta.get("adp", ""))).lower() in ("true", "1", "yes", "on")
+    is_py_enabled = str(meta.get("ipython", meta.get("py", ""))).lower() in ("true", "1", "yes", "on")
+    reasoning_budget = int(meta.get("reasoning_budget", 0)) if meta.get("reasoning_budget") else 0
+
+    core.save_state("adapters_active", adapters_on)
+    core.save_state("ipython_mode", is_py_enabled)
+    core.save_state("reasoning_budget", reasoning_budget)
+
     console.print(
         Panel(
             "[bold cyan]Py-Agent Full-Stack Agentic & Tool-Calling Benchmark Suite[/bold cyan]\n"
@@ -604,12 +623,12 @@ def main():
             os.remove(FAILURES_LOG)
 
     model_name, endpoint = get_current_model_info()
-    is_py_enabled = bool(core.get_state("ipython_mode", False))
 
     mode_label = "Dual (Python + Native)" if is_py_enabled else "Native 6-Tool"
+    adp_status = "ON" if adapters_on else "OFF"
     console.print(f"Target Model: [bold]{model_name}[/bold]")
     console.print(f"Target Endpoint: {endpoint}")
-    console.print(f"Harness Profile: [cyan]{prof_name}[/cyan] ({mode_label})\n")
+    console.print(f"Harness Profile: [cyan]{prof_name}[/cyan] ({mode_label}) [dim][Adapters: {adp_status} | Budget: {reasoning_budget}t][/dim]\n")
 
     results = []
     passed_count = 0
@@ -640,7 +659,7 @@ def main():
             total_par_turns += par
 
             spinner.start(f"[{idx}/{len(AGENTIC_BENCHMARKS)}] Running {bench['id']} ({bench['name']})...")
-            passed, elapsed, turns, toks, detail = run_single_agentic_test(bench, model_name, profile_content)
+            passed, elapsed, turns, toks, detail = run_single_agentic_test(bench, model_name, system_prompt, reasoning_budget)
             spinner.stop()
 
             total_time += elapsed

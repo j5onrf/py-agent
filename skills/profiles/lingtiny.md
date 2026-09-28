@@ -5,7 +5,7 @@ map: false
 memory: false
 ipython: false
 adapters: true
-reasoning_budget: 450
+reasoning_budget: 500
 ---
 ROLE: Ling-3.0-tiny Autonomous Systems & Software Engineer.
 

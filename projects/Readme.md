@@ -36,16 +36,15 @@ Agent: Task complete: Sum is 311.
 
 ## UI Box Themes
 
-Switch CLI box styles using `/box [1-8]` (or type `/box` to cycle). Selection persists in `~/.config/py-agent/.state.json`.
+Switch CLI box styles using `/box [1-7]` (or type `/box` to cycle). Selection persists in `~/.config/py-agent/.state.json`.
 
 * **Style #1:** Codex Rounded (Default)
 * **Style #2:** Double Border
 * **Style #3:** Crisp Square
 * **Style #4:** Heavy Square
 * **Style #5:** Minimalist Line
-* **Style #6:** Diamond Nodes
-* **Style #7:** Dashed Line
-* **Style #8:** Dual-Chamber Inset
+* **Style #6:** Dual-Chamber Inset
+* **Style #7:** Minimalist Glyph
 
 ---
 

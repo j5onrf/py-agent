@@ -5,7 +5,7 @@
   <h1>Py Agent</h1>
 
   <p>
-    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.43.svg?variant=secondary" alt="Version"></a>
+    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.44.svg?variant=secondary" alt="Version"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/Python.svg?variant=branded&brand=python" alt="Language"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/C%2B%2B.svg?variant=branded&brand=cplusplus" alt="C++"></a>
     <a href="https://github.com/j5onrf/py-agent/blob/main/LICENSE"><img src="https://shieldcn.dev/badge/license-MIT-green.svg" alt="License"></a>
@@ -37,7 +37,7 @@
         <code>KAT-Coder-V2.5*</code> &nbsp;•&nbsp; <code>Ornith-1.5</code><br>
         <code>Qwen3.8-35B-D</code> &nbsp;•&nbsp; <code>Tiel-Coder-35B</code><br>
         <code>Occamy-1.0</code> &nbsp;•&nbsp; <code>Nex-N2.5-mini</code><br>
-        <code>Qwen3.8-27B</code> &nbsp;•&nbsp; <code>Qwen3.8-Flash-Next</code><br>
+        <code>Qwen3.8-27B</code> &nbsp;•&nbsp; <code>Qwen3.8-Flash</code><br>
         <code>DeepSeek&#8209;V4.1</code>
       </td>
     </tr>
@@ -61,7 +61,7 @@
 
 ```console
 ~ ❯ ai
-╭─ ∿ Py Agent ──────────────────────╮
+╭─ ∿ ───────────────────────────────╮
 │     model:  Qwen3.8-35B-Distill   │
 │ directory:  ~                     │
 │   profile:  chat                  │
@@ -125,14 +125,14 @@
 
 | Rank | Model | Par Eff | Agent Index |
 | :---: | :--- | :---: | :---: |
-| **1** | **KAT-Coder-V2.5-Dev** | **103.4%** | **91.4 (A)** |
+| **1** | **KAT-Coder-V2.5-Dev** | **96.8%** | **90.6 (A)** |
 | **2** | **Ornith-1.5-35B-A3B** | **88.2%** | **89.3 (A)** |
 | **3** | **Tiel-Coder-35B-A3B** | **90.9%** | **87.6 (B)** |
 | **4** | **Qwen3.8-35B-Distill** *(MTP)* | **93.8%** | **87.5 (B)** |
 | **5** | **Occamy-1.0** | **90.9%** | **87.0 (B)** |
 | **6** | **Qwen3.8-35B-Distill** *(Pure)* | **90.9%** | **86.4 (B)** |
 | **7** | **Nex-N2.5-mini** | **88.2%** | **85.8 (B)** |
-| **—** | **Ling-3.0-tiny** *(SLM)* | **98.7%** | **100.0 (A+)** |
+| **—** | **Ling-3.0-tiny** *(SLM)* | **86.7%** | **95.3 (A+)** |
 
 <br>
 

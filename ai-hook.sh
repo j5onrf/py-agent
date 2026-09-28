@@ -1,19 +1,18 @@
 #!/usr/bin/env bash
-# Production Py-Agent Shell Hook v0.9.9.40 (Hardened & Production Ready)
+# Production Py-Agent Shell Hook (Sub-Millisecond Startup)
 
 [[ $- == *i* && -f "$HOME/.config/py-agent/ai-agent.py" ]] || return 0 2>/dev/null || exit 0
 
 _AI_DIR="$HOME/.config/py-agent"
-_AI_PY="${_AI_PY:-$(command -v python3 || command -v python)}"
+_AI_PY="${_AI_PY:-/usr/bin/python3}"
 
-# 1. Strict Python 3.8+ Version Probe
-if [[ -z "$_AI_PY" ]] || ! "$_AI_PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' 2>/dev/null; then
-    echo "py-agent: Python 3.8+ is required but not found on PATH." >&2
-    return 1 2>/dev/null || exit 1
-fi
-
-# 2. Atomic Shell Teleportation
+# 1. Atomic Shell Teleportation (Builtin only, first-draw screen hygiene)
 _ai_teleport() {
+    if [[ -z "${_AI_FIRST_PROMPT:-}" ]]; then
+        _AI_FIRST_PROMPT=1
+        printf '\x1b[H\x1b[2J'
+    fi
+
     local f="$_AI_DIR/.active_cd.$$"
     if [[ -f "$f" ]]; then
         local target
@@ -31,16 +30,14 @@ elif [[ -n "$BASH_VERSION" ]]; then
     fi
 fi
 
-# 3. Intent & Missing Command Handler
+# 2. Intent & Missing Command Handler
 ai_handle_missing() {
     local cmd exp
     cmd=$([[ -n "$*" ]] && "$_AI_PY" "$_AI_DIR/ai-agent.py" --interactive "$*") || return 127
     [[ -z "$cmd" ]] && return 127
 
-    # Comprehensive ANSI and OSC escape sequence stripper
     exp=$(printf '%s' "$cmd" | sed -E $'s/\x1b\\][^\x07\x1b]*(\x07|\x1b\\\\)|\x1b\\[[0-9;?]*[a-zA-Z~]|\r//g')
 
-    # Safe tilde expansion
     if [[ "$exp" == "~" ]]; then
         exp="$HOME"
     elif [[ "$exp" == "~/"* ]]; then
@@ -52,7 +49,6 @@ ai_handle_missing() {
     elif [[ "$exp" == *.py && -f "$exp" ]]; then
         "$_AI_PY" "$exp"
     else
-        # Syntax check using active interpreter (zsh or bash)
         if [[ -n "$ZSH_VERSION" ]]; then
             if ! zsh -n <<< "$exp" 2>/dev/null; then
                 echo "py-agent: invalid shell syntax in command" >&2
@@ -64,12 +60,11 @@ ai_handle_missing() {
                 return 127
             fi
         fi
-
         eval "$exp"
     fi
 }
 
-# 4. Command Not Found Hooks with Re-Entrancy Guard
+# 3. Command Not Found Hooks
 command_not_found_handle() {
     [[ -n "${_AI_CNF_ACTIVE:-}" ]] && return 127
     [[ "${1:-}" != --* ]] || return 127
@@ -79,9 +74,8 @@ command_not_found_handle() {
 }
 command_not_found_handler() { command_not_found_handle "$@"; }
 
-# 5. Primary AI Shell Wrapper
+# 4. Primary AI Shell Wrapper
 ai() {
-    # Portable nullglob: avoid zsh NOMATCH aborts when no lockfiles exist
     local old files=()
     if [[ -n "$ZSH_VERSION" ]]; then
         files=("$_AI_DIR"/.active_cd.*(N))
@@ -150,7 +144,6 @@ except Exception:
             elif git -C "$path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
                 [[ -n "$(git -C "$path" status --porcelain 2>/dev/null | grep -v '\.agent')" ]] && needs_compile=1
             else
-                # Portable POSIX check replacing GNU-only find -quit
                 [[ -n "$(find "$path" -maxdepth 3 -not -path '*/.git/*' -not -path '*/.agent/*' -not -name '*.md' -newer "$map" -print 2>/dev/null | head -n 1)" ]] && needs_compile=1
             fi
 
@@ -167,7 +160,7 @@ except Exception:
     fi
 }
 
-# 6. Terminal Markdown Pager
+# 5. Terminal Markdown Pager
 view() {
     local f="${1:-}"
     if [[ -z "$f" ]]; then

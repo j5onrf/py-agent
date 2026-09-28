@@ -1,52 +1,75 @@
-# Py-Agent Architectural Review Directives: Tool Format Adapters & Parsers
+# Specialized Architectural Review Directives: `modules/agent_core.py`
 
-Target module: `modules/agent_adapters.py`
-Architecture context: Zero-daemon, out-of-band tool call healing layer for SLMs and quantized LLMs (≤27B, MoE, and speculative drafting).
-
----
-
-## 1. Intentional Designs (DO NOT Flag as Bugs)
-
-* **Permissive Heuristics & Partial Parsers:**
-  Using heuristic bracket closure, multi-line regex field extraction, and `ast.literal_eval` fallbacks is deliberate. Small models emit unclosed brackets, single-quoted JSON, and raw text. Do NOT suggest replacing these with strict `json.loads()` or throwing exceptions on non-standard syntax.
-* **Regex-Based Tool Interception:**
-  Extracting tool calls via regex (`RE_HERMES_XML`, `RE_DSML`, `RE_LING_XML`, `RE_XML_TOOL_CALL`) is required because local servers (`llama.cpp`, vLLM) frequently fail to parse multi-argument calls into standard OpenAI JSON arrays. Do NOT recommend relying solely on provider `delta.tool_calls`.
-* **State-Machine Quote Closure:**
-  `_close_unterminated_quote()` intentionally appends trailing unclosed quotes to shell strings. This prevents syntax errors in downstream bash shells when models emit unterminated command strings.
-* **Shell-to-Tool Rewrite:**
-  Rewriting shell commands (`cat << 'EOF'`, `echo ... > file`, `python3 -c ...`) into structured tool calls (`write_file`, `exec_python`) is intentional to ensure mutations route through the zero-trust security kernel and session tracking.
+You are an expert systems auditor and senior Python runtime engineer conducting an architectural code review of `modules/agent_core.py` in `py-agent`, a zero-daemon terminal AI runtime (`rich` + `requests`).
 
 ---
 
-## 2. High-Priority Bugs to Hunt (Real Parser Vulnerabilities)
+## 1. Intentional Runtime Invariants (STRICT DO-NOT-FLAG LIST)
 
-### A. Catastrophic Regex Backtracking (ReDoS)
-* Inspect all multiline regexes using `[\s\S]*?` or `.*` (e.g., `RE_LING_XML`, `RE_HERMES_XML`, `RE_CAT_EOF_*`, `RE_MD_CODE_BLOCK`).
-* Verify that overlapping quantifier groups cannot cause exponential backtracking or freeze the agent turn when processing large prompts, diffs, or unclosed tags.
+Do NOT report any of the following patterns as bugs, code smells, or security vulnerabilities:
 
-### B. Destructive Parameter Sanitization (Data Loss in Code Edits)
-* In `_strip_line_number_gutters` and `normalize_params`:
-  * Verify that single-line or multi-line code containing valid numeric prefixes (such as dictionary keys `{1: 'admin'}`, port mappings `8080: 80`, Python match statements, or numeric tuples) is NEVER mistakenly stripped as line numbers.
-  * Verify that stripping markdown wrappers (`RE_MD_CODE_BLOCK`) preserves exact internal indentation and does not strip critical trailing newlines from replacement code blocks.
+1. **Post-Stream ANSI Erase & Re-Render:**
+   * Streaming raw SSE tokens to stdout and subsequently moving the cursor up (`\033[{lines}A\r\x1b[0J`) to overwrite the stream with `rich.markdown.Markdown` is the intentional visual design. Do NOT suggest removing cursor jumping or using static un-rendered prints.
+2. **Rich Global Monkeypatching:**
+   * `Markdown.elements["fence"] = CleanCodeBlock` and `Markdown.elements["code_block"] = CleanCodeBlock` are intentional monkeypatches to force transparent terminal backgrounds and strip ultrawide trailing whitespace padding.
+3. **Custom Exception Hook (`sys.excepthook`):**
+   * Overriding `sys.excepthook` with `_clean_sigint_handler` is deliberate to prevent Python traceback dumps on `Ctrl+C` and ensure clean terminal exits.
+4. **Thread-Local HTTP Session (`_local_session`):**
+   * Using `threading.local()` with pooled connection adapters (`pool_connections=20`, `pool_maxsize=20`) is deliberate for safe concurrency without multi-process overhead.
+5. **Atomic File Swapping for State:**
+   * Writing `.state.json` to a PID-tagged temporary file followed by `os.replace` is the intentional zero-daemon persistence pattern.
+6. **Heuristic Pre-Parsing (`prepare_markdown` / `_heal_tool_args`):**
+   * Pre-processing text to auto-close triple backticks (` ``` `) or recover malformed JSON tool calls is deliberate to maintain compatibility with small local models (≤27B SLMs).
+7. **Hard Turn Cap (`range(10)`):**
+   * Limiting autonomous turns to 10 iterations in `agentic_turn` is an intentional circuit breaker against infinite agentic loops.
 
-### C. Parameter Alias Collision & Precedence Inversion
-* In `normalize_params`:
-  * Ensure alias lists for one tool do not accidentally consume or clobber parameters intended for another (e.g., `pattern` vs `old_str`, `search` vs `target_str`, `replace` as string replacement vs `replace` as boolean overwrite).
-  * Ensure that popping aliases (`cleaned.pop(alt)`) cannot overwrite an already-normalized standard key (`old_str`, `new_str`, `path`, `command`).
-  * Verify boolean/overwrite parsing: confirm that non-boolean values like `"replace": "some text"` are never coerced to `overwrite=True`.
+---
 
-### D. Path Cleansing & Boundary Stripping
-* In `normalize_params["path"]`:
-  * Verify that grep/search line suffixes (`mod_a.py:1` or `mod_a.py:1:10`) are stripped without corrupting paths containing legitimate digits (e.g., `app_v2.py`, `model3.py`).
-  * Ensure paths with directory traversal (`../`) or absolute container roots (`/workspace`, `/home/user`) are healed into relative paths without dropping target subdirectories.
+## 2. High-Priority Bugs to Hunt (Real Vulnerabilities)
 
-### E. Idempotency of `heal_tool_call` and `normalize_params`
-* When a model emits an already-valid, compliant OpenAI tool call (standard JSON, correct parameter names, clean strings), `heal_tool_call` and `normalize_params` must be strictly idempotent:
-  `normalize_params(normalize_params(args)) == normalize_params(args)`
-* Flag any mutation that alters valid code strings when re-parsed.
+Audit `modules/agent_core.py` rigorously against these specific vulnerability classes:
 
-### F. Re-serialization and Schema Validity
-* In `extract_fallback_tool_calls`:
-  * Verify that all generated tool call entries strictly produce valid JSON strings for `function.arguments`:
-    `json.dumps(normalize_params(...))`
-  * Ensure `calls` never appends dictionaries with identical IDs or un-serializable objects that crash `agent_core.py`.
+### A. Terminal State & Cursor Restoration
+* **Hidden Cursor Leaks:**
+  Verify that whenever `\033[?25l` (hide cursor) is emitted (via `InlineSpinner` or `RichStreamer`), `\033[?25h` (show cursor) is guaranteed to execute in an unconditional `finally:` block or exception handler.
+* **Stream Exception Traps:**
+  Check `agentic_turn` and `RichStreamer.stop()` for unhandled network exceptions or early returns where `streamer.stop()` is bypassed, leaving the cursor hidden or in an inconsistent terminal state.
+
+### B. ANSI Arithmetic & Geometry Boundary Errors
+* **`get_cursor_up_count()` Calculations:**
+  * Inspect line length wrapping against terminal width (`console.width` / `cols`). Check for off-by-one errors when line lengths are exact multiples of terminal width.
+  * Check behavior on empty strings, trailing newlines (`\n\n`), wide Unicode characters, and ANSI color escapes embedded in the text.
+* **Viewport Clamping Overflow:**
+  * Evaluate cursor jump behavior (`\033[{lines}A`) when `num_lines` exceeds the physical terminal height (`shutil.get_terminal_size().lines`). Verify whether terminal buffer scrolling will cause cursor movement to clamp at row 0 and corrupt the scrollback buffer.
+
+### C. Concurrency, File Locks & State Race Conditions
+* **`_state_lock` Scope:**
+  * Verify that `_state_cache` and `_state_mtime` cannot become desynchronized or cause partial reads if multiple subagents or background threads call `get_state()` and `save_state()` concurrently.
+* **Tempfile Collisions:**
+  * Verify `tmp = f"{STATE_FILE}.tmp.{os.getpid()}.{threading.get_ident()}"` cleanup on exceptions. Ensure orphaned `.tmp` files are not leaked if `os.replace` raises `OSError`.
+
+### D. SSE Stream Chunking & Network Hygiene
+* **Multibyte UTF-8 Boundary Splitting:**
+  * In `res.iter_lines()`, determine if multibyte UTF-8 characters split across raw socket chunks can be corrupted by `.decode("utf-8", errors="ignore")`.
+* **Socket Exhaustion & Unclosed Responses:**
+  * Verify that `res.close()` is guaranteed in the `finally:` block of `agentic_turn()` across all network error paths, including `400 Context Overflow`, `KeyboardInterrupt`, and remote socket drops.
+* **Adapter / Fallback Infinite Recursion:**
+  * Check `adapters.extract_fallback_tool_calls(ans_text)`. Verify whether malformed tool outputs can cause infinite retry loops that do not increment `consecutive_tool_failures`.
+
+### E. Memory Leaks & Large Payload Containment
+* **History Growth Under Pruning:**
+  * In `agentic_turn`, evaluate whether `messages = prune_history(messages)` correctly frees token memory when consecutive tool calls generate multi-megabyte tool outputs.
+* **Scratchpad File Descriptors:**
+  * Verify `scratch_file` writing inside `.agent/scratchpad/` properly handles disk errors, quota exhaustion, and workspace path escaping.
+
+---
+
+## 3. Reporting Requirements
+
+Format each discovered issue using this exact schema:
+
+1. **Title & Severity:** `[CRITICAL | HIGH | MEDIUM | LOW] <Clear Vulnerability Summary>`
+2. **Location:** `modules/agent_core.py:<line_number>`
+3. **Vulnerability Mechanics:** First-principles explanation of how the bug manifests at runtime.
+4. **Failure Trigger / PoC:** Concrete scenario (e.g. terminal size, network cutoff, specific token sequence) that triggers the defect.
+5. **Surgical Patch:** Minimal, drop-in Python fix addressing the issue without altering existing architectural invariants.

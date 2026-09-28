@@ -154,7 +154,7 @@ def resolve_path(workspace: str, target: str) -> str:
             first_comp = "/" + rel_candidate.split("/", 1)[0]
             # Protected system trees must never be remapped into workspace relative paths
             if first_comp not in FORBIDDEN_SYS_DIRS and first_comp not in ("/tmp", "/opt", "/home"):
-                if os.path.exists(os.path.join(ws_real, rel_candidate)):
+                if os.path.exists(os.path.join(ws_real, rel_candidate)) or not os.path.exists(first_comp):
                     clean = rel_candidate
 
     return os.path.realpath(clean if os.path.isabs(clean) else os.path.join(ws_real, clean))

@@ -12,7 +12,7 @@ import urllib.request as urlreq
 from collections.abc import Callable
 from typing import Any
 
-from rich.box import DOUBLE, HEAVY, HORIZONTALS, ROUNDED, SQUARE, Box
+from rich.box import DOUBLE, HEAVY, HORIZONTALS, ROUNDED, SQUARE
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
@@ -29,17 +29,14 @@ CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
 _console = Console()
 RE_UNSAFE_SHELL_CHARS: re.Pattern = re.compile(r'[\[\]{}()=\'"",;|<>#`$&*!\\\r\n]')
 
-BOX_DIAMOND = Box("◈─┬◈\n│ ││\n├─┼┤\n│ ││\n├─┼┤\n├─┼┤\n│ ││\n◈─┴◈\n")
-BOX_DASHED = Box("┌┄┬┐\n┆ ┆┆\n├┄┼┤\n┆ ┆┆\n├┄┼┤\n├┄┼┤\n┆ ┆┆\n└┄┴┘\n")
-
 STYLES = {
     1: ("∿ Py Agent", ROUNDED, "green", "bold bright_green"),
     2: ("∿ Py Agent", DOUBLE, "bright_blue", "bold bright_blue"),
     3: ("∿ Py Agent", SQUARE, "bright_yellow", "bold bright_yellow"),
     4: ("∿ Py Agent", HEAVY, "bright_cyan", "bold bright_white"),
     5: ("∿ Py Agent", HORIZONTALS, "dim white", "bold cyan"),
-    6: ("∿ Py Agent", BOX_DIAMOND, "bright_cyan", "bold bright_white"),
-    7: ("∿ Py Agent", BOX_DASHED, "bright_magenta", "bold bright_magenta"),
+    6: ("∿ Py Agent", ROUNDED, "green", "bold bright_green"),
+    7: ("∿", ROUNDED, "green", "bold bright_green"),
 }
 
 RICH_TO_ANSI = {
@@ -76,7 +73,7 @@ class InlineSpinner:
                 import agent_core
                 _core_module = agent_core
             box = _core_module.get_state("box_style", 1)
-            border_col = "green" if box == 8 else STYLES.get(box, STYLES[1])[2]
+            border_col = "green" if box == 6 else STYLES.get(box, STYLES[1])[2]
             return RICH_TO_ANSI.get(border_col, "\033[1;32m")
         except Exception:
             return "\033[1;32m"
@@ -413,7 +410,8 @@ def draw_session_box(
 
     table.add_row("database:", db_status)
 
-    if box_style == 8:
+    # Style #6: Dual-Chamber Inset Panel
+    if box_style == 6:
         title_str = f"  ∿ Py Agent [sub-agent #{sub_id}]" if sub_id else "  ∿ Py Agent"
         max_val_len = max(len(model_name), len(display_dir), len(display_profile), len(db_status), 16)
         sep_str = " " + "─" * (10 + 2 + max_val_len)
@@ -497,7 +495,6 @@ def run_interactive_selection(
 
             key = get_key()
 
-            # Empty key indicates EOF or read failure — treat strictly as abort
             if not key or key == "\x1b":
                 sys.stderr.write("\r\x1b[2K\x1b[1A\r\x1b[2K")
                 sys.stderr.flush()
@@ -565,7 +562,7 @@ def show_help() -> None:
         ("/m, /map", "Toggle Codebase index-map"),
         ("/mem \\[save|list]", "Toggle & manage OKF memory files"),
         ("/hs, /hindsight", "Retrospective session memory audit"),
-        ("/box \\[1-8]", "Box style preset"),
+        ("/box \\[1-7]", "Box style preset"),
         ("/task \\[goal]", "Autonomous task loop"),
         ("/t \\[N|show|hide]", "Reasoning budget & display"),
         ("/g, /yolo", "Toggle confirmation gates (YOLO)"),
@@ -658,7 +655,6 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
         seen_cats.add(cat_name)
         options.append((k, lbl, tok_lbl, cat_header))
 
-    # Guard against missing or empty profiles directory before touching terminal cursor
     if not options:
         sys.stderr.write(f"\033[1;33m[ai init]\033[0m No agent profiles found in {profiles_dir}. Using defaults.\n")
         return "chat", False, False, False, False, False

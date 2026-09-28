@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [Hardened Production Ready]"""
 
+import fcntl
 import json
 import os
 import re
@@ -18,7 +19,6 @@ import agent_context as context
 from agent_context import (
     estimate_token_count,
     get_accurate_token_count,
-    prune_history,
     show_memory_status,
 )
 import agent_ipython as ipython
@@ -33,14 +33,80 @@ from agent_vision import (
 )
 import requests
 from rich.console import Console
+from rich.markdown import CodeBlock, Markdown
+from rich.segment import Segment
+from rich.syntax import Syntax
 
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
 STATE_FILE: str = os.path.join(CFG_DIR, ".state.json")
+STATE_LOCK_FILE: str = os.path.join(CFG_DIR, ".state.lock")
+
+
+def prune_history(msg_list: list[dict[str, Any]], max_tokens: int | None = None) -> list[dict[str, Any]]:
+    """In-place history pruner ensuring caller reference aliasing is preserved."""
+    pruned = context.prune_history(msg_list, max_tokens=max_tokens) if max_tokens else context.prune_history(msg_list)
+    msg_list[:] = pruned
+    return msg_list
+
+
+# Standard code-block renderer: transparent background, high-contrast syntax highlighting, zero trailing whitespace
+class CleanCodeBlock(CodeBlock):
+    def __rich_console__(self, console: Any, options: Any) -> Any:
+        code = str(self.text).rstrip()
+        lexer = getattr(self, "lexer_name", "text") or "text"
+        theme = getattr(self, "theme", "") or str(get_state("code_theme", "monokai"))
+        syntax = Syntax(
+            code,
+            lexer,
+            theme=theme,
+            word_wrap=False,
+            padding=0,
+            background_color="default",
+        )
+        lines = console.render_lines(syntax, options)
+        for line in lines:
+            while line and line[-1].text.isspace():
+                line.pop()
+            if line and line[-1].text != line[-1].text.rstrip(" "):
+                line[-1] = Segment(line[-1].text.rstrip(" "), line[-1].style)
+            yield from line
+            yield Segment.line()
+
+
+Markdown.elements["fence"] = CleanCodeBlock
+Markdown.elements["code_block"] = CleanCodeBlock
+
+
+def prepare_markdown(text: str) -> str:
+    """Repairs unclosed fences and wraps bare code emitted by small SLMs."""
+    if not text:
+        return ""
+    if text.count("```") % 2 != 0:
+        text = text.rstrip() + "\n```"
+    elif "```" not in text:
+        code_kw = ("import ", "from ", "def ", "class ", "return ", "print(")
+        if any(l.lstrip().startswith(code_kw) for l in text.splitlines()):
+            text = f"```python\n{text.strip()}\n```"
+    return text
+
+
+def get_cursor_up_count(text: str, width: int) -> int:
+    if not text:
+        return 0
+    w = max(1, width)
+    raw_lines = text.split("\n")
+    up = 0
+    for line in raw_lines[:-1]:
+        up += max(1, (len(line) + w - 1) // w)
+    last = raw_lines[-1]
+    if last:
+        last_visual = max(1, (len(last) + w - 1) // w)
+        up += last_visual - 1
+    return up
 
 
 def _get_console(stderr: bool = False) -> Console:
-    cols = max(40, shutil.get_terminal_size((80, 24)).columns - 2)
-    return Console(stderr=stderr, width=cols)
+    return Console(stderr=stderr)
 
 
 _console, _console_err = _get_console(False), _get_console(True)
@@ -92,7 +158,7 @@ DEFAULTS = {
     "show_thinking": True, "reasoning_active": True, "reasoning_budget": 500,
     "compact_mode": 0, "sidebar_hidden": False, "footer_hidden": True, "tips_card_hidden": False,
     "tui_theme": "code1", "voice_auto_submit": True, "tts_enabled": False, "tui_borders_enabled": True,
-    "render_markdown": True, "adapters_active": False, "calm_mode": False
+    "render_markdown": True, "adapters_active": False, "calm_mode": False, "code_theme": "monokai"
 }
 
 try:
@@ -105,6 +171,7 @@ except ImportError:
 _state_lock = threading.Lock()
 _state_cache: dict[str, Any] = {}
 _state_mtime: float = 0.0
+_state_size: int = 0
 
 
 def _get_int_env(key: str, default: int) -> int:
@@ -133,44 +200,60 @@ def _heal_tool_args(raw: Any) -> dict[str, Any]:
 
 
 def get_state(key: str = "", default: Any = None) -> Any:
-    global _state_cache, _state_mtime
+    global _state_cache, _state_mtime, _state_size
     with _state_lock:
-        try:
-            if os.path.exists(STATE_FILE):
-                mtime = os.path.getmtime(STATE_FILE)
-                if mtime != _state_mtime or not _state_cache:
+        if os.path.exists(STATE_FILE):
+            try:
+                st = os.stat(STATE_FILE)
+                sig = (st.st_mtime, st.st_size)
+                if sig != (_state_mtime, _state_size) or not _state_cache:
                     with open(STATE_FILE, "r", encoding="utf-8") as f:
                         _state_cache = json.load(f)
-                    _state_mtime = mtime
-        except (OSError, json.JSONDecodeError):
-            pass
+                    _state_mtime, _state_size = sig
+            except (OSError, json.JSONDecodeError):
+                pass
         merged = {**DEFAULTS, **_state_cache}
         return merged.get(key, default) if key else merged
 
 
 def save_state(key: str, value: Any) -> None:
-    global _state_cache, _state_mtime
+    global _state_cache, _state_mtime, _state_size
     with _state_lock:
-        try:
-            if os.path.exists(STATE_FILE):
-                with open(STATE_FILE, "r", encoding="utf-8") as f:
-                    _state_cache = json.load(f)
-        except (OSError, json.JSONDecodeError):
-            pass
-        st = {**DEFAULTS, **_state_cache}
-        st[key] = value
+        os.makedirs(CFG_DIR, exist_ok=True)
+        lock_fd = None
         tmp = f"{STATE_FILE}.tmp.{os.getpid()}.{threading.get_ident()}"
         try:
-            os.makedirs(CFG_DIR, exist_ok=True)
+            lock_fd = os.open(STATE_LOCK_FILE, os.O_CREAT | os.O_RDWR, 0o600)
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            current = {}
+            if os.path.exists(STATE_FILE):
+                try:
+                    with open(STATE_FILE, "r", encoding="utf-8") as f:
+                        current = json.load(f)
+                except (OSError, json.JSONDecodeError):
+                    current = {}
+            st = {**current, key: value}
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(st, f, indent=2)
             os.replace(tmp, STATE_FILE)
             _state_cache = st
-            _state_mtime = os.path.getmtime(STATE_FILE)
-        except OSError:
+            try:
+                st_stat = os.stat(STATE_FILE)
+                _state_mtime, _state_size = st_stat.st_mtime, st_stat.st_size
+            except OSError:
+                pass
+        except OSError as e:
+            sys.stderr.write(f"[sys] Failed to persist state '{key}': {e}\n")
             if os.path.exists(tmp):
                 try:
                     os.remove(tmp)
+                except OSError:
+                    pass
+        finally:
+            if lock_fd is not None:
+                try:
+                    fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                    os.close(lock_fd)
                 except OSError:
                     pass
 
@@ -191,8 +274,9 @@ def is_calm_cli() -> bool:
 
 def run_mod(module_name: str, *args: str) -> str:
     for base in (os.path.join(CFG_DIR, "modules"), os.path.join(CFG_DIR, "tools"), CFG_DIR):
-        target = os.path.join(base, module_name)
-        if os.path.isfile(target):
+        base_real = os.path.realpath(base)
+        target = os.path.realpath(os.path.join(base, module_name))
+        if os.path.isfile(target) and os.path.commonpath([base_real, target]) == base_real:
             try:
                 cmd = [sys.executable, target] + list(args) if target.endswith(".py") else [target] + list(args)
                 res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
@@ -208,6 +292,7 @@ class RichStreamer:
     def __init__(self, prefix: str = "", active: bool = True, spinner: Any = None) -> None:
         self.prefix, self.active, self.spinner = prefix, active and sys.stdout.isatty(), spinner
         self.acc_think, self.acc_ans, self.phase, self.think_hdr_printed, self.ans_started = "", "", "INIT", False, False
+        self.in_post_think = False
 
     def _stop_spinner(self, done_msg: str | None = None) -> None:
         if self.spinner:
@@ -239,24 +324,36 @@ class RichStreamer:
             return
 
         if "<think>" in token:
-            self.phase = "THINKING"
+            if self.ans_started:
+                self.in_post_think = True
+            else:
+                self.phase = "THINKING"
             token = token.replace("<think>", "")
 
         show_think = os.environ.get("AI_SHOW_THINKING", "1") == "1"
 
         if "</think>" in token:
             parts = token.split("</think>", 1)
+            if self.in_post_think:
+                self.in_post_think = False
+                if len(parts) > 1 and parts[1]:
+                    self.update(parts[1])
+                return
             if parts[0]:
                 self.update(parts[0])
-            if show_think and self.think_hdr_printed:
+            if show_think and self.think_hdr_printed and not self.ans_started:
                 sep = "" if self.acc_think.endswith("\n") else "\r\n"
-                _console_err.print(f"{sep}[dim]╰────────────────────────────────────────────────────────[/dim]")
+                _console_err.print(f"{sep}[dim]╰────────────────────────────────────────────────────────[/dim]\n")
                 sys.stderr.flush()
             self.phase = "ANSWER"
             if self.spinner and not self.ans_started:
                 self.spinner.start("Drafting tool action...")
             if len(parts) > 1 and parts[1]:
                 self.update(parts[1])
+            return
+
+        if self.in_post_think:
+            self.acc_think += token
             return
 
         if self.phase == "INIT":
@@ -287,7 +384,7 @@ class RichStreamer:
                     return
                 self._stop_spinner()
                 self.ans_started, p_clean = True, self.prefix.strip()
-                p_str = f"{p_clean} " if p_clean else ""
+                p_str = f"{p_clean}\n\n" if (p_clean and tok.startswith(("```", "#", "---"))) else (f"{p_clean} " if p_clean else "")
                 p_style = "\033[1;32m" if "Agent" in p_clean else "\033[1;36m"
                 if p_str:
                     try:
@@ -316,12 +413,13 @@ class RichStreamer:
             return
 
         show_think = os.environ.get("AI_SHOW_THINKING", "1") == "1"
-        if self.phase == "THINKING" and show_think and self.think_hdr_printed:
+        if self.phase == "THINKING" and show_think and self.think_hdr_printed and not self.ans_started:
             sep = "" if self.acc_think.endswith("\n") else "\r\n"
-            _console_err.print(f"{sep}[dim]╰────────────────────────────────────────────────────────[/dim]")
+            _console_err.print(f"{sep}[dim]╰────────────────────────────────────────────────────────[/dim]\n")
             self.phase = "ANSWER"
 
-        if self.ans_started:
+        render_md = bool(get_state("render_markdown", True))
+        if self.ans_started and not render_md:
             try:
                 sys.stdout.write("\r\n")
                 sys.stdout.flush()
@@ -329,7 +427,15 @@ class RichStreamer:
                 pass
 
 
-def _log_turn_usage(model: str, in_tok: int, out_tok: int, cost: float, show_stats: bool, ctx_used: int | None = None, cached_tok: int = 0, *args: Any, **kwargs: Any) -> None:
+def _log_turn_usage(
+    model: str,
+    in_tok: int,
+    out_tok: int,
+    cost: float,
+    show_stats: bool,
+    ctx_used: int | None = None,
+    cached_tok: int = 0,
+) -> None:
     if not usage_log:
         return
     try:
@@ -349,7 +455,11 @@ def _process_stream_chunk(content: str, reasoning: str, in_think_block: bool) ->
         if "<|tool_call" in content:
             content = RE_TOOL_CALL_BLOCK.sub("", content).replace("<|tool_call_start|>", "").replace("<|tool_call_end|>", "")
     if reasoning:
-        return (f"<think>{reasoning}", True, True) if not in_think_block else (reasoning, True, True)
+        think_part = f"<think>{reasoning}" if not in_think_block else reasoning
+        if content:
+            closer = "" if "</think>" in content else "</think>"
+            return f"{think_part}{closer}{content}", False, ("</think>" not in content)
+        return think_part, True, True
     if content:
         if in_think_block and "</think>" not in content:
             return f"</think>{content}", False, False
@@ -377,7 +487,6 @@ def _print_tool_output(spinner: Any, text: str) -> None:
     if sys.stdout.isatty() and text.strip():
         if spinner:
             spinner.stop()
-        # Copy-safe 4-space indent; disable markup to prevent bracketed logs ([Errno 2]) from crashing Rich
         clean_lines = text.strip().splitlines()
         preview = clean_lines[:15]
         for line in preview:
@@ -411,6 +520,7 @@ def agentic_turn(
     resolved_model, streamer, res = None, None, None
     max_ctx = _get_int_env("AI_MAX_TOKENS", 8192)
     is_calm = is_calm_cli()
+    is_sub = _get_int_env("AI_SUBAGENT_DEPTH", 0) >= 1
 
     consecutive_tool_failures = 0
     tools_disabled = False
@@ -434,7 +544,7 @@ def agentic_turn(
             spinner.update_context(curr_tok, max_ctx)
 
         if curr_tok > int(max_ctx * 0.75):
-            messages = prune_history(messages, max_tokens=int(max_ctx * 0.55))
+            messages[:] = prune_history(messages, max_tokens=int(max_ctx * 0.55))
 
         if consecutive_tool_failures >= 2:
             decomp_steer = (
@@ -465,8 +575,11 @@ def agentic_turn(
             else:
                 active_tools = list(tools.SMOL_TOOLS)
 
-            if _get_int_env("AI_SUBAGENT_DEPTH", 0) >= 1:
-                active_tools = [t for t in active_tools if t.get("function", {}).get("name") != "delegate_task"]
+            if is_sub:
+                active_tools = [
+                    t for t in active_tools
+                    if t.get("function", {}).get("name") not in ("delegate_task", "exec_python")
+                ]
 
             if use_gnd and hasattr(tools, "WEB_TOOL"):
                 active_tools.append(tools.WEB_TOOL)
@@ -480,6 +593,8 @@ def agentic_turn(
         if spinner and not getattr(spinner, "active", False):
             user_msg_count = len([m for m in messages if m.get("role") == "user"])
             spinner.start("Preloading..." if (_round == 0 and user_msg_count <= 1) else "Working...")
+
+        chunk_errors = 0
         try:
             res = session.post(url, json=body_tools, headers={"Content-Type": "application/json", "User-Agent": "py-agent", **headers}, timeout=timeout, stream=True)
             if res.status_code != 200:
@@ -488,7 +603,7 @@ def agentic_turn(
                     if spinner:
                         spinner.stop(leave_on_screen=False)
                     sys.stderr.write("\r\033[1;33m[sys] Context window full. Auto-compacting conversation history...\033[0m\r\n")
-                    messages = prune_history(messages, max_tokens=int(max_ctx * 0.5))
+                    messages[:] = prune_history(messages, max_tokens=int(max_ctx * 0.5))
                     continue
 
                 if spinner:
@@ -515,7 +630,7 @@ def agentic_turn(
 
                 try:
                     captured_usage = data.get("usage") or captured_usage
-                    captured_timings = data.get("timings") or data.get("usage", {}).get("timings") or captured_timings
+                    captured_timings = data.get("timings") or (data.get("usage") or {}).get("timings") or captured_timings
 
                     if m_candidate := (data.get("model") or (data.get("choices", [{}])[0].get("model") if data.get("choices") else None)):
                         if not resolved_model or resolved_model == "openrouter/free" or m_candidate != "openrouter/free":
@@ -531,7 +646,7 @@ def agentic_turn(
                     reasoning = delta.get("reasoning_content", "") or delta.get("thinking", "") or delta.get("reasoning", "") or ""
 
                     is_tool_incoming = bool(delta.get("tool_calls")) or any(k in content for k in ("<tool_call", "<function=", "<｜DSML｜", "<|tool_call"))
-                    if is_tool_incoming and not is_calm:
+                    if is_tool_incoming and not is_calm and not is_sub:
                         if streamer:
                             streamer.stop()
                             streamer = None
@@ -546,7 +661,6 @@ def agentic_turn(
 
                         if first_chunk:
                             first_chunk = False
-                            is_sub = _get_int_env("AI_SUBAGENT_DEPTH", 0) >= 1
                             if not is_calm and not is_sub:
                                 stream_pfx = prefix or ("Agent:" if is_agent else "AI:")
                                 streamer = RichStreamer(prefix=stream_pfx, spinner=spinner)
@@ -554,18 +668,22 @@ def agentic_turn(
                             if speed_test and show_stats:
                                 speed_test.start()
 
-                        if streamer and not is_calm:
+                        if streamer and not is_calm and not is_sub:
                             streamer.update(chunk_to_stream)
 
                         if speed_test and show_stats:
                             speed_test.count_token(chunk_to_stream, is_thinking=is_thinking)
                     elif "<tool_call" in content or "<function=" in content:
                         acc_content.append(content)
-                        if not is_calm and spinner and not spinner.active:
+                        if not is_calm and not is_sub and spinner and not spinner.active:
                             spinner.start("Drafting tool action...")
 
                     for tc in delta.get("tool_calls", []):
-                        idx = tc.get("index", 0)
+                        raw_idx = tc.get("index", 0)
+                        try:
+                            idx = int(raw_idx)
+                        except (TypeError, ValueError):
+                            idx = 0
                         tc_entry = tool_calls_map.setdefault(
                             idx,
                             {"id": tc.get("id", ""), "type": "function", "function": {"name": tc.get("function", {}).get("name", ""), "arguments": ""}}
@@ -583,11 +701,9 @@ def agentic_turn(
                             if speed_test and show_stats and not is_calm:
                                 speed_test.count_token(arg_chunk, is_thinking=False)
                 except Exception as e:
-                    if os.environ.get("AI_DEBUG") == "1":
+                    chunk_errors += 1
+                    if os.environ.get("AI_DEBUG") == "1" or chunk_errors == 1:
                         sys.stderr.write(f"\r\n[debug] Stream chunk processing error: {e}\r\n")
-
-            if streamer and not is_calm:
-                print()
 
             ans_text = "".join(acc_content)
             in_tok, out_tok = _calc_turn_tokens(ans_text, messages, captured_usage, is_local)
@@ -610,12 +726,46 @@ def agentic_turn(
                         spinner.update_context(in_tok + final_out, max_ctx)
                     spinner.stop(leave_on_screen=is_calm)
 
+                clean_reply = re.sub(r"<think>[\s\S]*?(?:</think>|$)", "", ans_text).strip()
+                render_md = bool(get_state("render_markdown", True))
+                p_prefix = prefix or ("Agent: " if is_agent else "AI: ")
+                p_style = "bold green" if "Agent" in p_prefix else "bold cyan"
+
                 if is_calm and ans_text:
-                    p_prefix = prefix or ("Agent: " if is_agent else "AI: ")
-                    clean_reply = re.sub(r"<think>[\s\S]*?(?:</think>|$)", "", ans_text).strip()
                     if clean_reply:
-                        _console.print(f"[bold green]{p_prefix}[/bold green]", end="")
-                        _console.print(clean_reply, markup=False, highlight=False)
+                        clean_reply = prepare_markdown(clean_reply)
+                        _console.print(f"[{p_style}]{p_prefix}[/{p_style}] ", end="")
+                        if render_md:
+                            code_th = str(get_state("code_theme", "monokai"))
+                            _console.print(Markdown(clean_reply, code_theme=code_th, justify="default"))
+                        else:
+                            _console.print(clean_reply, markup=False, highlight=False)
+                            _console.print()
+                elif render_md and streamer and clean_reply and not is_sub:
+                    cols = shutil.get_terminal_size((80, 24)).columns
+                    num_lines = get_cursor_up_count(streamer.acc_ans, cols)
+
+                    try:
+                        if num_lines > 0:
+                            sys.stdout.write(f"\033[{num_lines}A\r\x1b[0J")
+                        else:
+                            sys.stdout.write("\r\x1b[0J")
+                        sys.stdout.flush()
+                    except OSError:
+                        pass
+
+                    clean_reply = prepare_markdown(clean_reply)
+                    code_th = str(get_state("code_theme", "monokai"))
+                    p_header = f"[{p_style}]{p_prefix.strip()}[/{p_style}]"
+                    if clean_reply.startswith(("```", "#", "---")):
+                        _console.print(f"{p_header}\n")
+                        _console.print(Markdown(clean_reply, code_theme=code_th, justify="default"))
+                    else:
+                        _console.print(f"{p_header} ", end="")
+                        _console.print(Markdown(clean_reply, code_theme=code_th, justify="default"))
+
+                if show_stats and sys.stdout.isatty():
+                    print()
 
                 if speed_test and show_stats and not first_chunk:
                     speed_test.end(actual_out_tokens=out_tok, is_local=is_local, resolved_model=final_model, active_model=body.get("model"))
@@ -636,121 +786,6 @@ def agentic_turn(
 
                 _log_turn_usage(final_model, in_tok, final_out, 0.0, show_stats, in_tok + final_out, cached_tok=cached_tok)
                 return ans_text if ans_text else "(No response generated)"
-
-            healed_calls = []
-            for call_idx, tc in enumerate(calls):
-                raw_fname = tc.get("function", {}).get("name", "")
-                raw_args = tc.get("function", {}).get("arguments") or ""
-                if adapters_on:
-                    fname, healed_dict = adapters.heal_tool_call(raw_fname, raw_args)
-                else:
-                    fname = raw_fname
-                    healed_dict = _heal_tool_args(raw_args)
-
-                sig = (
-                    tc.get("thought_signature")
-                    or tc.get("thoughtSignature")
-                    or (tc.get("extra_content", {}).get("google", {}).get("thought_signature") if isinstance(tc.get("extra_content"), dict) else None)
-                    or "skip_thought_signature_validator"
-                )
-                unique_cid = tc.get("id") or f"call_{int(time.time())}_{call_idx}_{uuid.uuid4().hex[:6]}"
-                healed_calls.append({
-                    "id": unique_cid,
-                    "type": "function",
-                    "function": {
-                        "name": fname,
-                        "arguments": json.dumps(healed_dict)
-                    },
-                    "thought_signature": sig,
-                    "extra_content": {"google": {"thought_signature": sig}}
-                })
-
-            clean_ans_text = re.sub(r"<think>[\s\S]*?(?:</think>|$)", "", ans_text).strip()
-            messages.append({"role": "assistant", "content": clean_ans_text or "", "tool_calls": healed_calls})
-
-            for call_idx, tc in enumerate(healed_calls):
-                fname = tc.get("function", {}).get("name", "")
-                args = json.loads(tc.get("function", {}).get("arguments", "{}"))
-                brief = str(args.get("code") or args.get("symbol") or args.get("path") or args.get("command") or args.get("pattern") or args.get("goal") or "")[:100].replace("\n", " ")
-                verb = TOOL_VERBS.get(fname, "working")
-
-                if not is_calm and spinner and getattr(spinner, "active", False):
-                    spinner.stop()
-
-                if not is_calm:
-                    _console_err.print(f"\n  [dim]∗ {verb} •[/dim] [cyan]{fname}[/cyan] [dim italic]{brief}[/dim italic]")
-                if spinner and fname != "delegate_task" and not getattr(spinner, "active", False):
-                    spinner.start(f"{verb.capitalize()}...")
-
-                t_start = time.time()
-                try:
-                    result = _run_edit_tool(fname, args, workspace, spinner)
-                except Exception as e:
-                    result = f"[tool error] {e}"
-
-                if not is_calm and spinner and getattr(spinner, "active", False):
-                    spinner.stop()
-
-                if not is_calm:
-                    elapsed = max(0.01, time.time() - t_start)
-                    _console_err.print(f"  [green]✔[/green] [dim]Done ({elapsed:.1f}s)[/dim]")
-
-                scratch_threshold = max(12000, int(max_ctx * 3.5 * 0.35))
-
-                if len(result) > scratch_threshold:
-                    scratch_dir = os.path.join(workspace, ".agent", "scratchpad")
-                    os.makedirs(scratch_dir, exist_ok=True)
-                    scratch_file = os.path.join(scratch_dir, f"{fname}_{int(time.time())}.txt")
-                    try:
-                        with open(scratch_file, "w", encoding="utf-8") as sf:
-                            sf.write(result)
-                        rel_scratch = os.path.relpath(scratch_file, workspace)
-                        preview_len = int(scratch_threshold * 0.75)
-                        pruned_result = (
-                            result[:preview_len]
-                            + f"\n... [Output truncated: Full {len(result):,} chars saved to '{rel_scratch}'. "
-                            + f"Use read_file('{rel_scratch}', line_start, line_end) to inspect specific blocks.]"
-                        )
-                    except OSError:
-                        pruned_result = result[:6000] + "\n... [snipped]"
-                else:
-                    pruned_result = result
-
-                messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": fname, "content": pruned_result})
-
-                # Check for explicit user decline; backfill unexecuted parallel calls to maintain schema consistency
-                if str(result).strip().startswith("[denied]"):
-                    for rem_tc in healed_calls[call_idx + 1:]:
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": rem_tc.get("id", ""),
-                            "name": rem_tc.get("function", {}).get("name", ""),
-                            "content": "[cancelled: prior action declined by user]",
-                        })
-                    messages.append({
-                        "role": "user",
-                        "content": "[System Notice]: Action was explicitly declined by the user. Do not retry or attempt alternative workarounds for this resource.",
-                    })
-                    return "[denied] Action cancelled by user."
-
-                # Line-anchored check for Final Answer in exec_python tool output
-                if fname == "exec_python" and RE_FINAL_ANSWER_SENTINEL.search(result):
-                    messages.append({
-                        "role": "user",
-                        "content": "[System Directive]: final_answer() was received. Output your concise summary to the user now. Do not call any further tools.",
-                    })
-                    tools_disabled = True
-                    body_tools.pop("tools", None)
-
-                if result.startswith("[error") or result.startswith("[tool error"):
-                    consecutive_tool_failures += 1
-                else:
-                    consecutive_tool_failures = 0
-
-                if fname == "read_file" and len(messages) >= 4:
-                    prev_tools = [m for m in messages[-4:] if m.get("role") == "tool" and m.get("name") == "read_file"]
-                    if len(prev_tools) >= 2:
-                        messages.append({"role": "user", "content": "[System Directive]: File already inspected. Do not read again. Proceed immediately to edit, test, or final answer."})
 
         except KeyboardInterrupt:
             if streamer:
@@ -785,6 +820,147 @@ def agentic_turn(
                     res.close()
                 except Exception:
                     pass
+
+        # ── Tool Execution Phase ─────────────────────────────────────────────
+        try:
+            healed_calls = []
+            for call_idx, tc in enumerate(calls):
+                raw_fname = tc.get("function", {}).get("name", "")
+                raw_args = tc.get("function", {}).get("arguments") or ""
+                if adapters_on:
+                    fname, healed_dict = adapters.heal_tool_call(raw_fname, raw_args)
+                else:
+                    fname = raw_fname
+                    healed_dict = _heal_tool_args(raw_args)
+
+                # Single-component path healing: remap SLM leading slash ('/foo.py') to workspace-relative,
+                # while strictly guarding protected OS root directories (/etc, /usr, /root, /tmp, /var, etc.)
+                if isinstance(healed_dict, dict) and "path" in healed_dict and isinstance(healed_dict["path"], str):
+                    p_val = healed_dict["path"].strip()
+                    if p_val.startswith("/"):
+                        p_parts = p_val.strip("/").split("/")
+                        _sys_roots = {"etc", "usr", "root", "tmp", "var", "bin", "sbin", "boot", "dev", "proc", "sys", "home", "opt", "srv"}
+                        if len(p_parts) == 1 and p_parts[0] not in _sys_roots:
+                            healed_dict["path"] = p_parts[0]
+
+                sig = (
+                    tc.get("thought_signature")
+                    or tc.get("thoughtSignature")
+                    or (tc.get("extra_content", {}).get("google", {}).get("thought_signature") if isinstance(tc.get("extra_content"), dict) else None)
+                    or "skip_thought_signature_validator"
+                )
+                unique_cid = tc.get("id") or f"call_{int(time.time())}_{call_idx}_{uuid.uuid4().hex[:6]}"
+                healed_calls.append({
+                    "id": unique_cid,
+                    "type": "function",
+                    "function": {
+                        "name": fname,
+                        "arguments": json.dumps(healed_dict)
+                    },
+                    "thought_signature": sig,
+                    "extra_content": {"google": {"thought_signature": sig}}
+                })
+
+            clean_ans_text = re.sub(r"<think>[\s\S]*?(?:</think>|$)", "", ans_text).strip()
+            messages.append({"role": "assistant", "content": clean_ans_text or "", "tool_calls": healed_calls})
+
+            for call_idx, tc in enumerate(healed_calls):
+                fname = tc.get("function", {}).get("name", "")
+                args = json.loads(tc.get("function", {}).get("arguments", "{}"))
+                brief = str(args.get("code") or args.get("symbol") or args.get("path") or args.get("command") or args.get("pattern") or args.get("goal") or "")[:100].replace("\n", " ")
+                verb = TOOL_VERBS.get(fname, "working")
+
+                if not is_calm and not is_sub and spinner and getattr(spinner, "active", False):
+                    spinner.stop()
+
+                if not is_calm:
+                    _console_err.print(f"  [dim]∗ {verb} •[/dim] [cyan]{fname}[/cyan] [dim italic]{brief}[/dim italic]")
+                if spinner and fname != "delegate_task" and not getattr(spinner, "active", False):
+                    spinner.start(f"{verb.capitalize()}...")
+
+                t_start = time.time()
+                try:
+                    result = _run_edit_tool(fname, args, workspace, spinner)
+                except Exception as e:
+                    result = f"[tool error] {e}"
+
+                if not is_calm and not is_sub and spinner and getattr(spinner, "active", False):
+                    spinner.stop()
+
+                if not is_calm:
+                    elapsed = max(0.01, time.time() - t_start)
+                    _console_err.print(f"  [green]✔[/green] [dim]Done ({elapsed:.1f}s)[/dim]\n")
+
+                scratch_threshold = max(12000, int(max_ctx * 3.5 * 0.35))
+
+                if len(result) > scratch_threshold:
+                    scratch_dir = os.path.join(workspace, ".agent", "scratchpad")
+                    os.makedirs(scratch_dir, exist_ok=True)
+                    safe_fname = re.sub(r"[^A-Za-z0-9_.-]", "_", fname)[:40] or "tool"
+                    scratch_file = os.path.join(scratch_dir, f"{safe_fname}_{int(time.time())}.txt")
+                    try:
+                        with open(scratch_file, "w", encoding="utf-8") as sf:
+                            sf.write(result)
+                        rel_scratch = os.path.relpath(scratch_file, workspace)
+                        preview_len = int(scratch_threshold * 0.75)
+                        pruned_result = (
+                            result[:preview_len]
+                            + f"\n... [Output truncated: Full {len(result):,} chars saved to '{rel_scratch}'. "
+                            + f"Use read_file('{rel_scratch}', line_start, line_end) to inspect specific blocks.]"
+                        )
+                    except OSError:
+                        pruned_result = result[:6000] + "\n... [snipped]"
+                else:
+                    pruned_result = result
+
+                messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": fname, "content": pruned_result})
+
+                if str(result).strip().startswith("[denied]"):
+                    for rem_tc in healed_calls[call_idx + 1:]:
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": rem_tc.get("id", ""),
+                            "name": rem_tc.get("function", {}).get("name", ""),
+                            "content": "[cancelled: prior action declined by user]",
+                        })
+                    messages.append({
+                        "role": "user",
+                        "content": "[System Directive]: Action was explicitly declined by the user. Do not retry or attempt alternative workarounds for this resource.",
+                    })
+                    return "[denied] Action cancelled by user."
+
+                if fname == "exec_python" and RE_FINAL_ANSWER_SENTINEL.search(result):
+                    messages.append({
+                        "role": "user",
+                        "content": "[System Directive]: final_answer() was received. Output your concise summary to the user now. Do not call any further tools.",
+                    })
+                    tools_disabled = True
+
+                if result.startswith("[error") or result.startswith("[tool error"):
+                    consecutive_tool_failures += 1
+                else:
+                    consecutive_tool_failures = 0
+
+                if fname == "read_file" and len(messages) >= 4:
+                    prev_tools = [m for m in messages[-4:] if m.get("role") == "tool" and m.get("name") == "read_file"]
+                    if len(prev_tools) >= 2:
+                        messages.append({"role": "user", "content": "[System Directive]: File already inspected. Do not read again. Proceed immediately to edit, test, or final answer."})
+
+        except KeyboardInterrupt:
+            if streamer:
+                try:
+                    streamer.stop(interrupted=True)
+                except Exception:
+                    pass
+            raise
+        except Exception as e:
+            if spinner:
+                try:
+                    spinner.stop(leave_on_screen=False)
+                except Exception:
+                    pass
+            sys.stderr.write(f"\r\033[90m[sys] Tool execution error: {e}\033[0m\r\n")
+            return None
 
     if spinner:
         spinner.stop(leave_on_screen=False)
