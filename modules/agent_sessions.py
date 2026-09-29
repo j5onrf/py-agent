@@ -6,6 +6,7 @@ import json
 import os
 import re
 import sqlite3
+import subprocess
 import sys
 import time
 from contextlib import closing
@@ -130,7 +131,6 @@ def connect_db(db_path: str) -> sqlite3.Connection:
 
 def cleanup_all_stale_locks() -> None:
     """Universal reaper: cleans orphaned .session and .active_cd.* files for dead processes."""
-    # 1. Clean dead session lockfiles across all workspaces
     session_dir = os.path.join(CFG_DIR, ".active_sessions")
     if os.path.isdir(session_dir):
         for fpath in glob.glob(os.path.join(session_dir, "*.session")):
@@ -149,7 +149,6 @@ def cleanup_all_stale_locks() -> None:
             except (ValueError, OSError):
                 pass
 
-    # 2. Clean dead shell teleport files (.active_cd.<PID>)
     for fpath in glob.glob(os.path.join(CFG_DIR, ".active_cd.*")):
         try:
             pid = int(fpath.rsplit(".", 1)[-1])
@@ -171,7 +170,6 @@ def get_sub_agent_id(workspace: str, target_pid: int | None = None) -> int:
     ws_clean = _sanitize_workspace(workspace)
     current_pid = target_pid or os.getpid()
 
-    # Atomically claim our session lockfile first to close the TOCTOU race
     session_file = os.path.join(session_dir, f"{ws_clean}-{current_pid}.session")
     try:
         fd = os.open(session_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
@@ -244,6 +242,46 @@ def cleanup_sub_agent(workspace: str, target_pid: int | None = None) -> None:
             os.remove(direct)
         except OSError:
             pass
+
+
+def create_subagent_worktree(workspace: str, agent_id: int) -> str:
+    """Spawns an isolated git worktree for a sub-agent if conditions are met."""
+    if agent_id == 0:
+        return workspace
+
+    wt_dir = os.path.join(workspace, ".agent", "worktrees", f"agent-{agent_id}")
+    branch_name = f"subagent-{agent_id}"
+
+    res = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=workspace, capture_output=True, text=True)
+    if res.returncode != 0 or res.stdout.strip() != "true":
+        return workspace
+
+    os.makedirs(os.path.dirname(wt_dir), exist_ok=True)
+    if not os.path.exists(wt_dir):
+        subprocess.run(["git", "worktree", "add", "-b", branch_name, wt_dir, "HEAD"], cwd=workspace, capture_output=True)
+
+    return wt_dir if os.path.exists(wt_dir) else workspace
+
+
+def cleanup_subagent_worktree(workspace: str, agent_id: int, merge: bool = False) -> None:
+    """Removes the worktree and optionally merges its branch. Triggered on sub-agent exit."""
+    if agent_id == 0:
+        return
+
+    wt_dir = os.path.join(workspace, ".agent", "worktrees", f"agent-{agent_id}")
+    branch_name = f"subagent-{agent_id}"
+
+    res = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=workspace, capture_output=True)
+    if res.returncode != 0:
+        return
+
+    if merge and os.path.exists(wt_dir):
+        subprocess.run(["git", "merge", branch_name], cwd=workspace, capture_output=True)
+
+    if os.path.exists(wt_dir):
+        subprocess.run(["git", "worktree", "remove", "--force", wt_dir], cwd=workspace, capture_output=True)
+
+    subprocess.run(["git", "branch", "-D", branch_name], cwd=workspace, capture_output=True)
 
 
 def init_db(workspace: str) -> None:
@@ -437,7 +475,3 @@ if __name__ == "__main__":
         print(get_turns_count(workspace_name))
     elif cmd == "clear":
         clear_turns(workspace_name)
-    elif cmd == "get-sub-id":
-        print(get_sub_agent_id(workspace_name, int(args[2]) if len(args) > 2 else os.getppid()))
-    elif cmd == "cleanup-sub":
-        cleanup_sub_agent(workspace_name, int(args[2]) if len(args) > 2 else os.getppid())

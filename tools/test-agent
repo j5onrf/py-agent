@@ -189,7 +189,25 @@ try:
     p3_f = len(remaining_locks) == 0
     print_result("Sub-Agent Exit Cleanup", p3_f, "All active lockfiles unlinked")
 
-    all_passed = all_passed and p3_a and p3_b and p3_c and p3_d and p3_e and p3_f
+    # 7. Sub-Agent Git Worktree Sandbox & Teardown
+    git_test_dir = os.path.join(sandbox_dir, "git_sandbox_repo")
+    os.makedirs(git_test_dir, exist_ok=True)
+    subprocess.run(["git", "init"], cwd=git_test_dir, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Tester"], cwd=git_test_dir, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "tester@local.ai"], cwd=git_test_dir, capture_output=True)
+    with open(os.path.join(git_test_dir, "init.txt"), "w") as f:
+        f.write("root")
+    subprocess.run(["git", "add", "."], cwd=git_test_dir, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=git_test_dir, capture_output=True)
+
+    wt_path = sessions.create_subagent_worktree(git_test_dir, 1)
+    wt_created = os.path.isdir(wt_path) and wt_path != git_test_dir
+    sessions.cleanup_subagent_worktree(git_test_dir, 1, merge=False)
+    wt_cleaned = not os.path.exists(wt_path)
+    p3_g = wt_created and wt_cleaned
+    print_result("Sub-Agent Git Worktree Sandbox & Teardown", p3_g, "Created .agent/worktrees/agent-1 and cleanly pruned")
+
+    all_passed = all_passed and p3_a and p3_b and p3_c and p3_d and p3_e and p3_f and p3_g
 
     # --- PASS 4: OPEN KNOWLEDGE FORMAT (OKF) MARKDOWN MEMORY SUBSYSTEM ---
     print(f"\n{CYAN}[Pass 4/10] Open Knowledge Format (OKF) Markdown Memory Subsystem{RESET}")

@@ -1,6 +1,6 @@
 # Py-Agent Workspace & Session Manual
 
-Autonomous local developer agent with OKF memory, in-memory Python, and codebase indexing.
+Autonomous local developer agent with memory, iPython, and codebase index-map.
 
 ```console
 ~ ❯ ling
@@ -37,58 +37,52 @@ Agent: Task complete: Sum is 311.
 
 ## UI Box Themes
 
-Switch CLI box styles using `/box [1-7]` (or type `/box` to cycle). Selection persists in `~/.config/py-agent/.state.json`.
+Switch CLI box styles using `/box [1-7]` (or `/box` to cycle). Persists in `~/.config/py-agent/.state.json`.
 
-* **Style #1:** Codex Rounded (Default)
-* **Style #2:** Double Border
-* **Style #3:** Crisp Square
-* **Style #4:** Heavy Square
-* **Style #5:** Minimalist Line
-* **Style #6:** Dual-Chamber Inset
-* **Style #7:** Minimalist Clean
+* **#1:** Codex Rounded (Default)
+* **#2:** Double Border
+* **#3:** Crisp Square
+* **#4:** Heavy Square
+* **#5:** Minimalist Line
+* **#6:** Dual-Chamber Inset
+* **#7:** Minimalist Clean
 
 ---
 
 ## 1. Directory Structure
 
-All auto-created agent metadata files are strictly isolated inside `project/.agent/` to keep workspaces clean.
+Workspace metadata is isolated inside `project/.agent/`.
 
 | Path | Purpose |
 | :--- | :--- |
-| `~/.config/py-agent/projects/.database/*.db` | Global SQLite session checkpoints (`-save` / `-load`) and turn rollbacks. |
-| `~/.config/py-agent/.active_sessions/` | Sub-agent PID lockfiles for process tracking. |
-| `~/.config/py-agent/.spend_ledger.json` | Cloud API token spend ledger (zero I/O on local models). |
-| `~/<workspace>/.agent/config.json` | Workspace profile, YOLO, Map, Py, Memory, and Adapter settings. |
-| `~/<workspace>/.agent/memory/*.md` | Git-native Open Knowledge Format (OKF) Markdown files for persistent directives. |
+| `~/.config/py-agent/projects/.database/*.db` | SQLite session checkpoints (`-save` / `-load`) and turn rollbacks. |
+| `~/.config/py-agent/.active_sessions/` | Active process PID tracking files. |
+| `~/.config/py-agent/.spend_ledger.json` | Cloud API token spend ledger. |
+| `~/<workspace>/.agent/config.json` | Workspace runtime profile, YOLO, Map, Py, and Memory state. |
+| `~/<workspace>/.agent/memory/*.md` | Git-native Open Knowledge Format (OKF) Markdown files. |
 | `~/<workspace>/.agent/history.md` | Chronological session conversation log. |
-| `~/<workspace>/.agent/scratchpad/` | Large tool outputs (>1,500 chars) offloaded to preserve active context. |
-| `~/<workspace>/.agent/index-map-<project>.txt` | Shorthand codebase index map (injected into context when Map is ON). |
-| `~/<workspace>/.agent/index-map-memory-<project>.db` | Relational AST symbol graph & SQLite FTS5 index. |
+| `~/<workspace>/.agent/scratchpad/` | Large tool outputs (>1,500 chars) offloaded to preserve context. |
+| `~/<workspace>/.agent/worktrees/agent-<id>/` | Ephemeral Git worktree checkouts for sub-agent sandboxing. |
+| `~/<workspace>/.agent/index-map-<project>.txt` | Shorthand codebase index map. |
+| `~/<workspace>/.agent/index-map-memory-<project>.db` | AST symbol graph & SQLite FTS5 index. |
 
 ---
 
 ## 2. Profile Selector (`ai init`)
 
-Running `ai init <path>` initializes a workspace and opens the interactive profile selector with instant RAM frontmatter pre-caching and single-letter hotkeys.
+`ai init <path>` opens the profile selector with RAM frontmatter pre-caching.
 
 ```console
-[ai init] Select default Agent Profile for workspace session-test:
+[ai init] Select default Agent Profile for workspace Ling-tiny:
 
   ─── Cloud ─────────────────────────
-  >  1. Cloud                (~633t)
+     1. Cloud                (~633t)
      2. Deepseek             (~431t)
 
   ─── Local ─────────────────────────
      1. Katcoder             (~574t)
-     2. Lfm2                 (~588t)
-     3. Lingtiny             (~458t)
-     4. Minicpm              (~464t)
-     5. Nexn25               (~606t)
-     6. Occamy               (~575t)
-     7. Ornith               (~677t)
-     8. Q2Bu                 (~466t)
-     9. Qwen38D              (~444t)
-    10. Tielcoder            (~522t)
+  >  2. Lingtiny             (~458t)
+     3. Qwen38D              (~444t)
 
   ─── Roles ─────────────────────────
      1. Sysadmin             (~442t)
@@ -97,20 +91,17 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
     Tools: python + native (7 tools, ~760t)
 
   :: Enter select    Up/Down navigate    Esc: default
-     Tab: YOLO [ON]    m: Map [OFF]    d: Mem [OFF]    p: Py [ON]    a: Adp [OFF]
+     Tab: YOLO [ON]    m: Map [OFF]    d: Mem [OFF]    p: Py [OFF]    a: Adp [ON]
 ```
 
-* **Customize Profiles:** Modify or create profile `.md` files in `~/.config/py-agent/skills/profiles/`.
-* **Instant Frontmatter Auto-Sync:** Navigating `Up` / `Down` across profiles automatically synchronizes the toggle row to reflect each profile's frontmatter defaults.
-* **Real-Time Tools Inspector:** The `Tools:` line dynamically calculates active tool schema cost (`ipython`, `native json`, or `index-map`) alongside prompt context add-ons (`[+Map | +Mem]`).
-* **Single-Letter Overrides:**
-  * **`Tab`** -> Toggle Autonomous YOLO mode (`[ON]` disables confirmation gates).
-  * **`m`** -> Toggle Codebase Index-Map (12 tools + AST graph intelligence).
-  * **`d`** -> Toggle Database Session Memory & OKF Memory Directives.
-  * **`p`** -> Toggle In-Memory IPython Kernel Harness (`exec_python` tool execution).
-  * **`a`** -> Toggle Self-Healing Adapters (`agent_adapters.py` universal out-of-band safety net).
-* **Hierarchy of Precedence:** Manual toggle overrides take precedence over frontmatter defaults and are saved to `<workspace>/.agent/config.json`.
-* **Auto-Compiling Index-Map:** When Map is `[ON]`, `ai init` automatically builds missing or stale index maps on startup and injects them directly into turn 0.
+* **Customize Profiles:** `.md` files in `~/.config/py-agent/skills/profiles/`.
+* **Navigation:** `Up`/`Down` synchronizes toggles to the profile's frontmatter defaults.
+* **Overrides:**
+  * **`Tab`** -> YOLO Mode (`[ON]` disables tool confirmation prompts).
+  * **`m`** -> Codebase Map (12 tools + AST graph).
+  * **`d`** -> Session Memory & OKF directives.
+  * **`p`** -> IPython Kernel (`exec_python` tool execution).
+  * **`a`** -> Universal Self-Healing Adapters (`/adp`).
 
 ---
 
@@ -122,6 +113,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 │                                                                     │
 │   Surfaces & Audio                                                  │
 │   /pyc, /pyc web         - PyCode IDE (Desktop / WebUI)             │
+│   /dsh                   - DeepSeek Harness (dsh)                   │
 │   /webui, /web           - WebUI gateway (llama.cpp)                │
 │   /tui                   - Terminal UI (PyTUI)                      │
 │   /calm, /zen            - Toggle Calm mode (boat progress)         │
@@ -148,7 +140,7 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 │   file <path>            - Load file into context                   │
 │                                                                     │
 │   Session Management                                                │
-│   /box [1-8]             - Box style preset                         │
+│   /box [1-7]             - Box style preset                         │
 │   /stats                 - Generation speed stats                   │
 │   /md                    - Toggle Markdown stream rendering         │
 │   /clear, /c             - Soft clear active chat history           │
@@ -161,86 +153,79 @@ Running `ai init <path>` initializes a workspace and opens the interactive profi
 
 ---
 
-## 4. Adaptive Resilience & Model Tuning (/adp)
+## 4. Adaptive Resilience (/adp)
 
-* **Scope to Single Tasks:** Keep prompts focused on 1 file or 1 objective per turn for maximum accuracy.
-* **Universal Safety Net:** While originally designed for Sub-27B SLMs, `/adp` operates non-invasively across all model tiers (including 27B+ and MTP speculative builds). If a model emits 100% compliant native tool calls, the adapter does not execute (0ms overhead). If quantization or speculative drafting causes markdown code fencing or parameter aliasing, `/adp` rescues the call on Turn 1, preventing multi-turn recovery loops.
+The `/adp` layer rescues malformed JSON, unclosed quotes, and sequence drift on Turn 1 with zero runtime overhead on compliant models.
 
-### 4.1 Adapter Performance Impact (`eval-stack`)
-
-Empirical results across models with `/adp` active:
-
-| Benchmark Challenge | Without Adapters | With `/adp` Active | Efficiency Gain |
+| Benchmark Challenge | Without `/adp` | With `/adp` Active | Efficiency Gain |
 | :--- | :---: | :---: | :--- |
-| **AG-03 (Surgical Edit & Test)** | 16 turns | **6 turns** | **62% fewer turns** (eliminates diff-retry loops) |
-| **AG-07 (In-Memory Batch Loop)** | 14 turns | **2 turns** | **85% fewer turns** (executes batch script on Turn 1) |
-| **Full Suite Pass Rate** | Retries / Failures | **100% (7/7)** | **Zero unhandled syntax or format failures** |
+| **AG-03 (Surgical Edit & Test)** | 16 turns | **6 turns** | **62% fewer turns** |
+| **AG-07 (In-Memory Batch Loop)** | 14 turns | **2 turns** | **85% fewer turns** |
+| **Full Suite Pass Rate** | Failures / Retries | **100% (7/7)** | **Zero unhandled syntax failures** |
 
 ---
 
-## 5. Tooling & Safety
+## 5. Tooling, Context & Safety
 
-### 5.1 Operational Tiers & Token Footprint
-* **Pure Chat (`ai`):** **211 tokens** (ultra-minimal, zero tools).
+### 5.1 Operational Tiers
+* **Pure Chat (`ai`):** **211 tokens** (zero tools).
 * **Native Mode (`Py: OFF`):** **6 tools (`SMOL_TOOLS`)**, ~680t schema.
 * **Dual Mode (`Py: ON`):** **7 tools (`python + native`)**, ~760t schema with ~95% KV cache hits.
-* **Full Graph Mode (`Map: ON`):** **12 tools (`EDIT_TOOLS`)**, ~1.1kt schema.
-* **OKF Memory:** `.agent/memory/*.md` with 1-shot `/hs` retrospective audits.
+* **Index-Map Mode (`Map: ON`):** **12 tools (`EDIT_TOOLS`)**, ~1.1kt schema.
 
-### 5.2 Guardrails & Execution
-* **Zero-Trust Safety Gate (`agent_security.py`):** System mutations (`sudo`, `pacman`, `systemctl`) and out-of-bounds file access strictly ignore YOLO mode and always require interactive `[y/N]` confirmation.
-* **Surgical File Edits (`edit_file`):** 3-stage replacement (Exact -> Whitespace-tolerant -> 88% Fuzzy match).
-* **Adaptive Reads (`read_file`):** Automatically switches to an AST structural outline when files exceed your active context ceiling (250 to 4,000 lines).
+### 5.2 Context Ceilings & Scratchpad Scaling
+File ceilings dynamically adapt to `AI_MAX_TOKENS`:
 
-### 5.3 Adaptive Context Protection & File Inspection (`read_file`)
-
-`py-agent` automatically scales file-reading ceilings and scratchpad thresholds based on your active context budget (`AI_MAX_TOKENS`):
-
-| Context Budget (`AI_MAX_TOKENS`) | Target Environment | Auto Line Ceiling | Single-Call Character Cap |
+| Budget (`AI_MAX_TOKENS`) | Target Environment | Line Ceiling | Character Cap |
 | :--- | :--- | :---: | :---: |
-| **<= 16k** (8,192 - 16,384) | Local Models (2B-35B) | **250 lines** | ~20,000 chars |
-| **32k** (32,768) | Cloud / 24GB GPU | **1,000 lines** | ~45,000 chars |
-| **64k** (65,536) | DeepSeek / Claude / GPT | **2,000 lines** | ~90,000 chars |
-| **>= 128k** (131,072) | High-Capacity Cloud | **4,000 lines** | ~180,000 chars |
+| **<= 16k** | Local Models (2B–35B) | **250 lines** | ~20,000 chars |
+| **32k** | Cloud / 24GB GPU | **1,000 lines** | ~45,000 chars |
+| **64k** | DeepSeek / Claude / GPT | **2,000 lines** | ~90,000 chars |
+| **>= 128k** | High-Capacity Cloud | **4,000 lines** | ~180,000 chars |
 
-#### Configuring `AI_MAX_TOKENS`:
-* **Model Selector TUI:** Run `model select` (or `cloud`), choose Context Budget, and select a preset or custom limit.
-* **Persistent Config (`.env`):** Edit `~/.config/py-agent/.env` and set `AI_MAX_TOKENS=<limit>`.
-* **Scratchpad Offload:** Automatically offloads to `.agent/scratchpad/` only when tool output exceeds ~35% of the active context window.
+* **Zero-Trust Safety (`agent_security.py`):** Privileged mutations (`sudo`, `pacman`, `systemctl`) and out-of-bounds paths strictly require interactive `[y/N]` confirmation regardless of YOLO mode.
+* **Surgical Edits (`edit_file`):** 3-stage replacement (Exact -> Whitespace-tolerant -> 88% Fuzzy match).
 
 ---
 
-## 6. Project Memory (OKF)
+## 6. Memory & Directives
 
-Persistent directives stored in `.agent/memory/*.md` that load automatically into prompt context when Memory is ON (`/mem` or `d` in selector).
-
-### Quick Commands:
-* `/mem save <topic>: <rule>` -> Save a new rule or preference (e.g. `/mem save os: User runs Arch Linux`).
-* `/mem list` (or `/mem ls`) -> List active memory files and token weights.
-* `/mem` -> Toggle memory injection ON / OFF.
-* `/hs` (or `/hindsight`) -> Audit session history and extract durable engineering rules into `.agent/memory/`.
-
-### Manual Editing:
-Create or edit any `.md` file directly in `<workspace>/.agent/memory/` using any text editor (`nvim`, `nano`, `code`). Files are loaded in `< 0.1ms` on startup with zero background process overhead.
+* **Global (`skills/system_instructions.md`):** Always-on rules applied across all workspaces.
+* **Workspace (`<workspace>/.agent/memory/*.md`):** Project rules loaded when Memory is `[ON]`.
+  * `/mem save <topic>: <rule>` -> Save rule (e.g. `/mem save os: Arch Linux`).
+  * `/mem list` -> List active memory files and weights.
+  * `/mem` -> Toggle memory injection ON / OFF.
+  * `/hs` -> Hindsight audit: extracts session decisions into memory files.
 
 ---
 
 ## 7. Client Surfaces
 
-* **PyCode React Desktop IDE (`/pyc`):** Connects via ACP stdio JSON-RPC 2.0 with live token streaming and workspace synchronization.
-* **llama.cpp WebAgent (`/webui`):** Autonomous tool reverse proxy for `llama-server` (:8080) with auxiliary Gemini Flash Lite vision pre-processing.
-* **Textual PyTUI (`/tui`):** Full-screen terminal interface with `uvloop` background services, real-time thought shimmer, adaptive theme typography, and compact Quick Tips.
+* **PyCode Desktop IDE (`/pyc`, `/pyc web`):** ACP stdio JSON-RPC 2.0 with live token streaming and diff review.
+* **DeepSeek Harness (`/dsh`):** DSH Web Cockpit bound to the active workspace.
+* **llama.cpp WebAgent (`/webui`):** Autonomous tool reverse proxy for `llama-server` (`:8080`).
+* **Textual PyTUI (`/tui`):** Full-screen terminal dashboard with real-time thought shimmer.
 
 ---
 
-## 8. Official Skill Frontmatter Schema
+## 8. Sub-Agent Worktree Sandboxing
 
-Skill profiles (`skills/profiles/**/*.md`) configure agent persona and defaults using YAML frontmatter (`---`).
+Opening a secondary terminal in an active Git workspace automatically assigns `[sub-agent #1]` and provisions an isolated Git worktree (`.agent/worktrees/agent-1`).
+
+* **Zero-Blast-Radius:** File writes, command executions, and tests occur strictly on a dedicated branch (`subagent-1`), leaving the main branch pristine.
+* **Parallel Workflows:** Multiple terminals can execute independent tasks on the same codebase without file collisions.
+* **Teardown & Merge:** Exiting the sub-agent (`q` or `Ctrl+C`) prompts to `Merge` or `Discard`, cleanly deleting the worktree directory and branch.
+
+---
+
+## 9. Skill Frontmatter Schema
+
+Skill profiles (`skills/profiles/**/*.md`) configure agent persona and flags using YAML frontmatter:
 
 ```yaml
 ---
 description: "Autonomous software engineer"
-category: "Cloud"          # Optional: Cloud (0) → Local (1) → Roles (2) → Custom (3+)
+category: "Local"          # Optional: Cloud (0) → Local (1) → Roles (2) → Custom (3+)
 yolo: true
 map: true
 memory: true
@@ -249,5 +234,3 @@ adapters: true
 reasoning_budget: 500
 ---
 ```
-
-* **`category` (optional):** Section header in `ai init`. Built-in ordering: `Cloud` (0) → `Local` (1) → `Roles` (2) → Any custom frontmatter categories (3+). If omitted, category is inferred automatically from the filename.

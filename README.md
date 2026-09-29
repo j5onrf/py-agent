@@ -95,7 +95,7 @@
 <p align="center">
   <sub><code>/yolo</code> &nbsp;•&nbsp; <code>/py</code> repl &nbsp;•&nbsp; <code>/adp</code> adapters &nbsp;•&nbsp; <code>/t</code> reasoning &nbsp;•&nbsp; <code>/task</code> loop &nbsp;•&nbsp; <code>/s</code> skills &nbsp;•&nbsp; <code>/a</code> allmeta</sub><br>
   <sub><code>/m</code> map &nbsp;•&nbsp; <code>file</code> load &nbsp;•&nbsp; <code>/mem</code> memory &nbsp;•&nbsp; <code>/com</code> compact &nbsp;•&nbsp; <code>/gnd</code> search &nbsp;•&nbsp; <code>/hs</code> audit &nbsp;•&nbsp; <code>/tok</code> tokens &nbsp;•&nbsp; <code>/sync</code></sub><br>
-  <sub><code>/tui</code> &nbsp;•&nbsp; <code>/pyc</code> &nbsp;•&nbsp; <code>/dsh</code> &nbsp;•&nbsp; <code>/webui</code> &nbsp;•&nbsp; <code>/calm</code> &nbsp;•&nbsp; <code>/v</code> voice &nbsp;•&nbsp; <code>/tts</code> &nbsp;•&nbsp; <code>/box</code> &nbsp;•&nbsp; <code>/stats</code> &nbsp;•&nbsp; <code>-save</code> / <code>-load</code> &nbsp;•&nbsp; <code>/c</code> &nbsp;•&nbsp; <code>/r</code></sub>
+  <sub><code>/tui</code> &nbsp;•&nbsp; <code>/pyc</code> &nbsp;•&nbsp; <code>/dsh</code> &nbsp;•&nbsp; <code>/webui</code> &nbsp;•&nbsp; <code>/calm</code> &nbsp;•&nbsp; <code>/v</code> &nbsp;•&nbsp; <code>/tts</code> &nbsp;•&nbsp; <code>/box</code> &nbsp;•&nbsp; <code>/stats</code> &nbsp;•&nbsp; <code>-save</code> / <code>-load</code> &nbsp;•&nbsp; <code>/c</code> &nbsp;•&nbsp; <code>/r</code></sub>
 </p>
 
 <br>

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.44] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production Ready]"""
+"""Py Agent [j5onrf] [v0.9.9.45] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production Ready]"""
 
 import json
 import os
@@ -167,10 +167,15 @@ def _sweep_dead_session_locks() -> None:
             pass
 
 
-def clean_exit(safe_name: str | None = None) -> None:
-    """Cleans active session locks and exits cleanly."""
+def clean_exit(safe_name: str | None = None, workspace_path: str | None = None, sub_id: int | None = None) -> None:
+    """Cleans active session locks and worktrees, then exits cleanly."""
     if safe_name:
         try:
+            if sub_id is not None and sub_id > 0 and workspace_path:
+                merge = False
+                if ui and hasattr(ui, "confirm_tool"):
+                    merge = ui.confirm_tool(f"Merge sub-agent #{sub_id} worktree into main branch")
+                sessions.cleanup_subagent_worktree(workspace_path, sub_id, merge=merge)
             sessions.cleanup_sub_agent(safe_name, os.getpid())
         except Exception:
             pass
@@ -227,7 +232,8 @@ def _launch_surface(script_path: str, is_agent: bool, ws_path: str, skill: str, 
 def run_interactive_chat(args: list[str]) -> None:
     """Primary interactive agent and chat engine."""
     is_agent = (args[0] == "--talk-chat")
-    workspace_path = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
+    original_workspace_path = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
+    workspace_path = original_workspace_path
     home_dir = os.path.expanduser("~")
     safe_name = core.workspace_safe_name(workspace_path, home_dir)
 
@@ -385,6 +391,14 @@ def run_interactive_chat(args: list[str]) -> None:
     _sweep_dead_session_locks()
     sub_id = sessions.get_sub_agent_id(safe_name, os.getpid()) if is_agent else None
 
+    if sub_id is not None and sub_id > 0:
+        workspace_path = sessions.create_subagent_worktree(original_workspace_path, sub_id)
+        os.environ["AI_WORKSPACE_PATH"] = workspace_path
+        try:
+            os.chdir(workspace_path)
+        except OSError:
+            pass
+
     ui.draw_session_box(workspace_path, home_dir, is_agent, db_turns, mem_count, memory_active, active_system_prompt, clean_name, sub_id=sub_id, box_style=st.get("box_style", 2))
 
     # 4. Interactive Command & Query Loop
@@ -424,7 +438,7 @@ def run_interactive_chat(args: list[str]) -> None:
                     show_stats=show_stats,
                     flash_status=_flash_status,
                     launch_surface_fn=_launch_surface,
-                    clean_exit_fn=clean_exit,
+                    clean_exit_fn=lambda name: clean_exit(name, workspace_path=original_workspace_path, sub_id=sub_id if is_agent else None),
                 )
 
                 handled, new_query = commands.dispatch_command(query, ctx)
@@ -510,7 +524,7 @@ def run_interactive_chat(args: list[str]) -> None:
                         if os.environ.get("AI_DEBUG") == "1":
                             sys.stderr.write(f"\r\n[debug] Failed to write history.md: {e}\r\n")
     except KeyboardInterrupt:
-        clean_exit(safe_name if is_agent else None)
+        clean_exit(safe_name if is_agent else None, workspace_path=original_workspace_path, sub_id=sub_id if is_agent else None)
 
 
 def run_direct_query(args: list[str]) -> None:
