@@ -552,6 +552,7 @@ def show_help() -> None:
     cmds = [
         ("/h", "Help menu"),
         ("/pyc, /pyc web", "PyCode IDE (Desktop / Web)"),
+        ("/dsh", "DeepSeek Harness (dsh)"),
         ("/webui, /web", "WebUI gateway (llama.cpp)"),
         ("/tui", "Terminal UI (PyTUI)"),
         ("/calm, /zen", "Toggle silent Calm mode (boat indicator)"),

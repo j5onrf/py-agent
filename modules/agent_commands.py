@@ -311,7 +311,7 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
     parts = q_strip.split()
     cmd = parts[0].lower() if parts else ""
 
-    if cmd in ("/m", "/map", "/graph"):
+    if cmd in ("/m", "/map"):
         return handle_map_toggle(ctx, parts), None
 
     if cmd in ("/mem", "/memory"):
@@ -326,10 +326,10 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
         ctx.flash_status(f"voice: {'auto' if auto_mode else ('on' if active else 'off')}")
         return True, None
 
-    if cmd in ("/tts", "/talk", "/tol"):
+    if cmd in ("/tts"):
         return handle_tts_cmd(ctx, parts), None
 
-    if cmd in ("/adp", "/adapter", "/adapters"):
+    if cmd in ("/adp"):
         cur_adp = core.get_state("adapters_active", False)
         new_adp = not cur_adp
         core.save_state("adapters_active", new_adp)
@@ -353,11 +353,11 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
             ctx.flash_status(f"py: {'on' if active else 'off'}")
             return True, None
 
-    if cmd in ("/task", "/loop", "/ralph"):
+    if cmd in ("/task", "/loop"):
         task_text = q_strip.split(maxsplit=1)[1] if len(parts) > 1 else ""
         loop_script = os.path.join(CFG_DIR, "tools", "loop", "loop.py")
         if not os.path.exists(loop_script):
-            loop_script = os.path.join(CFG_DIR, "tools", "loop", "ralph.py")
+            loop_script = os.path.join(CFG_DIR, "tools", "loop")
         subprocess.run([sys.executable, loop_script, task_text], cwd=ctx.workspace_path, env={**os.environ, "AI_WORKSPACE_PATH": ctx.workspace_path})
         return True, None
 
@@ -384,7 +384,12 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
         ctx.launch_surface_fn(os.path.join(CFG_DIR, "plugins", "pycode", "launch.sh"), ctx.is_agent, ctx.workspace_path, ctx.clean_name or "chat", ctx.chat_history, args=["web"] if is_web else [])
         return True, None
 
-    if cmd in ("/box", "/box-style", "/boxstyle"):
+    if cmd == "/dsh":
+        ui._console.print("[dim yellow][sys] Suspending CLI. Launching DeepSeek Harness...[/dim yellow]")
+        ctx.launch_surface_fn(os.path.join(CFG_DIR, "plugins", "dsh", "run-dsh.sh"), ctx.is_agent, ctx.workspace_path, ctx.clean_name or "chat", ctx.chat_history)
+        return True, None
+
+    if cmd in ("/box"):
         cur_box = core.get_state("box_style", 2)
         val = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() and 1 <= int(parts[1]) <= 8 else (cur_box % 8) + 1
         core.save_state("box_style", val)
@@ -506,7 +511,7 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
         ctx.flash_status("workspace: reset")
         return True, None
 
-    if cmd in ("/compact", "/com", "/cpt"):
+    if cmd in ("/compact", "/com"):
         before_toks = sum(core.get_accurate_token_count(m.get("content") or "") for m in ctx.chat_history)
         ctx.chat_history[:] = core.prune_history(ctx.chat_history)
         after_toks = sum(core.get_accurate_token_count(m.get("content") or "") for m in ctx.chat_history)
@@ -542,7 +547,7 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
         ctx.flash_status(f"checkpoint: {tag}")
         return True, None
 
-    if q_strip in ("-load", "-timeline"):
+    if q_strip in ("-load"):
         try:
             if restored_hist := sessions.rollback_checkpoint(ctx.safe_name):
                 ctx.chat_history[:] = restored_hist
