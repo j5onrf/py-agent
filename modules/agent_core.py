@@ -705,6 +705,9 @@ def agentic_turn(
                     if os.environ.get("AI_DEBUG") == "1" or chunk_errors == 1:
                         sys.stderr.write(f"\r\n[debug] Stream chunk processing error: {e}\r\n")
 
+            if streamer:
+                streamer.stop()
+
             ans_text = "".join(acc_content)
             in_tok, out_tok = _calc_turn_tokens(ans_text, messages, captured_usage, is_local)
             final_model = resolved_model or body.get("model") or "local-model"
@@ -727,6 +730,13 @@ def agentic_turn(
                     spinner.stop(leave_on_screen=is_calm)
 
                 clean_reply = re.sub(r"<think>[\s\S]*?(?:</think>|$)", "", ans_text).strip()
+                if not clean_reply and ans_text.strip():
+                    raw_fallback = re.sub(r"</?think>", "", ans_text).strip()
+                    if m := re.search(r"(?:[✓✔]\s*)?Task complete:.*", raw_fallback, re.IGNORECASE):
+                        clean_reply = m.group(0).strip()
+                    else:
+                        clean_reply = raw_fallback.splitlines()[-1].strip() if raw_fallback else ""
+
                 render_md = bool(get_state("render_markdown", True))
                 p_prefix = prefix or ("Agent: " if is_agent else "AI: ")
                 p_style = "bold green" if "Agent" in p_prefix else "bold cyan"
