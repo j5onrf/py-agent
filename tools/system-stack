@@ -131,7 +131,6 @@ def check_mysys_drift() -> tuple[str, str]:
         s_parts = s_base.split(".")
         a_parts = a_base.split(".")
 
-        # Numeric comparison on major/minor components eliminates version-prefix false positives
         if len(s_parts) >= 2 and len(a_parts) >= 2:
             if s_parts[:2] != a_parts[:2]:
                 res = ("\033[1;33mMISALIGNED\033[0m", f"Active ({active_kernel}) != Profile ({static_kernel})")
@@ -217,8 +216,7 @@ def pause_terminal(tty_in_fd: int, tty_out):
 
 
 def draw_menu(selected: int, tty_out):
-    # \x1b[H = cursor home, \x1b[2J = clear screen, \x1b[3J = clear scrollback buffer
-    tty_out.write("\x1b[H\x1b[2J\x1b[3J")
+    tty_out.write("\x1b[H\x1b[2J")
     amber = "\033[38;2;230;120;60m"
     reset = "\033[0m"
     bold = "\033[1m"
@@ -238,7 +236,6 @@ def draw_menu(selected: int, tty_out):
         f"   {dim}{'─' * box_width}{reset}\r\n\r\n"
     )
 
-    # Fixed-height, non-moving menu items: every item has its permanent description & spacing
     for i, item in enumerate(STACK_ITEMS):
         is_selected = i == selected
         prefix = f"   {amber}❯{reset} {bold}" if is_selected else "     "
@@ -261,96 +258,101 @@ def draw_menu(selected: int, tty_out):
 
 
 def run_target(item: dict, tty_in, tty_out, console):
-    # Wipe viewport and scrollback buffer before launching target
-    tty_out.write("\x1b[?25h\x1b[H\x1b[2J\x1b[3J")
+    # Exit alternate screen, clear viewport, and wipe previous run's scrollback
+    tty_out.write("\x1b[?1049l\x1b[?25h\x1b[H\x1b[2J\x1b[3J")
     tty_out.flush()
 
     cmd = item["cmd"]
     in_fd = tty_in.fileno()
 
-    if cmd == "view_mysys":
-        if os.path.isfile(MYSYS_FILE):
-            try:
-                with open(MYSYS_FILE, "r", encoding="utf-8", errors="replace") as f:
-                    content = f.read()
-                if HAS_RICH and console:
-                    console.print(Markdown(content))
-                else:
-                    tty_out.write(content + "\n")
-            except Exception as e:
-                tty_out.write(f"\033[1;31mError reading blueprint: {e}\033[0m\n")
-            pause_terminal(in_fd, tty_out)
-        else:
-            tty_out.write("\033[1;31mBlueprint file not found. Run option 9 to generate.\033[0m\n")
-            pause_terminal(in_fd, tty_out)
-
-    elif cmd == "interactive_aur":
-        tty_out.write("\033[1;36m==> Enter AUR package name to audit: \033[0m")
-        tty_out.flush()
-
-        pkg_chars = []
-        while True:
-            k = get_key_non_blocking(in_fd, timeout=60.0)
-            if k is None or k in ("esc", "ctrl_c", "q"):
-                pkg_chars = []
-                break
-            elif k == "enter":
-                break
-            elif k == "backspace":
-                if pkg_chars:
-                    pkg_chars.pop()
-                    tty_out.write("\b \b")
-                    tty_out.flush()
-            elif len(k) == 1 and len(pkg_chars) < 64 and k.isprintable():
-                pkg_chars.append(k)
-                tty_out.write(k)
-                tty_out.flush()
-
-        tty_out.write("\n")
-        tty_out.flush()
-        pkg = "".join(pkg_chars).strip()
-
-        if pkg:
-            if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_@.+-]*$", pkg):
-                tty_out.write(f"\033[1;31mInvalid package name format: '{pkg}'\033[0m\n")
+    try:
+        if cmd == "view_mysys":
+            if os.path.isfile(MYSYS_FILE):
+                try:
+                    with open(MYSYS_FILE, "r", encoding="utf-8", errors="replace") as f:
+                        content = f.read()
+                    if HAS_RICH and console:
+                        console.print(Markdown(content))
+                    else:
+                        tty_out.write(content + "\n")
+                except Exception as e:
+                    tty_out.write(f"\033[1;31mError reading blueprint: {e}\033[0m\n")
+                pause_terminal(in_fd, tty_out)
             else:
-                aur_bin = os.path.join(TOOLS_DIR, "aur-audit")
-                if os.access(aur_bin, os.X_OK):
+                tty_out.write("\033[1;31mBlueprint file not found. Run option 9 to generate.\033[0m\n")
+                pause_terminal(in_fd, tty_out)
+
+        elif cmd == "interactive_aur":
+            tty_out.write("\033[1;36m==> Enter AUR package name to audit: \033[0m")
+            tty_out.flush()
+
+            pkg_chars = []
+            while True:
+                k = get_key_non_blocking(in_fd, timeout=60.0)
+                if k is None or k in ("esc", "ctrl_c", "q"):
+                    pkg_chars = []
+                    break
+                elif k == "enter":
+                    break
+                elif k == "backspace":
+                    if pkg_chars:
+                        pkg_chars.pop()
+                        tty_out.write("\b \b")
+                        tty_out.flush()
+                elif len(k) == 1 and len(pkg_chars) < 64 and k.isprintable():
+                    pkg_chars.append(k)
+                    tty_out.write(k)
+                    tty_out.flush()
+
+            tty_out.write("\n")
+            tty_out.flush()
+            pkg = "".join(pkg_chars).strip()
+
+            if pkg:
+                if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_@.+-]*$", pkg):
+                    tty_out.write(f"\033[1;31mInvalid package name format: '{pkg}'\033[0m\n")
+                else:
+                    aur_bin = os.path.join(TOOLS_DIR, "aur-audit")
+                    if os.access(aur_bin, os.X_OK):
+                        try:
+                            subprocess.run([aur_bin, pkg], stdin=subprocess.DEVNULL, stdout=tty_out, stderr=tty_out, timeout=300)
+                        except subprocess.TimeoutExpired:
+                            tty_out.write("\033[1;31mAUR audit timed out after 300s\033[0m\n")
+                        except Exception as e:
+                            tty_out.write(f"\033[1;31mExecution error: {e}\033[0m\n")
+                    else:
+                        tty_out.write(f"\033[1;31mTool missing or not executable: {aur_bin}\033[0m\n")
+            pause_terminal(in_fd, tty_out)
+
+        else:
+            if isinstance(cmd, list) and len(cmd) > 0:
+                target_bin = cmd[0]
+                if os.access(target_bin, os.X_OK):
                     try:
-                        subprocess.run([aur_bin, pkg], stdin=subprocess.DEVNULL, stdout=tty_out, stderr=tty_out, timeout=300)
+                        if item.get("markdown") and HAS_RICH and console:
+                            res = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180)
+                            output = (res.stdout or "").strip()
+                            if output:
+                                console.print(Markdown(output))
+                            if res.returncode != 0:
+                                tty_out.write(f"\n\033[1;31m[exit code {res.returncode}]\033[0m\n")
+                                if res.stderr:
+                                    tty_out.write(f"\033[90m{res.stderr.strip()}\033[0m\n")
+                        else:
+                            res = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=tty_out, stderr=tty_out, timeout=180)
+                            if res.returncode != 0:
+                                tty_out.write(f"\n\033[1;31m[exit code {res.returncode}]\033[0m\n")
                     except subprocess.TimeoutExpired:
-                        tty_out.write("\033[1;31mAUR audit timed out after 300s\033[0m\n")
+                        tty_out.write(f"\033[1;31m{item['name']} timed out after 180s\033[0m\n")
                     except Exception as e:
                         tty_out.write(f"\033[1;31mExecution error: {e}\033[0m\n")
                 else:
-                    tty_out.write(f"\033[1;31mTool missing or not executable: {aur_bin}\033[0m\n")
-        pause_terminal(in_fd, tty_out)
-
-    else:
-        if isinstance(cmd, list) and len(cmd) > 0:
-            target_bin = cmd[0]
-            if os.access(target_bin, os.X_OK):
-                try:
-                    if item.get("markdown") and HAS_RICH and console:
-                        res = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180)
-                        output = (res.stdout or "").strip()
-                        if output:
-                            console.print(Markdown(output))
-                        if res.returncode != 0:
-                            tty_out.write(f"\n\033[1;31m[exit code {res.returncode}]\033[0m\n")
-                            if res.stderr:
-                                tty_out.write(f"\033[90m{res.stderr.strip()}\033[0m\n")
-                    else:
-                        res = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=tty_out, stderr=tty_out, timeout=180)
-                        if res.returncode != 0:
-                            tty_out.write(f"\n\033[1;31m[exit code {res.returncode}]\033[0m\n")
-                except subprocess.TimeoutExpired:
-                    tty_out.write(f"\033[1;31m{item['name']} timed out after 180s\033[0m\n")
-                except Exception as e:
-                    tty_out.write(f"\033[1;31mExecution error: {e}\033[0m\n")
-            else:
-                tty_out.write(f"\033[1;31mCommand missing or not executable: {target_bin}\033[0m\n")
+                    tty_out.write(f"\033[1;31mCommand missing or not executable: {target_bin}\033[0m\n")
             pause_terminal(in_fd, tty_out)
+    finally:
+        # Re-enter alternate screen buffer before returning to the TUI menu
+        tty_out.write("\x1b[?1049h\x1b[?25l")
+        tty_out.flush()
 
 
 def main():

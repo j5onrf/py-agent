@@ -7,7 +7,7 @@
 
 ### Syntax Guide
 1. `ai init [path]`: Index workspace and launch interactive agent session.
-2. `ai init --<skill> [path]`: Index workspace primed with a specific agent profile.
+2. `ai init --<skill> [path]`: Index workspace primed with a specific agent skill.
 3. `[TOOL] <command>`: Execute system tool (prompts for `[Y/n]` authorization).
 4. `[TOOL] <command> --s`: Execute tool silently (bypasses confirmation gate).
 5. `<command>`: Terminal shortcut, alias, or file viewer.
@@ -22,7 +22,7 @@
 # --- Model Selector ---
 ~/.config/py-agent/modules/model-select.py ---> model select, cloud model
 # --- Project Creator ---
-~/.config/py-agent/tools/new-project ---> new project, newproject, newp, new-project
+~/.config/py-agent/tools/new-project ---> new project, newp
 # --- AI Status ---
 [TOOL] ~/.config/py-agent/tools/agentic/system/ai-status ---> aistatus, aistat, ais
 # --- Cheatsheet ---
@@ -72,8 +72,6 @@ ai init ~/.config/py-agent/projects/session-test ---> session test, projects ses
 ```properties
 # --- Index Map ---
 [TOOL] ~/.config/py-agent/tools/index-map/index-map --cat ---> index map, imap
-# --- eval-agent (HumanEval Benchmark) ---
-~/.config/py-agent/tools/evals/eval-agent ---> eval-agent, eval agent
 # --- Weather ---
 [TOOL] curl -s "wttr.in/?format=3" --cat ---> weather simple, get weather
 [TOOL] curl -s wttr.in --cat ---> weather full, get weather
