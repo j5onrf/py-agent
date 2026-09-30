@@ -1,6 +1,6 @@
 # Py-Agent Workspace & Session Manual
 
-Autonomous local developer agent with memory, iPython, and codebase index-map.
+Autonomous local developer agent with OKF memory, iPython, and codebase index-map.
 
 ```console
 ~ ❯ ling
