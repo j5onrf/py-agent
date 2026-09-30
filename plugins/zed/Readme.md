@@ -1,12 +1,12 @@
 # Py-Agent Zed Integration
 
-Connects `py-agent` to Zed's Agent Panel (via ACP) and enables in-editor Inline Buffer Transformations.
+Connects `py-agent` to Zed's Agent Panel (via ACP - Agent Client Protocol) and enables autonomous tool execution, file editing, and in-editor inline transformations.
 
 ---
 
 ## 1. Configure Zed
 
-Add both the Agent Server and Inline Assistant to `~/.config/zed/settings.json`:
+Add the Agent Server and local model definitions to `~/.config/zed/settings.json`:
 
 ```json
 {
@@ -42,27 +42,40 @@ Add both the Agent Server and Inline Assistant to `~/.config/zed/settings.json`:
       "command": "sh",
       "args": [
         "-c",
-        "exec python3 ~/.config/py-agent/plugins/zed/gpui-bridge.py"
+        "exec env AI_CONFIRM_GATES=0 python3 ~/.config/py-agent/plugins/zed/gpui-bridge.py"
       ],
+      "env": {
+        "AI_CONFIRM_GATES": "0"
+      },
       "type": "custom"
     }
   }
 }
 ```
 
+> **Note on `AI_CONFIRM_GATES=0`:** Because Zed communicates over headless stdio without an interactive TTY, `AI_CONFIRM_GATES=0` is required to allow in-bounds workspace tool execution (`write_file`, `edit_file`, `run_command`) without blocking on CLI confirmation prompts.
+
 ---
 
 ## 2. Usage
 
 ### A. Autonomous Agent Panel (Multi-Turn & Tools)
-1. Open the Agent panel on the right.
-2. Click **`+`** to open a fresh thread.
-3. Select **`py-agent`** from the agent dropdown.
-4. Prompt the agent (handles file creation, test execution, and thinking drawers).
+1. Open the Agent panel on the right (`Ctrl-?` or click the panel icon).
+2. Click `+` to open a new conversation thread.
+3. Select `py-agent` from the agent server selector.
+4. Enter your request (e.g., `write a python binary search tree with insert and search methods`).
+5. The agent streams its thinking process, writes the files directly into your open workspace, runs verification commands, and fixes any errors in place.
 
 ### B. Inline Buffer Assistant (In-Place Code Edits)
-1. Place the cursor on a line or highlight code in the editor buffer.
-2. Press **`Ctrl-Enter`** (or `Super-Enter`).
-3. Enter a code transformation instruction (e.g., `add a docstring`, `refactor to async`) and press **Enter**.
+1. Place the cursor on a line or highlight code in an editor buffer.
+2. Press `Ctrl-Enter` (or `Cmd-Enter` on macOS).
+3. Enter a code transformation instruction (e.g., `add type hints`, `refactor into a dataclass`) and press `Enter`.
 4. Accept the inline diff (`Ctrl-Enter` or `Enter`) or reject it (`Escape`).
 
+---
+
+## 3. Troubleshooting
+
+- **Tool shows a red X (`failed` / `[denied]`):** Ensure `AI_CONFIRM_GATES=0` is set in `agent_servers.py-agent.env` and in the `args` line of `settings.json`.
+- **Local model offline:** Verify your local inference server (e.g., llama.cpp, vLLM, or Ollama) is running on `http://127.0.0.1:8080/v1`.
+- **Debug output:** Review bridge output in Zed's logs or run `tail -f ~/.config/py-agent/.request_log`.
