@@ -18,7 +18,7 @@
 
 ```properties
 # --- Agent Diagnostic ---
-[TOOL] ~/.config/py-agent/tools/test-agent --cat --s ---> agent test, ta
+[TOOL] ~/.config/py-agent/tools/test-agent --cat ---> agent test, ta
 # --- Model Selector ---
 ~/.config/py-agent/modules/model-select.py ---> model select, cloud model
 # --- Project Creator ---

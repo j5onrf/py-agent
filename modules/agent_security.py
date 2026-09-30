@@ -9,10 +9,7 @@ import sys
 import urllib.parse
 from typing import Any
 
-try:
-    import agent_ui as ui
-except ImportError:
-    ui = None
+ui: Any = None
 
 # System-level device nodes permitted during cell execution
 SYSTEM_DEVICES: frozenset[str] = frozenset({
@@ -291,7 +288,6 @@ def check_command(workspace: str, cmd: str) -> str | None:
             if raw_t.startswith("-") and not raw_t.startswith("--/"):
                 continue
 
-            # Unquote and collapse redundant slashes (//etc -> /etc)
             clean_t = re.sub(r"/+", "/", raw_t.strip("'\"`"))
             expanded_t = os.path.expandvars(clean_t)
 
@@ -344,7 +340,6 @@ def check_ast(code: str) -> str | None:
     # 2. Inspect calls against resolved module/attribute pairs
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
-            # Standalone dangerous calls: exec(), eval(), compile(), __import__()
             if isinstance(node.func, ast.Name):
                 func_id = node.func.id
                 resolved = aliases.get(func_id, func_id)
@@ -360,7 +355,6 @@ def check_ast(code: str) -> str | None:
                 if resolved.startswith("pathlib.") and resolved.split(".", 1)[1] in DANGEROUS_PATHLIB_OPS:
                     return f"OUT-OF-BOUNDS KERNEL EXECUTION: {resolved}()"
 
-            # Attribute calls: os.system(), shutil.rmtree(), __import__(...).system()
             elif isinstance(node.func, ast.Attribute):
                 attr_name = node.func.attr
                 val_node = node.func.value
@@ -381,7 +375,6 @@ def check_ast(code: str) -> str | None:
                    (mod_name == "pathlib" and attr_name in DANGEROUS_PATHLIB_OPS):
                     return f"OUT-OF-BOUNDS KERNEL EXECUTION: {mod_name}.{attr_name}()"
 
-                # Guard dynamic reflection calls on sensitive modules
                 if isinstance(node.func, ast.Name) and node.func.id == "getattr":
                     return "PYTHON DANGEROUS OP: getattr() dynamic reflection"
 
@@ -389,16 +382,17 @@ def check_ast(code: str) -> str | None:
 
 
 def authorize(action_desc: str, is_security_event: bool = False, spinner: Any = None) -> bool:
-    """Centralized Invariant Authorization Gate.
-
-    1. Zero-Trust security events (out-of-bounds, sudo, package mutation, dangerous AST calls):
-       Confirmation bypass is strictly ignored. Mandatory interactive [y/N] prompt.
-    2. Safe in-bounds operations:
-       Auto-approved when confirmation gates are disabled via AI_CONFIRM_GATES == "0" (0ms overhead);
-       prompts for confirmation when AI_CONFIRM_GATES is "1" or unset.
-    """
+    """Centralized Invariant Authorization Gate."""
+    global ui
     if not is_security_event and os.environ.get("AI_CONFIRM_GATES") == "0":
         return True
+
+    if ui is None:
+        try:
+            import agent_ui as _ui
+            ui = _ui
+        except ImportError:
+            pass
 
     if spinner:
         try:

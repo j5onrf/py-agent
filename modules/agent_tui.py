@@ -54,6 +54,42 @@ CONTEXT_FILE = os.path.join(CFG_DIR, "ai-context.md")
 SKILLS_DIR, SESSIONS_DIR = os.path.join(CFG_DIR, "skills"), os.path.join(CFG_DIR, "projects", ".database")
 LEFT_BAR, NO_BOX = Box("▌   \n" * 8), Box("    \n" * 8)
 
+TUI_STATE_FILE = os.path.join(CFG_DIR, ".tui_state.json")
+TUI_DEFAULTS: dict[str, Any] = {
+    "compact_mode": 0,
+    "sidebar_hidden": False,
+    "footer_hidden": True,
+    "tips_card_hidden": False,
+    "tui_theme": "code1",
+    "tui_borders_enabled": True,
+}
+
+
+def get_tui_state(key: str = "", default: Any = None) -> Any:
+    state = dict(TUI_DEFAULTS)
+    if os.path.isfile(TUI_STATE_FILE):
+        try:
+            with open(TUI_STATE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    state.update(data)
+        except Exception:
+            pass
+    return state.get(key, default) if key else state
+
+
+def save_tui_state(key: str, value: Any) -> None:
+    state = get_tui_state()
+    state[key] = value
+    try:
+        tmp = f"{TUI_STATE_FILE}.tmp.{os.getpid()}"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2)
+        os.replace(tmp, TUI_STATE_FILE)
+    except OSError:
+        pass
+
+
 TOKEN_RE = re.compile(r"[^\w\s]")
 STOP_WORDS = frozenset({"is", "what", "it", "do", "any", "i", "have", "the", "a", "an", "on", "to", "for", "me", "you", "my", "your", "we", "us", "are", "about", "in", "how"})
 CSI_U_REGEX = re.compile(r'(?:\x1b\[<|\x1b\[|\[<)?\d+;\d+;\d+[mM]|\x1b\[[0-9;]*[a-zA-Z~]|\x1b[\[\(\=][0-9;]*[a-zA-Z~]?')
@@ -342,7 +378,7 @@ class LocalAITUI(App):
     ]
 
     def watch_theme(self, theme: str) -> None:
-        core.save_state("tui_theme", theme)
+        save_tui_state("tui_theme", theme)
         self.update_welcome_banner()
         self.set_skill(self.active_skill)
         try:
@@ -396,7 +432,7 @@ class LocalAITUI(App):
 
         self.memory_active, self.db_turns, self.mem_count = core.get_state("memory_active", False), 0, 0
         self.refresh_db_counts()
-        self.compact_mode = int(core.get_state("compact_mode", 0))
+        self.compact_mode = int(get_tui_state("compact_mode", 0))
         self.reasoning_active, self.reasoning_budget, self.entering_reasoning_budget = core.get_state("reasoning_active", False), core.get_state("reasoning_budget", 500), False
 
         try:
@@ -405,8 +441,10 @@ class LocalAITUI(App):
             self.history = []
 
         self.generation_cancelled, self.active_response, self.stats_turns = False, None, 0
-        self.borders_enabled = core.get_state("tui_borders_enabled", True)
-        self.footer_hidden, self.sidebar_hidden, self.tips_card_hidden = core.get_state("footer_hidden", True), core.get_state("sidebar_hidden", False), core.get_state("tips_card_hidden", False)
+        self.borders_enabled = bool(get_tui_state("tui_borders_enabled", True))
+        self.footer_hidden = bool(get_tui_state("footer_hidden", True))
+        self.sidebar_hidden = bool(get_tui_state("sidebar_hidden", False))
+        self.tips_card_hidden = bool(get_tui_state("tips_card_hidden", False))
 
     def on_unmount(self) -> None:
         self.gate_auth_result = False
@@ -547,7 +585,7 @@ class LocalAITUI(App):
 
     def action_close_tips_card(self) -> None:
         self.tips_card_hidden = True
-        core.save_state("tips_card_hidden", True)
+        save_tui_state("tips_card_hidden", True)
         try:
             self.query_one("#card-tips", Vertical).display = False
         except Exception:
@@ -561,7 +599,7 @@ class LocalAITUI(App):
                 except Exception:
                     pass
         try:
-            self.theme = core.get_state("tui_theme", "code1")
+            self.theme = get_tui_state("tui_theme", "code1")
         except Exception:
             pass
 
@@ -788,12 +826,12 @@ class LocalAITUI(App):
         elif root in ("/v", "/voice"):
             act, auto = voice.toggle_voice_bridge(auto_toggle=(bool(args) and args.strip().lower() == "auto")) if hasattr(voice, "toggle_voice_bridge") else (False, False)
             if hasattr(self, "lbl_voice"):
-                self.lbl_voice.update(f"[dim]Voice[/dim]      {'Active' if act else 'Disabled'}")
+                self.lbl_voice.update(f"[dim]Voice[/dim]      {'Active' if voice.is_bridge_running() else 'Disabled'}")
             self.notify(f"Voice {'active' if act else 'disabled'}.")
         elif root in ("/tts", "/talk", "/tol"):
             act = tts.toggle_tts() if hasattr(tts, "toggle_tts") else False
             if hasattr(self, "lbl_tts"):
-                self.lbl_tts.update(f"[dim]TTS[/dim]        {'Active' if act else 'Disabled'}")
+                self.lbl_tts.update(f"[dim]TTS[/dim]        {'Active' if tts.is_tts_enabled() else 'Disabled'}")
             self.notify(f"TTS {'enabled' if act else 'disabled'}.")
         elif root in ("/task", "/loop", "/goal"):
             await self.handle_task_command(args)
@@ -1288,7 +1326,7 @@ class LocalAITUI(App):
 
     def action_toggle_sidebar(self) -> None:
         self.sidebar_hidden = not self.sidebar_hidden
-        core.save_state("sidebar_hidden", self.sidebar_hidden)
+        save_tui_state("sidebar_hidden", self.sidebar_hidden)
         self.update_sidebar_visibility()
 
     def update_footer_visibility(self) -> None:
@@ -1300,12 +1338,12 @@ class LocalAITUI(App):
 
     def action_toggle_footer(self) -> None:
         self.footer_hidden = not self.footer_hidden
-        core.save_state("footer_hidden", self.footer_hidden)
+        save_tui_state("footer_hidden", self.footer_hidden)
         self.update_footer_visibility()
 
     def action_toggle_compact(self) -> None:
         self.compact_mode = (self.compact_mode + 1) % 3
-        core.save_state("compact_mode", self.compact_mode)
+        save_tui_state("compact_mode", self.compact_mode)
         if hasattr(self, "chat_area"):
             self.chat_area.set_class(self.compact_mode == 2, "zero-spacing")
             for c in self.chat_area.children:
@@ -1330,7 +1368,7 @@ class LocalAITUI(App):
 
     def action_toggle_borders(self) -> None:
         self.borders_enabled = not self.borders_enabled
-        core.save_state("tui_borders_enabled", self.borders_enabled)
+        save_tui_state("tui_borders_enabled", self.borders_enabled)
         if hasattr(self, "chat_area"):
             for c in self.chat_area.children:
                 if isinstance(c, Message):

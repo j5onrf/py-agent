@@ -10,13 +10,7 @@ import os
 import re
 import sys
 import threading
-import urllib.request as urlreq
 from typing import Any
-
-from rich.box import ROUNDED
-from rich.console import Console, Group
-from rich.panel import Panel
-from rich.text import Text
 
 try:
     import agent_tools as tools
@@ -208,6 +202,7 @@ def show_memory_status(
     server_url: str = "http://localhost:8080",
 ) -> None:
     """Queries upstream server context props and renders Rich context usage meter."""
+    import urllib.request as urlreq
     try:
         req = urlreq.Request(f"{server_url.rstrip('/')}/props")
         with urlreq.urlopen(req, timeout=0.25) as r:
@@ -227,6 +222,11 @@ def show_memory_status(
     pct = (total_toks / max_context) * 100
     bar = "█" * int(min(20, pct / 5)) + "░" * (20 - int(min(20, pct / 5)))
     color = "green" if pct < 70 else "yellow" if pct < 90 else "red"
+
+    from rich.box import ROUNDED
+    from rich.console import Console, Group
+    from rich.panel import Panel
+    from rich.text import Text
 
     console = Console()
     console.print(Panel(
@@ -261,14 +261,10 @@ def prune_history(history: list[dict[str, Any]], max_tokens: int | None = None) 
     limit = max_tokens or _get_int_env("AI_MAX_TOKENS", 8192)
     sys_msg = history[0]
 
-    # Select recent tail (at least 4 messages), walking backward to ensure we never start
-    # on an orphaned tool message whose assistant tool_calls message was moved to middle
     tail_idx = max(1, len(history) - 4)
     while tail_idx > 1 and history[tail_idx].get("role") == "tool":
         tail_idx -= 1
 
-    # Clamping guard: if walking backward pushed tail_idx to 1, advance past the tools
-    # so middle_msgs is not empty and recent_tail has valid content
     if tail_idx == 1 and len(history) > 3:
         tail_idx = 2
         while tail_idx < len(history) - 1 and history[tail_idx].get("role") == "tool":

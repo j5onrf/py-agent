@@ -10,15 +10,28 @@ import shlex
 import subprocess
 import sys
 import urllib.parse
-import urllib.request
 from collections.abc import Callable
 from typing import Any
 
-from rich.console import Console
-from rich.syntax import Syntax
-
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
-_console_err = Console(stderr=True)
+
+
+class _LazyDiffConsole:
+    def print(self, *args: Any, **kwargs: Any) -> None:
+        try:
+            from rich.console import Console
+            Console(stderr=True).print(*args, **kwargs)
+        except Exception:
+            pass
+
+
+_console_err = _LazyDiffConsole()
+
+
+def Syntax(*args: Any, **kwargs: Any) -> Any:
+    from rich.syntax import Syntax as _RichSyntax
+    return _RichSyntax(*args, **kwargs)
+
 
 BINARY_EXTENSIONS = frozenset({
     ".db", ".sqlite", ".sqlite3", ".bin", ".pyc", ".so", ".dll", ".exe",
@@ -869,6 +882,8 @@ def run_tool(
                 gem_key = os.environ.get("GEM_API_KEY", "")
             if not gem_key:
                 return "[error] Google search requires GEM_API_KEY."
+
+            import urllib.request
 
             gnd_model = os.environ.get("GND_MODEL", "gemini-2.5-flash")
             payload = {"contents": [{"parts": [{"text": f"Search the web and provide concise facts for: {q}"}]}], "tools": [{"googleSearch": {}}]}

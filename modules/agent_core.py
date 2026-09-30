@@ -21,23 +21,25 @@ from agent_context import (
     get_accurate_token_count,
     show_memory_status,
 )
-import agent_ipython as ipython
 import agent_security as security
 import agent_tools as tools
-import agent_ui as ui
-import agent_vision as vision
-from agent_vision import (
-    _get_img_config,
-    describe_image_gemini,
-    preprocess_multimodal_messages,
-)
-import requests
-from rich.console import Console
-from rich.markdown import CodeBlock, Markdown
-from rich.segment import Segment
-from rich.syntax import Syntax
 
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
+
+
+def preprocess_multimodal_messages(*args: Any, **kwargs: Any) -> Any:
+    import agent_vision
+    return agent_vision.preprocess_multimodal_messages(*args, **kwargs)
+
+
+def describe_image_gemini(*args: Any, **kwargs: Any) -> Any:
+    import agent_vision
+    return agent_vision.describe_image_gemini(*args, **kwargs)
+
+
+def _get_img_config(*args: Any, **kwargs: Any) -> Any:
+    import agent_vision
+    return agent_vision._get_img_config(*args, **kwargs)
 STATE_FILE: str = os.path.join(CFG_DIR, ".state.json")
 STATE_LOCK_FILE: str = os.path.join(CFG_DIR, ".state.lock")
 
@@ -49,32 +51,48 @@ def prune_history(msg_list: list[dict[str, Any]], max_tokens: int | None = None)
     return msg_list
 
 
-# Standard code-block renderer: transparent background, high-contrast syntax highlighting, zero trailing whitespace
-class CleanCodeBlock(CodeBlock):
-    def __rich_console__(self, console: Any, options: Any) -> Any:
-        code = str(self.text).rstrip()
-        lexer = getattr(self, "lexer_name", "text") or "text"
-        theme = getattr(self, "theme", "") or str(get_state("code_theme", "monokai"))
-        syntax = Syntax(
-            code,
-            lexer,
-            theme=theme,
-            word_wrap=False,
-            padding=0,
-            background_color="default",
-        )
-        lines = console.render_lines(syntax, options)
-        for line in lines:
-            while line and line[-1].text.isspace():
-                line.pop()
-            if line and line[-1].text != line[-1].text.rstrip(" "):
-                line[-1] = Segment(line[-1].text.rstrip(" "), line[-1].style)
-            yield from line
-            yield Segment.line()
+_markdown_initialized: bool = False
 
 
-Markdown.elements["fence"] = CleanCodeBlock
-Markdown.elements["code_block"] = CleanCodeBlock
+def _init_rich_markdown() -> None:
+    global _markdown_initialized
+    if _markdown_initialized:
+        return
+    from rich.markdown import CodeBlock, Markdown as _RM
+    from rich.segment import Segment
+    from rich.syntax import Syntax
+
+    class CleanCodeBlock(CodeBlock):
+        def __rich_console__(self, console: Any, options: Any) -> Any:
+            code = str(self.text).rstrip()
+            lexer = getattr(self, "lexer_name", "text") or "text"
+            theme = getattr(self, "theme", "") or str(get_state("code_theme", "monokai"))
+            syntax = Syntax(
+                code,
+                lexer,
+                theme=theme,
+                word_wrap=False,
+                padding=0,
+                background_color="default",
+            )
+            lines = console.render_lines(syntax, options)
+            for line in lines:
+                while line and line[-1].text.isspace():
+                    line.pop()
+                if line and line[-1].text != line[-1].text.rstrip(" "):
+                    line[-1] = Segment(line[-1].text.rstrip(" "), line[-1].style)
+                yield from line
+                yield Segment.line()
+
+    _RM.elements["fence"] = CleanCodeBlock
+    _RM.elements["code_block"] = CleanCodeBlock
+    _markdown_initialized = True
+
+
+def Markdown(*args: Any, **kwargs: Any) -> Any:
+    _init_rich_markdown()
+    from rich.markdown import Markdown as _RM
+    return _RM(*args, **kwargs)
 
 
 def prepare_markdown(text: str) -> str:
@@ -105,18 +123,40 @@ def get_cursor_up_count(text: str, width: int) -> int:
     return up
 
 
-def _get_console(stderr: bool = False) -> Console:
-    return Console(stderr=stderr)
+_console_inst: Any = None
+_console_err_inst: Any = None
 
 
-_console, _console_err = _get_console(False), _get_console(True)
+def _get_console(stderr: bool = False) -> Any:
+    global _console_inst, _console_err_inst
+    if stderr:
+        if _console_err_inst is None:
+            from rich.console import Console
+            _console_err_inst = Console(stderr=True)
+        return _console_err_inst
+    if _console_inst is None:
+        from rich.console import Console
+        _console_inst = Console(stderr=False)
+    return _console_inst
+
+
+class _LazyConsole:
+    def __init__(self, stderr: bool = False) -> None:
+        self._stderr = stderr
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(_get_console(self._stderr), name)
+
+
+_console, _console_err = _LazyConsole(False), _LazyConsole(True)
 
 # Thread-local HTTP session storage for safe concurrency
 _local_session = threading.local()
 
 
-def _get_session() -> requests.Session:
+def _get_session() -> Any:
     if not hasattr(_local_session, "session"):
+        import requests
         s = requests.Session()
         adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=1)
         s.mount("http://", adapter)
@@ -154,11 +194,10 @@ RE_TOOL_CALL_BLOCK = re.compile(r"<\|tool_call_start\|>.*?<\|tool_call_end\|>", 
 TOOL_VERBS: dict[str, str] = getattr(tools, "TOOL_VERBS", {})
 
 DEFAULTS = {
-    "show_stats": False, "memory_active": False, "box_style": 1, "yolo_mode": True,
+    "show_stats": False, "memory_active": False, "box_style": 7, "yolo_mode": True,
     "show_thinking": True, "reasoning_active": True, "reasoning_budget": 500,
-    "compact_mode": 0, "sidebar_hidden": False, "footer_hidden": True, "tips_card_hidden": False,
-    "tui_theme": "code1", "voice_auto_submit": True, "tts_enabled": False, "tui_borders_enabled": True,
-    "render_markdown": True, "adapters_active": False, "calm_mode": False, "code_theme": "monokai"
+    "voice_auto_submit": True, "tts_enabled": False, "render_markdown": False,
+    "adapters_active": False, "calm_mode": False, "code_theme": "monokai"
 }
 
 try:
@@ -564,10 +603,14 @@ def agentic_turn(
             is_py_mode = st.get("ipython_mode", False)
             use_map = st.get("use_map", False) or os.environ.get("AI_USE_MAP", "0") == "1"
 
-            if is_py_mode and ipython:
-                active_tools = list(ipython.IPYTHON_TOOL) + [
-                    t for t in tools.SMOL_TOOLS if t["function"]["name"] != "exec_python"
-                ]
+            if is_py_mode:
+                try:
+                    import agent_ipython as ipython
+                    active_tools = list(ipython.IPYTHON_TOOL) + [
+                        t for t in tools.SMOL_TOOLS if t["function"]["name"] != "exec_python"
+                    ]
+                except ImportError:
+                    active_tools = list(tools.SMOL_TOOLS)
                 if use_map:
                     active_tools += [t for t in tools.EDIT_TOOLS if t not in active_tools]
             elif use_map:
@@ -996,6 +1039,7 @@ def stream_response(
     max_ctx = _get_int_env("AI_MAX_TOKENS", 8192)
     initial_toks = sum(get_accurate_token_count(m.get("content") or "") for m in messages)
 
+    import agent_ui as ui
     spinner = None if is_sub else (ui.CalmBoatSpinner(tokens_used=initial_toks, max_tokens=max_ctx) if is_calm else ui.InlineSpinner())
 
     try:
