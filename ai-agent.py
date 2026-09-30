@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.45] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production Ready]"""
+"""Py Agent [j5onrf] [v0.9.9.48] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production Ready]"""
 
 import json
 import os
@@ -85,18 +85,18 @@ def _show_transient_status(tag: str) -> None:
     global _transient_cmd_count
     sys.stdout.write(f"  \033[2m[{tag}]\033[0m\n\n")
     sys.stdout.flush()
-    _transient_cmd_count += 2
+    _transient_cmd_count += 3
 
 
 _flash_status = _show_transient_status
 
 
 def _clear_transient_status(query: str) -> None:
-    """Erases the ephemeral slash command block and repositions the real query prompt."""
+    """Erases the ephemeral slash command block and repositions the real query prompt with breathing room."""
     global _transient_cmd_count
     if _transient_cmd_count > 0:
         try:
-            sys.stdout.write(f"\033[{_transient_cmd_count + 1}A\r\x1b[0J\n❯ {query}\n")
+            sys.stdout.write(f"\033[{_transient_cmd_count + 1}A\r\x1b[0J❯ {query}\n\n")
             sys.stdout.flush()
         except OSError:
             pass
@@ -381,7 +381,7 @@ def run_interactive_chat(args: list[str]) -> None:
         memory_active = st.get("memory_active", False)
     reasoning_active, reasoning_budget = st.get("reasoning_active", False), st.get("reasoning_budget", 500)
 
-    os.environ["AI_RENDER_MARKDOWN"] = "1" if st.get("render_markdown", True) else "0"
+    os.environ["AI_RENDER_MARKDOWN"] = "1" if st.get("render_markdown", False) else "0"
     os.environ["AI_REASONIX_ACTIVE"] = "1" if st.get("reasonix_active", True) else "0"
     os.environ["AI_SHOW_THINKING"] = "1" if st.get("show_thinking", True) else "0"
     if is_yolo or st.get("yolo_mode", False):

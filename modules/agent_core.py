@@ -328,10 +328,11 @@ def run_mod(module_name: str, *args: str) -> str:
 # ── 1. Streaming Rich Streamer ───────────────────────────────────────────────
 
 class RichStreamer:
-    def __init__(self, prefix: str = "", active: bool = True, spinner: Any = None) -> None:
+    def __init__(self, prefix: str = "", active: bool = True, spinner: Any = None, round_idx: int = 0) -> None:
         self.prefix, self.active, self.spinner = prefix, active and sys.stdout.isatty(), spinner
         self.acc_think, self.acc_ans, self.phase, self.think_hdr_printed, self.ans_started = "", "", "INIT", False, False
         self.in_post_think = False
+        self.round_idx = round_idx
 
     def _stop_spinner(self, done_msg: str | None = None) -> None:
         if self.spinner:
@@ -425,13 +426,14 @@ class RichStreamer:
                 self.ans_started, p_clean = True, self.prefix.strip()
                 p_str = f"{p_clean}\n\n" if (p_clean and tok.startswith(("```", "#", "---"))) else (f"{p_clean} " if p_clean else "")
                 p_style = "\033[1;32m" if "Agent" in p_clean else "\033[1;36m"
+                lead = "\n" if (not self.think_hdr_printed and self.round_idx == 0) else ""
                 if p_str:
                     try:
-                        sys.stdout.write(f"{p_style}{p_str}\033[0m")
+                        sys.stdout.write(f"{lead}{p_style}{p_str}\033[0m")
                         sys.stdout.flush()
                     except OSError:
                         pass
-                self.acc_ans += p_str
+                self.acc_ans += lead + p_str
 
             self.acc_ans += tok
             if tok:
@@ -706,7 +708,7 @@ def agentic_turn(
                             first_chunk = False
                             if not is_calm and not is_sub:
                                 stream_pfx = prefix or ("Agent:" if is_agent else "AI:")
-                                streamer = RichStreamer(prefix=stream_pfx, spinner=spinner)
+                                streamer = RichStreamer(prefix=stream_pfx, spinner=spinner, round_idx=_round)
                                 streamer.start()
                             if speed_test and show_stats:
                                 speed_test.start()
