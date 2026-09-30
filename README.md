@@ -192,7 +192,7 @@
   </table>
 
   <p>
-    <sub><code>/v</code> Voice-to-Text (<code>:9999</code>) &nbsp;•&nbsp; <code>/tts</code> Neural Kokoro Audio &nbsp;•&nbsp; <code>/dsh</code> DeepSeek Harness</sub>
+    <sub><code>/v</code> Voice-to-Text (<code>:9999</code>) &nbsp;•&nbsp; <code>/tts</code> Neural Kokoro Audio &nbsp;•&nbsp; <code>/dsh</code> DeepSeek Harness &nbsp;•&nbsp; <code>zed</code> gpui</sub>
   </p>
 </div>
 
