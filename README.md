@@ -27,7 +27,7 @@
     <tr>
       <td align="center" width="50%" valign="top">
         <h3>Sub-27B Compact (SLM)</h3>
-        <p><sub>Ultra-fast tool calling, shell triage & single-turn edits</sub></p>
+        <p><sub>Ultra-fast tool calling, shell triage & single-turn code edits</sub></p>
         <code>Ling-3.0-tiny*</code> &nbsp;•&nbsp; <code>LFM2.5-8B</code><br>
         <code>MiniCPM5-2B</code> &nbsp;•&nbsp; <code>Qwen3.5-2B+</code>
       </td>
@@ -35,7 +35,7 @@
         <h3>27B+ Autonomous (LLM)</h3>
         <p><sub>Deep reasoning, multi-file refactoring & sub-agents</sub></p>
         <code>Qwen3.8-35B-D*</code> &nbsp;•&nbsp; <code>Ornith-1.5</code><br>
-        <code>KAT-Coder-V2.5</code> &nbsp;•&nbsp; <code>Tiel-Coder</code><br>
+        <code>KAT-Coder-V2.5</code> &nbsp;•&nbsp; <code>Tiel-Coder-35B</code><br>
         <code>Occamy-1.0</code> &nbsp;•&nbsp; <code>Nex-N2.5-mini</code><br>
         <code>Qwen3.8-27B</code> &nbsp;•&nbsp; <code>Qwen3.8-Flash</code><br>
         <code>DeepSeek&#8209;V4.1</code>
