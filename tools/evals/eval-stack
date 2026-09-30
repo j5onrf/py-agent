@@ -21,6 +21,8 @@ CFG_DIR = os.path.expanduser("~/.config/py-agent")
 MODULES_DIR = os.path.join(CFG_DIR, "modules")
 RESULTS_LOG = os.path.join(CFG_DIR, "tools", "evals", "eval_history.json")
 FAILURES_LOG = os.path.join(CFG_DIR, "tools", "evals", "last_failure_trace.log")
+TRACES_LOG = os.path.join(CFG_DIR, "tools", "evals", "eval_traces.json")
+RUN_TRACES: list[dict[str, Any]] = []
 
 if MODULES_DIR not in sys.path:
     sys.path.insert(0, MODULES_DIR)
@@ -562,6 +564,15 @@ def run_single_agentic_test(
 
         par_val = bench.get("par_turns", turn_count)
         detail = f"{elapsed:.2f}s ({turn_count}/{par_val}t)" if passed else "State verification failed"
+        RUN_TRACES.append({
+            "id": bench["id"],
+            "name": bench["name"],
+            "passed": passed,
+            "elapsed_seconds": round(elapsed, 2),
+            "turns": turn_count,
+            "tokens": total_tokens,
+            "messages": [dict(m) for m in messages],
+        })
         return passed, elapsed, turn_count, total_tokens, detail
     except Exception as e:
         elapsed = time.time() - t0
@@ -777,9 +788,27 @@ def main():
         history.append(record)
         tmp_log = f"{RESULTS_LOG}.tmp.{os.getpid()}"
         with open(tmp_log, "w", encoding="utf-8") as wf:
-            json.dump(history[-30:], wf, indent=2)
+            json.dump(history[-15:], wf, indent=2)
         os.replace(tmp_log, RESULTS_LOG)
         tmp_log = None
+
+        # Auto-pruned full turn traces (keeps last 5 evaluation runs)
+        trace_history = []
+        if os.path.isfile(TRACES_LOG):
+            with contextlib.suppress(Exception):
+                with open(TRACES_LOG, "r", encoding="utf-8") as trf:
+                    trace_history = json.load(trf)
+        trace_history.append({
+            "timestamp": int(time.time()),
+            "model": model_name,
+            "profile": prof_name,
+            "accuracy": accuracy,
+            "traces": RUN_TRACES,
+        })
+        tmp_traces = f"{TRACES_LOG}.tmp.{os.getpid()}"
+        with open(tmp_traces, "w", encoding="utf-8") as twf:
+            json.dump(trace_history[-5:], twf, indent=2)
+        os.replace(tmp_traces, TRACES_LOG)
     except Exception:
         pass
     finally:

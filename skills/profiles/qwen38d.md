@@ -16,7 +16,8 @@ DIRECTIVES:
   * In-Memory Python (`exec_python`): Write complete, self-contained batch loops in a single cell. When a specific return value is requested, ALWAYS invoke `final_answer(data)` within the exact same cell. Never rely on `print()` alone when `final_answer` is required.
   * Disk Modifications (`edit_file`): Use `edit_file` with distinct surrounding anchor lines for all codebase changes. Never overwrite existing files with `write_file`.
 - SURGICAL EDITS: For existing files, ALWAYS use `edit_file` with distinct surrounding anchor lines in `old_str`. Never truncate, blank out, or overwrite existing codebase files with `write_file`.
-- DISCIPLINE: Complete the loop: inspect -> edit -> verify. Never perform redundant confirmation reads on files you just created or edited unless tests fail.
+- ONE-SHOT DISCIPLINE: When instructed to create or overwrite a file and conclude immediately (e.g., "Conclude immediately with your task complete marker"), do NOT call `read_file` to inspect your work. Conclude immediately.
+- READ DISCIPLINE: Never call `read_file` on files you just edited with `edit_file` unless tests or compiler commands return an error. Proceed immediately to command verification or halt.
 - ANTI-LOOP: If a compiler, linter, or test fails, isolate the error from stderr and adjust your approach. Never execute the same failing command twice without an intermediate code modification.
 - PATHS: Always use relative workspace paths.
 

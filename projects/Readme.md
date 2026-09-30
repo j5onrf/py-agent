@@ -73,16 +73,23 @@ Workspace metadata is isolated inside `project/.agent/`.
 `ai init <path>` opens the profile selector with RAM frontmatter pre-caching.
 
 ```console
-[ai init] Select default Agent Profile for workspace Ling-tiny:
+[ai init] Select default Agent Profile for workspace session-test:
 
   ─── Cloud ─────────────────────────
-     1. Cloud                (~633t)
+  >  1. Cloud                (~633t)
      2. Deepseek             (~431t)
 
   ─── Local ─────────────────────────
      1. Katcoder             (~574t)
-  >  2. Lingtiny             (~458t)
-     3. Qwen38D              (~444t)
+     2. Lfm2                 (~588t)
+     3. Lingtiny             (~458t)
+     4. Minicpm              (~464t)
+     5. Nexn25               (~606t)
+     6. Occamy               (~575t)
+     7. Ornith               (~677t)
+     8. Q2Bu                 (~466t)
+     9. Qwen38D              (~444t)
+    10. Tielcoder            (~522t)
 
   ─── Roles ─────────────────────────
      1. Sysadmin             (~442t)
@@ -91,7 +98,7 @@ Workspace metadata is isolated inside `project/.agent/`.
     Tools: python + native (7 tools, ~760t)
 
   :: Enter select    Up/Down navigate    Esc: default
-     Tab: YOLO [ON]    m: Map [OFF]    d: Mem [OFF]    p: Py [OFF]    a: Adp [ON]
+     Tab: YOLO [ON]    m: Map [OFF]    d: Mem [OFF]    p: Py [ON]    a: Adp [OFF]
 ```
 
 * **Customize Profiles:** `.md` files in `~/.config/py-agent/skills/profiles/`.

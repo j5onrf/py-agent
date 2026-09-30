@@ -5,7 +5,7 @@
   <h1>Py Agent</h1>
 
   <p>
-    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.45.svg?variant=secondary" alt="Version"></a>
+    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.46.svg?variant=secondary" alt="Version"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/Python.svg?variant=branded&brand=python" alt="Language"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/C%2B%2B.svg?variant=branded&brand=cplusplus" alt="C++"></a>
     <a href="https://github.com/j5onrf/py-agent/blob/main/LICENSE"><img src="https://shieldcn.dev/badge/license-MIT-green.svg" alt="License"></a>
@@ -72,7 +72,7 @@
 ```
 
 <div align="center">
-  <p><sub>Customize box themes with <code>/box [1-8]</code>. For detailed workflows, read the <a href="projects/Readme.md"><b>Workspace Manual</b></a>.</sub></p>
+  <p><sub>Customize box themes with <code>/box [1-7]</code>. For detailed workflows, read the <a href="projects/Readme.md"><b>Workspace Manual</b></a>.</sub></p>
 </div>
 
 <br>
@@ -125,14 +125,14 @@
 
 | Rank | Model | Par Eff | Agent Index |
 | :---: | :--- | :---: | :---: |
-| **1** | **KAT-Coder-V2.5-Dev** | **96.8%** | **90.6 (A)** |
-| **2** | **Ornith-1.5-35B-A3B** | **88.2%** | **89.3 (A)** |
-| **3** | **Tiel-Coder-35B-A3B** | **90.9%** | **87.6 (B)** |
-| **4** | **Qwen3.8-35B-Distill** *(MTP)* | **93.8%** | **87.5 (B)** |
+| **1** | **Qwen3.8-35B-Distill** *(MTP)* | **107.1%** | **91.3 (A)** |
+| **2** | **KAT-Coder-V2.5-Dev** | **90.9%** | **89.8 (A)** |
+| **3** | **Ornith-1.5-35B-A3B** | **88.2%** | **89.3 (A)** |
+| **4** | **Tiel-Coder-35B-A3B** | **90.9%** | **87.6 (B)** |
 | **5** | **Occamy-1.0** | **90.9%** | **87.0 (B)** |
 | **6** | **Qwen3.8-35B-Distill** *(Pure)* | **90.9%** | **86.4 (B)** |
 | **7** | **Nex-N2.5-mini** | **88.2%** | **85.8 (B)** |
-| **—** | **Ling-3.0-tiny** *(SLM)* | **86.7%** | **95.3 (A+)** |
+| **—** | **Ling-3.0-tiny** *(SLM)* | **96.3%** | **98.7 (A+)** |
 
 <br>
 

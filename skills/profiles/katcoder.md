@@ -19,6 +19,8 @@ DIRECTIVES:
 - CLOSED-LOOP ENGINEERING: When asked to fix a bug or add a feature, complete the full loop: inspect (`read_file`) -> modify (`edit_file`) -> verify (`run_command` or in-kernel). Never stop after merely reading.
 - READ DISCIPLINE: Never perform redundant verification reads on files you just created or edited unless a test fails and requires diagnostic inspection.
 - COMMAND DISCIPLINE: All commands execute directly from the workspace root. NEVER prepend `cd` or attempt directory navigation (e.g. run `python src/bst.py`, NOT `cd /home/user && ...` or `cd /workspace && ...`).
+- BATCH DISCIPLINE: When instructed to process files in-memory (`exec_python`), read them directly inside the Python loop. Do NOT call `read_file` on disk beforehand.
+- VERIFICATION DISCIPLINE: Never call `read_file` to verify a file you just edited with `edit_file`. Proceed immediately to `run_command` verification or halt.
 - ERROR RECOVERY & ANTI-LOOP: If a command fails or a test exits non-zero, read stderr, diagnose the root cause, and alter strategy. Never invoke the exact same failing command twice without changing code.
 - PATHS: Always use relative workspace paths (e.g., `src/main.py`).
 

@@ -69,7 +69,7 @@ RE_TEE_EOF = re.compile(
     re.DOTALL,
 )
 RE_ECHO_REDIRECT = re.compile(
-    r"^echo\s+['\"]([\s\S]*?)['\"]\s*>\s*(\S+)$",
+    r"^echo\s+(?:-[a-zA-Z]+\s+)?['\"]([\s\S]*?)['\"]\s*>\s*(\S+)$",
     re.DOTALL,
 )
 RE_PRINTF_REDIRECT = re.compile(
@@ -88,14 +88,9 @@ RE_BOGUS_IMPORTS = re.compile(
 
 RE_GUTTER_LINE = re.compile(r"^\s*\d+[:|│\t ]\s?")
 
-RE_ELLIPSIS_PLACEHOLDER = re.compile(
-    r"^[ \t]*(?:#|//|/\*|<!--)[ \t]*\.{3,}[ \t]*(?:existing|rest of|unchanged|previous|remaining|code here|code).*?(?:\*/|-->)?$",
-    re.IGNORECASE | re.MULTILINE,
-)
-
 
 def _close_unterminated_quote(cmd_str: str) -> str:
-    """State machine quote balancing: only balances quotes genuinely unclosed at the end of a command."""
+    """State machine quote balancing: balances quotes genuinely unclosed at the end of a command."""
     in_quote = None
     esc = False
     for ch in cmd_str:
@@ -117,7 +112,7 @@ def _close_unterminated_quote(cmd_str: str) -> str:
 
 
 def _strip_line_number_gutters(text: str) -> str:
-    """Strips copied editor line number gutters (e.g. '12: ', '12 | ') from old_str or new_str."""
+    """Strips copied editor line number gutters from old_str or new_str."""
     if not text:
         return text
 
@@ -179,6 +174,28 @@ def _extract_diff_hunk(diff_text: str) -> tuple[str, str] | None:
     return None
 
 
+def deduplicate_tool_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Prunes duplicate parallel tool calls emitted within a single assistant turn."""
+    if not calls or len(calls) <= 1:
+        return calls
+    seen = set()
+    unique = []
+    for call in calls:
+        fn = call.get("function", {})
+        name = fn.get("name", "")
+        raw_args = fn.get("arguments", "")
+        try:
+            parsed = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+            norm_args = json.dumps(parsed, sort_keys=True)
+        except Exception:
+            norm_args = str(raw_args)
+        key = (name, norm_args)
+        if key not in seen:
+            seen.add(key)
+            unique.append(call)
+    return unique
+
+
 # ── 2. Parameter Aliases & String Normalization ───────────────────────────────
 
 def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
@@ -201,6 +218,9 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
             if k in ("old_str", "new_str", "content", "code", "command"):
                 if m := RE_MD_CODE_BLOCK.match(clean_v):
                     clean_v = m.group(1).rstrip()
+                elif clean_v.startswith("```") and clean_v.endswith("```") and len(clean_v) >= 6:
+                    clean_v = re.sub(r"^```[a-zA-Z0-9_+-]*\s*", "", clean_v)
+                    clean_v = re.sub(r"\s*```$", "", clean_v)
 
             if k in ("old_str", "new_str"):
                 clean_v = _strip_line_number_gutters(clean_v)
@@ -224,12 +244,10 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
         else:
             cleaned["path"] = raw_p.strip('\'"`\\\n\r\t ').strip()
 
-        # Heal hallucinated sandbox root prefixes
         if m := RE_ROOT_SANDBOX.match(cleaned["path"]):
             if m.group(1):
                 cleaned["path"] = m.group(1).strip('\'"')
 
-        # Strip search/grep line and column suffixes (e.g. "mod_a.py:1" -> "mod_a.py")
         cleaned["path"] = re.sub(r":\d+(?::\d+)?$", "", cleaned["path"]).strip()
 
     # 2. Command Aliases
@@ -267,7 +285,7 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
                 cleaned["symbol"] = cleaned.pop(alt)
                 break
 
-    # 6. Surgical Edit String Aliases
+    # 6. Surgical Edit String Aliases & Unified Diff Parameter Recovery
     if "old_str" not in cleaned:
         for alt in ("old", "old_string", "old_text", "search", "search_str", "target_str", "find", "before", "original"):
             if alt in cleaned and not isinstance(cleaned[alt], bool):
@@ -275,12 +293,12 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
                 break
 
     if "new_str" not in cleaned:
-        for alt in ("new", "new_string", "new_text", "replace", "replace_str", "replacement", "after", "update"):
+        for alt in ("new", "new_string", "new_text", "replace", "replace_str", "replacement", "after", "update", "patch", "diff", "unified_diff", "hunk"):
             if alt in cleaned and not isinstance(cleaned[alt], bool) and str(cleaned[alt]).lower() not in ("true", "1", "yes", "on"):
                 cleaned["new_str"] = _strip_line_number_gutters(str(cleaned.pop(alt)))
                 break
 
-    # 7. Line Range Aliases (read_file)
+    # 7. Line Range Aliases
     if "line_start" not in cleaned:
         for alt in ("start_line", "start", "from_line", "begin"):
             if alt in cleaned:
@@ -299,7 +317,11 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
                 except (ValueError, TypeError):
                     pass
 
-    # 8. Overwrite Aliases & Booleans
+    # 8. Overwrite & Mode Aliases
+    if "mode" in cleaned and "overwrite" not in cleaned:
+        m_val = str(cleaned.pop("mode")).lower()
+        cleaned["overwrite"] = m_val in ("w", "write", "overwrite", "truncate")
+
     for alt in ("force", "overwrite_file", "clobber"):
         if alt in cleaned:
             val = cleaned.pop(alt)
@@ -322,10 +344,10 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
     return cleaned
 
 
-# ── 3. Balanced JSON Object Extractor (Linear Bail-out) ───────────────────────
+# ── 3. Balanced JSON Object Extractor ─────────────────────────────────────────
 
 def _extract_balanced_json(text: str) -> list[dict[str, Any]]:
-    """Extracts top-level JSON objects safely by balancing braces, ignoring string contents with linear bail-out."""
+    """Extracts top-level JSON objects safely by balancing braces with linear bail-out."""
     results = []
     i, n = 0, len(text)
     while i < n:
@@ -408,13 +430,13 @@ def _extract_balanced_json(text: str) -> list[dict[str, Any]]:
     return results
 
 
-# ── 4. Self-Healing JSON Argument Parser ──────────────────────────────────────
+# ── 4. Self-Healing Tool Call Transformer ─────────────────────────────────────
 
 def heal_tool_call(fname: str, raw_args: str | dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    """Universal tool adapter for small models: heals parameters, aliases, and misdirected shell calls."""
+    """Universal tool adapter: heals parameters, aliases, diffs, and shell file mutations."""
     healed_dict = heal_json_args(raw_args)
 
-    # 1. Scoped resolution for 'script' / 'cell' aliases based on target tool
+    # 1. Scoped resolution for 'script' / 'cell' aliases
     if fname == "exec_python":
         if "script" in healed_dict and "code" not in healed_dict:
             healed_dict["code"] = healed_dict.pop("script")
@@ -429,6 +451,10 @@ def heal_tool_call(fname: str, raw_args: str | dict[str, Any]) -> tuple[str, dic
 
     # 2. Unified Diff Hunk Recovery for edit_file
     if fname == "edit_file":
+        for diff_k in ("patch", "diff", "unified_diff", "hunk"):
+            if diff_k in healed_dict and "new_str" not in healed_dict:
+                healed_dict["new_str"] = healed_dict.pop(diff_k)
+                break
         new_val = str(healed_dict.get("new_str", ""))
         old_val = str(healed_dict.get("old_str", ""))
         if ("\n-" in new_val or "\n+" in new_val or new_val.startswith("@@")) and (not old_val or old_val in ("...", "diff")):
@@ -437,9 +463,9 @@ def heal_tool_call(fname: str, raw_args: str | dict[str, Any]) -> tuple[str, dic
 
     # 3. Intercept and heal shell file mutations into native tools
     if fname == "run_command" and "command" in healed_dict:
-        cmd_raw = str(healed_dict["command"]).strip()
+        cmd_raw = re.sub(r"^\s*touch\s+\S+\s*(&&|;)\s*", "", str(healed_dict["command"]).strip()).strip()
 
-        # Inline python -c -> exec_python (bail out if trailing shell redirection/pipes exist)
+        # Inline python -c -> exec_python
         if cmd_raw.startswith(("python3 -c", "python -c")):
             rest = re.sub(r"^python3?\s+-c\s+", "", cmd_raw).strip()
             py_code = ""
@@ -474,7 +500,6 @@ def heal_tool_call(fname: str, raw_args: str | dict[str, Any]) -> tuple[str, dic
                 if py_code:
                     return "exec_python", {"code": py_code}
 
-        # Helper to safely move shell output into write_file
         def _safe_shell_write(raw_content: str, path: str, append_nl: bool = False) -> tuple[str, dict[str, Any]] | None:
             if any(exp in raw_content for exp in ("$(", "${", "`")):
                 return None
@@ -520,7 +545,7 @@ def heal_tool_call(fname: str, raw_args: str | dict[str, Any]) -> tuple[str, dic
 
 
 def heal_json_args(raw: str | dict[str, Any]) -> dict[str, Any]:
-    """Self-healing JSON tool argument parser for small quantized models (2B–8B)."""
+    """Self-healing JSON tool argument parser for small quantized models (2B–35B)."""
     if isinstance(raw, dict):
         return normalize_params(raw)
     if not raw or not isinstance(raw, str) or not raw.strip():
@@ -625,7 +650,6 @@ def _extract_ast_python_calls(text: str) -> list[dict[str, Any]]:
             continue
         start_idx = m.start()
 
-        # Prose gating: ignore calls embedded in explanatory text or inline backticks
         line_start = text.rfind("\n", 0, start_idx) + 1
         preceding = text[line_start:start_idx].strip()
         if preceding and not re.match(r"^([a-zA-Z0-9_]+\s*=\s*|print\s*\(?|return\s+)?$", preceding):
@@ -728,7 +752,7 @@ def _extract_ast_python_calls(text: str) -> list[dict[str, Any]]:
 # ── 6. Universal Fallback Tool Extraction Suite ───────────────────────────────
 
 def extract_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
-    """Extracts and normalizes tool calls across non-standard model formats."""
+    """Extracts, heals, and deduplicates tool calls across non-standard model formats."""
     if not text or not text.strip():
         return []
 
@@ -884,4 +908,4 @@ def extract_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
                 })
                 break
 
-    return calls
+    return deduplicate_tool_calls(calls)
