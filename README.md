@@ -27,7 +27,7 @@
     <tr>
       <td align="center" width="50%" valign="top">
         <h3>Sub-27B Compact (SLM)</h3>
-        <p><sub>Ultra-fast tool calling, shell triage & single-turn code edits</sub></p>
+        <p><sub>Ultra-fast tool calling, shell triage & single-turn edits</sub></p>
         <code>Ling-3.0-tiny*</code> &nbsp;•&nbsp; <code>LFM2.5-8B</code><br>
         <code>MiniCPM5-2B</code> &nbsp;•&nbsp; <code>Qwen3.5-2B+</code>
       </td>
