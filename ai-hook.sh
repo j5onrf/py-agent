@@ -15,28 +15,42 @@ _ai_teleport() {
 
     local f="$_AI_DIR/.active_cd.$$"
     if [[ -f "$f" ]]; then
-        local target
-        target=$(head -n 1 "$f" 2>/dev/null)
+        local target=""
+        IFS= read -r target < "$f" 2>/dev/null
         rm -f "$f"
         [[ -n "$target" && -d "$target" ]] && cd "$target" 2>/dev/null
     fi
 }
 
-if [[ -n "$ZSH_VERSION" ]]; then
-    autoload -Uz add-zsh-hook 2>/dev/null && add-zsh-hook precmd _ai_teleport
-elif [[ -n "$BASH_VERSION" ]]; then
-    if [[ "$PROMPT_COMMAND" != *_ai_teleport* ]]; then
-        PROMPT_COMMAND="_ai_teleport${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
+# High-Performance Hook Registration (Zero-Fork Bash & Zsh)
+if [[ -n "$BASH_VERSION" ]]; then
+    if (( BASH_VERSINFO[0] >= 5 )); then
+        if [[ ${PROMPT_COMMAND@a} == *a* ]]; then
+            case " ${PROMPT_COMMAND[*]} " in
+                *" _ai_teleport "*) ;;
+                *) PROMPT_COMMAND+=(_ai_teleport) ;;
+            esac
+        else
+            [[ "${PROMPT_COMMAND:-}" != *_ai_teleport* ]] && PROMPT_COMMAND="_ai_teleport${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
+        fi
+    else
+        [[ "${PROMPT_COMMAND:-}" != *_ai_teleport* ]] && PROMPT_COMMAND="_ai_teleport${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
     fi
+elif [[ -n "$ZSH_VERSION" ]]; then
+    autoload -Uz add-zsh-hook 2>/dev/null && add-zsh-hook precmd _ai_teleport
 fi
 
 # 2. Intent & Missing Command Handler
 ai_handle_missing() {
     local cmd exp
-    cmd=$([[ -n "$*" ]] && "$_AI_PY" "$_AI_DIR/ai-agent.py" --interactive "$*") || return 127
+    [[ $# -gt 0 ]] || return 127
+    cmd=$("$_AI_PY" "$_AI_DIR/ai-agent.py" --interactive "$@") || return 127
     [[ -z "$cmd" ]] && return 127
 
-    exp=$(printf '%s' "$cmd" | sed -E $'s/\x1b\\][^\x07\x1b]*(\x07|\x1b\\\\)|\x1b\\[[0-9;?]*[a-zA-Z~]|\r//g')
+    exp=$(printf '%s' "$cmd" | sed -E $'s/\x1b\\][^\x07\x1b]*(\x07|\x1b\\\\)|\x1b\\[[0-9;?]*[a-zA-Z~]|\r//g' | LC_ALL=C tr -d '\000-\010\013-\037\177')
+    [[ -z "$exp" ]] && return 127
+
+    _AI_HANDLED=1
 
     if [[ "$exp" == "~" ]]; then
         exp="$HOME"
@@ -49,13 +63,13 @@ ai_handle_missing() {
     elif [[ "$exp" == *.py && -f "$exp" ]]; then
         "$_AI_PY" "$exp"
     else
-        if [[ -n "$ZSH_VERSION" ]]; then
-            if ! zsh -n <<< "$exp" 2>/dev/null; then
+        if [[ -n "$BASH_VERSION" ]]; then
+            if ! bash -n <<< "$exp" 2>/dev/null; then
                 echo "py-agent: invalid shell syntax in command" >&2
                 return 127
             fi
         else
-            if ! bash -n <<< "$exp" 2>/dev/null; then
+            if ! zsh -n <<< "$exp" 2>/dev/null; then
                 echo "py-agent: invalid shell syntax in command" >&2
                 return 127
             fi
@@ -64,27 +78,63 @@ ai_handle_missing() {
     fi
 }
 
-# 3. Command Not Found Hooks
-command_not_found_handle() {
-    [[ -n "${_AI_CNF_ACTIVE:-}" ]] && return 127
-    [[ "${1:-}" != --* ]] || return 127
-    local rc=127
-    _AI_CNF_ACTIVE=1 ai_handle_missing "$@" && rc=0
-    return "$rc"
-}
-command_not_found_handler() { command_not_found_handle "$@"; }
+# 3. Command Not Found Hooks (Pure Built-in Chaining)
+if [[ -n "$BASH_VERSION" ]]; then
+    if [[ -z "${_AI_CNF_INSTALLED:-}" ]]; then
+        _AI_CNF_INSTALLED=1
+        if declare -F command_not_found_handle >/dev/null 2>&1; then
+            _orig_def=$(declare -f command_not_found_handle)
+            eval "_orig_cnf_handle() ${_orig_def#*$'\n'}"
+            unset _orig_def
+        fi
+    fi
+    command_not_found_handle() {
+        [[ -n "${_AI_CNF_ACTIVE:-}" ]] && return 127
+        [[ "${1:-}" != --* ]] || return 127
+        local _AI_HANDLED=0 _AI_CNF_ACTIVE=1 cmd_rc=127
+        ai_handle_missing "$@"
+        cmd_rc=$?
+        if [[ "$_AI_HANDLED" -eq 1 ]]; then
+            return "$cmd_rc"
+        fi
+        if declare -F _orig_cnf_handle >/dev/null 2>&1; then
+            _orig_cnf_handle "$@"
+            return $?
+        fi
+        return 127
+    }
+elif [[ -n "$ZSH_VERSION" ]]; then
+    if (( $+functions[command_not_found_handler] )) && [[ -z "${_orig_cnf_handler+x}" ]]; then
+        functions[_orig_cnf_handler]=$functions[command_not_found_handler]
+    fi
+    command_not_found_handler() {
+        [[ -n "${_AI_CNF_ACTIVE:-}" ]] && return 127
+        [[ "${1:-}" != --* ]] || return 127
+        local _AI_HANDLED=0 _AI_CNF_ACTIVE=1 cmd_rc=127
+        ai_handle_missing "$@"
+        cmd_rc=$?
+        if [[ "$_AI_HANDLED" -eq 1 ]]; then
+            return "$cmd_rc"
+        fi
+        if (( $+functions[_orig_cnf_handler] )); then
+            _orig_cnf_handler "$@"
+            return $?
+        fi
+        return 127
+    }
+fi
 
 # 4. Primary AI Shell Wrapper
 ai() {
     local old files=()
-    if [[ -n "$ZSH_VERSION" ]]; then
-        files=("$_AI_DIR"/.active_cd.*(N))
-    else
+    if [[ -n "$BASH_VERSION" ]]; then
         local nullglob_set=0
         shopt -q nullglob && nullglob_set=1
         shopt -s nullglob
         files=("$_AI_DIR"/.active_cd.*)
         [[ "$nullglob_set" -eq 0 ]] && shopt -u nullglob
+    else
+        files=("$_AI_DIR"/.active_cd.*(N))
     fi
 
     for old in "${files[@]}"; do
@@ -93,15 +143,19 @@ ai() {
         if [[ "$pid" =~ ^[0-9]+$ ]]; then
             if ! kill -0 "$pid" 2>/dev/null; then
                 rm -f "$old"
-            elif [[ -f "/proc/$pid/comm" ]] && ! grep -qE '(bash|zsh|sh)$' "/proc/$pid/comm" 2>/dev/null; then
-                rm -f "$old"
+            else
+                local comm
+                comm=$(ps -p "$pid" -o comm= 2>/dev/null | tr -d ' -')
+                if [[ -n "$comm" && ! "$comm" =~ (bash|zsh|sh)$ ]]; then
+                    rm -f "$old"
+                fi
             fi
         else
             rm -f "$old"
         fi
     done
 
-    if [[ "$1" == "init" ]]; then
+    if [[ "${1:-}" == "init" ]]; then
         shift
         local path skills=() name map db
         path=$(pwd)
@@ -119,63 +173,67 @@ ai() {
         echo "$path" > "$lockfile"
         name=$(basename "$path")
 
+        local _saved_traps
+        _saved_traps=$(trap -p INT TERM 2>/dev/null)
+        trap 'rm -f "'"$lockfile"'" 2>/dev/null; eval "${_saved_traps:-trap - INT TERM}"' INT TERM
+
         local cfg="$path/.agent/config.json"
         local use_map=0
-        if [[ -f "$cfg" ]]; then
-            if "$_AI_PY" -c '
-import json, sys
-try:
-    d = json.load(open(sys.argv[1]))
-    sys.exit(0 if (str(d.get("map", "")).lower() in ("true", "1", "yes") or "-map" in str(d.get("profile", "")).lower()) else 1)
-except Exception:
-    sys.exit(1)
-' "$cfg" 2>/dev/null; then
-                use_map=1
-            fi
+        if [[ -f "$cfg" ]] && grep -qiE '"(map|use_map)"\s*:\s*(true|1)' "$cfg" 2>/dev/null; then
+            use_map=1
         fi
 
         if [[ "$use_map" -eq 1 ]]; then
             map="$path/.agent/index-map-$name.txt"; [[ -f "$map" ]] || map="$path/index-map-$name.txt"
             db="$path/.agent/index-map-memory-$name.db"; [[ -f "$db" ]] || db="$path/index-map-memory-$name.db"
 
-            local needs_compile=0
-            if [[ ! -f "$map" || ! -f "$db" || "$path" -nt "$map" ]]; then
-                needs_compile=1
-            elif git -C "$path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-                [[ -n "$(git -C "$path" status --porcelain 2>/dev/null | grep -v '\.agent')" ]] && needs_compile=1
-            else
-                [[ -n "$(find "$path" -maxdepth 3 -not -path '*/.git/*' -not -path '*/.agent/*' -not -name '*.md' -newer "$map" -print 2>/dev/null | head -n 1)" ]] && needs_compile=1
-            fi
-
-            if [[ "$needs_compile" -eq 1 ]]; then
-                "$_AI_PY" "$_AI_DIR/tools/index-map/index-map" --agent "$path" || { rm -f "$lockfile"; return 1; }
+            if [[ ! -f "$map" || ! -f "$db" ]]; then
+                "$_AI_PY" "$_AI_DIR/tools/index-map/index-map" --agent "$path" 2>/dev/null || true
             fi
         fi
 
         AI_ACTIVE_SKILL="${skills[*]}" AI_WORKSPACE_PATH="$path" "$_AI_PY" "$_AI_DIR/ai-agent.py" --talk-chat
         _ai_teleport
         rm -f "$lockfile" 2>/dev/null
+
+        if [[ -n "$_saved_traps" ]]; then
+            eval "$_saved_traps"
+        else
+            trap - INT TERM
+        fi
     else
         "$_AI_PY" "$_AI_DIR/ai-agent.py" --talk "$@"
     fi
 }
 
-# 5. Terminal Markdown Pager
-view() {
+# 5. Terminal Markdown Pager (Unified Rich Engine)
+aiview() {
     local f="${1:-}"
-    if [[ -z "$f" ]]; then
-        if [ ! -t 0 ]; then
-            FORCE_COLOR=1 "$_AI_PY" -c "import sys,rich.markdown,rich.console;rich.console.Console().print(rich.markdown.Markdown(sys.stdin.read()))"
-        else
-            echo "Usage: view <file.md> or <command> | view" >&2
-            return 1
-        fi
-    elif [[ "$f" == *.md && -f "$f" ]]; then
-        FORCE_COLOR=1 "$_AI_PY" -m rich.markdown "$f"
-    elif [[ -f "$f" ]]; then
-        cat "$f"
-    else
-        echo "view: file not found: $f" >&2
+    if [[ -n "$f" && ! -f "$f" ]]; then
+        echo "aiview: file not found: $f" >&2
         return 1
     fi
+
+    if [[ -n "$f" && "$f" != *.md ]]; then
+        cat "$f"
+        return 0
+    fi
+
+    if [[ -z "$f" && -t 0 ]]; then
+        echo "Usage: aiview <file.md> or <command> | aiview" >&2
+        return 1
+    fi
+
+    FORCE_COLOR=1 "$_AI_PY" -c '
+import sys
+from rich.console import Console
+from rich.markdown import Markdown
+
+src = open(sys.argv[1], "r", encoding="utf-8", errors="replace").read() if len(sys.argv) > 1 else sys.stdin.read()
+Console().print(Markdown(src, code_theme="monokai", justify="default"))
+' "${f:+"$f"}"
 }
+
+if ! command -v view >/dev/null 2>&1; then
+    alias view=aiview
+fi

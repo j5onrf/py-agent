@@ -1,67 +1,63 @@
-# Specialized Architectural Review Directives: `plugins/zed/gpui-bridge.py`
+# Specialized Architectural Review Directives: `ai-hook.sh`
 
-You are an expert protocol engineer and senior Python runtime auditor conducting an architectural code review of `plugins/zed/gpui-bridge.py` in `py-agent`. This module implements a dedicated JSON-RPC 2.0 stdio bridge conforming to Zed's Agent Client Protocol (ACP).
+You are an expert Unix systems engineer and shell security auditor conducting a rigorous architectural code review of `ai-hook.sh`, the zero-lag interactive shell integration hook for `py-agent` supporting both Bash (>=4.4) and Zsh (>=5.0).
 
 ---
 
 ## 1. Intentional Runtime Invariants (STRICT DO-NOT-FLAG LIST)
 
-Do NOT report any of the following patterns as bugs, code smells, or architectural defects:
+Do NOT report any of the following patterns as bugs, code smells, or security vulnerabilities:
 
-1. **Two-Way Stdio JSON-RPC Architecture:**
-   * Reading line-delimited JSON-RPC from `sys.stdin` and writing responses/notifications to `sys.stdout` (guarded by `_stdout_lock`) is the core ACP protocol contract. Do NOT suggest using sockets, WebSockets, or HTTP servers.
-2. **Per-Turn Daemon Worker Threads:**
-   * Spawning `threading.Thread(target=_worker, daemon=True).start()` in `handle_session_prompt` is deliberate so the bridge can stream chunks asynchronously without blocking the `sys.stdin` dispatch loop from handling `session/cancel` or user permission responses.
-3. **Synchronous ACP Permission Handshake:**
-   * In `_request_client_permission()`, emitting an outbound `session/request_permission` RPC request to Zed and waiting on a `threading.Event(timeout=60.0)` is the intentional ACP interactive permission flow. Do NOT flag this synchronous wait as a blocking thread anti-pattern.
-4. **`loadSession: False` Capability:**
-   * Advertising `"loadSession": False` in `agentCapabilities` and rejecting `session/load` for un-cached sessions with `-32602` is intentional. ACP session resumption from historical SQLite databases is currently disabled.
-5. **Single-Component Leading Slash Normalization:**
-   * Stripping the leading slash from single-component paths (e.g. `/calc.py` -> `calc.py`) while preserving forbidden system roots (`/etc`, `/usr`, `/var`, etc.) is deliberate to heal hallucinated root paths emitted by small SLMs.
-6. **Ephemeral Memory Injection:**
-   * Injecting `memories.get_memory_context` only into transient turn request messages (`messages[-1]`) while keeping the clean user prompt in `session["history"]` is intentional to prevent compounding context bloat across multi-turn sessions.
-7. **Process-Level Pooled HTTP Session:**
-   * Using module-level `_http_session = requests.Session()` with connection pooling adapters across SSE streaming turns is deliberate to minimize connection handshake latency.
+1. **Dual-Shell Hybrid Scripting (Bash + Zsh in One File):**
+   * Sourcing this file in both Bash and Zsh is intentional. Branching on `[[ -n "$ZSH_VERSION" ]]` vs `[[ -n "$BASH_VERSION" ]]` and registering shell hooks via `add-zsh-hook` or `PROMPT_COMMAND` is deliberate design. Do NOT suggest splitting into separate `.zsh` and `.bash` files.
+2. **Dynamic Command Execution (`eval "$exp"`):**
+   * `eval "$exp"` in `ai_handle_missing` is intentional: it executes terminal shortcuts, aliases, and commands selected interactively by the user from the intent matcher after pre-flight syntax verification (`bash -n` / `zsh -n`). Do NOT report `eval` as an automatic security defect.
+3. **First-Prompt Terminal Clearing (`printf '\x1b[H\x1b[2J'`):**
+   * Clearing the viewport on the first interactive prompt draw (`_AI_FIRST_PROMPT=1`) is deliberate for screen hygiene. Do NOT flag screen clearing as disruptive.
+4. **PID-Tagged Directory Teleportation (`.active_cd.$$`):**
+   * Using a PID-stamped file in `~/.config/py-agent/.active_cd.$$` and reading it with `IFS= read -r target < "$f"` is the intentional mechanism for mutating the parent shell's working directory (`cd`) from Python child processes without shell subshell traps.
+5. **Direct `/proc` and `kill -0` Probing:**
+   * Checking `/proc/$pid/comm` and running `kill -0 "$pid"` to detect dead terminal processes and purge stale `.active_cd.*` files is intentional and expected on modern Linux systems.
+6. **Built-in Pure Shell Optimization in `_ai_teleport`:**
+   * `_ai_teleport` runs on every single shell prompt return. Prioritizing pure shell built-ins (`IFS= read -r`) over external utilities (`head`) is deliberate to achieve sub-millisecond execution.
 
 ---
 
 ## 2. High-Priority Bugs to Hunt (Real Vulnerabilities)
 
-Audit `plugins/zed/gpui-bridge.py` rigorously against these specific vulnerability classes:
+Audit `ai-hook.sh` rigorously against these specific vulnerability classes:
 
-### A. ACP JSON-RPC 2.0 Protocol Compliance
-* **Hanging Pending Requests:**
-  Verify that whenever an incoming request with an `id` is received, an error response (`-32601`, `-32602`, `-32603`) is guaranteed to be returned on any exception path or invalid payload so Zed is never left hanging until timeout.
-* **Permission Response Matching:**
-  Verify that responses to agent-initiated requests (`session/request_permission`) correctly parse Zed's outcome object (`{"outcome": {"outcome": "selected", "optionId": "allow"}}`) and clean up the `_pending_requests` table on all exit paths (success, rejection, or timeout).
-* **Notification vs. Request Handling:**
-  Ensure notifications (messages without `id`, such as `session/cancel` or `session/update`) never generate an outbound JSON-RPC response payload.
+### A. Sub-Millisecond Hook Hygiene & Process Fork Leaks
+* **Prompt Latency:**
+  `_ai_teleport` runs on every single Enter keypress via `precmd` or `PROMPT_COMMAND`. Verify that there are zero external subshells (`$(...)`) or binary forks in the common path when no `.active_cd.$$` file exists.
+* **Command-Not-Found Recursion:**
+  Inspect `_AI_CNF_ACTIVE`. Verify that unexpected failures or command re-evaluations inside `ai_handle_missing` cannot cause infinite recursion loops in `command_not_found_handle` or `command_not_found_handler`.
 
-### B. Concurrency, Race Conditions & Deadlocks
-* **Session Lock Coverage:**
-  Inspect `session["lock"]` and verify that concurrent operations (such as incoming `session/cancel` or `/clear` on the main thread while `_execute_acp_turn` is running on a worker thread) cannot race, desynchronize message history, or leak a permanent `session["busy"] = True` state.
-* **Worker Cleanup Invariants:**
-  Verify that `session["busy"] = False` is strictly guaranteed in a `finally:` block of `_worker()` even on unhandled network drops, parsing failures, or client disconnections.
+### B. Shell Portability & Word Splitting (Bash vs. Zsh)
+* **Zsh Glob Qualifier Portability:**
+  Verify that the Zsh nullglob qualifier `(N)` in `files=("$_AI_DIR"/.active_cd.*(N))` is never evaluated by Bash, and that Bash's `shopt -s nullglob` accurately restores prior user shell options (`$nullglob_set`).
+* **Path & Parameter Quoting:**
+  Check path expansions involving spaces, tabs, or globbing characters (`*`, `?`, `[ ]`) across `path`, `target`, and `exp`. Verify that variable expansions cannot be split into unintended argv elements.
 
-### C. Streaming Network Hygiene & Socket Leaks
-* **Stream Exception Traps:**
-  Verify that `_http_session.post(..., stream=True)` responses are wrapped in `with res:` blocks across all error paths to guarantee socket disposal on `res.iter_lines()` exceptions (e.g. `ChunkedEncodingError`, network drops).
-* **HTTP Error Reporting:**
-  Ensure HTTP status codes other than 200 (such as `400 Context Overflow`, `401 Unauthorized`, `502 Bad Gateway`) are surfaced as explicit error chunks rather than silently completing the turn with an empty assistant message.
+### C. Input Sanitization & `eval` Integrity
+* **ANSI & Control Character Stripping:**
+  Scrutinize the ANSI/OSC stripping regex in `ai_handle_missing`:
+  ```bash
+  sed -E $'s/\x1b\\][^\x07\x1b]*(\x07|\x1b\\\\)|\x1b\\[[0-9;?]*[a-zA-Z~]|\r//g'
+  ```
+  Verify whether crafted terminal escape sequences, carriage returns (`\r`), or multiline commands from `ai-agent.py --interactive` can bypass sanitization or inject unintended commands into `eval "$exp"`.
+* **Dry-Run Syntax Verification:**
+  Verify that `zsh -n <<< "$exp"` and `bash -n <<< "$exp"` reliably catch malformed shell code before execution without side-effects.
 
-### D. Tool Execution Integrity & Security Gates
-* **Conversation History Poisoning (Orphaned Tool Calls):**
-  Verify that whenever an assistant message containing `tool_calls` is appended to `messages`, every single tool call in that turn is guaranteed to receive a matching `{"role": "tool", "tool_call_id": ...}` response, even if execution raises an exception or is declined by the user.
-* **Security Gate Invariants:**
-  Verify that `_confirm_gate` properly differentiates between safe in-bounds file edits (auto-approved when `is_yolo` is active or `AI_CONFIRM_GATES == "0"`) and critical security events (`OUT-OF-BOUNDS`, `PYTHON DANGEROUS OP`, `PYTHON SHELL ESCAPE`), ensuring security events always require explicit user permission.
-* **Honest Tool Status Reporting:**
-  Ensure tool call notifications (`emit_tool_call`) report status `"failed"` when a tool returns `[denied]`, `[error]`, or raises an unhandled exception.
+### D. Subshell Error Trapping & Worktree Safety
+* **Lockfile Cleanup on Error:**
+  In `ai init`, verify that if index-map compilation fails, path canonicalization fails, or `ai-agent.py` exits with non-zero status, `$lockfile` is guaranteed to be unlinked and the shell does not remain in an inconsistent state.
+* **Canonical Path Traversal (`pwd -P`):**
+  Inspect `path=$(CDPATH= cd "$path" 2>/dev/null && pwd -P)`. Verify that symlinked directory paths or invalid non-existent paths handle `CDPATH` pollution cleanly.
 
-### E. Content Ingestion & Edge Cases
-* **Non-Text Block Parsing:**
-  Verify that multi-block inputs from Zed (`resource`, `resource_link`, `image`) cannot cause `AttributeError` or `KeyError` if unexpected or missing fields occur in the payload.
-* **Path Traversal in Workspace Resolution:**
-  Verify that `workspace` paths extracted from `params.get("cwd")` or environment variables cannot escape local filesystem bounds.
+### E. Reaper Parsing & Edge Cases
+* **Lockfile PID Validation:**
+  In the `ai()` cleanup loop, verify that `pid="${old##*.active_cd.}"` handles unexpected non-numeric filenames gracefully without passing bad arguments to `kill -0`.
 
 ---
 
@@ -70,7 +66,8 @@ Audit `plugins/zed/gpui-bridge.py` rigorously against these specific vulnerabili
 Format each discovered issue using this exact schema:
 
 1. **Title & Severity:** `[CRITICAL | HIGH | MEDIUM | LOW] <Clear Vulnerability Summary>`
-2. **Location:** `plugins/zed/gpui-bridge.py:<line_number>`
+2. **Location:** `ai-hook.sh:<line_number>`
 3. **Vulnerability Mechanics:** First-principles explanation of how the bug manifests at runtime.
-4. **Failure Trigger / PoC:** Concrete scenario (e.g. payload sequence, network drop, concurrent RPC call) that triggers the defect.
-5. **Surgical Patch:** Minimal, drop-in Python fix addressing the issue without altering existing architectural invariants.
+4. **Failure Trigger / PoC:** Concrete scenario (e.g. specific directory path, terminal sequence, Bash vs Zsh state) that triggers the defect.
+5. **Surgical Patch:** Minimal, drop-in shell fix addressing the issue without altering existing architectural invariants.
+
