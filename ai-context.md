@@ -24,9 +24,9 @@
 # --- Project Creator ---
 ~/.config/py-agent/tools/new-project ---> new project, newp
 # --- AI Status ---
-[TOOL] ~/.config/py-agent/tools/system/ai-status ---> aistatus, aistat, ais
+[TOOL] ~/.config/py-agent/tools/system/ai-status --cat ---> aistatus, aistat, ais
 # --- Cheatsheet ---
-[TOOL] ~/.config/py-agent/tools/cheatsheet ---> cheatsheet, cs
+[TOOL] ~/.config/py-agent/tools/cheatsheet --cat ---> cheatsheet, cs
 # --- Eval Model & Profile (Agentic Tool Benchmark) ---
 ~/.config/py-agent/tools/evals/eval-stack --->  eval stack, eval-stack, eva
 # --- System Orchestrator TUI ---
@@ -94,18 +94,18 @@ ai init ~/.config/py-agent/projects/session-test ---> session test, projects ses
 
 ```properties
 # --- System Profile ---
-[TOOL] cat ~/.config/py-agent/skills/system/mysys.md ---> mysys
-[TOOL] ~/.config/py-agent/tools/generate-profile ---> generate profile, genp
+[TOOL] cat ~/.config/py-agent/skills/system/mysys.md --cat ---> mysys
+[TOOL] ~/.config/py-agent/tools/generate-profile --cat ---> generate profile, genp
 # --- System Health ---
-[TOOL] ~/.config/py-agent/tools/system/system-health ---> system health, sysh
+[TOOL] ~/.config/py-agent/tools/system/system-health --cat ---> system health, sysh
 # --- Log Checker ---
-[TOOL] ~/.config/py-agent/tools/system/log-checker ---> log checker, ailog
+[TOOL] ~/.config/py-agent/tools/system/log-checker --cat ---> log checker, ailog
 # --- AUR Audit ---
-[TOOL] ~/.config/py-agent/tools/system/aur-audit ---> aur audit, aurp
+[TOOL] ~/.config/py-agent/tools/system/aur-audit --cat ---> aur audit, aurp
 # --- Security Audit ---
-[TOOL] ~/.config/py-agent/tools/system/security-audit ---> security audit, secaud
+[TOOL] ~/.config/py-agent/tools/system/security-audit --cat ---> security audit, secaud
 # --- System Optimizer ---
-[TOOL] ~/.config/py-agent/tools/system/system-optimizer ---> system optimizer, sysop
+[TOOL] ~/.config/py-agent/tools/system/system-optimizer --cat ---> system optimizer, sysop
 # --- Update Inspector ---
-[TOOL] ~/.config/py-agent/tools/system/update-inspector ---> update inspector, upi
+[TOOL] ~/.config/py-agent/tools/system/update-inspector --cat ---> update inspector, upi
 ```

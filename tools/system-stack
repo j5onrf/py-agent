@@ -23,8 +23,8 @@ except ImportError:
 
 # --- Path Configurations ---
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
-SYSTEM_DIR = os.path.join(CFG_DIR, "tools", "agentic", "system")
-TOOLS_DIR = SYSTEM_DIR if os.path.isdir(SYSTEM_DIR) else os.path.dirname(os.path.abspath(__file__))
+SYSTEM_DIR = os.path.join(CFG_DIR, "tools", "system")
+TOOLS_DIR = SYSTEM_DIR if os.path.isdir(SYSTEM_DIR) else os.path.join(os.path.dirname(os.path.abspath(__file__)), "system")
 
 GENP_BIN = os.path.join(CFG_DIR, "tools", "generate-profile")
 MYSYS_FILE = os.path.join(CFG_DIR, "skills", "system", "mysys.md")
