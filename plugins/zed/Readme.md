@@ -1,12 +1,12 @@
 # Py-Agent Zed Integration
 
-Connects `py-agent` to Zed's Agent Panel (via ACP - Agent Client Protocol) and enables autonomous tool execution, file editing, and in-editor inline transformations.
+Connects `py-agent` to Zed via the Agent Client Protocol (ACP) for autonomous tool execution and inline code transformations.
 
 ---
 
 ## 1. Configure Zed
 
-Add the Agent Server and local model definitions to `~/.config/zed/settings.json`:
+Add the `local-model` and agent server definitions to `~/.config/zed/settings.json`:
 
 ```json
 {
@@ -15,21 +15,13 @@ Add the Agent Server and local model definitions to `~/.config/zed/settings.json
     "dock": "right",
     "inline_assistant_model": {
       "provider": "openai",
-      "model": "Ling-3.0-tiny"
+      "model": "local-model"
     }
   },
   "language_models": {
     "openai": {
       "api_url": "http://127.0.0.1:8080/v1",
       "available_models": [
-        {
-          "name": "Ling-3.0-tiny",
-          "max_tokens": 8192
-        },
-        {
-          "name": "Qwen3.8-35B-Distill",
-          "max_tokens": 8192
-        },
         {
           "name": "local-model",
           "max_tokens": 8192
@@ -53,30 +45,35 @@ Add the Agent Server and local model definitions to `~/.config/zed/settings.json
 }
 ```
 
-> **Note on `AI_CONFIRM_GATES=0`:** Because Zed communicates over headless stdio without an interactive TTY, `AI_CONFIRM_GATES=0` is required to allow in-bounds workspace tool execution (`write_file`, `edit_file`, `run_command`) without blocking on CLI confirmation prompts.
+> **Note:** `local-model` automatically routes to whichever GGUF is currently loaded on `127.0.0.1:8080`. `AI_CONFIRM_GATES=0` allows in-bounds workspace tool execution over headless stdio without interactive TTY prompts.
 
 ---
 
 ## 2. Usage
 
-### A. Autonomous Agent Panel (Multi-Turn & Tools)
-1. Open the Agent panel on the right (`Ctrl-?` or click the panel icon).
-2. Click `+` to open a new conversation thread.
-3. Select `py-agent` from the agent server selector.
-4. Enter your request (e.g., `write a python binary search tree with insert and search methods`).
-5. The agent streams its thinking process, writes the files directly into your open workspace, runs verification commands, and fixes any errors in place.
+### Launch from CLI
+From any active workspace session, run:
+```console
+❯ /zed
+```
+This opens Zed on the current workspace and exports `AI_ACTIVE_SKILL` to sync the active profile.
 
-### B. Inline Buffer Assistant (In-Place Code Edits)
+### Agent Panel (Autonomous Tools)
+1. Open the Agent panel on the right (`Ctrl-?`).
+2. Select `py-agent` from the agent dropdown.
+3. Enter requests (e.g., `write a python binary search tree with insert and search methods`). The agent runs tools, edits files, and verifies commands.
+
+### Inline Buffer Assistant
 1. Place the cursor on a line or highlight code in an editor buffer.
-2. Press `Ctrl-Enter` (or `Cmd-Enter` on macOS).
-3. Enter a code transformation instruction (e.g., `add type hints`, `refactor into a dataclass`) and press `Enter`.
-4. Accept the inline diff (`Ctrl-Enter` or `Enter`) or reject it (`Escape`).
+2. Press `Ctrl-Enter`.
+3. Enter an instruction (e.g., `add type hints`) and press `Enter` to preview diffs.
 
 ---
 
 ## 3. Troubleshooting
 
-- **Tool shows a red X (`failed` / `[denied]`):** Ensure `AI_CONFIRM_GATES=0` is present in the `args` line and under `"env"` in your `settings.json`.
-- **Local model offline:** Verify your local inference server (e.g., llama.cpp, vLLM, or Ollama) is running on `http://127.0.0.1:8080/v1`.
-- **Debug output:** Review bridge output in Zed's logs or run `tail -f ~/.config/py-agent/.request_log`.
+- **Binary not found:** On Arch/CachyOS, verify if Zed is installed as `zeditor` (`which zeditor`).
+- **Verify active profile:** Run `tail -n 30 ~/.local/share/zed/logs/Zed.log | grep zed-bridge` to confirm session initialization.
+- **Tool shows a red X (`[denied]`):** Ensure `AI_CONFIRM_GATES=0` is present in `settings.json` under `"env"` and in the `"args"` line.
+- **Local model offline:** Ensure your local server is running on `http://127.0.0.1:8080` (`curl http://localhost:8080/v1/models`).
 

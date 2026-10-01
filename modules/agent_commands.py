@@ -205,7 +205,6 @@ def handle_file_command(ctx: SessionContext, query: str, parts: list[str]) -> bo
     cand_p = os.path.expanduser(raw_f) if os.path.isabs(os.path.expanduser(raw_f)) else os.path.join(ctx.workspace_path, raw_f)
     full_p = os.path.realpath(cand_p)
 
-    # 1. Strict boundary containment: must remain within the active workspace root
     if not (full_p == ws_real or full_p.startswith(ws_real + os.sep)):
         ui._console.print(f"[red][sys] Access denied: '{raw_f}' is outside the workspace.[/red]\n")
         return True
@@ -214,7 +213,6 @@ def handle_file_command(ctx: SessionContext, query: str, parts: list[str]) -> bo
         ui._console.print(f"[red][sys] File not found: {raw_f}[/red]\n")
         return True
 
-    # 2. Comprehensive credential and secrets pattern protection
     base_f = os.path.basename(full_p).lower()
     sens_ext = (".pem", ".key", ".p12", ".pfx", ".kdbx", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519")
     if (
@@ -226,12 +224,10 @@ def handle_file_command(ctx: SessionContext, query: str, parts: list[str]) -> bo
         ui._console.print(f"[red][sys] Access denied: Sensitive credential file '{base_f}'.[/red]\n")
         return True
 
-    # 3. Binary file protection
     if any(full_p.endswith(ext) for ext in (".db", ".sqlite", ".bin", ".png", ".jpg", ".jpeg", ".zip", ".tar", ".gz", ".pyc", ".so", ".dylib")):
         ui._console.print(f"[red][sys] Cannot load binary file: {raw_f}[/red]\n")
         return True
 
-    # 4. Size protection cap (max 250 KB to prevent context blowup)
     try:
         f_size = os.path.getsize(full_p)
         if f_size > 250 * 1024:
@@ -293,7 +289,6 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
     if not q_strip:
         return True, None
 
-    # Global Stop Voice/Speech Commands
     if q_lower.rstrip(".") in ("stop speech", "stop talking", "kill tts"):
         try:
             tts.stop_tts()
@@ -302,12 +297,10 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
         subprocess.run("killall -9 pw-play koko 2>/dev/null || true", shell=True)
         return True, None
 
-    # Global Session Exit
     if q_lower in ("exit", "quit", "q"):
         ctx.clean_exit_fn(ctx.safe_name if ctx.is_agent else None)
         return True, None
 
-    # Match Interactive Commands
     parts = q_strip.split()
     cmd = parts[0].lower() if parts else ""
 
@@ -387,6 +380,40 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
     if cmd == "/dsh":
         ui._console.print("[dim yellow][sys] Suspending CLI. Launching DeepSeek Harness...[/dim yellow]")
         ctx.launch_surface_fn(os.path.join(CFG_DIR, "plugins", "dsh", "run-dsh.sh"), ctx.is_agent, ctx.workspace_path, ctx.clean_name or "chat", ctx.chat_history)
+        return True, None
+
+    if cmd in ("/zed", "/gpui"):
+        candidates = [
+            shutil.which("zed"),
+            shutil.which("zeditor"),
+            shutil.which("zed-editor"),
+            shutil.which("zed-preview"),
+            os.path.expanduser("~/.local/bin/zed"),
+            os.path.expanduser("~/.local/bin/zeditor"),
+            os.path.expanduser("~/.cargo/bin/zed"),
+            "/usr/bin/zed",
+            "/usr/bin/zeditor",
+            "/usr/local/bin/zed",
+            "/usr/local/bin/zeditor",
+        ]
+        zed_bin = next((c for c in candidates if c and os.path.isfile(c) and os.access(c, os.X_OK)), None)
+
+        if not zed_bin and shutil.which("flatpak"):
+            res = subprocess.run(["flatpak", "info", "dev.zed.Zed"], capture_output=True)
+            if res.returncode == 0:
+                zed_bin = "flatpak"
+
+        if not zed_bin:
+            ui._console.print("[dim yellow][sys] Zed executable not found. Checked 'zed', 'zeditor', 'zed-editor', and ~/.local/bin/zed.[/dim yellow]\n")
+            return True, None
+
+        ui._console.print(f"[dim yellow][sys] Launching Zed editor ({zed_bin})...[/dim yellow]")
+        env = {**os.environ, "AI_WORKSPACE_PATH": ctx.workspace_path, "AI_ACTIVE_SKILL": ctx.clean_name or "chat"}
+        cmd_args = ["flatpak", "run", "dev.zed.Zed", ctx.workspace_path] if zed_bin == "flatpak" else [zed_bin, ctx.workspace_path]
+        try:
+            subprocess.Popen(cmd_args, env=env)
+        except OSError as e:
+            ui._console.print(f"[red][sys] Failed to launch Zed: {e}[/red]\n")
         return True, None
 
     if cmd in ("/box"):

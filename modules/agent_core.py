@@ -626,6 +626,7 @@ def agentic_turn(
     session = _get_session()
 
     for _round in range(10):
+        healed_calls: list[dict[str, Any]] = []
         curr_tok = _calc_msg_tokens(messages)
         if spinner and hasattr(spinner, "update_context"):
             spinner.update_context(curr_tok, max_ctx)
@@ -891,7 +892,8 @@ def agentic_turn(
                 return ans_text if ans_text else "(No response generated)"
 
         except KeyboardInterrupt:
-            _backfill_missing_tool_results(messages, healed_calls, "[cancelled: interrupted by user]")
+            if healed_calls:
+                _backfill_missing_tool_results(messages, healed_calls, "[cancelled: interrupted by user]")
             if streamer:
                 try:
                     streamer.stop(interrupted=True)

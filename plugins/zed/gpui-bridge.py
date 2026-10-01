@@ -145,13 +145,16 @@ def _request_client_permission(session_id: str, tool_call_id: str, title: str, t
 
 
 def _build_session_context(workspace: str) -> tuple[str, str, bool, int, bool]:
-    cfg_file = os.path.join(workspace, ".agent", "config.json")
-    profile_name = "lingtiny"
+    inherited_skill = os.environ.get("AI_ACTIVE_SKILL")
+    env_yolo = os.environ.get("AI_CONFIRM_GATES") == "0" or os.environ.get("AI_YOLO") == "1"
+
+    profile_name = inherited_skill or "chat"
     adapters_on = True
     reasoning_budget = 500
-    is_yolo = False
+    is_yolo = env_yolo
 
-    if os.path.isfile(cfg_file):
+    cfg_file = os.path.join(workspace, ".agent", "config.json")
+    if not inherited_skill and os.path.isfile(cfg_file):
         try:
             with open(cfg_file, "r", encoding="utf-8") as cf:
                 cfg_data = json.load(cf)
