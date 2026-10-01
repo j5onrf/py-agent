@@ -23,7 +23,6 @@ try:
     import agent_cloud as cloud
     import agent_core as core
     import agent_memories as memories
-    import agent_security as security
     import agent_skills as skills
     import agent_tools as tools
     import requests
@@ -166,8 +165,8 @@ def _build_session_context(workspace: str) -> tuple[str, str, bool, int, bool]:
                             reasoning_budget = min(max(0, int(b_val)), 32000)
                         except ValueError:
                             pass
-        except (OSError, json.JSONDecodeError, ValueError, TypeError, AttributeError):
-            pass
+        except (OSError, json.JSONDecodeError, ValueError, TypeError, AttributeError) as e:
+            log_debug(f"Failed to load workspace config '{cfg_file}': {e}")
 
     skills_dir = os.path.join(CFG_DIR, "skills")
     profile_raw = skills.load_skill_content(profile_name, skills_dir, CFG_DIR) or "You are an expert autonomous software engineer."
@@ -193,11 +192,11 @@ def handle_initialize(req_id: Any, params: dict[str, Any]) -> None:
     send_response(req_id, {
         "protocolVersion": proto_version,
         "agentCapabilities": {
-            "loadSession": False
+            "loadSession": True
         },
         "agentInfo": {
             "name": "py-agent",
-            "version": "0.9.9.45"
+            "version": "0.9.9.48"
         }
     })
 
@@ -229,13 +228,27 @@ def handle_session_new(req_id: Any, params: dict[str, Any]) -> None:
 
 
 def handle_session_load(req_id: Any, params: dict[str, Any]) -> None:
-    session_id = str(params.get("sessionId") or "")
+    session_id = str(params.get("sessionId") or f"sess_{int(time.time())}_{uuid.uuid4().hex[:6]}")
     with _sessions_lock:
-        if session_id in _sessions:
-            send_response(req_id, {"sessionId": session_id})
-            return
+        if session_id not in _sessions:
+            cwd = params.get("cwd") or os.environ.get("AI_WORKSPACE_PATH") or os.getcwd()
+            workspace = os.path.realpath(os.path.expanduser(cwd))
+            prompt, profile_name, adapters_on, budget, is_yolo = _build_session_context(workspace)
 
-    send_response(req_id, error={"code": -32602, "message": f"Session '{session_id}' not found"})
+            _sessions[session_id] = {
+                "workspace": workspace,
+                "history": [{"role": "system", "content": prompt}],
+                "cancelled": False,
+                "busy": False,
+                "lock": threading.Lock(),
+                "profile_name": profile_name,
+                "adapters_on": adapters_on,
+                "reasoning_budget": budget,
+                "is_yolo": is_yolo
+            }
+            log_debug(f"Re-initialized session '{session_id}' on reload | Workspace: {workspace}")
+
+    send_response(req_id, {"sessionId": session_id})
 
 
 def handle_session_cancel(params: dict[str, Any]) -> None:
@@ -495,7 +508,10 @@ def _execute_acp_turn(session_id: str, req_id: Any) -> None:
             healed_calls.append({"id": cid, "type": "function", "function": {"name": fname, "arguments": json.dumps(healed_dict)}})
 
         clean_ans_text = re.sub(r"<think>[\s\S]*?(?:</think>|$)", "", ans_text).strip()
-        messages.append({"role": "assistant", "content": clean_ans_text or "", "tool_calls": healed_calls})
+        asst_msg = {"role": "assistant", "content": clean_ans_text or "", "tool_calls": healed_calls}
+        messages.append(asst_msg)
+        with session["lock"]:
+            session["history"].append(asst_msg)
 
         for tc in healed_calls:
             fname = tc["function"]["name"]
@@ -526,16 +542,15 @@ def _execute_acp_turn(session_id: str, req_id: Any) -> None:
                 or str(result).startswith("[denied]")
             )
             emit_tool_call(session_id, tc["id"], f"{fname} {brief}", "failed" if tool_failed else "completed")
-            messages.append({"role": "tool", "tool_call_id": tc["id"], "name": fname, "content": result})
+            tool_msg = {"role": "tool", "tool_call_id": tc["id"], "name": fname, "content": result}
+            messages.append(tool_msg)
+            with session["lock"]:
+                session["history"].append(tool_msg)
 
             if str(result).startswith("[denied]"):
-                with session["lock"]:
-                    session["history"].extend(messages[len(session["history"]):])
                 send_response(req_id, {"stopReason": "end_turn"})
                 return
 
-    with session["lock"]:
-        session["history"].extend(messages[len(session["history"]):])
     send_response(req_id, {"stopReason": "end_turn"})
 
 
