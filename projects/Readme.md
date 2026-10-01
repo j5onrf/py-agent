@@ -121,6 +121,7 @@ Workspace metadata is isolated inside `project/.agent/`.
 │   Surfaces & Audio                                                  │
 │   /pyc, /pyc web         - PyCode IDE (Desktop / WebUI)             │
 │   /dsh                   - DeepSeek Harness (dsh)                   │
+│   /zed                   - Zed editor (ACP integration)             │
 │   /webui, /web           - WebUI gateway (llama.cpp)                │
 │   /tui                   - Terminal UI (PyTUI)                      │
 │   /calm, /zen            - Toggle Calm mode (boat progress)         │

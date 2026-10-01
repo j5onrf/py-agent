@@ -449,14 +449,13 @@ class RichStreamer:
                 self.ans_started, p_clean = True, self.prefix.strip()
                 p_str = f"{p_clean}\n\n" if (p_clean and tok.startswith(("```", "#", "---"))) else (f"{p_clean} " if p_clean else "")
                 p_style = "\033[1;32m" if "Agent" in p_clean else "\033[1;36m"
-                lead = "\n" if (not self.think_hdr_printed and self.round_idx == 0) else ""
                 if p_str:
                     try:
-                        sys.stdout.write(f"{lead}{p_style}{p_str}\033[0m")
+                        sys.stdout.write(f"{p_style}{p_str}\033[0m")
                         sys.stdout.flush()
                     except OSError:
                         pass
-                self.acc_ans += lead + p_str
+                self.acc_ans += p_str
 
             self.acc_ans += tok
             if tok:

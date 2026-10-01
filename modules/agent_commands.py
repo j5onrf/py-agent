@@ -404,16 +404,17 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
                 zed_bin = "flatpak"
 
         if not zed_bin:
-            ui._console.print("[dim yellow][sys] Zed executable not found. Checked 'zed', 'zeditor', 'zed-editor', and ~/.local/bin/zed.[/dim yellow]\n")
+            ctx.flash_status("zed: not found")
             return True, None
 
-        ui._console.print(f"[dim yellow][sys] Launching Zed editor ({zed_bin})...[/dim yellow]")
         env = {**os.environ, "AI_WORKSPACE_PATH": ctx.workspace_path, "AI_ACTIVE_SKILL": ctx.clean_name or "chat"}
         cmd_args = ["flatpak", "run", "dev.zed.Zed", ctx.workspace_path] if zed_bin == "flatpak" else [zed_bin, ctx.workspace_path]
         try:
             subprocess.Popen(cmd_args, env=env)
-        except OSError as e:
-            ui._console.print(f"[red][sys] Failed to launch Zed: {e}[/red]\n")
+            bname = "flatpak" if zed_bin == "flatpak" else os.path.basename(zed_bin)
+            ctx.flash_status(f"zed: {bname}")
+        except OSError:
+            ctx.flash_status("zed: launch failed")
         return True, None
 
     if cmd in ("/box"):

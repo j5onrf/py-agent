@@ -96,7 +96,7 @@ def _clear_transient_status(query: str) -> None:
     global _transient_cmd_count
     if _transient_cmd_count > 0:
         try:
-            sys.stdout.write(f"\033[{_transient_cmd_count + 1}A\r\x1b[0J❯ {query}\n\n")
+            sys.stdout.write(f"\033[{_transient_cmd_count + 1}A\r\x1b[0J❯ {query}\n")
             sys.stdout.flush()
         except OSError:
             pass
@@ -484,6 +484,9 @@ def run_interactive_chat(args: list[str]) -> None:
                 readline.add_history(query)
             except Exception:
                 pass
+
+            sys.stdout.write("\n")
+            sys.stdout.flush()
 
             if ans := core.stream_response(chat_history, prefix="Agent:" if is_agent else "AI:", show_stats=show_stats, thinking_budget=reasoning_budget if reasoning_active else 0, is_agent=is_agent):
                 clean_ans = RE_THINK_TAGS.sub("", ans).strip()
