@@ -19,7 +19,7 @@ STATE_LOCK_FILE: str = os.path.join(CFG_DIR, ".state.lock")
 DEFAULTS: dict[str, Any] = {
     "show_stats": False,
     "memory_active": False,
-    "box_style": 7,
+    "box_style": 1,
     "yolo_mode": True,
     "show_thinking": True,
     "reasoning_active": True,

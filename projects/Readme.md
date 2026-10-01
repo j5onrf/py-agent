@@ -8,7 +8,7 @@ Autonomous local developer agent with OKF memory, iPython, and codebase index-ma
 OK: Profile set to: Lingtiny [Yolo: ON] [Map: ON] [Mem: ON] [Py: ON] [Adp: ON]
 
  Map enabled: compiled index-map.
-╭─ ∿ ──────────────────────────────────────────────────────╮
+╭─ ∿ Py Agent ─────────────────────────────────────────────╮
 │     model:  Ling-3.0-tiny                                │
 │ directory:  ~/.config/py-agent/projects/ling-tiny        │
 │   profile:  lingtiny                                     │
