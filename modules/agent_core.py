@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [Hardened Production Ready]"""
 
-import fcntl
 import json
 import os
 import re
@@ -21,11 +20,28 @@ from agent_context import (
     show_memory_status,
 )
 import agent_security as security
+from agent_state import (
+    CFG_DIR,
+    DEFAULTS,
+    STATE_FILE,
+    STATE_LOCK_FILE,
+    _get_int_env,
+    get_state,
+    is_calm_cli,
+    save_state,
+    workspace_safe_name,
+)
+from agent_stream import (
+    Markdown,
+    RichStreamer,
+    _console,
+    _console_err,
+    _escape_markup,
+    _process_stream_chunk,
+    get_cursor_up_count,
+    prepare_markdown,
+)
 import agent_tools as tools
-
-CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
-STATE_FILE: str = os.path.join(CFG_DIR, ".state.json")
-STATE_LOCK_FILE: str = os.path.join(CFG_DIR, ".state.lock")
 
 
 def preprocess_multimodal_messages(*args: Any, **kwargs: Any) -> Any:
@@ -49,109 +65,6 @@ def prune_history(msg_list: list[dict[str, Any]], max_tokens: int | None = None)
     msg_list[:] = pruned
     return msg_list
 
-
-_markdown_initialized: bool = False
-_console_lock = threading.Lock()
-
-
-def _init_rich_markdown() -> None:
-    global _markdown_initialized
-    with _console_lock:
-        if _markdown_initialized:
-            return
-        from rich.markdown import CodeBlock, Markdown as _RM
-        from rich.segment import Segment
-        from rich.syntax import Syntax
-
-        class CleanCodeBlock(CodeBlock):
-            def __rich_console__(self, console: Any, options: Any) -> Any:
-                code = str(self.text).rstrip()
-                lexer = getattr(self, "lexer_name", "text") or "text"
-                theme = getattr(self, "theme", "") or str(get_state("code_theme", "monokai"))
-                syntax = Syntax(
-                    code,
-                    lexer,
-                    theme=theme,
-                    word_wrap=False,
-                    padding=0,
-                    background_color="default",
-                )
-                lines = console.render_lines(syntax, options)
-                for line in lines:
-                    while line and line[-1].text.isspace():
-                        line.pop()
-                    if line and line[-1].text != line[-1].text.rstrip(" "):
-                        line[-1] = Segment(line[-1].text.rstrip(" "), line[-1].style)
-                    yield from line
-                    yield Segment.line()
-
-        _RM.elements["fence"] = CleanCodeBlock
-        _RM.elements["code_block"] = CleanCodeBlock
-        _markdown_initialized = True
-
-
-def Markdown(*args: Any, **kwargs: Any) -> Any:
-    _init_rich_markdown()
-    from rich.markdown import Markdown as _RM
-    return _RM(*args, **kwargs)
-
-
-def prepare_markdown(text: str) -> str:
-    """Repairs unclosed fences and wraps bare code emitted by small SLMs."""
-    if not text:
-        return ""
-    if text.count("```") % 2 != 0:
-        text = text.rstrip() + "\n```"
-    elif "```" not in text:
-        code_kw = ("import ", "from ", "def ", "class ", "return ", "print(")
-        if any(l.lstrip().startswith(code_kw) for l in text.splitlines()):
-            text = f"```python\n{text.strip()}\n```"
-    return text
-
-
-def get_cursor_up_count(text: str, width: int) -> int:
-    if not text:
-        return 0
-    w = max(1, width)
-    clean = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", text)
-    raw_lines = clean.split("\n")
-    up = 0
-    for line in raw_lines[:-1]:
-        up += max(1, (len(line) + w - 1) // w)
-    last = raw_lines[-1]
-    if last:
-        last_visual = max(1, (len(last) + w - 1) // w)
-        up += last_visual - 1
-    return up
-
-
-_console_inst: Any = None
-_console_err_inst: Any = None
-
-
-def _get_console(stderr: bool = False) -> Any:
-    global _console_inst, _console_err_inst
-    with _console_lock:
-        if stderr:
-            if _console_err_inst is None:
-                from rich.console import Console
-                _console_err_inst = Console(stderr=True)
-            return _console_err_inst
-        if _console_inst is None:
-            from rich.console import Console
-            _console_inst = Console(stderr=False)
-        return _console_inst
-
-
-class _LazyConsole:
-    def __init__(self, stderr: bool = False) -> None:
-        self._stderr = stderr
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(_get_console(self._stderr), name)
-
-
-_console, _console_err = _LazyConsole(False), _LazyConsole(True)
 
 _local_session = threading.local()
 
@@ -187,23 +100,8 @@ def _clean_sigint_handler(exctype, value, tb):
 
 sys.excepthook = _clean_sigint_handler
 
-RE_THINKING_TITLE = re.compile(r"^\s*Thinking Process:\s*", re.IGNORECASE)
-RE_FINAL_ANSWER = re.compile(r"^\s*Final Answer:\s*", re.IGNORECASE)
 RE_FINAL_ANSWER_SENTINEL = re.compile(r"^\s*#{0,3}\s*Final Answer\b", re.IGNORECASE | re.MULTILINE)
-RE_MULTIPLE_NEWLINES = re.compile(r"\n{2,}")
-RE_TOOL_CALL_BLOCK = re.compile(
-    r"<\|tool_call_start\|>.*?<\|tool_call_end\|>|<tool_call>[\s\S]*?</tool_call>|<arg_key>[\s\S]*?</arg_value>",
-    re.DOTALL
-)
-
 TOOL_VERBS: dict[str, str] = getattr(tools, "TOOL_VERBS", {})
-
-DEFAULTS = {
-    "show_stats": False, "memory_active": False, "box_style": 7, "yolo_mode": True,
-    "show_thinking": True, "reasoning_active": True, "reasoning_budget": 500,
-    "voice_auto_submit": True, "tts_enabled": False, "render_markdown": False,
-    "adapters_active": False, "calm_mode": False, "code_theme": "monokai"
-}
 
 try:
     import agent_usage as usage_log
@@ -211,22 +109,6 @@ try:
 except ImportError:
     usage_log = None
     speed_test = None
-
-_state_lock = threading.Lock()
-_state_cache: dict[str, Any] = {}
-_state_mtime: float = 0.0
-_state_size: int = 0
-_state_ino: int = 0
-
-
-def _get_int_env(key: str, default: int) -> int:
-    val = os.environ.get(key)
-    if val is None or not str(val).strip():
-        return default
-    try:
-        return int(val)
-    except (ValueError, TypeError):
-        return default
 
 
 def _heal_tool_args(raw: Any) -> dict[str, Any]:
@@ -252,83 +134,6 @@ def _heal_tool_args(raw: Any) -> dict[str, Any]:
         return {"_parse_error": str(e), "_raw_args": str(raw)}
 
 
-def get_state(key: str = "", default: Any = None) -> Any:
-    global _state_cache, _state_mtime, _state_size, _state_ino
-    with _state_lock:
-        if os.path.exists(STATE_FILE):
-            try:
-                st = os.stat(STATE_FILE)
-                sig = (st.st_mtime, st.st_size, getattr(st, "st_ino", 0))
-                if sig != (_state_mtime, _state_size, _state_ino) or not _state_cache:
-                    with open(STATE_FILE, "r", encoding="utf-8") as f:
-                        loaded = json.load(f)
-                    if isinstance(loaded, dict):
-                        _state_cache = loaded
-                    _state_mtime, _state_size, _state_ino = sig
-            except (OSError, json.JSONDecodeError):
-                pass
-        elif _state_cache:
-            _state_cache, _state_mtime, _state_size, _state_ino = {}, 0.0, 0, 0
-        merged = {**DEFAULTS, **_state_cache}
-        return merged.get(key, default) if key else merged
-
-
-def save_state(key: str, value: Any) -> None:
-    global _state_cache, _state_mtime, _state_size, _state_ino
-    with _state_lock:
-        os.makedirs(CFG_DIR, exist_ok=True)
-        lock_fd = None
-        tmp = f"{STATE_FILE}.tmp.{os.getpid()}.{threading.get_ident()}"
-        try:
-            lock_fd = os.open(STATE_LOCK_FILE, os.O_CREAT | os.O_RDWR, 0o600)
-            fcntl.flock(lock_fd, fcntl.LOCK_EX)
-            current = {}
-            if os.path.exists(STATE_FILE):
-                try:
-                    with open(STATE_FILE, "r", encoding="utf-8") as f:
-                        current = json.load(f)
-                except (OSError, json.JSONDecodeError):
-                    current = {}
-            st = {**current, key: value}
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(st, f, indent=2)
-            os.replace(tmp, STATE_FILE)
-            _state_cache = st
-            try:
-                st_stat = os.stat(STATE_FILE)
-                _state_mtime, _state_size, _state_ino = st_stat.st_mtime, st_stat.st_size, getattr(st_stat, "st_ino", 0)
-            except OSError:
-                pass
-        except (OSError, TypeError, ValueError) as e:
-            sys.stderr.write(f"[sys] Failed to persist state '{key}': {e}\n")
-            if os.path.exists(tmp):
-                try:
-                    os.remove(tmp)
-                except OSError:
-                    pass
-        finally:
-            if lock_fd is not None:
-                try:
-                    fcntl.flock(lock_fd, fcntl.LOCK_UN)
-                    os.close(lock_fd)
-                except OSError:
-                    pass
-
-
-def workspace_safe_name(workspace_path: str, home_dir: str = "") -> str:
-    home, ws = os.path.realpath(home_dir or os.path.expanduser("~")), os.path.realpath(workspace_path)
-    return "home-chat" if ws == home else (ws.replace("/", "-").strip("-.") or "home-chat")
-
-
-def is_calm_cli() -> bool:
-    """Strict gate: Calm mode only runs in interactive CLI terminals."""
-    if os.environ.get("AI_SURFACE") == "1" or os.environ.get("TEXTUAL") or _get_int_env("AI_SUBAGENT_DEPTH", 0) >= 1:
-        return False
-    if not (sys.stdout.isatty() and sys.stderr.isatty()):
-        return False
-    return bool(get_state("calm_mode", False))
-
-
 def run_mod(module_name: str, *args: str) -> str:
     for base in (os.path.join(CFG_DIR, "modules"), os.path.join(CFG_DIR, "tools"), CFG_DIR):
         base_real = os.path.realpath(base)
@@ -341,153 +146,6 @@ def run_mod(module_name: str, *args: str) -> str:
             except Exception as e:
                 return f"[error: {e}]"
     return ""
-
-
-def _escape_markup(text: str) -> str:
-    return str(text).replace("[", "\\[")
-
-
-# ── 1. Streaming Rich Streamer ───────────────────────────────────────────────
-
-class RichStreamer:
-    def __init__(self, prefix: str = "", active: bool = True, spinner: Any = None, round_idx: int = 0) -> None:
-        self.prefix, self.active, self.spinner = prefix, active and sys.stdout.isatty(), spinner
-        self.acc_think, self.acc_ans, self.phase, self.think_hdr_printed, self.ans_started = "", "", "INIT", False, False
-        self.in_post_think = False
-        self.round_idx = round_idx
-
-    def _stop_spinner(self, done_msg: str | None = None) -> None:
-        if self.spinner:
-            try:
-                self.spinner.stop(done_msg=done_msg)
-            except Exception:
-                pass
-
-    def start(self) -> None:
-        if self.active:
-            try:
-                sys.stdout.write("\033[?25h")
-                sys.stdout.flush()
-            except OSError:
-                pass
-
-    def update(self, token: str) -> None:
-        if not self.active:
-            if "<think>" in token and self.phase != "THINKING":
-                self.phase, token = "THINKING", token.replace("<think>", "")
-            if "</think>" in token:
-                parts = token.split("</think>", 1)
-                self.phase, token = "ANSWER", parts[1]
-            if self.phase != "THINKING" and token:
-                try:
-                    sys.stdout.write(token.replace("\r\n", "\n").replace("\n", "\r\n"))
-                    sys.stdout.flush()
-                except OSError:
-                    pass
-            return
-
-        if "<think>" in token:
-            if self.ans_started:
-                self.in_post_think = True
-            else:
-                self.phase = "THINKING"
-            token = token.replace("<think>", "")
-
-        show_think = os.environ.get("AI_SHOW_THINKING", "1") == "1"
-
-        if "</think>" in token:
-            parts = token.split("</think>", 1)
-            if self.in_post_think:
-                self.in_post_think = False
-                if len(parts) > 1 and parts[1]:
-                    self.update(parts[1])
-                return
-            if parts[0]:
-                self.update(parts[0])
-            if show_think and self.think_hdr_printed and not self.ans_started:
-                sep = "" if self.acc_think.endswith("\n") else "\r\n"
-                _console_err.print(f"{sep}[dim]╰────────────────────────────────────────────────────────[/dim]\n")
-                sys.stderr.flush()
-            self.phase = "ANSWER"
-            if self.spinner and not self.ans_started:
-                self.spinner.start("Drafting tool action...")
-            if len(parts) > 1 and parts[1]:
-                self.update(parts[1])
-            return
-
-        if self.in_post_think:
-            self.acc_think += token
-            return
-
-        if self.phase == "INIT":
-            self.phase = "ANSWER"
-
-        if self.phase == "THINKING":
-            tok = RE_MULTIPLE_NEWLINES.sub("\n", RE_THINKING_TITLE.sub("", token))
-            if self.acc_think.endswith("\n") and tok.startswith("\n"):
-                tok = tok.lstrip("\r\n")
-            self.acc_think += tok
-            if show_think and tok:
-                if not self.think_hdr_printed and tok.strip():
-                    self.think_hdr_printed = True
-                    self._stop_spinner()
-                    _console_err.print("[dim]╭─ ∿ ────────────────────────────────────────────────────[/dim]")
-                    tok = tok.lstrip("\r\n")
-                if tok:
-                    try:
-                        sys.stderr.write(tok.replace("\r\n", "\n").replace("\n", "\r\n"))
-                        sys.stderr.flush()
-                    except OSError:
-                        pass
-        else:
-            tok = RE_FINAL_ANSWER.sub("", token)
-            if not self.ans_started:
-                tok = tok.lstrip("\r\n\t ")
-                if not tok:
-                    return
-                self._stop_spinner()
-                self.ans_started, p_clean = True, self.prefix.strip()
-                p_str = f"{p_clean}\n\n" if (p_clean and tok.startswith(("```", "#", "---"))) else (f"{p_clean} " if p_clean else "")
-                p_style = "\033[1;32m" if "Agent" in p_clean else "\033[1;36m"
-                if p_str:
-                    try:
-                        sys.stdout.write(f"{p_style}{p_str}\033[0m")
-                        sys.stdout.flush()
-                    except OSError:
-                        pass
-                self.acc_ans += p_str
-
-            self.acc_ans += tok
-            if tok:
-                try:
-                    sys.stdout.write(tok.replace("\r\n", "\n").replace("\n", "\r\n"))
-                    sys.stdout.flush()
-                except OSError:
-                    pass
-
-    def stop(self, interrupted: bool = False) -> None:
-        self._stop_spinner()
-        if interrupted:
-            try:
-                sys.stdout.write("\033[?25h\r\n")
-                sys.stdout.flush()
-            except OSError:
-                pass
-            return
-
-        show_think = os.environ.get("AI_SHOW_THINKING", "1") == "1"
-        if self.phase == "THINKING" and show_think and self.think_hdr_printed and not self.ans_started:
-            sep = "" if self.acc_think.endswith("\n") else "\r\n"
-            _console_err.print(f"{sep}[dim]╰────────────────────────────────────────────────────────[/dim]\n")
-            self.phase = "ANSWER"
-
-        render_md = bool(get_state("render_markdown", False))
-        if self.ans_started and not render_md:
-            try:
-                sys.stdout.write("\r\n")
-                sys.stdout.flush()
-            except OSError:
-                pass
 
 
 def _log_turn_usage(
@@ -509,40 +167,6 @@ def _log_turn_usage(
             print()
     except Exception:
         pass
-
-
-def _process_stream_chunk(content: str, reasoning: str, in_think_block: bool) -> tuple[str, bool, bool]:
-    if content:
-        if "Final Answer:" in content:
-            content = RE_FINAL_ANSWER.sub("", content).lstrip()
-        if "<|tool_call" in content:
-            content = RE_TOOL_CALL_BLOCK.sub("", content).replace("<|tool_call_start|>", "").replace("<|tool_call_end|>", "")
-
-    if reasoning:
-        think_part = f"<think>{reasoning}" if not in_think_block else reasoning
-        if content:
-            has_closer = "</think>" in content
-            closer = "" if has_closer else "</think>"
-            new_in_think = ("<think>" in content and content.rindex("<think>") > content.rindex("</think>")) if has_closer else False
-            return f"{think_part}{closer}{content}", False, new_in_think
-        return think_part, True, True
-
-    if content:
-        if in_think_block and "</think>" not in content:
-            return f"</think>{content}", False, False
-
-        if "<think>" in content and "</think>" in content:
-            in_think = content.rindex("<think>") > content.rindex("</think>")
-        elif "<think>" in content:
-            in_think = True
-        elif "</think>" in content:
-            in_think = False
-        else:
-            in_think = in_think_block
-
-        return content, in_think, in_think
-
-    return "", False, in_think_block
 
 
 def _calc_turn_tokens(ans_text: str, messages: list[dict[str, Any]], captured_usage: dict[str, Any] | None, is_local: bool) -> tuple[int, int]:
@@ -585,7 +209,7 @@ def _backfill_missing_tool_results(msg_list: list[dict[str, Any]], expected_call
             msg_list.append({"role": "tool", "tool_call_id": cid, "name": fn_name, "content": fallback_content})
 
 
-# ── 2. Autonomous Agentic Turn Engine ────────────────────────────────────────
+# ── Autonomous Agentic Turn Engine ───────────────────────────────────────────
 
 def agentic_turn(
     messages: list[dict[str, Any]],
@@ -623,8 +247,9 @@ def agentic_turn(
         return total
 
     session = _get_session()
+    max_rounds = _get_int_env("AI_MAX_AGENT_ROUNDS", 10)
 
-    for _round in range(10):
+    for _round in range(max_rounds):
         healed_calls: list[dict[str, Any]] = []
         curr_tok = _calc_msg_tokens(messages)
         if spinner and hasattr(spinner, "update_context"):
@@ -1057,11 +682,11 @@ def agentic_turn(
 
     if spinner:
         spinner.stop(leave_on_screen=False)
-    sys.stderr.write("\r\033[1;33m[sys] Agent loop limit reached (10 rounds exhausted without final answer).\033[0m\r\n")
+    sys.stderr.write(f"\r\033[1;33m[sys] Agent loop limit reached ({max_rounds} rounds exhausted without final answer).\033[0m\r\n")
     return ans_text or "(Agent loop limit reached)"
 
 
-# ── 3. High-Level Stream Entrypoint ──────────────────────────────────────────
+# ── High-Level Stream Entrypoint ─────────────────────────────────────────────
 
 def stream_response(
     messages: list[dict[str, Any]],

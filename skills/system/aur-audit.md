@@ -7,7 +7,7 @@
 
 ## INTENT MAPPINGS
 * **Intents**: audit package before install, check PKGBUILD safety, inspect AUR package, audit package source code, aur audit.
-* **Command Action**: `[TOOL] ~/.config/py-agent/tools/agentic/system/aur-audit $1`
+* **Command Action**: `[TOOL] ~/.config/py-agent/tools/system/aur-audit $1`
 
 ---
 

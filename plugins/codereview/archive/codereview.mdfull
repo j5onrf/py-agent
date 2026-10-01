@@ -14,7 +14,7 @@ This project is a lightweight, zero-daemon terminal AI runtime (`rich` + `reques
   Custom regex and partial JSON extractors are intentional to rescue malformed JSON and XML calls from ≤27B models. Do NOT suggest replacing them with strict `json.loads()`.
 * **Zero-Daemon Architecture:** 
   Do NOT suggest adding background services, Docker containers, Redis, or external vector databases. The architecture is strictly standard library Python + SQLite + Rich.
-* **Host Telemetry & System Inspections (`tools/agentic/system/`):**
+* **Host Telemetry & System Inspections (`tools/system/`):**
   Scripts in this directory are administrative triage tools. Reading `/proc`, `/sys/class/hwmon`, `/var/log`, and executing read-only inspection commands (`journalctl`, `systemctl list-units`, `ss -tulnpH`, `pacman -Qm`, `checkupdates`, `df`) is deliberate and authorized. Do NOT flag these inspection commands as security breaches.
 * **Semantic IP Masking (`AI_CONTEXT_RUN=1`):**
   In `security-audit`, substituting raw IP addresses and local subnets with semantic tokens (`[localhost]`, `[private-ip]`, `[all-interfaces]`) is an intentional zero-trust privacy layer to prevent leaking network topology to cloud LLMs.
@@ -33,7 +33,7 @@ This project is a lightweight, zero-daemon terminal AI runtime (`rich` + `reques
 * Ensure all background subshells and processes (`$!`) are tracked and killed in exit traps to prevent orphaned processes.
 
 ### C. Symlink & Path Resolution in Shell Utilities
-* In `tools/agentic/system/*` (e.g. `syscheck`), verify that script directory resolution uses canonical bash source inspection:
+* In `tools/system/*` (e.g. `syscheck`), verify that script directory resolution uses canonical bash source inspection:
   `cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P`
   Flag any use of raw `dirname "$0"`, which breaks when utilities are symlinked into `~/.local/bin` or executed via `$PATH`.
 

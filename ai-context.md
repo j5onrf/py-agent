@@ -24,7 +24,7 @@
 # --- Project Creator ---
 ~/.config/py-agent/tools/new-project ---> new project, newp
 # --- AI Status ---
-[TOOL] ~/.config/py-agent/tools/agentic/system/ai-status ---> aistatus, aistat, ais
+[TOOL] ~/.config/py-agent/tools/system/ai-status ---> aistatus, aistat, ais
 # --- Cheatsheet ---
 [TOOL] ~/.config/py-agent/tools/cheatsheet ---> cheatsheet, cs
 # --- Eval Model & Profile (Agentic Tool Benchmark) ---
@@ -84,7 +84,7 @@ ai init ~/.config/py-agent/projects/session-test ---> session test, projects ses
 # --- Email TUI ---
 ~/.config/py-agent/tools/email/email-agent ---> email agent
 # --- AI Commit ---
-~/.config/py-agent/tools/agentic/system/ai-commit ---> ai-commit, gc, git commit
+~/.config/py-agent/tools/system/ai-commit ---> ai-commit, gc, git commit
 # --- Hyprland State ---
 ~/.config/py-agent/tools/subsec/hyprstate/work ---> hyprstate work, hyprwork, hyprw
 ~/.config/py-agent/tools/subsec/hyprstate/gitcom ---> hyprstate gitcom, gitcom, gitc
@@ -97,15 +97,15 @@ ai init ~/.config/py-agent/projects/session-test ---> session test, projects ses
 [TOOL] cat ~/.config/py-agent/skills/system/mysys.md ---> mysys
 [TOOL] ~/.config/py-agent/tools/generate-profile ---> generate profile, genp
 # --- System Health ---
-[TOOL] ~/.config/py-agent/tools/agentic/system/system-health ---> system health, sysh
+[TOOL] ~/.config/py-agent/tools/system/system-health ---> system health, sysh
 # --- Log Checker ---
-[TOOL] ~/.config/py-agent/tools/agentic/system/log-checker ---> log checker, ailog
+[TOOL] ~/.config/py-agent/tools/system/log-checker ---> log checker, ailog
 # --- AUR Audit ---
-[TOOL] ~/.config/py-agent/tools/agentic/system/aur-audit ---> aur audit, aurp
+[TOOL] ~/.config/py-agent/tools/system/aur-audit ---> aur audit, aurp
 # --- Security Audit ---
-[TOOL] ~/.config/py-agent/tools/agentic/system/security-audit ---> security audit, secaud
+[TOOL] ~/.config/py-agent/tools/system/security-audit ---> security audit, secaud
 # --- System Optimizer ---
-[TOOL] ~/.config/py-agent/tools/agentic/system/system-optimizer ---> system optimizer, sysop
+[TOOL] ~/.config/py-agent/tools/system/system-optimizer ---> system optimizer, sysop
 # --- Update Inspector ---
-[TOOL] ~/.config/py-agent/tools/agentic/system/update-inspector ---> update inspector, upi
+[TOOL] ~/.config/py-agent/tools/system/update-inspector ---> update inspector, upi
 ```

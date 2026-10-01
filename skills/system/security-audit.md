@@ -7,7 +7,7 @@
 
 ## INTENT MAPPINGS
 * **Intents**: audit system security, run vulnerability assessment, identify local network attack surface, verify AUR packages safety, inspect running systemd services, check for recent package compromise, scan for install hooks, secaud.
-* **Command Action**: `[TOOL] ~/.config/py-agent/tools/agentic/system/security-audit --s`
+* **Command Action**: `[TOOL] ~/.config/py-agent/tools/system/security-audit --s`
 
 ---
 

@@ -614,6 +614,7 @@ async def async_main():
         voice_curr = env.get("GEM_MODEL", "gemini-3.5-flash-lite")
         img_curr = env.get("IMG_MODEL", "gemini-3.5-flash-lite")
         ctx_curr = env.get("AI_MAX_TOKENS", "8192")
+        rounds_curr = env.get("AI_MAX_AGENT_ROUNDS", "10")
 
         # ── Dynamically Build Menu Items & Handlers ──
         items = []
@@ -656,13 +657,14 @@ async def async_main():
             "render": f"🌐  {'OpenRouter Paid':<{col_w}} {fmt_or_paid}\n       {DIM}High-end paid catalog (Claude, GPT, DeepSeek, Llama){RESET}"
         })
 
-        # Auxiliary Services
-        items.append({"type": "aux", "key": "GND_KEY", "mod": "GND_MODEL", "curr": gnd_curr, "title": "Search Grounding (/gnd)", "render": f"🔍  {'Search Grounding (/gnd)':<{col_w}} {fmt(gnd_curr, 'GND_KEY')}\n       {DIM}Live Google search retrieval for facts & documentation{RESET}"})
-        items.append({"type": "aux", "key": "GEM_VOICE", "mod": "GEM_MODEL", "curr": voice_curr, "title": "Voice Transcription", "render": f"🎙️  {'Voice Transcription':<{col_w}} {fmt(voice_curr, 'GEM_VOICE')}\n       {DIM}Low-latency voice-to-text bridge (:9999){RESET}"})
-        items.append({"type": "aux", "key": "IMG_VOICE", "mod": "IMG_MODEL", "curr": img_curr, "title": "Vision OCR Multimodal", "render": f"👁️  {'Vision OCR Multimodal':<{col_w}} {fmt(img_curr, 'IMG_VOICE')}\n       {DIM}Gemini OCR pre-processor for text-only local models{RESET}"})
+        # Auxiliary Services (Compact)
+        items.append({"type": "aux", "key": "GND_KEY", "mod": "GND_MODEL", "curr": gnd_curr, "title": "Search Grounding (/gnd)", "render": f"🔍  {'Search Grounding (/gnd)':<{col_w}} {fmt(gnd_curr, 'GND_KEY')}"})
+        items.append({"type": "aux", "key": "GEM_VOICE", "mod": "GEM_MODEL", "curr": voice_curr, "title": "Voice Transcription", "render": f"🎙️  {'Voice Transcription':<{col_w}} {fmt(voice_curr, 'GEM_VOICE')}"})
+        items.append({"type": "aux", "key": "IMG_VOICE", "mod": "IMG_MODEL", "curr": img_curr, "title": "Vision OCR Multimodal", "render": f"👁️  {'Vision OCR Multimodal':<{col_w}} {fmt(img_curr, 'IMG_VOICE')}"})
 
-        # Tokens, Refresh & Exit
-        items.append({"type": "tokens", "render": f"🧠  {'Context Budget':<{col_w}} {GREEN}{ctx_curr} tokens{RESET}\n       {DIM}Context ceiling for compaction & tool output (AI_MAX_TOKENS){RESET}"})
+        # Tokens, Rounds, Refresh & Exit (Compact)
+        items.append({"type": "tokens", "render": f"🧠  {'Context Budget':<{col_w}} {GREEN}{ctx_curr} tokens{RESET}"})
+        items.append({"type": "rounds", "render": f"🔄  {'Max Agent Rounds':<{col_w}} {GREEN}{rounds_curr} rounds{RESET}"})
         items.append({"type": "refresh", "render": f"↺  Refresh API Lists        {DIM}Sync live endpoints (Gemini, OpenRouter, HF){RESET}"})
         items.append({"type": "exit", "render": "✕  Save & Close"})
 
@@ -674,12 +676,12 @@ async def async_main():
             if itm["type"] == "aux" and (i == 0 or items[i-1]["type"] != "aux"):
                 sys.stdout.write(f"   {DIM}{'─'*19}  Auxiliary Services  {'─'*19}{RESET}\n\n")
             elif itm["type"] == "tokens":
-                sys.stdout.write(f"   {DIM}{'─'*19}  Context Budget  {'─'*23}{RESET}\n\n")
+                sys.stdout.write(f"\n   {DIM}{'─'*18}  Context & Loop Budget  {'─'*17}{RESET}\n\n")
             elif itm["type"] == "refresh":
-                sys.stdout.write(f"   {DIM}{'─'*60}{RESET}\n")
+                sys.stdout.write(f"\n   {DIM}{'─'*60}{RESET}\n")
 
             cursor = f"   {AMBER}❯{RESET}  {BOLD}" if i == menu_idx else "      "
-            extra_nl = "\n" if itm["type"] in ("custom1", "custom_generic", "gemini", "or_free", "or_paid", "aux") else ""
+            extra_nl = "\n" if itm["type"] in ("custom1", "custom_generic", "gemini", "or_free", "or_paid") else ""
             sys.stdout.write(f"{cursor}{itm['render']}{RESET}\n{extra_nl}")
 
         sys.stdout.write(f"\n   {DIM}{'─'*60}{RESET}\n   {message or f'{DIM}▲/▼: Navigate | Space: Toggle | Enter: Select | Q: Quit{RESET}'}\n")
@@ -716,6 +718,11 @@ async def async_main():
             elif ttype == "aux":
                 now_on = toggle_independent_key(target["key"])
                 message = f"✓ {target['title']}: {GREEN+'ENABLED'+RESET if now_on else RED+'DISABLED'+RESET}"
+            elif ttype == "rounds":
+                cycle_rounds = ["5", "10", "15", "20", "25", "30", "50"]
+                next_rounds = cycle_rounds[(cycle_rounds.index(rounds_curr) + 1) % len(cycle_rounds)] if rounds_curr in cycle_rounds else "10"
+                update_env_multiple({"AI_MAX_AGENT_ROUNDS": next_rounds})
+                message = f"✓ Max Agent Rounds: {next_rounds}"
 
         elif key == "enter":
             target = items[menu_idx]
@@ -865,6 +872,31 @@ async def async_main():
                     tok_val = res.split()[0]
                     update_env_multiple({"AI_MAX_TOKENS": tok_val})
                     message = f"✓ Context window budget set to {tok_val} tokens."
+
+            elif ttype == "rounds":
+                round_presets = [
+                    "5 (Fast / Strict Tool Limit)",
+                    "10 (10 rounds - Default)",
+                    "15 (15 rounds - Extended)",
+                    "20 (20 rounds - Deep Investigation)",
+                    "25 (25 rounds - High Autonomy)",
+                    "30 (30 rounds - Heavy Refactoring)",
+                    "50 (50 rounds - Autonomous Loop)",
+                ]
+                cur_preset = next((p for p in round_presets if p.startswith(f"{rounds_curr} ")), rounds_curr)
+                res = await run_interactive_menu("Max Agent Rounds", round_presets, cur_preset, True, ["✏️  [Custom Rounds Limit]"])
+                if not res:
+                    continue
+                if res == "✏️  [Custom Rounds Limit]":
+                    if r_in := prompt_user_input(f"Enter max agent rounds (current: {rounds_curr})"):
+                        clean_r = "".join(c for c in r_in if c.isdigit())
+                        if clean_r and int(clean_r) > 0:
+                            update_env_multiple({"AI_MAX_AGENT_ROUNDS": clean_r})
+                            message = f"✓ Max agent rounds set to {clean_r}."
+                else:
+                    r_val = res.split()[0]
+                    update_env_multiple({"AI_MAX_AGENT_ROUNDS": r_val})
+                    message = f"✓ Max agent rounds set to {r_val}."
 
             elif ttype == "refresh":
                 message = f"{AMBER}↺ Querying live models...{RESET}"

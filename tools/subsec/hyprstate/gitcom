@@ -6,7 +6,7 @@ set -euo pipefail
 
 TARGET_WS=5
 TARGET_DIR="$HOME/.config/py-agent"
-SYSTEM_TOOLS_DIR="${TARGET_DIR}/tools/agentic/system"
+SYSTEM_TOOLS_DIR="${TARGET_DIR}/tools/system"
 
 manage_app() {
     local target_ws="$1"
