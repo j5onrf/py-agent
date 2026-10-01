@@ -9,7 +9,6 @@ import re
 import shlex
 import subprocess
 import sys
-import urllib.parse
 from collections.abc import Callable
 from typing import Any
 

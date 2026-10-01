@@ -107,7 +107,7 @@ def run_task_loop(
     def tracked_run_tool(name: str, args: Any, ws: str | None = None, **kwargs: Any) -> Any:
         nonlocal total_tools_run, turn_tool_failures
         total_tools_run += 1
-        result = original_run_tool(name, args, ws, **kwargs)
+        result = original_run_tool(name, args, ws or workspace, **kwargs)
         res_str = str(result)
         if TOOL_ERROR_PATTERN.search(res_str):
             turn_tool_failures += 1
@@ -157,9 +157,9 @@ def run_task_loop(
             turn_tool_failures = 0
 
             # Guard against context window overflow in extended runs
-            if len(history) > 20 and hasattr(core, "compact_history"):
+            if len(history) > 20 and hasattr(core, "prune_history"):
                 try:
-                    history = core.compact_history(history)
+                    history = core.prune_history(history)
                 except Exception:
                     pass
 

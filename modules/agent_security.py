@@ -402,9 +402,7 @@ def authorize(action_desc: str, is_security_event: bool = False, spinner: Any = 
 
     is_tty = False
     try:
-        if hasattr(sys, "__stdout__") and sys.__stdout__ and sys.__stdout__.isatty():
-            is_tty = True
-        elif sys.stdout and sys.stdout.isatty():
+        if hasattr(sys, "__stdout__") and sys.__stdout__ and sys.__stdout__.isatty() or sys.stdout and sys.stdout.isatty():
             is_tty = True
     except Exception:
         is_tty = False

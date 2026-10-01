@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sys
+import urllib.error as urlerr
 import urllib.request as urlreq
 
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
@@ -218,7 +219,7 @@ for url, headers, body, timeout in configs:
             spinner.stop()
         sys.stderr.write("\n\033[90m[sys] Interrupted.\033[0m\n")
         sys.exit(130)
-    except (urlreq.URLError, TimeoutError, OSError) as e:
+    except (urlerr.URLError, TimeoutError, OSError) as e:
         if spinner:
             spinner.stop()
         if os.environ.get("AI_DEBUG") == "1":

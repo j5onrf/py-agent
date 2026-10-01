@@ -172,19 +172,18 @@ def get_custom_indices(env: dict) -> list[str]:
                         indices.add(m.group(1))
         except OSError:
             pass
-    for k in env.keys():
+    for k in env:
         if m := re.search(r"CUSTOM(\d+)_(?:API_KEY|URL|MODEL)", k):
             indices.add(m.group(1))
     if "2" not in indices:
         indices.add("2")
-    return sorted(list(indices), key=lambda x: int(x))
+    return sorted(indices, key=lambda x: int(x))
 
 
 def get_provider_keys() -> list[str]:
     """Returns all primary chat model keys including dynamically detected CUSTOM<N>_API_KEY."""
     keys = ["CUSTOM_API_KEY"]
-    for idx in get_custom_indices(load_env_vars()):
-        keys.append(f"CUSTOM{idx}_API_KEY")
+    keys.extend(f"CUSTOM{idx}_API_KEY" for idx in get_custom_indices(load_env_vars()))
     keys.extend(["GEMINI_API_KEY", "OPENROUTER_API_KEY"])
     return keys
 

@@ -7,7 +7,6 @@ import re
 import shutil
 import subprocess
 import sys
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -489,10 +488,10 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
             res_sync = subprocess.run([sys.executable, imap_bin, "--agent", ctx.workspace_path], capture_output=True, text=True)
             if res_sync.returncode != 0:
                 ui._console.print(f"\r\x1b[2K[red][sys] Sync failed: {res_sync.stderr.strip()[:100]}[/red]\n")
-                return True
+                return True, None
         else:
             ui._console.print(f"\r\x1b[2K[red][sys] index-map tool not found: {imap_bin}[/red]\n")
-            return True
+            return True, None
 
         agent_dir = os.path.join(ctx.workspace_path, ".agent")
         ws_name = os.path.basename(ctx.workspace_path)
@@ -511,7 +510,7 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
                 ctx.flash_status("map: synced")
             except Exception as e:
                 ui._console.print(f"\r\x1b[2K[red][sys] Sync parse failed: {e}[/red]\n")
-        return True
+        return True, None
 
     if q_lower in ("/clear", "/c"):
         ctx.chat_history.clear()
@@ -549,7 +548,8 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
         return True, None
 
     if cmd == "/tok":
-        core.show_memory_status(ctx.chat_history, max_context=int(os.environ.get("AI_MAX_TOKENS", 8192)), server_url="http://localhost:8080")
+        from agent_context import show_memory_status
+        show_memory_status(ctx.chat_history, max_context=int(os.environ.get("AI_MAX_TOKENS", 8192)), server_url="http://localhost:8080")
         return True, None
 
     if cmd in ("file", "/file"):

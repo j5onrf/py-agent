@@ -502,7 +502,7 @@ def draw_menu(
 
         sys.stdout.write(f"\r\x1b[K{prefix}{name_text}{reset}{' ' * pad_len}{status_tag}\n")
 
-    sys.stdout.write(f"\r\x1b[K\n")
+    sys.stdout.write("\r\x1b[K\n")
     stop_idx = len(LOCAL_MODELS)
     exit_idx = len(LOCAL_MODELS) + 1
 
@@ -585,7 +585,7 @@ async def async_main():
                         last_state_hash = None
                         continue
 
-                    message = f"\033[1;33m↺ Releasing current server and flushing RAM pages...\033[0m"
+                    message = "\033[1;33m↺ Releasing current server and flushing RAM pages...\033[0m"
                     draw_menu(selected, running_instances, active_statuses, message, mem_info)
 
                     await async_stop_all_engines()

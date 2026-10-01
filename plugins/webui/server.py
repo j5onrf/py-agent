@@ -450,7 +450,7 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                                         if not delta.get("content"):
                                             continue
                                         delta.pop("reasoning_content", None)
-                                        line = f"data: {json.dumps(parsed_data)}".encode("utf-8")
+                                        line = f"data: {json.dumps(parsed_data)}".encode()
                             except Exception as e:
                                 sys.stderr.write(f"[webui] warning: reasoning delta parse error: {e}\n")
 

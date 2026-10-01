@@ -17,19 +17,15 @@ import agent_cloud
 import agent_context as context
 from agent_context import (
     get_accurate_token_count,
-    show_memory_status,
 )
 import agent_security as security
 from agent_state import (
     CFG_DIR,
-    DEFAULTS,
-    STATE_FILE,
-    STATE_LOCK_FILE,
     _get_int_env,
     get_state,
     is_calm_cli,
-    save_state,
-    workspace_safe_name,
+    save_state as save_state,
+    workspace_safe_name as workspace_safe_name,
 )
 from agent_stream import (
     Markdown,
@@ -72,6 +68,7 @@ _local_session = threading.local()
 def _get_session() -> Any:
     if not hasattr(_local_session, "session"):
         import requests
+        import requests.adapters
         s = requests.Session()
         adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=1)
         s.mount("http://", adapter)
@@ -632,13 +629,15 @@ def agentic_turn(
                 messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": fname, "content": pruned_result})
 
                 if res_str.strip().startswith("[denied]"):
-                    for rem_tc in healed_calls[call_idx + 1:]:
-                        messages.append({
+                    messages.extend(
+                        {
                             "role": "tool",
                             "tool_call_id": rem_tc.get("id", ""),
                             "name": rem_tc.get("function", {}).get("name", ""),
                             "content": "[cancelled: prior action declined by user]",
-                        })
+                        }
+                        for rem_tc in healed_calls[call_idx + 1:]
+                    )
                     messages.append({
                         "role": "user",
                         "content": "[System Directive]: Action was explicitly declined by the user. Do not retry or attempt alternative workarounds for this resource.",

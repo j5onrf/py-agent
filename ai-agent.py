@@ -11,7 +11,6 @@ import sys
 import tempfile
 import time
 from contextlib import closing
-from typing import Any
 
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
 CONTEXT_FILE: str = os.path.join(CFG_DIR, "ai-context.md")

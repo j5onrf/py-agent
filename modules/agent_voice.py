@@ -349,7 +349,7 @@ def run_server() -> None:
             stderr=subprocess.DEVNULL,
         )
         if res.returncode != 0 or not os.path.exists(cert_path):
-            sys.stderr.write(f"[error] OpenSSL certificate generation failed. Cannot start secure voice bridge.\n")
+            sys.stderr.write("[error] OpenSSL certificate generation failed. Cannot start secure voice bridge.\n")
             sys.exit(1)
         try:
             os.chmod(cert_path, 0o600)

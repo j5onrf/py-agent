@@ -63,7 +63,7 @@ def load_context_entries(
         cache_key = (context_file, current_mtime, frozen_stop)
 
         with _cache_lock:
-            if _CACHED_ENTRIES is not None and _CACHE_KEY == cache_key:
+            if _CACHED_ENTRIES is not None and cache_key == _CACHE_KEY:
                 return list(_CACHED_ENTRIES)
 
         parsed: list[dict[str, Any]] = []
@@ -80,15 +80,17 @@ def load_context_entries(
                     continue
 
                 primary_intent = intents[0]
-                for intent in intents:
-                    if tokens := tokenize(intent, frozen_stop):
-                        parsed.append({
-                            "cmd": cmd_clean,
-                            "intent": intent,
-                            "primary": primary_intent,
-                            "tokens": tokens,
-                            "tokens_set": frozenset(tokens),
-                        })
+                parsed.extend(
+                {
+                    "cmd": cmd_clean,
+                    "intent": intent,
+                    "primary": primary_intent,
+                    "tokens": tokens,
+                    "tokens_set": frozenset(tokens),
+                }
+                for intent in intents
+                if (tokens := tokenize(intent, frozen_stop))
+            )
 
         with _cache_lock:
             _CACHE_KEY = cache_key
@@ -123,9 +125,7 @@ def jaccard_search(
 
         has_sub = False
         if not is_exact:
-            if len(ent_clean) >= 3 and ent_clean in q_clean:
-                has_sub = True
-            elif len(q_clean) >= 3 and q_clean in ent_clean:
+            if len(ent_clean) >= 3 and ent_clean in q_clean or len(q_clean) >= 3 and q_clean in ent_clean:
                 has_sub = True
             elif len(ent_clean) < 3:
                 if re.search(rf"\b{re.escape(ent_clean)}\b", q_clean):
