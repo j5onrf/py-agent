@@ -39,3 +39,4 @@ pyproject.toml
 pyrightconfig.json
 .tui_state.json
 model_pricing.json
+.state.lock
