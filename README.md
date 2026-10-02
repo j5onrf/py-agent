@@ -94,7 +94,7 @@
 
 <p align="center">
   <sub><code>/yolo</code> &nbsp;•&nbsp; <code>/py</code> repl &nbsp;•&nbsp; <code>/adp</code> adapters &nbsp;•&nbsp; <code>/t</code> reasoning &nbsp;•&nbsp; <code>/task</code> loop goal &nbsp;•&nbsp; <code>/s</code> skills &nbsp;•&nbsp; <code>/a</code> all meta &nbsp;•&nbsp; <code>/md</code> markdown</sub><br>
-  <sub><code>/m</code> map &nbsp;•&nbsp; <code>file</code> load &nbsp;•&nbsp; <code>/mem</code> memory &nbsp;•&nbsp; <code>/com</code> compact &nbsp;•&nbsp; <code>/gnd</code> search &nbsp;•&nbsp; <code>/hs</code> hindsite &nbsp;•&nbsp; <code>/tok</code> tokens &nbsp;•&nbsp; <code>/sync</code> map</sub><br>
+  <sub><code>/m</code> map &nbsp;•&nbsp; <code>file</code> load &nbsp;•&nbsp; <code>/mem</code> memory &nbsp;•&nbsp; <code>/com</code> compact &nbsp;•&nbsp; <code>/gnd</code> search &nbsp;•&nbsp; <code>/hs</code> hindsight &nbsp;•&nbsp; <code>/tok</code> tokens &nbsp;•&nbsp; <code>/sync</code> map</sub><br>
   <sub><code>/tui</code> &nbsp;•&nbsp; <code>/pyc</code> &nbsp;•&nbsp; <code>/dsh</code> &nbsp;•&nbsp; <code>/zed</code> &nbsp;•&nbsp; <code>/webui</code> &nbsp;•&nbsp; <code>/calm</code> &nbsp;•&nbsp; <code>/v</code> &nbsp;•&nbsp; <code>/tts</code> &nbsp;•&nbsp; <code>/box</code> &nbsp;•&nbsp; <code>/stats</code> &nbsp;•&nbsp; <code>-save</code> / <code>-load</code> &nbsp;•&nbsp; <code>/c</code> &nbsp;•&nbsp; <code>/r</code></sub>
 </p>
 
@@ -132,7 +132,7 @@
 | **5** | **Occamy-1.0** | **90.9%** | **87.0 (B)** |
 | **6** | **Qwen3.8-35B-Distill** *(Pure)* | **90.9%** | **86.4 (B)** |
 | **7** | **Nex-N2.5-mini** | **88.2%** | **85.8 (B)** |
-| **—** | **Ling-3.0-tiny** *(SLM)* | **96.3%** | **98.7 (A+)** |
+| **—** | **Ling-3.0-tiny** *(SLM)* | **104.0%** | **99.8 (A+)** |
 
 <br>
 

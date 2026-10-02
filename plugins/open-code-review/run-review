@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Open Code Review (ocr) Runner - Universal Provider, Speed & Robust Reasoning Engine"""
 
+import glob
 import json
 import os
 import re
@@ -12,6 +13,12 @@ import time
 from typing import Any
 
 try:
+    import readline
+    _HAS_READLINE = True
+except ImportError:
+    _HAS_READLINE = False
+
+try:
     from rich.console import Console
     from rich.markdown import Markdown
     _HAS_RICH = True
@@ -19,7 +26,7 @@ except ImportError:
     _HAS_RICH = False
 
 ENV_FILE = os.path.expanduser("~/.config/py-agent/.env")
-BG_DIRECTIVES = os.path.expanduser("~/.config/py-agent/plugins/codereview/codereview.md")
+BG_DIRECTIVES = os.path.expanduser("~/.config/py-agent/plugins/open-code-review/codereview.md")
 SPINNER_FRAMES = ("✦ [∿ · ·]", "✦ [· ∿ ·]", "✦ [· · ∿]", "✦ [· ∿ ·]")
 
 RE_PLACEHOLDER = re.compile(
@@ -30,6 +37,48 @@ RE_RATE_LIMIT = re.compile(
     r"\b429\b|rate.?limit|rejected by provider",
     re.IGNORECASE,
 )
+
+
+def _init_path_completion() -> None:
+    if not _HAS_READLINE:
+        return
+
+    def _complete_path(text: str, state: int) -> str | None:
+        pattern = os.path.expanduser(text) + "*"
+        matches = glob.glob(pattern)
+        home = os.path.expanduser("~")
+        formatted = []
+        for m in sorted(matches):
+            item = m + "/" if os.path.isdir(m) else m
+            if text.startswith("~") and item.startswith(home):
+                item = "~" + item[len(home):]
+            formatted.append(item)
+        try:
+            return formatted[state]
+        except IndexError:
+            return None
+
+    readline.set_completer_delims(" \t\n\"'")
+    readline.parse_and_bind("tab: complete")
+    readline.set_completer(_complete_path)
+
+
+def _init_budget_completion() -> None:
+    if not _HAS_READLINE:
+        return
+
+    options = ("off", "low", "medium", "high", "max")
+
+    def _complete_budget(text: str, state: int) -> str | None:
+        matches = [o for o in options if o.startswith(text.lower())]
+        try:
+            return matches[state]
+        except IndexError:
+            return None
+
+    readline.set_completer_delims(" \t\n")
+    readline.parse_and_bind("tab: complete")
+    readline.set_completer(_complete_budget)
 
 
 class TelemetrySpinner:
@@ -102,7 +151,7 @@ class TelemetrySpinner:
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=0.3)
         with self._lock:
-            sys.stderr.write(f"\r\033[K\033[1;32m✔ {done_msg}\033[0m \033[2m({elapsed_str})\033[0m\n\n")
+            sys.stderr.write(f"\r\033[1;32m✔ {done_msg}\033[0m \033[2m({elapsed_str})\033[0m\n\n")
             sys.stderr.write("\033[?25h")
             sys.stderr.flush()
 
@@ -168,7 +217,7 @@ def build_reasoning_payload(budget_val: str) -> tuple[dict[str, Any], str]:
     return tiers.get(val, tiers["medium"])
 
 
-def sync_ocr_config(env: dict[str, str], active_keys: set[str], reasoning_input: str) -> tuple[str, str, str, str, str]:
+def sync_ocr_config(env: dict[str, str], active_keys: set[str], reasoning_input: str) -> tuple[str, str, str, str, str, str]:
     extra_body, budget_desc = build_reasoning_payload(reasoning_input)
 
     if "CUSTOM_API_KEY" in active_keys:
@@ -207,13 +256,14 @@ def sync_ocr_config(env: dict[str, str], active_keys: set[str], reasoning_input:
     concurrency_raw = str(env.get("OCR_CONCURRENCY", default_concurrency) or "").strip()
     concurrency = concurrency_raw if re.fullmatch(r"[1-9]\d?", concurrency_raw) else default_concurrency
 
-    # Sync static parameters
+    # Sync static parameters and credentials to OCR's config store
     subprocess.run(["ocr", "config", "set", "llm.use_anthropic", "false"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
     subprocess.run(["ocr", "config", "set", "llm.url", base_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
     subprocess.run(["ocr", "config", "set", "llm.model", model], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    subprocess.run(["ocr", "config", "set", "llm.auth_token", api_key], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
     subprocess.run(["ocr", "config", "set", "llm.extra_body", json.dumps(extra_body)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 
-    return provider, model, concurrency, budget_desc, api_key
+    return provider, model, concurrency, budget_desc, api_key, base_url
 
 
 def parse_action(line: str) -> str | None:
@@ -253,10 +303,12 @@ def main():
 
     env, active_keys = load_env()
 
-    # 1. Prompt for Project Path
+    # 1. Prompt for Project Path (with filesystem tab completion)
     if not target_input:
+        _init_path_completion()
         try:
-            target_input = input(f"Enter project path to review [default: {cur_dir}]: ").strip()
+            raw_target = input(f"Enter project path to review [default: {cur_dir}]: ")
+            target_input = raw_target.strip().replace("\t", "")
         except (KeyboardInterrupt, EOFError):
             print("\nCancelled.")
             sys.exit(0)
@@ -266,17 +318,22 @@ def main():
         print(f"\033[1;31m[error] Path does not exist:\033[0m {target_path}")
         sys.exit(1)
 
-    # 2. Prompt for Reasoning Budget
-    default_budget = env.get("OCR_BUDGET", env.get("OCR_EFFORT", "medium"))
+    # 2. Prompt for Reasoning Budget (with budget keyword tab completion)
+    default_budget = env.get("OCR_BUDGET", env.get("OCR_EFFORT", "high"))
     if not reasoning_arg:
+        _init_budget_completion()
         try:
-            user_b = input(f"Reasoning budget [off/low/medium/high/max, or tokens like 2500] [default: {default_budget}]: ").strip()
-            reasoning_choice = user_b or default_budget
+            user_b = input(f"Reasoning budget [off/low/medium/high/max, or tokens like 2500] [default: {default_budget}]: ")
+            cleaned_b = user_b.strip().replace("\t", "")
+            reasoning_choice = cleaned_b or default_budget
         except (KeyboardInterrupt, EOFError):
             print("\nCancelled.")
             sys.exit(0)
     else:
-        reasoning_choice = reasoning_arg
+        reasoning_choice = reasoning_arg.replace("\t", "")
+
+    if _HAS_READLINE:
+        readline.set_completer(None)
 
     is_file = os.path.isfile(target_path)
     target_dir = os.path.dirname(target_path) if is_file else target_path
@@ -302,7 +359,7 @@ def main():
         os.chdir(target_dir)
         rel_target = os.path.basename(target_path) if is_file else "."
 
-    provider, model, concurrency, budget_desc, api_key = sync_ocr_config(env, active_keys, reasoning_choice)
+    provider, model, concurrency, budget_desc, api_key, base_url = sync_ocr_config(env, active_keys, reasoning_choice)
 
     home = os.path.expanduser("~")
     display_target = target_path.replace(home, "~", 1) if target_path.startswith(home) else target_path
@@ -317,14 +374,13 @@ def main():
     print(f"\033[1;36m[review]\033[0m Engine:  \033[1;32m{provider}\033[0m \033[2m({model})\033[0m")
     print(f"\033[1;36m[review]\033[0m Budget:  \033[1;34m{budget_desc}\033[0m | Workers: \033[1;35m{concurrency}\033[0m | Timeout: \033[1;33m{timeout_mins}m\033[0m")
 
-    # Mismatch warning visual
     target_basename = os.path.basename(target_path)
-    if profile_title != "Default (Generic)" and target_basename not in profile_title:
+    is_global_profile = any(k in profile_title.lower() for k in ("global", "policy", "generic", "default"))
+    if not is_global_profile and target_basename not in profile_title:
         print(f"\033[33m  ↳ Notice: Active directives in codereview.md specify a different file target.\033[0m")
 
     timeout_flag = ["--timeout", timeout_mins]
 
-    # Target-Aware Dispatch
     is_specific_target = is_file or (rel_target != ".")
 
     if is_specific_target:
@@ -352,6 +408,10 @@ def main():
     child_env = {**os.environ}
     if api_key:
         child_env["OCR_LLM_TOKEN"] = api_key
+        child_env["OCR_LLM_URL"] = base_url
+        child_env["OCR_LLM_MODEL"] = model
+        child_env["OPENAI_API_KEY"] = api_key
+        child_env["OPENROUTER_API_KEY"] = api_key
 
     try:
         proc = subprocess.Popen(

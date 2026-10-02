@@ -155,6 +155,7 @@ class RichStreamer:
                 parts = token.split("</think>", 1)
                 self.phase, token = "ANSWER", parts[1]
             if self.phase != "THINKING" and token:
+                self._stop_spinner()
                 try:
                     sys.stdout.write(token.replace("\r\n", "\n").replace("\n", "\r\n"))
                     sys.stdout.flush()
@@ -185,8 +186,7 @@ class RichStreamer:
                 _console_err.print(f"{sep}[dim]╰────────────────────────────────────────────────────────[/dim]\n")
                 sys.stderr.flush()
             self.phase = "ANSWER"
-            if self.spinner and not self.ans_started:
-                self.spinner.start("Drafting tool action...")
+            self._stop_spinner()
             if len(parts) > 1 and parts[1]:
                 self.update(parts[1])
             return

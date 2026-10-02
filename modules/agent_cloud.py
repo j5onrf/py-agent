@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Dynamic Cloud Cascade Engine - Top-down .env provider API priority with infinite CUSTOM* support [Production Ready]"""
+"""Dynamic Cloud Cascade Engine - Top-down .env & os.environ provider API priority with infinite CUSTOM* support [Production Ready]"""
 
 import os
 import re
@@ -7,7 +7,6 @@ from typing import Any
 
 ENV_PATH: str = os.path.expanduser("~/.config/py-agent/.env")
 
-# Matches: KEY="val" or KEY='val' or KEY=val, with optional 'export ' prefix and trailing comments
 RE_ENV_LINE: re.Pattern = re.compile(
     r"^\s*(?:export\s+)?([A-Za-z0-9_]+)\s*=\s*(?:([\"'])(.*?)\2|([^#\s\r\n]+))(?:\s*#.*)?$"
 )
@@ -40,42 +39,51 @@ def _is_valid_key(val: str) -> bool:
 def get_active_configs(
     messages: list[dict[str, Any]],
 ) -> list[tuple[str, dict[str, str], dict[str, Any], int]]:
-    """Compiles all active cloud API configurations in a single pass top-down scan."""
+    """Compiles all active cloud API configurations scanning .env and os.environ."""
     configs: list[tuple[str, dict[str, str], dict[str, Any], int]] = []
     target_env = getattr(get_active_configs, "ENV_PATH", ENV_PATH)
-    if not os.path.exists(target_env):
-        return configs
 
     env_vars: dict[str, str] = {}
     ordered_keys: list[tuple[str, str]] = []
+    seen_keys: set[str] = set()
 
-    # Single-pass read: parse all variables and preserve top-down priority ordering
-    try:
-        with open(target_env, "r", encoding="utf-8") as f:
-            for line in f:
-                line_clean = line.strip()
-                if not line_clean or line_clean.startswith("#"):
-                    continue
+    # 1. First Pass: Read .env file if it exists
+    if os.path.exists(target_env):
+        try:
+            with open(target_env, "r", encoding="utf-8") as f:
+                for line in f:
+                    line_clean = line.strip()
+                    if not line_clean or line_clean.startswith("#"):
+                        continue
 
-                if m := RE_ENV_LINE.match(line_clean):
-                    k_str = m.group(1).strip()
-                    # Quoted value is group 3; unquoted value is group 4
-                    v_str = (m.group(3) if m.group(2) else m.group(4)) or ""
-                    v_str = v_str.strip()
+                    if m := RE_ENV_LINE.match(line_clean):
+                        k_str = m.group(1).strip()
+                        v_str = (m.group(3) if m.group(2) else m.group(4)) or ""
+                        v_str = v_str.strip()
 
-                    env_vars[k_str] = v_str
+                        env_vars[k_str] = v_str
 
-                    if RE_API_KEY_NAME.match(k_str) and _is_valid_key(v_str):
-                        ordered_keys.append((k_str, v_str))
-    except OSError:
-        return configs
+                        if RE_API_KEY_NAME.match(k_str) and _is_valid_key(v_str):
+                            if k_str not in seen_keys:
+                                ordered_keys.append((k_str, v_str))
+                                seen_keys.add(k_str)
+        except OSError:
+            pass
 
-    # Resolve endpoints matching the exact top-down priority
+    # 2. Second Pass: Check os.environ for keys not declared in .env
+    for k_str, v_str in os.environ.items():
+        if k_str not in env_vars:
+            env_vars[k_str] = v_str.strip()
+        if RE_API_KEY_NAME.match(k_str) and _is_valid_key(v_str):
+            if k_str not in seen_keys:
+                ordered_keys.append((k_str, v_str.strip()))
+                seen_keys.add(k_str)
+
+    # 3. Resolve endpoints matching priority
     for key_name, val_clean in ordered_keys:
-        # Isolate message list for each provider config to prevent cross-provider mutation
         isolated_messages = [dict(msg) for msg in messages]
 
-        # 1. Custom Matcher: CUSTOM_API_KEY, CUSTOM2_KEY, CUSTOM_GROQ_API_KEY, etc.
+        # Custom Matcher: CUSTOM_API_KEY, CUSTOM2_KEY, etc.
         if m_custom := re.match(r"^(CUSTOM[0-9A-Z_]*?)(?:_API)?_KEY$", key_name):
             prefix = m_custom.group(1)
             url = (
@@ -94,7 +102,7 @@ def get_active_configs(
             body = {"model": model, "messages": isolated_messages, "stream": True}
             configs.append((url, headers, body, 180))
 
-        # 2. Google Gemini
+        # Google Gemini
         elif key_name in ("GEMINI_API_KEY", "GEMINI_KEY"):
             model = (
                 env_vars.get("GEMINI_MODEL")
@@ -110,7 +118,7 @@ def get_active_configs(
             body = {"model": model, "messages": isolated_messages, "stream": True}
             configs.append((url, headers, body, 45))
 
-        # 3. OpenRouter
+        # OpenRouter
         elif key_name in ("OPENROUTER_API_KEY", "OPENROUTER_KEY"):
             model = (
                 env_vars.get("OPENROUTER_MODEL")
@@ -131,7 +139,7 @@ def get_active_configs(
             }
             configs.append((url, headers, body, 180))
 
-        # 4. DeepSeek Direct
+        # DeepSeek Direct
         elif key_name in ("DEEPSEEK_API_KEY", "DEEPSEEK_KEY"):
             model = (
                 env_vars.get("DEEPSEEK_MODEL")
@@ -146,7 +154,7 @@ def get_active_configs(
             body = {"model": model, "messages": isolated_messages, "stream": True}
             configs.append((url, headers, body, 180))
 
-        # 5. OpenAI Direct
+        # OpenAI Direct
         elif key_name in ("OPENAI_API_KEY", "OPENAI_KEY"):
             model = (
                 env_vars.get("OPENAI_MODEL")

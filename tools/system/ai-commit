@@ -156,4 +156,4 @@ if [[ -z "$user_message" ]]; then
     exit 1
 fi
 
-git commit -m "$user_message"
+git commit -m "$user_message" --

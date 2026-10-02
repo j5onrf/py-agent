@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.49] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production Ready]"""
+"""Py Agent [j5onrf] [v0.9.9.50] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production Ready]"""
 
 import json
 import os
@@ -241,7 +241,6 @@ def run_interactive_chat(args: list[str]) -> None:
     selected_profile = "pi/pro" if is_agent else "chat"
     is_yolo, use_map, is_py, memory_active, adapters_active = False, False, False, False, False
 
-    # 1. Workspace Profile & Config Resolution (Single-Pass)
     if is_agent:
         if not os.path.exists(cfg_file):
             selected_profile, is_yolo, use_map, is_py, memory_active, adapters_active = ui.select_workspace_profile(os.path.basename(workspace_path))
@@ -274,14 +273,12 @@ def run_interactive_chat(args: list[str]) -> None:
             except (OSError, json.JSONDecodeError):
                 pass
 
-    # 2. CLI Profile Overrides & Query Token Cleansing
     profile_args = set()
     for arg in args:
         if arg.startswith("-") and arg not in ("--talk", "--talk-chat"):
             selected_profile = arg.lstrip("-").lower()
             profile_args.add(arg)
 
-    # 3. Persona & Prompt Initialization
     if is_agent:
         clean_name = selected_profile if selected_profile != "init" else "pi/pro"
         profile_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
@@ -294,7 +291,6 @@ def run_interactive_chat(args: list[str]) -> None:
         reasoning_budget = st_init.get("reasoning_budget", 500)
         reasoning_active = st_init.get("reasoning_active", reasoning_budget > 0)
 
-        # Workspace config takes precedence for reasoning
         if os.path.isfile(cfg_file):
             try:
                 with open(cfg_file, "r", encoding="utf-8") as cf:
@@ -319,7 +315,6 @@ def run_interactive_chat(args: list[str]) -> None:
         if is_yolo:
             os.environ["AI_CONFIRM_GATES"] = "0"
 
-        # Inject Codespace Map at startup if Map is ON
         if use_map:
             agent_dir = os.path.join(workspace_path, ".agent")
             ws_name = os.path.basename(workspace_path)
@@ -400,7 +395,6 @@ def run_interactive_chat(args: list[str]) -> None:
 
     ui.draw_session_box(workspace_path, home_dir, is_agent, db_turns, mem_count, memory_active, active_system_prompt, clean_name, sub_id=sub_id, box_style=st.get("box_style", 2))
 
-    # 4. Interactive Command & Query Loop
     try:
         while True:
             if pending_query:
@@ -419,7 +413,6 @@ def run_interactive_chat(args: list[str]) -> None:
                 if not query:
                     continue
 
-                # Delegate to modular command dispatcher
                 ctx = commands.SessionContext(
                     workspace_path=workspace_path,
                     home_dir=home_dir,
@@ -442,7 +435,6 @@ def run_interactive_chat(args: list[str]) -> None:
 
                 handled, new_query = commands.dispatch_command(query, ctx)
 
-                # Sync back mutated states
                 use_map = ctx.use_map
                 memory_active = ctx.memory_active
                 is_yolo = ctx.is_yolo
@@ -455,7 +447,6 @@ def run_interactive_chat(args: list[str]) -> None:
                 if new_query:
                     query = new_query
 
-            # Cleanly wipe ephemeral slash commands above when real prompt is submitted
             _clear_transient_status(query)
 
             memory_ctx = memories.get_memory_context(workspace_path) if (is_agent and memory_active) else ""
@@ -533,11 +524,24 @@ def run_direct_query(args: list[str]) -> None:
     """Executes instant single-turn CLI prompt without interactive session loop."""
     query_parts = args[1:]
     skill_content = ""
-    if query_parts and query_parts[-1].startswith("-"):
-        skill_content = skills.load_skill_content(query_parts[-1].lstrip("-").lower(), SKILLS_DIR, CFG_DIR)
-        query_parts = query_parts[:-1]
+    clean_parts: list[str] = []
 
-    query = " ".join(query_parts).strip()
+    for part in query_parts:
+        if part.startswith("-") and part != "-":
+            loaded = skills.load_skill_content(part.lstrip("-").lower(), SKILLS_DIR, CFG_DIR)
+            if loaded:
+                skill_content = loaded
+                continue
+        clean_parts.append(part)
+
+    query = " ".join(clean_parts).strip()
+
+    if query == "-" or (not query and not sys.stdin.isatty()):
+        try:
+            query = sys.stdin.read().strip()
+        except Exception:
+            query = ""
+
     if not query:
         ui._console.print("[dim yellow][sys] Usage: ai --talk <prompt> [-skill][/dim yellow]")
         sys.exit(0)
@@ -545,6 +549,16 @@ def run_direct_query(args: list[str]) -> None:
     if query.lower() in ("/help", "/h", "help", "--help", "-h"):
         ui.show_help()
         sys.exit(0)
+
+    if "AI_SHOW_THINKING" not in os.environ:
+        os.environ["AI_SHOW_THINKING"] = "0"
+
+    thinking_budget = 0
+    if env_budget := os.environ.get("AI_THINKING_BUDGET"):
+        try:
+            thinking_budget = max(0, int(env_budget.strip()))
+        except (ValueError, TypeError):
+            thinking_budget = 0
 
     sys_ctx = skills.get_system_context(query, CONTEXT_FILE, STOP_WORDS, SKILLS_DIR, CFG_DIR)
     if sys_ctx == "__ABORT_TURN__":
@@ -562,7 +576,7 @@ def run_direct_query(args: list[str]) -> None:
             pass
 
     messages = [{"role": "system", "content": active_p}, {"role": "user", "content": f"<context>\n{sys_ctx}\n</context>\n\nUser Question: {query}" if sys_ctx else f"User Question: {query}"}]
-    core.stream_response(messages, prefix="AI:", show_stats=False, thinking_budget=0)
+    core.stream_response(messages, prefix="AI:", show_stats=False, thinking_budget=thinking_budget)
     sys.exit(0)
 
 

@@ -2,13 +2,17 @@
 """Native Tool Engine - Handles file editing, search, commands, & graph intelligence [Hardened Production Ready]"""
 
 import ast
+import contextvars
 import difflib
 import json
 import os
 import re
+import select
 import shlex
+import signal
 import subprocess
 import sys
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -50,9 +54,14 @@ READONLY_INSPECTION_SUBCOMMANDS = security.READONLY_INSPECTION_SUBCOMMANDS
 FORBIDDEN_SYS_DIRS = security.FORBIDDEN_SYS_DIRS
 RE_ROOT_SANDBOX = security.RE_ROOT_SANDBOX
 
+SHELL_METACHARS: frozenset[str] = frozenset({
+    "|", "&", ";", ">", "<", "$", "`", "\n", "*", "?", "~", "(", ")", "{", "}", "#", "!", "=", "\\"
+})
+
 # In-Memory Session State (Strictly workspace-relative paths)
 _SESSION_READ_FILES: set[str] = set()
 _SESSION_MODIFIED_FILES: set[str] = set()
+_SUBAGENT_DEPTH: contextvars.ContextVar[int] = contextvars.ContextVar("subagent_depth", default=0)
 
 
 def get_modified_files() -> list[str]:
@@ -72,11 +81,24 @@ def clear_session_tracking() -> None:
 
 
 def _invalidate_module_cache(file_path: str) -> None:
-    """Purges modified module from sys.modules so in-kernel imports always reload."""
-    if file_path.endswith(".py"):
-        mod_name = os.path.splitext(os.path.basename(file_path))[0]
-        if mod_name in sys.modules:
-            sys.modules.pop(mod_name, None)
+    """Purges modified module from sys.modules including package/submodule variants."""
+    if not file_path.endswith(".py"):
+        return
+    try:
+        target_real = os.path.realpath(file_path)
+        to_purge: list[str] = []
+        for name, mod in list(sys.modules.items()):
+            mod_file = getattr(mod, "__file__", None)
+            if mod_file:
+                try:
+                    if os.path.realpath(mod_file) == target_real:
+                        to_purge.append(name)
+                except OSError:
+                    continue
+        for name in to_purge:
+            sys.modules.pop(name, None)
+    except Exception:
+        pass
 
 
 def _get_int_env(key: str, default: int) -> int:
@@ -261,6 +283,10 @@ def _search_codebase(pattern: str, search_root: str, workspace: str, max_results
         return "[error] Parameter 'pattern' cannot be empty."
 
     target_path = _safe_path(workspace, search_root)
+    real_target = os.path.realpath(target_path)
+
+    if _is_outside_workspace(workspace, real_target):
+        return f"[error] Refusing to search '{search_root}': it resolves outside the workspace."
 
     try:
         regex = re.compile(pattern, re.IGNORECASE)
@@ -271,20 +297,32 @@ def _search_codebase(pattern: str, search_root: str, workspace: str, max_results
     files_searched = 0
 
     if os.path.isfile(target_path):
-        scan_files = [target_path]
-    else:
+        if os.path.islink(target_path) or _is_outside_workspace(workspace, real_target):
+            return f"[error] Refusing to search '{search_root}': it resolves outside the workspace."
+        if os.path.splitext(target_path)[1].lower() in BINARY_EXTENSIONS:
+            return f"[error] Refusing to search binary file '{search_root}'."
+        try:
+            if os.path.getsize(real_target) > 2 * 1024 * 1024:
+                return f"[error] Target file '{search_root}' is too large to search (> 2 MB)."
+            scan_files = [real_target]
+        except OSError as e:
+            return f"[error] Cannot access '{search_root}': {e}"
+    elif os.path.isdir(target_path):
         scan_files = []
         for root, dirs, files in os.walk(target_path):
             dirs[:] = [d for d in dirs if d not in EXCLUDED_SEARCH_DIRS and not d.startswith(".")]
             for f in files:
                 if os.path.splitext(f)[1].lower() not in BINARY_EXTENSIONS and not f.startswith("."):
                     fp = os.path.join(root, f)
+                    if os.path.islink(fp) or _is_outside_workspace(workspace, os.path.realpath(fp)):
+                        continue
                     try:
-                        # Cap individual search files at 2 MB to prevent scanning huge artifacts
                         if os.path.getsize(fp) <= 2 * 1024 * 1024:
                             scan_files.append(fp)
                     except OSError:
                         pass
+    else:
+        return f"[error] Search path not found: '{search_root}'"
 
     for fpath in scan_files:
         files_searched += 1
@@ -395,7 +433,6 @@ def _resilient_replace(original: str, old_str: str, new_str: str) -> tuple[str |
     if old_len == 0:
         return None, "Parameter 'old_str' contains no non-whitespace content."
 
-    # Pre-index non-blank lines and original indices once (O(N) setup)
     non_blank_orig: list[str] = []
     non_blank_indices: list[int] = []
     for idx, line in enumerate(orig_lines):
@@ -446,7 +483,6 @@ def _resilient_replace(original: str, old_str: str, new_str: str) -> tuple[str |
     if len(non_blank_orig) >= old_len:
         for i in range(len(non_blank_orig) - old_len + 1):
             cand_block_str = "\n".join(non_blank_orig[i : i + old_len])
-            # Quick ratio heuristic before full SequenceMatcher calculation
             if difflib.SequenceMatcher(None, old_block_str, cand_block_str).quick_ratio() >= 0.85:
                 ratio = difflib.SequenceMatcher(None, old_block_str, cand_block_str).ratio()
                 if ratio > best_ratio:
@@ -503,36 +539,49 @@ def run_tool(
     confirm_gate_fn: Callable[[str], bool] | None = None,
     print_output_fn: Callable[[str], None] | None = None,
 ) -> str:
-    if isinstance(args, dict):
-        for k in ("path", "pattern", "symbol", "goal"):
-            if k in args and isinstance(args[k], str):
-                args[k] = args[k].strip().strip('\'"`\\\n\r\t ').strip()
-        if "command" in args and isinstance(args["command"], str):
-            args["command"] = args["command"].strip()
+    args = dict(args) if isinstance(args, dict) else {}
 
-        if "path" not in args:
-            for alt in ("file", "filename", "filepath", "target", "file_path"):
-                if alt in args:
-                    args["path"] = args[alt]
-                    break
-        if "command" not in args:
-            for alt in ("cmd", "exec", "shell_command", "script"):
-                if alt in args:
-                    args["command"] = args[alt]
-                    break
-        if "content" not in args:
-            for alt in ("text", "code", "body", "data"):
-                if alt in args:
-                    args["content"] = args[alt]
-                    break
-        if "pattern" not in args:
-            for alt in ("query", "regex", "search_term", "find"):
-                if alt in args:
-                    args["pattern"] = args[alt]
-                    break
+    # Canonicalize parameter aliases
+    if "path" not in args or args["path"] is None:
+        for alt in ("file", "filename", "filepath", "target", "file_path"):
+            if args.get(alt) is not None:
+                args["path"] = args[alt]
+                break
+    if "command" not in args or args["command"] is None:
+        for alt in ("cmd", "exec", "shell_command", "script"):
+            if args.get(alt) is not None:
+                args["command"] = args[alt]
+                break
+    if "content" not in args or args["content"] is None:
+        for alt in ("text", "code", "body", "data"):
+            if args.get(alt) is not None:
+                args["content"] = args[alt]
+                break
+    if "pattern" not in args or args["pattern"] is None:
+        for alt in ("query", "regex", "search_term", "find"):
+            if args.get(alt) is not None:
+                args["pattern"] = args[alt]
+                break
+
+    # Coerce and sanitize string parameters to prevent model null / type exceptions
+    for str_key in ("path", "command", "content", "pattern", "symbol", "goal", "old_str", "new_str", "query"):
+        if str_key in args:
+            val = args[str_key]
+            if val is None:
+                args[str_key] = ""
+            elif not isinstance(val, str):
+                args[str_key] = str(val)
+
+    for k in ("path", "symbol", "goal"):
+        if k in args:
+            args[k] = args[k].strip().strip('\'"`\\\n\r\t ')
+    if "pattern" in args:
+        args["pattern"] = args["pattern"].strip("\r\n")
+    if "command" in args:
+        args["command"] = args["command"].strip()
 
     raw_path = args.get("path", "")
-    full = _safe_path(workspace, raw_path)
+    full = _safe_path(workspace, raw_path) if raw_path else ""
 
     def _in_bounds_gate(reason: str) -> bool:
         if confirm_gate_fn:
@@ -546,7 +595,7 @@ def run_tool(
             return confirm_gate_fn(reason)
         return security.authorize(reason, is_security_event=True)
 
-    # 1. Isolated Sandbox Sub-Agent Delegation with Recursion Guard
+    # 1. Isolated Sandbox Sub-Agent Delegation with Thread-Safe Depth Guard
     if name == "delegate_task":
         goal = args.get("goal", "").strip()
         if not goal:
@@ -554,12 +603,12 @@ def run_tool(
         if not _in_bounds_gate(f"delegate sub-task: '{goal[:80]}'"):
             return "[denied] User declined sub-agent delegation."
 
-        current_depth = _get_int_env("AI_SUBAGENT_DEPTH", 0)
+        current_depth = _SUBAGENT_DEPTH.get()
         if current_depth >= 1:
             return "[error] Sub-agents cannot recursively delegate tasks. Execute the tools directly."
 
+        token = _SUBAGENT_DEPTH.set(current_depth + 1)
         try:
-            os.environ["AI_SUBAGENT_DEPTH"] = str(current_depth + 1)
             import agent_core as core
             sub_history = [
                 {
@@ -580,13 +629,15 @@ def run_tool(
         except Exception as e:
             return f"[error] Sub-agent delegation failed: {e}"
         finally:
-            os.environ["AI_SUBAGENT_DEPTH"] = str(current_depth)
+            _SUBAGENT_DEPTH.reset(token)
 
     # 2. IPython Kernel Execution
     if name == "exec_python":
         try:
             import agent_ipython as ipython
             code_str = args.get("code") or args.get("content") or args.get("cell") or args.get("script") or ""
+            if not isinstance(code_str, str):
+                code_str = str(code_str)
             out = ipython.run_cell(code_str, workspace, confirm_gate_fn)
             if print_output_fn:
                 print_output_fn(out)
@@ -596,25 +647,37 @@ def run_tool(
 
     # 3. Graph Intelligence Tools
     if name == "read_symbol":
-        out = run_graph_cmd("snippet", args.get("symbol", "").strip(), workspace)
+        sym = args.get("symbol", "").strip()
+        if not sym:
+            return "[error] Parameter 'symbol' cannot be empty."
+        out = run_graph_cmd("snippet", sym, workspace)
         if print_output_fn:
             print_output_fn(out)
         return out
 
     if name == "trace_symbol":
-        out = run_graph_cmd("trace", args.get("symbol", "").strip(), workspace)
+        sym = args.get("symbol", "").strip()
+        if not sym:
+            return "[error] Parameter 'symbol' cannot be empty."
+        out = run_graph_cmd("trace", sym, workspace)
         if print_output_fn:
             print_output_fn(out)
         return out
 
     if name == "blast_radius":
-        out = run_graph_cmd("blast-radius", args.get("symbol", "").strip(), workspace)
+        sym = args.get("symbol", "").strip()
+        if not sym:
+            return "[error] Parameter 'symbol' cannot be empty."
+        out = run_graph_cmd("blast-radius", sym, workspace)
         if print_output_fn:
             print_output_fn(out)
         return out
 
     if name == "find_symbol":
-        out = run_graph_cmd("search", args.get("pattern", "").strip(), workspace)
+        pat = args.get("pattern", "").strip()
+        if not pat:
+            return "[error] Parameter 'pattern' cannot be empty."
+        out = run_graph_cmd("search", pat, workspace)
         if print_output_fn:
             print_output_fn(out)
         return out
@@ -628,10 +691,11 @@ def run_tool(
     # 4. Codebase Search
     if name == "search_code":
         pattern = args.get("pattern", "")
-        search_root = args.get("path", ".")
+        search_root = args.get("path", ".") or "."
         target_path = _safe_path(workspace, search_root)
-        if _is_outside_workspace(workspace, target_path):
-            if not _security_gate(f"OUT-OF-BOUNDS SEARCH: {target_path}"):
+        real_target = os.path.realpath(target_path)
+        if _is_outside_workspace(workspace, real_target):
+            if not _security_gate(f"OUT-OF-BOUNDS SEARCH: {real_target}"):
                 return f"[denied] User declined search of '{search_root}' outside workspace."
         out = _search_codebase(pattern, search_root, workspace)
         if print_output_fn:
@@ -640,8 +704,10 @@ def run_tool(
 
     # 5. File System Tools
     if name == "read_file":
+        if not raw_path:
+            return "[error] Parameter 'path' cannot be empty."
         if os.path.isdir(full):
-            return f"[error] '{raw_path or '.'}' is a directory, not a file. Use list_dir('{raw_path or '.'}') to view files, or pass a file path."
+            return f"[error] '{raw_path}' is a directory, not a file. Use list_dir('{raw_path}') to view files."
         if os.path.splitext(full)[1].lower() in BINARY_EXTENSIONS:
             return f"[error] Refused to read binary file '{raw_path}'."
         if not os.path.isfile(full):
@@ -653,56 +719,72 @@ def run_tool(
         elif not _in_bounds_gate(f"read file {raw_path}"):
             return f"[denied] User declined read of '{raw_path}'."
 
-        rel_f = os.path.relpath(full, workspace)
-        _SESSION_READ_FILES.add(rel_f)
+        try:
+            file_size = os.path.getsize(full)
+        except OSError as e:
+            return f"[error] Cannot access '{raw_path}': {e}"
+
+        max_read_bytes = 8 * 1024 * 1024
+        l_start = args.get("line_start")
+        l_end = args.get("line_end")
+        has_range = (l_start is not None or l_end is not None)
+
+        if file_size > max_read_bytes and not has_range:
+            return f"[error] '{raw_path}' is too large to read entirely ({file_size / (1024*1024):.1f} MB > 8 MB). Specify 'line_start' and 'line_end', or use 'search_code'."
+
+        if not _is_outside_workspace(workspace, full):
+            rel_f = os.path.relpath(full, workspace)
+            _SESSION_READ_FILES.add(rel_f)
 
         try:
             with open(full, "r", encoding="utf-8", errors="replace") as f:
-                lines = f.readlines()
+                if has_range:
+                    try:
+                        start_idx = (int(str(l_start).strip()) - 1) if l_start is not None else 0
+                        end_idx = int(str(l_end).strip()) if l_end is not None else sys.maxsize
+                    except (ValueError, TypeError):
+                        return f"[error] 'line_start'/'line_end' must be valid integers (got line_start={l_start!r}, line_end={l_end!r})."
 
-            l_start = args.get("line_start")
-            l_end = args.get("line_end")
-            total_lines = len(lines)
+                    if start_idx < 0 or end_idx < 1:
+                        return f"[error] 'line_start' and 'line_end' must be >= 1 (got line_start={l_start!r}, line_end={l_end!r})."
+                    if start_idx >= end_idx:
+                        return f"[error] Inverted or empty range: line_start ({l_start}) must be less than line_end ({l_end})."
 
-            if l_start is not None or l_end is not None:
-                try:
-                    start_idx = max(0, (int(str(l_start).strip()) - 1) if l_start else 0)
-                    end_idx = min(total_lines, int(str(l_end).strip()) if l_end else total_lines)
-                except (ValueError, TypeError):
-                    return f"[error] Parameters 'line_start' and 'line_end' must be valid integers (got line_start={l_start!r}, line_end={l_end!r})."
-                sliced = lines[start_idx:end_idx]
-                content = "".join(sliced)
-                prefix = f"### File: {raw_path} (Lines {start_idx + 1}-{end_idx} of {total_lines})\n"
-                res_out = prefix + content
-            else:
-                max_ctx = _get_int_env("AI_MAX_TOKENS", 8192)
-                if max_ctx <= 16384:
-                    skel_limit = 250
-                elif max_ctx <= 32768:
-                    skel_limit = 1000
-                elif max_ctx <= 65536:
-                    skel_limit = 2000
+                    lines = []
+                    for cur_idx, line in enumerate(f, start=1):
+                        if cur_idx > end_idx:
+                            break
+                        if cur_idx > start_idx:
+                            lines.append(line)
+
+                    shown_end = min(end_idx, start_idx + len(lines))
+                    total_lines = shown_end + sum(1 for _ in f)
+                    content = "".join(lines)
+                    res_out = f"### File: {raw_path} (Lines {start_idx + 1}-{shown_end} of {total_lines})\n" + content
                 else:
-                    skel_limit = 4000
+                    lines = f.readlines()
+                    total_lines = len(lines)
+                    max_ctx = _get_int_env("AI_MAX_TOKENS", 8192)
+                    skel_limit = 250 if max_ctx <= 16384 else (1000 if max_ctx <= 32768 else (2000 if max_ctx <= 65536 else 4000))
 
-                if total_lines > skel_limit:
-                    res_out = _generate_ast_skeleton("".join(lines), raw_path)
-                else:
-                    char_cap = max(20000, int(max_ctx * 3.5 * 0.40))
-                    full_content = "".join(lines)
-                    if len(full_content) > char_cap:
-                        truncated_c = full_content[:char_cap]
-                        last_nl = truncated_c.rfind("\n")
-                        if last_nl > 0:
-                            truncated_c = truncated_c[:last_nl]
-                        cut_lines = len(truncated_c.splitlines())
-                        res_out = (
-                            f"{truncated_c}\n\n"
-                            f"... [Truncated at character cap: showing lines 1-{cut_lines} of {total_lines} (~{char_cap:,} chars). "
-                            f"Use read_file('{raw_path}', line_start={cut_lines + 1}, line_end={total_lines}) to view remaining content]"
-                        )
+                    if total_lines > skel_limit:
+                        res_out = _generate_ast_skeleton("".join(lines), raw_path)
                     else:
-                        res_out = full_content
+                        char_cap = max(20000, int(max_ctx * 3.5 * 0.40))
+                        full_content = "".join(lines)
+                        if len(full_content) > char_cap:
+                            truncated_c = full_content[:char_cap]
+                            last_nl = truncated_c.rfind("\n")
+                            if last_nl > 0:
+                                truncated_c = truncated_c[:last_nl]
+                            cut_lines = len(truncated_c.splitlines())
+                            res_out = (
+                                f"{truncated_c}\n\n"
+                                f"... [Truncated at character cap: showing lines 1-{cut_lines} of {total_lines} (~{char_cap:,} chars). "
+                                f"Use read_file('{raw_path}', line_start={cut_lines + 1}, line_end={total_lines}) to view remaining content]"
+                            )
+                        else:
+                            res_out = full_content
 
             if print_output_fn:
                 print_output_fn(res_out)
@@ -711,6 +793,8 @@ def run_tool(
             return f"[error] failed to read file: {e}"
 
     if name == "edit_file":
+        if not raw_path:
+            return "[error] Parameter 'path' cannot be empty."
         if not os.path.isfile(full):
             return f"[error] File '{raw_path}' does not exist. Use write_file to create new files."
 
@@ -726,8 +810,8 @@ def run_tool(
             return "[error] Parameter 'old_str' cannot be empty."
 
         try:
-            mtime_before = os.path.getmtime(full)
-            # Read strictly as UTF-8 to prevent data corruption on non-UTF-8 content
+            st_before = os.stat(full)
+            stat_before = (st_before.st_mtime_ns, st_before.st_size)
             try:
                 with open(full, "r", encoding="utf-8", errors="strict") as f:
                     original = f.read()
@@ -749,11 +833,6 @@ def run_tool(
                 except (json.JSONDecodeError, TypeError, ValueError) as e:
                     return f"[error] Edit blocked. Resulting JSON syntax error: {e}."
 
-            # Guard against concurrent disk modification
-            mtime_now = os.path.getmtime(full)
-            if mtime_now != mtime_before:
-                return f"[error] Conflict detected: '{raw_path}' was modified on disk by another process after it was read. Re-read the file before editing."
-
             if sys.stdout.isatty() and not _is_calm():
                 if diff := "\n".join(
                     difflib.unified_diff(
@@ -770,39 +849,62 @@ def run_tool(
                         "\n",
                     )
 
-            # Atomic write via temp file
             tmp_target = f"{full}.tmp.{os.getpid()}"
-            with open(tmp_target, "w", encoding="utf-8") as f:
-                f.write(new_content)
-            os.replace(tmp_target, full)
+            try:
+                with open(tmp_target, "w", encoding="utf-8") as f:
+                    f.write(new_content)
 
-            rel_f = os.path.relpath(full, workspace)
-            _SESSION_MODIFIED_FILES.add(rel_f)
-            _SESSION_READ_FILES.add(rel_f)
+                # Re-verify stat immediately before replace to eliminate the TOCTOU window
+                st_now = os.stat(full)
+                if (st_now.st_mtime_ns, st_now.st_size) != stat_before:
+                    return f"[error] Conflict detected: '{raw_path}' was modified on disk by another process after it was read. Re-read the file before editing."
+
+                os.replace(tmp_target, full)
+            finally:
+                if os.path.exists(tmp_target):
+                    try:
+                        os.unlink(tmp_target)
+                    except OSError:
+                        pass
+
+            if not _is_outside_workspace(workspace, full):
+                rel_f = os.path.relpath(full, workspace)
+                _SESSION_MODIFIED_FILES.add(rel_f)
+                _SESSION_READ_FILES.add(rel_f)
+
             _invalidate_module_cache(full)
-
             return f"Successfully edited {raw_path} (replaced {len(old_str)} chars with {len(new_str)} chars)."
         except OSError as e:
             return f"[error] failed to edit file: {e}"
 
     if name == "write_file":
-        content = args.get("content", "")
-        is_overwrite = bool(args.get("overwrite", False) or args.get("force", False))
+        if not raw_path or not raw_path.strip():
+            return "[error] Parameter 'path' cannot be empty."
 
-        if os.path.exists(full) and not is_overwrite:
-            try:
-                with open(full, "r", encoding="utf-8", errors="replace") as f:
-                    existing_len = len(f.read().splitlines())
-                if existing_len > 0:
-                    return f"[error] File '{raw_path}' already exists ({existing_len} lines). To make targeted changes, use edit_file(path, old_str, new_str). If you intend to overwrite the entire file, pass overwrite=true."
-            except OSError as e:
-                return f"[error] File '{raw_path}' already exists, but reading it failed: {e}. Pass overwrite=true to force overwrite."
-
+        # Security gate MUST be evaluated before any filesystem probing
         if _is_outside_workspace(workspace, full):
             if not _security_gate(f"OUT-OF-BOUNDS WRITE: {full}"):
                 return f"[denied] User declined write to '{raw_path}' outside workspace."
         elif not _in_bounds_gate(f"{'overwrite' if os.path.exists(full) else 'create'} {raw_path}"):
             return f"[denied] User declined write to '{raw_path}'."
+
+        if os.path.isdir(full) or full == os.path.realpath(workspace):
+            return f"[error] Cannot write to '{raw_path}': Target is a directory or workspace root."
+
+        content = args.get("content", "")
+        is_overwrite = bool(args.get("overwrite", False) or args.get("force", False))
+
+        if os.path.exists(full):
+            try:
+                with open(full, "r", encoding="utf-8", errors="strict") as f:
+                    existing_len = sum(1 for _ in f)
+                if not is_overwrite and existing_len > 0:
+                    return f"[error] File '{raw_path}' already exists ({existing_len} lines). To make targeted changes, use edit_file(path, old_str, new_str). If you intend to overwrite the entire file, pass overwrite=true."
+            except UnicodeDecodeError:
+                return f"[error] File '{raw_path}' is not valid UTF-8. Overwriting would destroy non-UTF-8 or binary content. Convert or re-encode it explicitly before overwriting."
+            except OSError as e:
+                if not is_overwrite:
+                    return f"[error] File '{raw_path}' already exists, but reading it failed: {e}. Pass overwrite=true to force overwrite."
 
         if full.endswith(".py"):
             try:
@@ -817,7 +919,7 @@ def run_tool(
 
         if sys.stdout.isatty() and not _is_calm() and os.path.exists(full):
             try:
-                with open(full, "r", encoding="utf-8", errors="replace") as f:
+                with open(full, "r", encoding="utf-8", errors="strict") as f:
                     old = f.read()
                 if diff := "\n".join(
                     difflib.unified_diff(
@@ -833,34 +935,44 @@ def run_tool(
                         Syntax(diff, "diff", theme="ansi_dark", background_color="default"),
                         "\n",
                     )
-            except OSError:
+            except (OSError, UnicodeDecodeError):
                 pass
 
         try:
             os.makedirs(os.path.dirname(full) or workspace, exist_ok=True)
             tmp_target = f"{full}.tmp.{os.getpid()}"
-            with open(tmp_target, "w", encoding="utf-8") as f:
-                f.write(content)
-            os.replace(tmp_target, full)
+            try:
+                with open(tmp_target, "w", encoding="utf-8") as f:
+                    f.write(content)
+                os.replace(tmp_target, full)
+            finally:
+                if os.path.exists(tmp_target):
+                    try:
+                        os.unlink(tmp_target)
+                    except OSError:
+                        pass
 
-            rel_f = os.path.relpath(full, workspace)
-            _SESSION_READ_FILES.add(rel_f)
-            _SESSION_MODIFIED_FILES.add(rel_f)
+            if not _is_outside_workspace(workspace, full):
+                rel_f = os.path.relpath(full, workspace)
+                _SESSION_READ_FILES.add(rel_f)
+                _SESSION_MODIFIED_FILES.add(rel_f)
+
             _invalidate_module_cache(full)
             return f"wrote {len(content)} chars to {raw_path}"
         except OSError as e:
             return f"[error] failed to write file: {e}"
 
     if name == "list_dir":
-        if _is_outside_workspace(workspace, full):
-            if not _security_gate(f"OUT-OF-BOUNDS LIST DIR: {full}"):
+        target_dir = full or os.path.realpath(workspace)
+        if _is_outside_workspace(workspace, target_dir):
+            if not _security_gate(f"OUT-OF-BOUNDS LIST DIR: {target_dir}"):
                 return f"[denied] User declined list_dir of '{raw_path}' outside workspace."
         elif not _in_bounds_gate(f"list directory {raw_path or '.'}"):
             return f"[denied] User declined list_dir of '{raw_path}'."
 
         try:
-            entries = sorted(os.listdir(full))
-            res_str = "\n".join((e + "/" if os.path.isdir(os.path.join(full, e)) else e) for e in entries) or "(empty)"
+            entries = sorted(os.listdir(target_dir))
+            res_str = "\n".join((e + "/" if os.path.isdir(os.path.join(target_dir, e)) else e) for e in entries) or "(empty)"
             if print_output_fn:
                 print_output_fn(res_str)
             return res_str
@@ -900,7 +1012,11 @@ def run_tool(
             if not parts:
                 return "[error] Web search returned empty content parts."
 
-            res = parts[0].get("text", "")
+            res = "".join(
+                p.get("text", "")
+                for p in parts
+                if isinstance(p, dict) and p.get("text") and not p.get("thought")
+            )
             out = res.strip() or "(No search results found)"
             if print_output_fn:
                 print_output_fn(out)
@@ -911,6 +1027,11 @@ def run_tool(
 
     if name == "run_command":
         cmd = args.get("command", "")
+        if not isinstance(cmd, str):
+            return "[error] Parameter 'command' must be a string."
+        cmd = cmd.strip()
+        if not cmd:
+            return "[error] Parameter 'command' cannot be empty."
 
         if sec_reason := _check_command_security(cmd, workspace):
             if not _security_gate(f"OUT-OF-BOUNDS EXECUTION: $ {cmd} ({sec_reason})"):
@@ -919,27 +1040,113 @@ def run_tool(
             return f"[denied] User declined command execution: {cmd}"
 
         shell = os.environ.get("SHELL") or "/bin/sh"
-        try:
-            # If command lacks shell metacharacters/redirection, execute directly
-            if not any(ch in cmd for ch in ("|", "&", ";", ">", "<", "$", "`", "\n", "*", "?", "~")):
-                try:
-                    argv = shlex.split(cmd)
-                except ValueError:
-                    argv = None
-                if argv:
-                    res = subprocess.run(argv, cwd=workspace, capture_output=True, text=True, timeout=300, stdin=subprocess.DEVNULL)
-                else:
-                    res = subprocess.run([shell, "-c", cmd], cwd=workspace, capture_output=True, text=True, timeout=300, stdin=subprocess.DEVNULL)
-            else:
-                res = subprocess.run([shell, "-c", cmd], cwd=workspace, capture_output=True, text=True, timeout=300, stdin=subprocess.DEVNULL)
+        if not any(ch in cmd for ch in SHELL_METACHARS):
+            try:
+                argv = shlex.split(cmd)
+            except ValueError:
+                argv = None
+            cmd_args = argv if argv else [shell, "-c", cmd]
+        else:
+            cmd_args = [shell, "-c", cmd]
 
-            out = ((res.stdout or "") + (("\n" + res.stderr) if res.stderr else "")).strip()[:10000]
-            if print_output_fn:
-                print_output_fn(out)
-            return f"(exit {res.returncode})\n{out}" if res.returncode != 0 else (out or "(exit 0, no output)")
-        except subprocess.TimeoutExpired:
-            return "[error] command timed out after 300 seconds"
+        try:
+            proc = subprocess.Popen(
+                cmd_args,
+                cwd=workspace,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                errors="replace",
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
         except OSError as e:
             return f"[error] failed to run command: {e}"
+
+        output_lines: list[str] = []
+        total_chars = 0
+        cap_chars = 25_000
+        truncated = False
+        deadline = time.monotonic() + 300
+        timed_out = False
+
+        try:
+            poller = select.poll()
+            if proc.stdout:
+                poller.register(proc.stdout.fileno(), select.POLLIN | select.POLLHUP | select.POLLERR)
+
+            while True:
+                remaining_time = deadline - time.monotonic()
+                if remaining_time <= 0:
+                    timed_out = True
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError, OSError):
+                        try:
+                            proc.kill()
+                        except OSError:
+                            pass
+                    break
+
+                events = poller.poll(max(0, min(int(remaining_time * 1000), 1000)))
+                if not events:
+                    if proc.poll() is not None:
+                        if proc.stdout:
+                            for rem_line in proc.stdout.readlines():
+                                total_chars += len(rem_line)
+                                if total_chars < cap_chars:
+                                    output_lines.append(rem_line)
+                        break
+                    continue
+
+                line = proc.stdout.readline() if proc.stdout else ""
+                if not line:
+                    break
+
+                total_chars += len(line)
+                if len(output_lines) < 500 and total_chars < cap_chars:
+                    output_lines.append(line)
+                elif not truncated:
+                    truncated = True
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                    except (ProcessLookupError, PermissionError, OSError):
+                        pass
+                    break
+        finally:
+            # Structured cleanup: reap child process group and close pipe descriptor
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except (ProcessLookupError, PermissionError, OSError):
+                    try:
+                        proc.kill()
+                    except OSError:
+                        pass
+                try:
+                    proc.wait(timeout=5)
+                except (subprocess.TimeoutExpired, OSError):
+                    pass
+            except OSError:
+                pass
+
+            if proc.stdout:
+                try:
+                    proc.stdout.close()
+                except OSError:
+                    pass
+
+        if timed_out:
+            return "[error] command timed out after 300 seconds"
+
+        out = "".join(output_lines).strip()
+        if truncated:
+            out += f"\n\n... [Output capped at {len(out):,} characters ({total_chars:,} bytes total) to prevent memory exhaustion]"
+
+        if print_output_fn:
+            print_output_fn(out)
+        return f"(exit {proc.returncode})\n{out}" if proc.returncode != 0 else (out or "(exit 0, no output)")
 
     return f"[error] unknown tool {name}"
