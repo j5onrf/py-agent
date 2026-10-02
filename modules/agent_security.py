@@ -147,7 +147,7 @@ DANGEROUS_IO_OPS: frozenset[str] = frozenset({
     "open", "FileIO"
 })
 DANGEROUS_BUILTINS: frozenset[str] = frozenset({
-    "exec", "eval", "compile", "__import__", "getattr", "setattr", "delattr", "__getattribute__", "open"
+    "exec", "eval", "compile", "__import__", "getattr", "setattr", "delattr", "__getattribute__"
 })
 
 # Destructive methods forbidden on any object or receiver

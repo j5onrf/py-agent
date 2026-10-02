@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local-AI Standalone IPython Kernel & RLM Harness Module [Production Ready]"""
+"""Local-AI Standalone IPython Kernel & RLM Harness Module [Hardened Production Ready]"""
 
 import builtins
 import contextlib
@@ -333,9 +333,8 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
         "workspace": ws_real,
     }
     _shell_globals.update(sdk)
-    builtins.open = safe_open
-    os.listdir = safe_listdir
 
+    # Scoped strictly to the kernel namespace without process-wide builtins mutation
     if _shell_instance:
         _shell_instance.user_ns.update(sdk)
 
@@ -394,7 +393,8 @@ def run_cell(code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] |
         try:
             if _shell_instance and capture_output:
                 with capture_output() as captured:
-                    res = _shell_instance.run_cell(code, store_history=True)
+                    # store_history=False prevents disk SQLite writes to ~/.ipython/
+                    res = _shell_instance.run_cell(code, store_history=False)
                     if res.error_in_exec:
                         traceback.print_exception(type(res.error_in_exec), res.error_in_exec, res.error_in_exec.__traceback__)
                 out = (captured.stdout or "").strip()

@@ -5,7 +5,7 @@
   <h1>Py Agent</h1>
 
   <p>
-    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.49.svg?variant=secondary" alt="Version"></a>
+    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.50.svg?variant=secondary" alt="Version"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/Python.svg?variant=branded&brand=python" alt="Language"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/C%2B%2B.svg?variant=branded&brand=cplusplus" alt="C++"></a>
     <a href="https://github.com/j5onrf/py-agent/blob/main/LICENSE"><img src="https://shieldcn.dev/badge/license-MIT-green.svg" alt="License"></a>
@@ -125,7 +125,7 @@
 
 | Rank | Model | Par Eff | Agent Index |
 | :---: | :--- | :---: | :---: |
-| **1** | **Qwen3.8-35B-Distill** *(MTP)* | **107.1%** | **91.3 (A)** |
+| **1** | **Qwen3.8-35B-Distill** *(MTP)* | **136.4%** | **92.2 (A)** |
 | **2** | **KAT-Coder-V2.5-Dev** | **90.9%** | **89.8 (A)** |
 | **3** | **Ornith-1.5-35B-A3B** | **88.2%** | **89.3 (A)** |
 | **4** | **Tiel-Coder-35B-A3B** | **90.9%** | **87.6 (B)** |
