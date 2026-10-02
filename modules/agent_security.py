@@ -260,8 +260,7 @@ def resolve_path(workspace: str, target: str) -> str:
                 if not norm_rel.startswith("..") and not os.path.isabs(norm_rel):
                     first_comp = "/" + norm_rel.split("/", 1)[0]
                     if not is_in_system_dir(first_comp) and first_comp not in ("/tmp", "/opt", "/home"):
-                        if os.path.exists(os.path.join(ws_real, norm_rel)):
-                            clean = norm_rel
+                        clean = norm_rel
 
     return os.path.realpath(clean if os.path.isabs(clean) else os.path.join(ws_real, clean))
 

@@ -87,7 +87,7 @@ class MinimalSpinner:
                 elapsed = time.time() - self.start_time
                 try:
                     self.target_stream.write(
-                        f"\r\033[1;36m[{self.chars[i % len(self.chars)]}]\033[0m {self.label} \033[2m{elapsed:.1f}s\033[0m"
+                        f"\r\x1b[2K\033[1;36m[{self.chars[i % len(self.chars)]}]\033[0m {self.label} \033[2m{elapsed:.1f}s\033[0m"
                     )
                     self.target_stream.flush()
                 except OSError:
@@ -648,6 +648,7 @@ def main():
     total_actual_turns = 0
     total_par_turns = 0
     evaluated_count = 0
+    task_scores = []
     spinner = MinimalSpinner()
 
     try:
@@ -680,8 +681,11 @@ def main():
             if passed:
                 passed_count += 1
                 status_str = "[bold green]PASS[/bold green]"
+                turn_ratio = min(1.0, par / turns) if turns > 0 else 1.0
+                task_scores.append(60.0 + (40.0 * turn_ratio))
             else:
                 status_str = "[bold red]FAIL[/bold red]"
+                task_scores.append(0.0)
 
             tps = (toks / elapsed) if elapsed > 0 else 0
             turn_metrics = f"{turns}t (Par {par})" if passed else "FAILED"
@@ -706,8 +710,8 @@ def main():
     avg_tps = (total_tokens / total_time) if total_time > 0 else 0
     toks_per_turn = (total_tokens / total_actual_turns) if total_actual_turns > 0 else 0
 
-    speed_score = min(100.0, (avg_tps / 50.0) * 100.0)
-    agent_index = (accuracy * 0.50) + (min(100.0, par_eff) * 0.35) + (speed_score * 0.15)
+    # Per-task granular capability: every over-par turn visibly penalizes the composite index
+    agent_index = (sum(task_scores) / len(task_scores)) if task_scores else 0.0
     grade = (
         "A+"
         if agent_index >= 95
