@@ -366,8 +366,6 @@ def run_interactive_chat(args: list[str]) -> None:
         pending_query = None
 
     chat_history = [{"role": "system", "content": active_system_prompt}]
-    if is_agent and not pending_query:
-        chat_history.append({"role": "assistant", "content": "Agent: Workspace loaded. Awaiting instructions."})
 
     st = core.get_state()
     show_stats = st.get("show_stats", True)
@@ -467,7 +465,7 @@ def run_interactive_chat(args: list[str]) -> None:
                 continue
 
             comb_ctx = "\n\n".join(filter(None, [memory_ctx, sys_ctx]))
-            prompt = f"<context>\n{comb_ctx}\n</context>\n\nUser Question: {query}" if comb_ctx else f"User Question: {query}"
+            prompt = f"<context>\n{comb_ctx}\n</context>\n\n{query}" if comb_ctx else query
 
             chat_history.append({"role": "user", "content": prompt})
             try:
@@ -575,7 +573,7 @@ def run_direct_query(args: list[str]) -> None:
         except OSError:
             pass
 
-    messages = [{"role": "system", "content": active_p}, {"role": "user", "content": f"<context>\n{sys_ctx}\n</context>\n\nUser Question: {query}" if sys_ctx else f"User Question: {query}"}]
+    messages = [{"role": "system", "content": active_p}, {"role": "user", "content": f"<context>\n{sys_ctx}\n</context>\n\n{query}" if sys_ctx else query}]
     core.stream_response(messages, prefix="AI:", show_stats=False, thinking_budget=thinking_budget)
     sys.exit(0)
 

@@ -41,3 +41,4 @@ pyrightconfig.json
 model_pricing.json
 .state.lock
 .opencodereview
+tools/evals/eval_traces.json

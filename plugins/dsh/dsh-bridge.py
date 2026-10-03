@@ -373,7 +373,8 @@ def handle_acp_prompt(
 
             res = None
             try:
-                res = core._session.post(
+                http_client = core._get_session() if hasattr(core, "_get_session") else requests.Session()
+                res = http_client.post(
                     url,
                     json=body,
                     headers={"Content-Type": "application/json", **headers},
