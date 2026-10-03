@@ -28,7 +28,7 @@ OK: Profile set to: Lingtiny [Yolo: ON] [Map: ON] [Mem: ON] [Py: ON] [Adp: ON]
 Agent: Task complete: Sum is 311.
 
  [ think: 56 | ans: 18 | 74 tokens | 0.61s @ 121.31 t/s ]
- [ 767 in | 53 out | cch: 93% | ctx: 10.0% ]
+ [ 767 in | 53 out | cch: 98% | ctx: 10.0% ]
  
 ❯ █
 ```

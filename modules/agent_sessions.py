@@ -244,17 +244,43 @@ def cleanup_sub_agent(workspace: str, target_pid: int | None = None) -> None:
             pass
 
 
+def _is_valid_project_git_repo(workspace: str) -> bool:
+    """Ensures workspace is its own dedicated git repository, never CFG_DIR."""
+    if not workspace or not os.path.isdir(workspace):
+        return False
+    real_ws = os.path.realpath(workspace)
+    real_cfg = os.path.realpath(CFG_DIR)
+
+    # Never treat ~/.config/py-agent as a project repo unless workspace has its own .git
+    if real_ws == real_cfg or real_ws.startswith(real_cfg + os.sep):
+        if not os.path.exists(os.path.join(real_ws, ".git")):
+            return False
+
+    try:
+        res = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+        )
+        if res.returncode != 0:
+            return False
+        top_level = os.path.realpath(res.stdout.strip())
+        if top_level == real_cfg:
+            return False
+        return top_level == real_ws or os.path.exists(os.path.join(real_ws, ".git"))
+    except Exception:
+        return False
+
+
 def create_subagent_worktree(workspace: str, agent_id: int) -> str:
-    """Spawns an isolated git worktree for a sub-agent if conditions are met."""
-    if agent_id == 0:
+    """Spawns an isolated git worktree for a sub-agent only if workspace is a valid project repo."""
+    if agent_id == 0 or not _is_valid_project_git_repo(workspace):
         return workspace
 
     wt_dir = os.path.join(workspace, ".agent", "worktrees", f"agent-{agent_id}")
     branch_name = f"subagent-{agent_id}"
-
-    res = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=workspace, capture_output=True, text=True)
-    if res.returncode != 0 or res.stdout.strip() != "true":
-        return workspace
 
     os.makedirs(os.path.dirname(wt_dir), exist_ok=True)
     if not os.path.exists(wt_dir):
@@ -271,8 +297,13 @@ def cleanup_subagent_worktree(workspace: str, agent_id: int, merge: bool = False
     wt_dir = os.path.join(workspace, ".agent", "worktrees", f"agent-{agent_id}")
     branch_name = f"subagent-{agent_id}"
 
-    res = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=workspace, capture_output=True)
-    if res.returncode != 0:
+    if not _is_valid_project_git_repo(workspace):
+        if os.path.exists(wt_dir):
+            import shutil
+            try:
+                shutil.rmtree(wt_dir, ignore_errors=True)
+            except Exception:
+                pass
         return
 
     if merge and os.path.exists(wt_dir):
