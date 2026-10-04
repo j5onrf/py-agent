@@ -60,7 +60,6 @@ files_to_compile = [
     "modules/agent_adapters.py",
     "modules/agent_tui.py",
     "modules/agent_tui_async.py",
-    "modules/agent_usage.py",
     "modules/agent_cloud.py",
     "modules/agent_context.py",
     "modules/agent_skills.py",
@@ -101,7 +100,6 @@ modules_to_import = [
     "agent_ipython",
     "agent_tools",
     "agent_adapters",
-    "agent_usage",
     "agent_cloud",
     "agent_context",
     "agent_skills",
@@ -507,30 +505,19 @@ try:
 
     all_passed = all_passed and p9_a and p9_b and p9_c
 
-    # --- PASS 10: ZERO-I/O SPEND LEDGER, TTS, REASONIX & LOOP ENGINE ---
-    print(f"\n{CYAN}[Pass 10/10] Zero-I/O Ledger, TTS Sanitizer, TUI Reasonix & Loop Engine{RESET}")
+    # --- PASS 10: TURN TELEMETRY, TTS, REASONIX & LOOP ENGINE ---
+    print(f"\n{CYAN}[Pass 10/10] Turn Telemetry, TTS Sanitizer, TUI Reasonix & Loop Engine{RESET}")
     import agent_tts as tts
     import agent_tui as tui
-    import agent_usage as usage
 
-    # 1. Zero-I/O Local Spend Bypass with safe sentinel restore
-    _SENTINEL = object()
-    orig_ledger = getattr(usage, "LEDGER_FILE", _SENTINEL)
-    test_ledger_path = os.path.join(sandbox_dir, "test_ledger.json")
-    try:
-        usage.LEDGER_FILE = test_ledger_path
-        usage.record("local-model", 500, 500, 0.0)
-        p10_a1 = not os.path.exists(test_ledger_path)
-        print_result("Spend Ledger Zero-I/O Local Bypass", p10_a1, "0 disk writes for local/free turns")
-
-        usage.record("claude-3-5-sonnet", 1000, 1000, 0.05)
-        p10_a2 = os.path.exists(test_ledger_path) and "$0.05" in usage.turn_line(1000, 1000, 0.05)
-        print_result("Spend Ledger Paid API Accounting", p10_a2, "Logged non-zero cloud spend")
-    finally:
-        if orig_ledger is not _SENTINEL:
-            usage.LEDGER_FILE = orig_ledger
-        elif hasattr(usage, "LEDGER_FILE"):
-            delattr(usage, "LEDGER_FILE")
+    # 1. In-Memory Turn Telemetry Formatter
+    telemetry_capture = io.StringIO()
+    telemetry_capture.isatty = lambda: True
+    with contextlib.redirect_stdout(telemetry_capture):
+        core._log_turn_usage(1000, 100, True, 8192, cached_tok=500, r_tok=50, elapsed=1.5)
+    val = telemetry_capture.getvalue()
+    p10_a1 = p10_a2 = ("↑1.0k" in val and "↓100" in val and "R50" in val and "CH50%" in val)
+    print_result("In-Memory Compact Telemetry Formatter", p10_a1, "Single-line metrics generated")
 
     # 2. TTS URL Pronunciation Sanitizer
     tts_clean = tts.clean_text_for_speech("<think>Internal plan</think> Inspect https://github.com/j5onrf/py-agent at 08:30!")

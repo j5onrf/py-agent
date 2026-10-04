@@ -56,7 +56,6 @@ ALLOWED_MODULES: frozenset[str] = frozenset({
     "agent_tui.py",
     "agent_tui_async.py",
     "agent_ui.py",
-    "agent_usage.py",
     "agent_vision.py",
     "agent_voice.py",
     "model-select.py",
@@ -130,13 +129,6 @@ sys.excepthook = _clean_sigint_handler
 RE_FINAL_ANSWER_SENTINEL = re.compile(r"^\s*#{0,3}\s*Final Answer\b", re.IGNORECASE | re.MULTILINE)
 TOOL_VERBS: dict[str, str] = getattr(tools, "TOOL_VERBS", {})
 
-try:
-    import agent_usage as usage_log
-    speed_test = usage_log
-except ImportError:
-    usage_log = None
-    speed_test = None
-
 
 def _heal_tool_args(raw: Any) -> dict[str, Any]:
     """Heals malformed JSON tool arguments via modular adapter or safe decode."""
@@ -198,22 +190,43 @@ def run_mod(module_name: str, *args: str) -> str:
 
 
 def _log_turn_usage(
-    model: str,
     in_tok: int,
     out_tok: int,
-    cost: float,
     show_stats: bool,
-    ctx_used: int | None = None,
+    ctx_max: int,
     cached_tok: int = 0,
+    r_tok: int = 0,
+    elapsed: float = 0.0,
 ) -> None:
-    if not usage_log:
+    """Renders unified compact turn metrics in exact muted gray (\\033[90m) with dialed-in spacing."""
+    if not (show_stats and sys.stdout.isatty()):
         return
     try:
-        usage_log.record(model, in_tok, out_tok, cost)
-        if show_stats and sys.stdout.isatty():
-            ctx_max = _get_int_env("AI_MAX_TOKENS", 8192) if ctx_used is not None else None
-            print(usage_log.turn_line(in_tok, out_tok, cost, ctx_used, ctx_max, cached_tok=cached_tok))
-            print()
+        parts = []
+
+        in_s = f"↑{in_tok / 1000:.1f}k" if in_tok >= 1000 else f"↑{in_tok}"
+        out_s = f"↓{out_tok / 1000:.1f}k" if out_tok >= 1000 else f"↓{out_tok}"
+        tok_s = f"{in_s} {out_s}"
+        if r_tok > 0:
+            r_s = f"R{r_tok / 1000:.1f}k" if r_tok >= 1000 else f"R{r_tok}"
+            tok_s += f" {r_s}"
+        parts.append(tok_s)
+
+        if cached_tok > 0 and in_tok > 0:
+            cch = int(round((cached_tok / in_tok) * 100))
+            parts.append(f"CH{cch}%")
+
+        ctx_used = in_tok + out_tok
+        ctx_pct = (ctx_used / max(1, ctx_max)) * 100
+        max_k = "8.2k" if ctx_max == 8192 else (f"{ctx_max / 1000:.1f}k" if ctx_max % 1000 != 0 else f"{ctx_max // 1000}k")
+        parts.append(f"{ctx_pct:.1f}%/{max_k}")
+
+        if elapsed > 0:
+            speed = out_tok / max(0.01, elapsed)
+            parts.append(f"{elapsed:.1f}s @ {speed:.1f} t/s")
+
+        sys.stdout.write(f"\n\033[90m [ {' · '.join(parts)} ]\033[0m\n\n")
+        sys.stdout.flush()
     except Exception:
         pass
 
@@ -293,7 +306,6 @@ def agentic_turn(
     ephemeral_directives: list[dict[str, str]] = []
     last_prompt_tokens = 0
     last_msg_count = 0
-    speed_test_active = False
 
     def _calc_msg_tokens(msg_list: list[dict[str, Any]]) -> int:
         total = 0
@@ -304,20 +316,6 @@ def agentic_turn(
                 total += get_accurate_token_count(fn.get("name", ""))
                 total += get_accurate_token_count(fn.get("arguments", ""))
         return total
-
-    def _finalize_speed_test(tokens_out: int = 0) -> None:
-        nonlocal speed_test_active
-        if speed_test_active and speed_test and show_stats:
-            try:
-                speed_test.end(
-                    actual_out_tokens=tokens_out,
-                    is_local=is_local,
-                    resolved_model=resolved_model or body.get("model") or "local-model",
-                    active_model=body.get("model"),
-                )
-            except Exception:
-                pass
-            speed_test_active = False
 
     session = _get_session()
     max_rounds = _get_int_env("AI_MAX_AGENT_ROUNDS", 10)
@@ -423,7 +421,6 @@ def agentic_turn(
                     if res.status_code == 400 and ("exceed" in err_text.lower() or "context" in err_text.lower()):
                         consecutive_context_overflows += 1
                         if consecutive_context_overflows >= 2:
-                            _finalize_speed_test(0)
                             if spinner:
                                 spinner.stop(leave_on_screen=False)
                             sys.stderr.write("\r\033[1;31m[error] Context window overflow: message payload cannot be pruned further.\033[0m\r\n")
@@ -434,10 +431,8 @@ def agentic_turn(
                         sys.stderr.write("\r\033[1;33m[sys] Context window full. Auto-compacting conversation history...\033[0m\r\n")
                         messages[:] = prune_history(messages, max_tokens=int(max_ctx * 0.5))
                         last_prompt_tokens = 0
-                        _finalize_speed_test(0)
                         continue
 
-                    _finalize_speed_test(0)
                     if spinner:
                         spinner.stop(leave_on_screen=False)
                     sys.stderr.write(f"\r\033[1;31m[error] Server HTTP {res.status_code}: {err_text}\033[0m\r\n")
@@ -528,15 +523,9 @@ def agentic_turn(
                                     stream_pfx = prefix or ("Agent:" if is_agent else "AI:")
                                     streamer = RichStreamer(prefix=stream_pfx, spinner=spinner, round_idx=_round)
                                     streamer.start()
-                                if speed_test and show_stats:
-                                    speed_test.start()
-                                    speed_test_active = True
 
                             if streamer and not is_calm and not is_sub:
                                 streamer.update(chunk_to_stream)
-
-                            if speed_test and show_stats:
-                                speed_test.count_token(chunk_to_stream, is_thinking=is_thinking)
                         elif has_xml_tool_tag:
                             acc_content.append(content)
                             if not is_calm and not is_sub and spinner and not spinner.active:
@@ -562,8 +551,6 @@ def agentic_turn(
                             arg_chunk = tc.get("function", {}).get("arguments", "")
                             if arg_chunk:
                                 tc_entry["function"]["arguments"] += arg_chunk
-                                if speed_test and show_stats and not is_calm:
-                                    speed_test.count_token(arg_chunk, is_thinking=False)
                     except Exception as e:
                         if os.environ.get("AI_DEBUG") == "1":
                             _console_err.print(f"[dim][debug] Stream chunk error: {e}[/dim]")
@@ -579,7 +566,6 @@ def agentic_turn(
                             pass
 
         except KeyboardInterrupt:
-            _finalize_speed_test(0)
             if streamer:
                 try:
                     streamer.stop(interrupted=True)
@@ -587,7 +573,6 @@ def agentic_turn(
                     pass
             raise
         except Exception as e:
-            _finalize_speed_test(0)
             if spinner:
                 try:
                     spinner.stop(leave_on_screen=False)
@@ -685,11 +670,6 @@ def agentic_turn(
                     _console.print(clean_reply, markup=False, highlight=False)
                     _console.print()
 
-            if show_stats and sys.stdout.isatty():
-                print()
-
-            _finalize_speed_test(out_tok)
-
             cached_tok = 0
             if captured_usage and isinstance(captured_usage, dict):
                 details = captured_usage.get("prompt_tokens_details") or {}
@@ -704,7 +684,15 @@ def agentic_turn(
             if not cached_tok and captured_timings and isinstance(captured_timings, dict):
                 cached_tok = captured_timings.get("cache_n", 0) or 0
 
-            _log_turn_usage(final_model, in_tok, final_out, 0.0, show_stats, in_tok + final_out, cached_tok=cached_tok)
+            r_tok = 0
+            if captured_usage and isinstance(captured_usage, dict):
+                details = captured_usage.get("completion_tokens_details") or {}
+                r_tok = details.get("reasoning_tokens") or 0
+            if not r_tok and streamer and getattr(streamer, "acc_think", None):
+                r_tok = get_accurate_token_count(streamer.acc_think)
+
+            elapsed_turn = max(0.01, time.monotonic() - turn_start_time)
+            _log_turn_usage(in_tok, final_out, show_stats, max_ctx, cached_tok=cached_tok, r_tok=r_tok, elapsed=elapsed_turn)
             return ans_text if ans_text else "(No response generated)"
 
         # ── Tool Execution Phase ─────────────────────────────────────────────
@@ -846,7 +834,6 @@ def agentic_turn(
                         "role": "user",
                         "content": "[System Directive]: Action was explicitly declined by the user. Do not retry or attempt alternative workarounds for this resource.",
                     }]
-                    _finalize_speed_test(0)
                     return "[denied] Action cancelled by user."
 
                 if fname == "exec_python" and RE_FINAL_ANSWER_SENTINEL.search(res_str):
@@ -867,7 +854,6 @@ def agentic_turn(
                         ephemeral_directives = [{"role": "user", "content": "[System Directive]: File already inspected. Do not read again. Proceed immediately to edit, test, or final answer."}]
 
         except KeyboardInterrupt:
-            _finalize_speed_test(0)
             _backfill_missing_tool_results(messages, healed_calls, "[cancelled: interrupted by user]")
             if streamer:
                 try:
@@ -876,7 +862,6 @@ def agentic_turn(
                     pass
             raise
         except Exception as e:
-            _finalize_speed_test(0)
             _backfill_missing_tool_results(messages, healed_calls, f"[tool error] {e}")
             if spinner:
                 try:
@@ -886,7 +871,6 @@ def agentic_turn(
             sys.stderr.write(f"\r\033[90m[sys] Tool execution error: {e}\033[0m\r\n")
             return None
 
-    _finalize_speed_test(0)
     if spinner:
         spinner.stop(leave_on_screen=False)
     sys.stderr.write(f"\r\033[1;33m[sys] Agent loop limit reached ({max_rounds} rounds exhausted without final answer).\033[0m\r\n")

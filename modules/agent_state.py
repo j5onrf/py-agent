@@ -17,7 +17,7 @@ STATE_FILE: str = os.path.join(CFG_DIR, ".state.json")
 STATE_LOCK_FILE: str = os.path.join(CFG_DIR, ".state.lock")
 
 DEFAULTS: dict[str, Any] = {
-    "show_stats": False,
+    "show_stats": True,
     "memory_active": False,
     "box_style": 1,
     "yolo_mode": True,
