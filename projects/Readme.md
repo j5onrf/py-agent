@@ -5,7 +5,7 @@ Autonomous local developer agent with OKF memory, iPython, and codebase index-ma
 ```console
 ~ ❯ ling
 [01/01] > [ling-tiny] ai init ~/ling-tiny
-OK: Profile set to: Lingtiny [Yolo: ON] [Adp: ON]
+✓ Profile set to: Lingtiny [Yolo: ON] [Adp: ON]
 
 ╭─ ∿ Py Agent ────────────────────────────────────────╮
 │     model:  Ling-3.0-tiny                           │
@@ -17,7 +17,8 @@ OK: Profile set to: Lingtiny [Yolo: ON] [Adp: ON]
 ❯ write a python binary search tree with insert and search methods
 
 ╭─ ∿ ────────────────────────────────────────────────────
-The user wants a Python binary search tree with insert and search methods. I need to create a Python script that implements a BST with these methods.
+The user wants a Python binary search tree with insert and search methods. I need to create a Python
+script that implements a BST with these methods.
 ╰────────────────────────────────────────────────────────
 
   ∗ updating • write_file binary_search_tree.py

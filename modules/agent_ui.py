@@ -809,7 +809,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                 b_mem  = f" {badge_col}[Mem: ON]\033[0m" if is_mem else ""
                 b_py   = f" {badge_col}[Py: ON]\033[0m" if is_py else ""
                 b_adp  = f" {badge_col}[Adp: ON]\033[0m" if is_adp else ""
-                sys.stderr.write(f"\x1b[{last_rendered_lines + 3}A\r\x1b[J\033[1;32mOK: Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}{b_adp}\n\n")
+                sys.stderr.write(f"\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}{b_adp}\n\n")
                 sys.stderr.flush()
                 return key, is_yolo, use_map, is_py, is_mem, is_adp
             elif char in ("\r", "\n"):
@@ -841,7 +841,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                 b_mem  = f" {badge_col}[Mem: ON]\033[0m" if is_mem else ""
                 b_py   = f" {badge_col}[Py: ON]\033[0m" if is_py else ""
                 b_adp  = f" {badge_col}[Adp: ON]\033[0m" if is_adp else ""
-                sys.stderr.write(f"\033[1;32mOK: Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}{b_adp}\n\n")
+                sys.stderr.write(f"\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}{b_adp}\n\n")
                 sys.stderr.flush()
                 return key, is_yolo, use_map, is_py, is_mem, is_adp
             elif char in ("\x1b[A", "\x1b[B"):
