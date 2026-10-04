@@ -220,7 +220,7 @@ def run_task_loop(
                     continue
 
                 ui._console.print(
-                    f"\n[bold green]✔ [Loop Engine] Task completed in {turn} loop cycle(s) "
+                    f"\n[bold green]✓ [Loop Engine] Task completed in {turn} loop cycle(s) "
                     f"({total_tools_run} tool actions executed)![/bold green]\n"
                 )
                 if not no_log:

@@ -731,7 +731,7 @@ class LocalAITUI(App):
                 try:
                     res = subprocess.run([sys.executable, r_bin, args], cwd=self.workspace_path, capture_output=True, text=True, timeout=300, env={**os.environ, "AI_WORKSPACE_PATH": self.workspace_path})
                     out = ANSI_CLEAN_REGEX.sub('', (res.stdout or res.stderr or "").replace('\r', '\n')).strip()
-                    self.call_from_thread(asst.update_content, f"### Task Report\n\n{out or '✔ Task completed.'}")
+                    self.call_from_thread(asst.update_content, f"### Task Report\n\n{out or '✓ Task completed.'}")
                     self.history.extend([{"role": "user", "content": f"/task \"{goal}\""}, {"role": "assistant", "content": out or "Task complete."}])
                     self.refresh_db_counts()
                 except Exception as e:

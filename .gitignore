@@ -8,7 +8,6 @@ skills/system/mysys.md
 
 # Ephemeral State, Caches & Logs
 .state.json
-.spend_ledger.json
 .openrouter_cache_v2.json
 .request_log
 .voice_pending.txt
@@ -17,7 +16,6 @@ skills/system/mysys.md
 .auto-f
 .cache/
 ai-history
-tools/agentic/fusion/logs/
 .agent/
 custom_spaces.json
 .last_cloud_key.txt
@@ -38,7 +36,6 @@ eval_history.json
 pyproject.toml
 pyrightconfig.json
 .tui_state.json
-model_pricing.json
 .state.lock
 .opencodereview
 tools/evals/eval_traces.json

@@ -4,31 +4,32 @@ Autonomous local developer agent with OKF memory, iPython, and codebase index-ma
 
 ```console
 ~ ❯ ling
-[01/02] > [ling-tiny] ai init ~/ling-tiny
-OK: Profile set to: Lingtiny [Yolo: ON] [Map: ON] [Mem: ON] [Py: ON] [Adp: ON]
+[01/01] > [ling-tiny] ai init ~/ling-tiny
+OK: Profile set to: Lingtiny [Yolo: ON] [Adp: ON]
 
- Map enabled: compiled index-map.
-╭─ ∿ Py Agent ─────────────────────────────────────────────╮
-│     model:  Ling-3.0-tiny                                │
-│ directory:  ~/.config/py-agent/projects/ling-tiny        │
-│   profile:  lingtiny                                     │
-│  database:  active (map + mem: 3m/5t)                    │
-╰──────────────────────────────────────────────────────────╯
+╭─ ∿ Py Agent ────────────────────────────────────────╮
+│     model:  Ling-3.0-tiny                           │
+│ directory:  ~/.config/py-agent/projects/ling-tiny   │
+│   profile:  lingtiny                                │
+│  database:  stateless                               │
+╰─────────────────────────────────────────────────────╯
 
-❯ /calm
- [Calm On]
- 
-❯ /stats
- [Stats On]
+❯ write a python binary search tree with insert and search methods
 
-❯ calculate the sum of all prime numbers between 10 and 50 and print the result.
-            |>
--~~~-~~~-~\___/~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-~~~-
+╭─ ∿ ────────────────────────────────────────────────────
+The user wants a Python binary search tree with insert and search methods. I need to create a Python script that implements a BST with these methods.
+╰────────────────────────────────────────────────────────
 
-Agent: Task complete: Sum is 311.
+  ∗ updating • write_file binary_search_tree.py
+  ✓ Done (0.1s)
 
- [ think: 56 | ans: 18 | 74 tokens | 0.61s @ 121.31 t/s ]
- [ 767 in | 53 out | cch: 98% | ctx: 10.0% ]
+╭─ ∿ ────────────────────────────────────────────────────
+Let me verify the file was created correctly and then provide a summary.
+╰────────────────────────────────────────────────────────
+
+Agent: ✓ Task complete: Created a Python BST with insert and search methods.
+
+ [ ↑1.1k ↓36 R35 · CH98% · 14.2%/8.2k · 0.61s @ 121.31 t/s ]
  
 ❯ █
 ```

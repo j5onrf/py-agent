@@ -38,8 +38,8 @@ Built to be lightweight, auditable by a single developer, and private by design.
    ▼          ▼              ▼              ▼              ▼              ▼
 ┌───────────┐ ┌────────────┐ ┌──────────┐ ┌────────────┐ ┌───────────┐ ┌─────────────┐
 │ Stream &  │ │ Adapters   │ │ Sandbox  │ │ Security   │ │ Skills    │ │ SQLite DBs  │
-│ Terminal  │ │ (/adp for  │ │ Kernel   │ │ Kernel     │ │ & Context │ │ (Sessions & │
-│ (Render)  │ │ Sub-27B)   │ │ (/py)    │ │ (Zero-Trust│ │           │ │  FTS5 Graph)│
+│ Terminal  │ │ (/adp)     │ │ Kernel   │ │ Kernel     │ │ & Context │ │ (Sessions & │
+│ (Render)  │ │            │ │ (/py)    │ │ (Zero-Trust│ │           │ │  FTS5 Graph)│
 └───────────┘ └────────────┘ └──────────┘ └────────────┘ └───────────┘ └─────────────┘
 ```
 
@@ -103,9 +103,9 @@ Workspace capabilities (`/map`, `/mem`, `/yolo`, SQLite checkpoints) are univers
    - Implements a non-bypassable authorization gate: in-bounds workspace operations auto-approve under YOLO mode, but out-of-bounds access and mutating system commands strictly ignore YOLO mode and always prompt for `[y/N]` confirmation.
 
 8. **Opt-In Out-of-Band Adapters (`agent_adapters.py`):**
-   - **Opt-in only:** Disabled by default across the runtime. Enabled explicitly per profile via `adapters: true` (recommended for Sub-27B SLMs) or toggled on the fly with `/adp`.
+   - **Opt-in only:** Disabled by default across the runtime. Enabled explicitly per profile via `adapters: true` or toggled on the fly with `/adp`.
    - Large models (27B+) do not use adapters by default, relying on native schema compliance.
-   - When active on small models, it normalizes parameter aliases (`file` -> `path`, `cmd` -> `command`), repairs unclosed JSON brackets, and rescues markdown-wrapped tool calls out-of-band without polluting base system prompts.
+   - When active, it normalizes parameter aliases (`file` -> `path`, `cmd` -> `command`), repairs unclosed JSON brackets, and rescues markdown-wrapped tool calls out-of-band without polluting base system prompts.
 
 9. **Deterministic Diffing (`agent_tools.py`):**
    - `_resilient_replace` handles diff execution in 3 stages: Exact -> Whitespace-Normalized -> 88% Fuzzy Match.
@@ -142,8 +142,8 @@ Workspace capabilities (`/map`, `/mem`, `/yolo`, SQLite checkpoints) are univers
    ├── agent_state.py           - Zero-dependency atomic state persistence (.state.json), flock locks & CLI calm guards
    ├── agent_memories.py        - Git-native Open Knowledge Format (OKF) Markdown memory manager (.agent/memory/*.md)
    ├── agent_sessions.py        - SQLite session checkpoints (-save / -load), turn logger, projects/.database/ isolation
-   ├── agent_context.py         - 3-zone context compactor (prune_history) & Jaccard semantic intent router
-   └── agent_usage.py           - Unified spend ledger, dynamic model_pricing.json override, timer & speed tracker
+   └── agent_context.py         - 3-zone context compactor (prune_history) & Jaccard semantic intent router
+ tracker
 
 6. Cloud Providers & Auxiliary Services
    ├── agent_cloud.py           - Single-pass top-down .env cascade engine (Custom HF, Gemini, OpenRouter, DeepSeek)

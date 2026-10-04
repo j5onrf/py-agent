@@ -203,6 +203,8 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
 
     cleaned: dict[str, Any] = {}
     for k, v in args.items():
+        if v is None or v == "null":
+            continue
         if isinstance(v, str):
             clean_v = v
             if k not in ("old_str", "new_str", "content", "code"):
@@ -213,6 +215,10 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
                         if inner[:1] not in ("'", '"') and inner[-1:] not in ("'", '"'):
                             clean_v = inner
                 clean_v = clean_v.strip()
+
+            # Schema anchor bleed repair (e.g. "^calc.py$" -> "calc.py")
+            if k not in ("pattern", "regex") and len(clean_v) > 2 and clean_v.startswith("^") and clean_v.endswith("$"):
+                clean_v = clean_v[1:-1].strip()
 
             if k in ("pattern", "query") and "\n" in clean_v:
                 clean_v = clean_v.replace("\r\n", "\n")
@@ -231,7 +237,7 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
         else:
             cleaned[k] = v
 
-    # 1. Path Aliases
+    # 1. Path Aliases & Leading Slash Normalization
     if "path" not in cleaned:
         for alt in ("file", "filename", "filepath", "target", "file_path", "target_file"):
             if alt in cleaned:
@@ -249,6 +255,10 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
         if m := RE_ROOT_SANDBOX.match(cleaned["path"]):
             rem = m.group(1)
             cleaned["path"] = rem.strip('\'"`\\\n\r\t ') if rem else "."
+
+        # Strip accidental leading slashes on workspace relative files
+        if cleaned["path"].startswith("/") and not cleaned["path"].startswith(("/home", "/workspace")):
+            cleaned["path"] = cleaned["path"].lstrip("/")
 
         if m := re.search(r":(\d{1,6})(?::\d{1,6})?$", cleaned["path"]):
             stem = cleaned["path"][: m.start()]
@@ -303,7 +313,7 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
                 cleaned["new_str"] = _strip_line_number_gutters(str(cleaned.pop(alt)))
                 break
 
-    # 7. Line Range Aliases
+    # 7. Line Range Aliases & Numeric String Coercion
     if "line_start" not in cleaned:
         for alt in ("start_line", "start", "from_line", "begin"):
             if alt in cleaned:
@@ -314,6 +324,11 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
                     break
                 except (ValueError, TypeError):
                     pass
+    elif isinstance(cleaned.get("line_start"), str):
+        try:
+            cleaned["line_start"] = int(cleaned["line_start"])
+        except ValueError:
+            pass
 
     if "line_end" not in cleaned:
         for alt in ("end_line", "end", "to_line", "stop"):
@@ -325,6 +340,11 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
                     break
                 except (ValueError, TypeError):
                     pass
+    elif isinstance(cleaned.get("line_end"), str):
+        try:
+            cleaned["line_end"] = int(cleaned["line_end"])
+        except ValueError:
+            pass
 
     # 8. Overwrite & Precedence Disambiguation
     if "overwrite" not in cleaned:
@@ -618,6 +638,13 @@ def heal_json_args(raw: str | dict[str, Any]) -> dict[str, Any]:
         return {}
 
     cleaned = raw.strip()
+
+    # Bare string auto-wrapping (e.g. raw "calc.py" -> {"path": "calc.py"})
+    if not cleaned.startswith(("{", "[", "```", "<")):
+        if "\n" not in cleaned and re.search(r"\.[a-zA-Z0-9]+$", cleaned):
+            return normalize_params({"path": cleaned})
+        if cleaned.startswith(("python ", "python3 ", "pytest", "ls ", "cat ", "git ", "find ")):
+            return normalize_params({"command": cleaned})
 
     # Pass 1: Direct JSON parse on clean payload without destructive stripping
     try:
@@ -973,13 +1000,16 @@ def extract_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
     calls.extend(_extract_ast_python_calls(text))
 
     # Format 7: Standalone Python Markdown Code Block Auto-Execution
-    if not calls and re.search(r"```(?:py|python)\b", text, re.IGNORECASE):
+    from agent_state import get_state
+    is_py_active = get_state("ipython_mode", False) or os.environ.get("AI_IPYTHON_MODE") == "1"
+    if (is_py_active or "final_answer(" in text) and not calls and re.search(r"```(?:py|python)\b", text, re.IGNORECASE):
         py_blocks = re.findall(
             r"```(?:py|python)[a-zA-Z0-9_+-]*[ \t]*\n([\s\S]+?)(?:\n```|\Z)", text, re.IGNORECASE
         )
         for i, code_block in enumerate(py_blocks):
             clean_block = code_block.strip()
-            if any(k in clean_block for k in ("final_answer(", "open(", "read_file(", "os.listdir(", "glob.", "edit_file(", "write_file(")):
+            triggers = ("final_answer(", "open(", "read_file(", "os.listdir(", "glob.", "edit_file(", "write_file(") if is_py_active else ("final_answer(",)
+            if any(k in clean_block for k in triggers):
                 clean_block = RE_BOGUS_IMPORTS.sub("", clean_block).strip()
                 calls.append({
                     "id": f"call_py_block_{i}_{int(time.time())}",

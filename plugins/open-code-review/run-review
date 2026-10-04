@@ -152,7 +152,7 @@ class TelemetrySpinner:
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=0.3)
         with self._lock:
-            sys.stderr.write(f"\r\033[1;32m✔ {done_msg}\033[0m \033[2m({elapsed_str})\033[0m\n\n")
+            sys.stderr.write(f"\r\033[1;32m✓ {done_msg}\033[0m \033[2m({elapsed_str})\033[0m\n\n")
             sys.stderr.write("\033[?25h")
             sys.stderr.flush()
 
@@ -492,7 +492,7 @@ def main():
         else:
             print(report_text)
     else:
-        print("\033[1;32m✔ No issues found.\033[0m")
+        print("\033[1;32m✓ No issues found.\033[0m")
 
 
 if __name__ == "__main__":

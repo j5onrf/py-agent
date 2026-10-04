@@ -197,9 +197,8 @@ def _log_turn_usage(
     cached_tok: int = 0,
     r_tok: int = 0,
     elapsed: float = 0.0,
-    server_tps: float | None = None,
 ) -> None:
-    """Renders unified compact turn metrics in exact muted gray (\\033[90m) with dialed-in single-space breathing room."""
+    """Renders unified compact turn metrics in exact muted gray (\\033[90m) with dialed-in spacing."""
     if not (show_stats and sys.stdout.isatty()):
         return
     try:
@@ -222,11 +221,11 @@ def _log_turn_usage(
         max_k = "8.2k" if ctx_max == 8192 else (f"{ctx_max / 1000:.1f}k" if ctx_max % 1000 != 0 else f"{ctx_max // 1000}k")
         parts.append(f"{ctx_pct:.1f}%/{max_k}")
 
-        speed = server_tps if (server_tps and server_tps > 0) else (out_tok / max(0.001, elapsed) if elapsed > 0 else 0.0)
-        if speed > 0:
+        if elapsed > 0:
+            speed = out_tok / max(0.001, elapsed)
             parts.append(f"{elapsed:.1f}s @ {speed:.1f} t/s")
 
-        sys.stdout.write(f"\033[90m [ {' · '.join(parts)} ]\033[0m\n\n")
+        sys.stdout.write(f"\n\033[90m [ {' · '.join(parts)} ]\033[0m\n\n")
         sys.stdout.flush()
     except Exception:
         pass
@@ -618,7 +617,7 @@ def agentic_turn(
             clean_reply = re.sub(r"<think>[\s\S]*?(?:</think>|$)", "", ans_text).strip()
             if not clean_reply and ans_text.strip():
                 raw_fallback = re.sub(r"</?think>", "", ans_text).strip()
-                if m := re.search(r"(?:[✓✔]\s*)?Task complete:.*", raw_fallback, re.IGNORECASE):
+                if m := re.search(r"(?:[✓✓]\s*)?Task complete:.*", raw_fallback, re.IGNORECASE):
                     clean_reply = m.group(0).strip()
                 else:
                     clean_reply = raw_fallback.splitlines()[-1].strip() if raw_fallback else ""
@@ -630,13 +629,14 @@ def agentic_turn(
             try:
                 if is_calm and ans_text:
                     if clean_reply:
-                        clean_reply = prepare_markdown(clean_reply.strip())
+                        clean_reply = prepare_markdown(clean_reply)
                         _console.print(f"[{p_style}]{p_prefix}[/{p_style}] ", end="")
                         if render_md:
                             code_th = str(get_state("code_theme", "monokai"))
                             _console.print(Markdown(clean_reply, code_theme=code_th, justify="default"))
                         else:
                             _console.print(clean_reply, markup=False, highlight=False)
+                            _console.print()
                 elif render_md and streamer and clean_reply and not is_sub:
                     tsize = shutil.get_terminal_size((80, 24))
                     cols, rows = tsize.columns, tsize.lines
@@ -652,7 +652,7 @@ def agentic_turn(
                         except OSError:
                             pass
 
-                    clean_reply = prepare_markdown(clean_reply.strip())
+                    clean_reply = prepare_markdown(clean_reply)
                     code_th = str(get_state("code_theme", "monokai"))
                     p_header = f"[{p_style}]{p_prefix.strip()}[/{p_style}]"
                     if clean_reply.startswith(("```", "#", "---")):
@@ -662,22 +662,19 @@ def agentic_turn(
                         _console.print(f"{p_header} ", end="")
                         _console.print(Markdown(clean_reply, code_theme=code_th, justify="default"))
                 elif clean_reply and (not streamer or not getattr(streamer, "ans_started", False)) and not is_sub:
-                    clean_reply = prepare_markdown(clean_reply.strip())
-                    _console.print(f"[{p_style}]{p_prefix}[/{p_style}]", end=" ")
-                    if render_md:
-                        code_th = str(get_state("code_theme", "monokai"))
-                        _console.print(Markdown(clean_reply, code_theme=code_th, justify="default"))
-                    else:
-                        _console.print(clean_reply, markup=False, highlight=False)
+                        clean_reply = prepare_markdown(clean_reply)
+                        _console.print(f"[{p_style}]{p_prefix}[/{p_style}]", end=" ")
+                        if render_md:
+                            code_th = str(get_state("code_theme", "monokai"))
+                            _console.print(Markdown(clean_reply, code_theme=code_th, justify="default"))
+                        else:
+                            _console.print(clean_reply, markup=False, highlight=False)
             except Exception as render_err:
                 if os.environ.get("AI_DEBUG") == "1":
                     sys.stderr.write(f"\r\n[debug] Markdown render fallback: {render_err}\r\n")
                 if clean_reply:
-                    _console.print(clean_reply.strip(), markup=False, highlight=False)
-
-            # Ensure exactly one blank line before the stats bar across all output paths
-            sys.stdout.write("\n")
-            sys.stdout.flush()
+                    _console.print(clean_reply, markup=False, highlight=False)
+                    _console.print()
 
             cached_tok = 0
             if captured_usage and isinstance(captured_usage, dict):
@@ -701,11 +698,7 @@ def agentic_turn(
                 r_tok = get_accurate_token_count(streamer.acc_think)
 
             elapsed_gen = max(0.001, time.monotonic() - (gen_start_time or turn_start_time))
-            server_tps = None
-            if captured_timings and isinstance(captured_timings, dict):
-                server_tps = captured_timings.get("predicted_per_second")
-
-            _log_turn_usage(in_tok, final_out, show_stats, max_ctx, cached_tok=cached_tok, r_tok=r_tok, elapsed=elapsed_gen, server_tps=server_tps)
+            _log_turn_usage(in_tok, final_out, show_stats, max_ctx, cached_tok=cached_tok, r_tok=r_tok, elapsed=elapsed_gen)
             return ans_text if ans_text else "(No response generated)"
 
         # ── Tool Execution Phase ─────────────────────────────────────────────

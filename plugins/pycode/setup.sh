@@ -102,6 +102,6 @@ pnpm build
 chmod +x "$PYAGENT_DIR/plugins/pycode/launch.sh" 2>/dev/null || true
 chmod +x "$PYAGENT_DIR/plugins/pycode/bridge.py" 2>/dev/null || true
 
-echo -e "\n\033[1;32m✔ PyCode installation complete!\033[0m"
+echo -e "\n\033[1;32m✓ PyCode installation complete!\033[0m"
 echo -e "You can now launch the GUI from your terminal by running:\n"
 echo -e "  \033[1;37mai\033[0m  ──►  \033[1;36m/pycode\033[0m (or \033[1;36m/pycode web\033[0m for browser mode)\n"

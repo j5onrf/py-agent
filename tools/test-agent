@@ -37,7 +37,7 @@ GREEN, RED, CYAN, YELLOW, DIM, RESET = (
 
 
 def print_result(name: str, passed: bool, detail: str = ""):
-    badge = f"  {GREEN}✔ PASS{RESET}" if passed else f"  {RED}✖ FAIL{RESET}"
+    badge = f"  {GREEN}✓ PASS{RESET}" if passed else f"  {RED}✖ FAIL{RESET}"
     det_str = f" {GREEN}{detail}{RESET}" if passed else f" {RED}{detail}{RESET}"
     print(f"{badge} : {name:<52}{det_str}")
 
@@ -566,7 +566,7 @@ finally:
 
 print(f"\n{CYAN}======================================================================{RESET}")
 if all_passed:
-    print(f"{GREEN}   ✔ ALL 10 PASSES SUCCESSFUL — PY AGENT STACK IS 100% OPERATIONAL    {RESET}")
+    print(f"{GREEN}   ✓ ALL 10 PASSES SUCCESSFUL — PY AGENT STACK IS 100% OPERATIONAL    {RESET}")
 else:
     print(f"{RED}   ✖ SOME TESTS FAILED — CHECK DETAILS ABOVE                         {RESET}")
 print(f"{CYAN}======================================================================{RESET}\n")
