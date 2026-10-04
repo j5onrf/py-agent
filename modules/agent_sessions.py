@@ -251,7 +251,6 @@ def _is_valid_project_git_repo(workspace: str) -> bool:
     real_ws = os.path.realpath(workspace)
     real_cfg = os.path.realpath(CFG_DIR)
 
-    # Never treat ~/.config/py-agent as a project repo unless workspace has its own .git
     if real_ws == real_cfg or real_ws.startswith(real_cfg + os.sep):
         if not os.path.exists(os.path.join(real_ws, ".git")):
             return False
@@ -290,29 +289,21 @@ def create_subagent_worktree(workspace: str, agent_id: int) -> str:
 
 
 def cleanup_subagent_worktree(workspace: str, agent_id: int, merge: bool = False) -> None:
-    """Removes the worktree and optionally merges its branch. Triggered on sub-agent exit."""
+    """Removes the worktree, merges if requested, and guaranteed-deletes the temporary branch."""
     if agent_id == 0:
         return
 
     wt_dir = os.path.join(workspace, ".agent", "worktrees", f"agent-{agent_id}")
     branch_name = f"subagent-{agent_id}"
 
-    if not _is_valid_project_git_repo(workspace):
+    try:
+        if merge and os.path.exists(wt_dir) and _is_valid_project_git_repo(workspace):
+            subprocess.run(["git", "merge", branch_name], cwd=workspace, capture_output=True)
+    finally:
         if os.path.exists(wt_dir):
-            import shutil
-            try:
-                shutil.rmtree(wt_dir, ignore_errors=True)
-            except Exception:
-                pass
-        return
-
-    if merge and os.path.exists(wt_dir):
-        subprocess.run(["git", "merge", branch_name], cwd=workspace, capture_output=True)
-
-    if os.path.exists(wt_dir):
-        subprocess.run(["git", "worktree", "remove", "--force", wt_dir], cwd=workspace, capture_output=True)
-
-    subprocess.run(["git", "branch", "-D", branch_name], cwd=workspace, capture_output=True)
+            subprocess.run(["git", "worktree", "remove", "--force", wt_dir], cwd=workspace, capture_output=True)
+        subprocess.run(["git", "branch", "-D", branch_name], cwd=workspace, capture_output=True)
+        subprocess.run(["git", "worktree", "prune"], cwd=workspace, capture_output=True)
 
 
 def init_db(workspace: str) -> None:

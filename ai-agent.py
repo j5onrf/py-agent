@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.50] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production Ready]"""
+"""Py Agent [j5onrf] [v0.9.9.51] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production Ready]"""
 
 import json
 import os
@@ -428,7 +428,11 @@ def run_interactive_chat(args: list[str]) -> None:
                     show_stats=show_stats,
                     flash_status=_flash_status,
                     launch_surface_fn=_launch_surface,
-                    clean_exit_fn=lambda name: clean_exit(name, workspace_path=original_workspace_path, sub_id=sub_id if is_agent else None),
+                    clean_exit_fn=lambda name: clean_exit(
+                        name,
+                        workspace_path=original_workspace_path if (workspace_path != original_workspace_path) else None,
+                        sub_id=sub_id if is_agent else None,
+                    ),
                 )
 
                 handled, new_query = commands.dispatch_command(query, ctx)
@@ -515,7 +519,11 @@ def run_interactive_chat(args: list[str]) -> None:
                         if os.environ.get("AI_DEBUG") == "1":
                             sys.stderr.write(f"\r\n[debug] Failed to write history.md: {e}\r\n")
     except KeyboardInterrupt:
-        clean_exit(safe_name if is_agent else None, workspace_path=original_workspace_path, sub_id=sub_id if is_agent else None)
+        clean_exit(
+            safe_name if is_agent else None,
+            workspace_path=original_workspace_path if (workspace_path != original_workspace_path) else None,
+            sub_id=sub_id if is_agent else None,
+        )
 
 
 def run_direct_query(args: list[str]) -> None:
