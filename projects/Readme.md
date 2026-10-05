@@ -30,7 +30,7 @@ Let me verify the file was created correctly and then provide a summary.
 
 Agent: ✓ Task complete: Created a Python BST with insert and search methods.
 
- [ ↑767 ↓14 R22 · CH97% · 9.8%/8.2k · 0.44s @ 121.31 t/s ]
+  [ ↑767 ↓14 R22 · CH97% · 9.8%/8.2k · 0.44s @ 121.31 t/s ]
 
 ❯ █
 ```
@@ -41,13 +41,15 @@ Agent: ✓ Task complete: Created a Python BST with insert and search methods.
 
 Switch CLI box styles using `/box [1-7]` (or `/box` to cycle). Persists in `~/.config/py-agent/.state.json`.
 
-* **#1:** Codex Rounded (Default)
-* **#2:** Double Border
-* **#3:** Crisp Square
-* **#4:** Heavy Square
-* **#5:** Minimalist Line
-* **#6:** Dual-Chamber Inset
-* **#7:** Minimalist Clean
+| Box Style | Preset Name | Thinking Box Geometry |
+| :---: | :--- | :---: |
+| **#1** | **Codex Rounded** *(Default)* | **Rounded** (`╭` and `╰`) |
+| **#2** | **Crisp Square** | **Square** (`┌` and `└`) |
+| **#3** | **Double Border** | **Square** (`┌` and `└`) |
+| **#4** | **Heavy Square** | **Square** (`┌` and `└`) |
+| **#5** | **Minimalist Line** | **Square** (`┌` and `└`) |
+| **#6** | **Dual-Chamber Inset** | **Rounded** (`╭` and `╰`) |
+| **#7** | **Minimalist Clean** | **Rounded** (`╭` and `╰`) |
 
 ---
 

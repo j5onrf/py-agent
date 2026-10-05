@@ -1,31 +1,89 @@
 #!/usr/bin/env python3
 # email-agent [Secure Multi-Mailbox Tag-Filter Agent]
 
-import os
-import sys
-import re
-import imaplib
-import email
 import concurrent.futures
+import email
+import imaplib
+import os
+import re
+import sys
 from email.header import decode_header
 
-# 1. Append local modules path so standalone execution can resolve dependencies
-CFG_DIR = os.path.expanduser("~/.config/local-ai")
-sys.path.append(os.path.join(CFG_DIR, "modules"))
+try:
+    import select
+    import termios
+    import tty
+    _HAS_TERMIOS = True
+except ImportError:
+    _HAS_TERMIOS = False
+
+# 1. Resolve paths dynamically for py-agent modules
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+REPO_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
+CFG_DIR = os.path.expanduser("~/.config/py-agent")
+
+for p in (os.path.join(REPO_DIR, "modules"), os.path.join(CFG_DIR, "modules")):
+    if os.path.isdir(p) and p not in sys.path:
+        sys.path.insert(0, p)
 
 try:
     import agent_ui as ui
     HAS_UI = True
 except ImportError:
+    ui = None
     HAS_UI = False
 
-# Resolve the .email config path (checks tool directory and ~/.config/local-ai/)
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+
+def _fallback_get_key() -> str:
+    """Self-contained terminal key reader fallback."""
+    if not _HAS_TERMIOS:
+        return sys.stdin.read(1) if sys.stdin.isatty() else ""
+    fd = None
+    close_file = False
+    if not sys.stdin.isatty():
+        try:
+            f = open("/dev/tty", "r")
+            fd = f.fileno()
+            close_file = True
+        except Exception:
+            return ""
+    else:
+        fd = sys.stdin.fileno()
+
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        termios.tcflush(fd, termios.TCIFLUSH)
+        char_bytes = os.read(fd, 1)
+        if not char_bytes:
+            return ""
+        if char_bytes == b"\x03":
+            raise KeyboardInterrupt
+        if char_bytes == b"\x1b" and select.select([fd], [], [], 0.05)[0]:
+            char_bytes += os.read(fd, 2)
+        return char_bytes.decode("utf-8", errors="ignore")
+    finally:
+        termios.tcsetattr(fd, termios.TCSAFLUSH, old)
+        if close_file and f:
+            try:
+                f.close()
+            except Exception:
+                pass
+
+
+def get_key() -> str:
+    if HAS_UI and hasattr(ui, "get_key"):
+        return ui.get_key()
+    return _fallback_get_key()
+
+
+# Resolve the .email config path (checks tool directory and ~/.config/py-agent/)
 EMAIL_CFG_PATH = next((p for p in (
     os.path.join(SCRIPT_DIR, ".email"),
     os.path.join(CFG_DIR, ".email"),
     os.path.join(CFG_DIR, ".env")
 ) if os.path.exists(p)), os.path.join(SCRIPT_DIR, ".email"))
+
 
 def load_email_config(path: str) -> dict:
     """Loads configuration keys specifically from the dedicated .email file."""
@@ -43,12 +101,14 @@ def load_email_config(path: str) -> dict:
             pass
     return cfg
 
+
 # Load isolated configurations
 CONFIG = load_email_config(EMAIL_CFG_PATH)
 
 IMAP_SERVER = CONFIG.get("IMAP_SERVER")
 EMAIL_USER = CONFIG.get("EMAIL_USER")
 APP_PASS = CONFIG.get("EMAIL_APP_PASSWORD")
+
 
 def clean_header(header_val) -> str:
     """Safely decodes raw mime headers into standard UTF-8 strings."""
@@ -66,18 +126,18 @@ def clean_header(header_val) -> str:
             parts.append(text)
     return "".join(parts).strip()
 
+
 def highlight_tags(text: str, tags: list, color_code: str = "\033[1;33m", reset_code: str = "\033[0m") -> str:
     """Highlights configured keywords in bold/color while preserving case and surrounding styles."""
     if not tags:
         return text
-    # Sort tags by length descending to prevent partial-word replacement collisions
     sorted_tags = sorted(tags, key=len, reverse=True)
     highlighted = text
     for tag in sorted_tags:
         pattern = re.compile(re.escape(tag), re.IGNORECASE)
-        # Wrap matched keyword, then apply the surrounding reset_code to restore text style
         highlighted = pattern.sub(lambda m: f"{color_code}{m.group(0)}{reset_code}", highlighted)
     return highlighted
+
 
 def fetch_single_account(acc: dict, limit: int) -> list:
     """Connects to a single mailbox and lazily fetches unread matching emails."""
@@ -86,38 +146,35 @@ def fetch_single_account(acc: dict, limit: int) -> list:
         mail = imaplib.IMAP4_SSL(acc["server"], timeout=10)
         mail.login(acc["user"], acc["pass"])
         mail.select("inbox")
-        
+
         status, data = mail.search(None, "UNSEEN")
         if status != "OK" or not data[0]:
             mail.logout()
             return []
-            
+
         mail_ids = data[0].split()
         fetch_limit = 50 if acc["tags"] else limit
         target_ids = mail_ids[-fetch_limit:]
-        
+
         matched_count = 0
         for mid in reversed(target_ids):
             if matched_count >= limit:
                 break
-                
-            # 1. Fetch ONLY the lightweight headers (Saves 99% of bandwidth)
+
             status, hdata = mail.fetch(mid, "(RFC822.HEADER)")
             if status != "OK" or not hdata or not hdata[0]:
                 continue
             raw_headers = hdata[0][1]
             msg = email.message_from_bytes(raw_headers)
-            
+
             subject = clean_header(msg["Subject"])
             sender = clean_header(msg["From"])
-            
-            # 2. Apply fast tag filtering strictly on the Subject line
+
             if acc["tags"]:
                 subject_lower = subject.lower()
                 if not any(tag in subject_lower for tag in acc["tags"]):
                     continue
-            
-            # 3. Only if it matches do we fetch a tiny 500-char plain-text snippet (non-marking)
+
             snippet = "(No preview available)"
             try:
                 status, sdata = mail.fetch(mid, "(BODY.PEEK[1]<0.500>)")
@@ -125,12 +182,11 @@ def fetch_single_account(acc: dict, limit: int) -> list:
                     raw_snippet = sdata[0][1]
                     if raw_snippet:
                         snippet = raw_snippet.decode("utf-8", errors="ignore").strip()
-                        # Clean up formatting, replacing double-spacing/newlines with space
-                        snippet = re.sub(r'\s+', ' ', snippet)
+                        snippet = re.sub(r"\s+", " ", snippet)
                         snippet = snippet[:150] + "..." if len(snippet) > 150 else snippet
             except Exception:
                 pass
-            
+
             emails_list.append({
                 "id": mid.decode("utf-8"),
                 "account": acc["user"],
@@ -140,17 +196,17 @@ def fetch_single_account(acc: dict, limit: int) -> list:
                 "tags": acc["tags"]
             })
             matched_count += 1
-            
+
         mail.logout()
     except Exception as e:
-        sys.stderr.write(f"❌ Connection failure for {acc['user']}: {e}\n")
+        sys.stderr.write(f"\r\x1b[2K\033[1;31m❌ Connection failure for {acc['user']}: {e}\033[0m\n")
     return emails_list
+
 
 def fetch_emails(limit: int = 10) -> list:
     """Queries all configured mailboxes in parallel threads and aggregates the results."""
     discovered_accounts = {}
-    
-    # 1. Fallback: Parse legacy flat account if configured
+
     legacy_user = CONFIG.get("EMAIL_USER")
     legacy_pass = CONFIG.get("EMAIL_APP_PASSWORD")
     if legacy_user and legacy_pass:
@@ -161,8 +217,7 @@ def fetch_emails(limit: int = 10) -> list:
             "server": CONFIG.get("IMAP_SERVER", "imap.gmail.com"),
             "tags_str": tags_str
         }
-        
-    # 2. Dynamic Scan: Find any numbered keys like EMAIL_USER_1, EMAIL_USER_2, etc.
+
     for k, v in CONFIG.items():
         match = re.match(r"^EMAIL_USER_(\d+)$", k)
         if match:
@@ -178,7 +233,6 @@ def fetch_emails(limit: int = 10) -> list:
                     "tags_str": tags_str
                 }
 
-    # Convert discovered map into a clean, index-sorted list
     resolved_accounts = []
     for idx in sorted(discovered_accounts.keys()):
         acc = discovered_accounts[idx]
@@ -191,120 +245,109 @@ def fetch_emails(limit: int = 10) -> list:
         })
 
     if not resolved_accounts:
-        sys.stderr.write("❌ Configuration error. Check your .email file.\n")
+        sys.stderr.write("\033[1;31m❌ Configuration error. Check your .email file.\033[0m\n")
         return []
-    
+
     aggregated_emails = []
-    
-    # 3. Query all mailboxes concurrently in parallel threads
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(resolved_accounts)) as executor:
         futures = {executor.submit(fetch_single_account, acc, limit): acc for acc in resolved_accounts}
         for future in concurrent.futures.as_completed(futures):
             res = future.result()
             if res:
                 aggregated_emails.extend(res)
-            
+
     return aggregated_emails
+
 
 def run_interactive_tui():
     """Runs a fast, responsive ANSI-escaped terminal selection menu for your mail."""
-    # 1. Hide the terminal cursor immediately so it does not obscure your text
-    sys.stderr.write("\033[?25l")
-    
-    # 2. Print the descriptive loading label with 2 leading spaces for alignment
-    sys.stderr.write("  \033[2mConnecting to mailboxes... \033[0m")
-    sys.stderr.flush()
-
-    # 3. Start the rotating spinner if TTY is active (with no positional arguments)
     spinner = None
-    if HAS_UI and sys.stderr.isatty():
+    if HAS_UI and hasattr(ui, "InlineSpinner") and sys.stderr.isatty():
         try:
             spinner = ui.InlineSpinner()
-            spinner.start()
+            spinner.start("Connecting to mailboxes...")
         except Exception:
             pass
-        
+
     try:
-        # Secure the mail list (Catching interrupts during connection/fetching)
         emails = fetch_emails(10)
     except KeyboardInterrupt:
         if spinner:
-            try: spinner.stop()
-            except: pass
-        sys.stderr.write("\r\x1b[KCancelled.\n")
-        sys.stderr.write("\033[?25h")  # Ensure cursor is restored
+            try:
+                spinner.stop()
+            except Exception:
+                pass
+        sys.stderr.write("\r\x1b[2KCancelled.\n")
+        sys.stderr.write("\033[?25h")
         sys.stderr.flush()
         sys.exit(130)
-    
-    # Teardown spinner
+
     if spinner:
         spinner.stop()
-    sys.stderr.write("\r\x1b[K")
+    sys.stderr.write("\r\x1b[2K")
     sys.stderr.flush()
-    
+
     if not emails:
         print("📭 Your inboxes are clean! No unread filtered messages found.")
-        sys.stderr.write("\033[?25h")  # Restore cursor if no mail found
+        sys.stderr.write("\033[?25h")
         sys.stderr.flush()
         return
 
     current_idx = 0
     num_opts = len(emails)
-    
-    # Cursor is already hidden, so we enter the selection loop directly
+
     try:
         while True:
             selected = emails[current_idx]
             idx_str = f"{current_idx + 1:02d}/{num_opts:02d}"
-            
-            # Highlight matched tags in Subject, restoring italics (\033[3m) on reset
+
             subject_highlighted = highlight_tags(
-                selected['subject'][:60], 
-                selected['tags'], 
-                color_code="\033[1;33m", # Bold Yellow
-                reset_code="\033[0m\033[3m" # Reset and restore italics
+                selected["subject"][:60],
+                selected["tags"],
+                color_code="\033[1;33m",
+                reset_code="\033[0m\033[3m",
             )
-            
-            # Highlight matched tags in Preview snippet
+
             preview_highlighted = highlight_tags(
-                selected['snippet'][:75], 
-                selected['tags'], 
-                color_code="\033[1;33m", # Bold Yellow
-                reset_code="\033[0m"
+                selected["snippet"][:75],
+                selected["tags"],
+                color_code="\033[1;33m",
+                reset_code="\033[0m",
             )
-            
-            # Print TUI selection layout (4 lines)
-            sys.stderr.write(f"\r\x1b[K\033[1;30m[\033[1;32m{idx_str}\033[1;30m]\033[0m ❯ \033[1;35m[{selected['account']}]\033[0m ❯ \033[1;36m[From]\033[0m \033[1;32m{selected['sender'][:35]}\033[0m\n")
-            sys.stderr.write(f"\r\x1b[K\033[3m   Subject: \"{subject_highlighted}\"\033[0m\n")
-            sys.stderr.write(f"\r\x1b[K   Preview: {preview_highlighted}\n")
-            sys.stderr.write(f"\r\x1b[K   [Arrows to navigate  Esc to exit]: ")
+
+            sys.stderr.write(f"\r\x1b[2K\033[1;30m[\033[1;32m{idx_str}\033[1;30m]\033[0m ❯ \033[1;35m[{selected['account']}]\033[0m ❯ \033[1;36m[From]\033[0m \033[1;32m{selected['sender'][:35]}\033[0m\n")
+            sys.stderr.write(f"\r\x1b[2K\033[3m   Subject: \"{subject_highlighted}\"\033[0m\n")
+            sys.stderr.write(f"\r\x1b[2K   Preview: {preview_highlighted}\n")
+            sys.stderr.write(f"\r\x1b[2K   [Arrows to navigate  Esc to exit]: ")
             sys.stderr.flush()
-            
-            key = ui.get_key()
-            if key in ('\x03', '\x1b', 'q', 'Q', '\r', ''):
-                sys.stderr.write("\r\x1b[K\x1b[3A\r\x1b[KExited.\n")
+
+            key = get_key()
+            if key in ("\x03", "\x1b", "q", "Q", "\r", ""):
+                sys.stderr.write("\r\x1b[3A\x1b[0J\033[90m[email] Exited.\033[0m\n")
                 break
-            elif key in ('\x1b[A', '\x1b[B'):
-                current_idx = (current_idx + (1 if key == '\x1b[B' else -1) + num_opts) % num_opts
-                sys.stderr.write("\r\x1b[K\x1b[3A\r\x1b[K")
+            elif key in ("\x1b[A", "\x1b[B"):
+                current_idx = (current_idx + (1 if key == "\x1b[B" else -1) + num_opts) % num_opts
+                sys.stderr.write("\r\x1b[3A\x1b[0J")
             else:
-                sys.stderr.write("\r\x1b[K\x1b[3A\r\x1b[K")
+                sys.stderr.write("\r\x1b[3A\x1b[0J")
     except KeyboardInterrupt:
-        sys.stderr.write("\r\x1b[K\x1b[3A\r\x1b[KCancelled.\n")
+        sys.stderr.write("\r\x1b[3A\x1b[0J\033[90m[email] Cancelled.\033[0m\n")
         sys.stderr.flush()
         sys.exit(130)
     finally:
-        sys.stderr.write("\033[?25h")  # Safely restore terminal cursor on exit
+        sys.stderr.write("\033[?25h")
         sys.stderr.flush()
+
 
 def main():
     run_interactive_tui()
+
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
         sys.stderr.write("\nCancelled.\n")
-        sys.stderr.write("\033[?25h")  # Ensure cursor is restored
+        sys.stderr.write("\033[?25h")
         sys.stderr.flush()
         sys.exit(130)

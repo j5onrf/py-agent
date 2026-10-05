@@ -1,8 +1,8 @@
-# CODEBASE INDEX MAP | Generated: 2026-10-03 21:23 | Workspace: py-agent | Path: ~/.config/py-agent
+# CODEBASE INDEX MAP | Generated: 2026-10-05 17:18 | Workspace: py-agent | Path: ~/.config/py-agent
 # Active symbols and structural connections mapped in the local index.
 # -----------------------------------------------------------------------------------------
 # Codebase Modules & Active Architecture:
-#   ├── .active_cd.65452         - home/j5/.config/py-agent/projects/ling-tiny
+#   ├── .active_cd.361166        - home/j5/.config/py-agent/projects/ling-tiny
 #   ├── .env                     - ~/.config/py-agent/.env
 #   ├── .env.example             - ==============================================================================
 #   ├── .gitignore               - Secrets & Credentials
@@ -57,7 +57,7 @@
 [shell:ai-hook.sh] sum:Production Py-Agent Shell Hook (Sub-Millisecond Startup)
 [image/svg:logo.svg] dim:x | size:1.4KB
 [markdown:modules/Readme.md] title:Private-First
-[python:modules/agent_adapters.py] imp:ast,json,os,re,sys,time,typing | fn:_close_unterminated_quote,_strip_line_number_gutters,_extract_diff_hunk,deduplicate_tool_calls,normalize_params,_extract_balanced_json,_parse_heredoc,heal_tool_call,_safe_shell_write,heal_json_args,_extract_ast_python_calls,extract_fallback_tool_calls
+[python:modules/agent_adapters.py] imp:agent_state,ast,json,os,re,sys,time,typing | fn:_close_unterminated_quote,_strip_line_number_gutters,_extract_diff_hunk,deduplicate_tool_calls,normalize_params,_extract_balanced_json,_parse_heredoc,heal_tool_call,_safe_shell_write,heal_json_args,_extract_ast_python_calls,extract_fallback_tool_calls
 [python:modules/agent_chat.py] imp:agent_cloud,agent_ui,json,os,re,sys,urllib | fn:_build_option_placeholders
 [python:modules/agent_cloud.py] imp:os,re,typing | fn:_is_valid_key,get_active_configs
 [python:modules/agent_commands.py] imp:agent_context,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tts,agent_ui,agent_voice,collections,dataclasses,json,os,re,shutil,subprocess,sys,typing | cls:SessionContext | fn:update_workspace_config,handle_map_toggle,handle_memory_cmd,handle_grounding_cmd,handle_tts_cmd,handle_file_command,handle_hindsight_cmd,dispatch_command
@@ -160,9 +160,8 @@
 [python:tools/cheatsheet] imp:os,re,sys
 [file:tools/email/.email] sum:--- Global fallback connection details ---
 [markdown:tools/email/Readme.md] title:Email TUI Monitor: `email-agent`
-[python:tools/email/email-agent] imp:agent_ui,concurrent,email,imaplib,os,re,sys | fn:load_email_config,clean_header,highlight_tags,fetch_single_account,fetch_emails,run_interactive_tui,main
+[python:tools/email/email-agent] imp:agent_ui,concurrent,email,imaplib,os,re,select,sys,termios,tty | fn:_fallback_get_key,get_key,load_email_config,clean_header,highlight_tags,fetch_single_account,fetch_emails,run_interactive_tui,main
 [python:tools/evals/eval-stack] imp:agent_adapters,agent_cloud,agent_core,agent_ipython,agent_skills,agent_tools,agent_ui,contextlib,io,json,os,re,rich,select,shutil,subprocess,sys,tempfile,termios,threading,time,tty,typing | cls:MinimalSpinner | fn:__init__,start,_spin,stop,_safe_read,_write_fixture,_verify_python_script,_verify_ag01,_verify_ag02,_verify_ag03,_verify_ag04,_verify_ag05,_verify_ag06,_verify_ag07,list_available_profiles,select_profile_interactive,_get_k,resolve_dynamic_profile,get_current_model_info,_log_failure_trace,run_single_agentic_test,main
-[json:tools/evals/eval_traces.json]
 [python:tools/generate-profile] imp:contextlib,glob,os,re,shutil,socket,subprocess,sys,typing | fn:clean_str,read_sysfs,run_cmd
 [markdown:tools/index-map/Readme.md] title:Codebase Mapping & Relational Knowledge Graph: `index-map`
 [python:tools/index-map/index-map] imp:ast,fnmatch,json,os,re,sqlite3,struct,sys,time | cls:PythonGraphVisitor | fn:load_gitignore_patterns,should_ignore,is_binary,get_file_summary,__init__,visit_Import,visit_ImportFrom,visit_ClassDef,visit_FunctionDef,visit_AsyncFunctionDef,visit_any_func,parse_non_python_file,analyze_markdown_file,analyze_image_file,analyze_json_file,analyze_shell_file,analyze_generic_file,init_db,find_db_path,compile_ascii_tree,compile_flat_shorthand,run_indexing,search_symbols,extract_snippet,main

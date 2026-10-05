@@ -131,6 +131,8 @@ class RichStreamer:
         self.acc_think, self.acc_ans, self.phase, self.think_hdr_printed, self.ans_started = "", "", "INIT", False, False
         self.in_post_think = False
         self.round_idx = round_idx
+        is_sq = get_state("box_style", 1) not in (1, 6, 7)
+        self.c_top, self.c_bot = ("┌", "└") if is_sq else ("╭", "╰")
 
     def _stop_spinner(self, done_msg: str | None = None) -> None:
         if self.spinner:
@@ -183,7 +185,7 @@ class RichStreamer:
                 self.update(parts[0])
             if show_think and self.think_hdr_printed and not self.ans_started:
                 sep = "" if self.acc_think.endswith("\n") else "\r\n"
-                _console_err.print(f"{sep}[dim]╰────────────────────────────────────────────────────────[/dim]\n")
+                _console_err.print(f"{sep}[dim]{self.c_bot}────────────────────────────────────────────────────────[/dim]\n")
                 sys.stderr.flush()
             self.phase = "ANSWER"
             self._stop_spinner()
@@ -207,7 +209,7 @@ class RichStreamer:
                 if not self.think_hdr_printed and tok.strip():
                     self.think_hdr_printed = True
                     self._stop_spinner()
-                    _console_err.print("[dim]╭─ ∿ ────────────────────────────────────────────────────[/dim]")
+                    _console_err.print(f"[dim]{self.c_top}─ ∿ ────────────────────────────────────────────────────[/dim]")
                     tok = tok.lstrip("\r\n")
                 if tok:
                     try:
@@ -254,7 +256,7 @@ class RichStreamer:
         show_think = os.environ.get("AI_SHOW_THINKING", "1") == "1"
         if self.phase == "THINKING" and show_think and self.think_hdr_printed and not self.ans_started:
             sep = "" if self.acc_think.endswith("\n") else "\r\n"
-            _console_err.print(f"{sep}[dim]╰────────────────────────────────────────────────────────[/dim]\n")
+            _console_err.print(f"{sep}[dim]{self.c_bot}────────────────────────────────────────────────────────[/dim]\n")
             self.phase = "ANSWER"
 
         render_md = bool(get_state("render_markdown", False))

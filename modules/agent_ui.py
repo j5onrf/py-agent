@@ -31,8 +31,8 @@ RE_UNSAFE_SHELL_CHARS: re.Pattern = re.compile(r'[\[\]{}()=\'"",;|<>#`$&*!\\\r\n
 
 STYLES = {
     1: ("∿ Py Agent", ROUNDED, "green", "bold bright_green"),
-    2: ("∿ Py Agent", DOUBLE, "bright_blue", "bold bright_blue"),
-    3: ("∿ Py Agent", SQUARE, "bright_yellow", "bold bright_yellow"),
+    2: ("∿ Py Agent", SQUARE, "green", "bold bright_green"),
+    3: ("∿ Py Agent", DOUBLE, "bright_blue", "bold bright_blue"),
     4: ("∿ Py Agent", HEAVY, "bright_cyan", "bold bright_white"),
     5: ("∿ Py Agent", HORIZONTALS, "dim white", "bold cyan"),
     6: ("∿ Py Agent", ROUNDED, "green", "bold bright_green"),
