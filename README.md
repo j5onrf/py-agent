@@ -50,7 +50,7 @@
   <p>
     <sub><b>Cloud & Community Gateways:</b> Official endpoints across <a href="https://huggingface.co">Hugging Face Router</a>, <a href="https://tokenharbor.ai">TokenHarbor</a> &amp; <a href="https://openrouter.ai">OpenRouter</a><br>
     <b>Hugging Face:</b> <a href="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash"><code>DeepSeek-V4.1-Flash</code></a>, <a href="https://huggingface.co/zai-org/GLM-5.3-Flash"><code>GLM-5.3-Flash</code></a>, <a href="https://huggingface.co/inclusionAI/Ling-3.0-flash-VL"><code>Ling-3.0-flash-VL</code></a>, and <a href="https://huggingface.co/moonshotai/Kimi-K3"><code>Kimi-K3</code></a><br><br>
-    <b>Featured Free:</b> <a href="https://tokenharbor.ai"><code>qwen3.8-flash:free</code></a>, <a href="https://tokenharbor.ai"><code>deepseek-v4.1-flash:free</code></a> (TokenHarbor) &nbsp;•&nbsp; <a href="https://openrouter.ai/models?variant=free"><code>space-bunny-alpha</code></a> (OpenRouter)</sub>
+    <b>Featured Free:</b> <a href="https://tokenharbor.ai"><code>mimo-v2.6-flash:free</code></a>, <a href="https://tokenharbor.ai"><code>deepseek-v4.1-flash:free</code></a> (TokenHarbor) &nbsp;•&nbsp; <a href="https://openrouter.ai/models?variant=free"><code>inclusionai/ling-3.1-flash</code></a> (OpenRouter)</sub>
   </p>
 </div>
 
