@@ -513,8 +513,12 @@ async def run_interactive_menu(title: str, items: list[str], current: str, activ
 
     opts = filter_items()
 
-    if active and current in opts:
-        sel = opts.index(current)
+    def _is_cur(item: str) -> bool:
+        return item == current or item.split()[0] == current
+
+    cur_idx = next((i for i, x in enumerate(opts) if _is_cur(x)), None)
+    if active and cur_idx is not None:
+        sel = cur_idx
     elif len(opts) > len(extras):
         sel = len(extras)
     else:
@@ -531,7 +535,7 @@ async def run_interactive_menu(title: str, items: list[str], current: str, activ
         for i in range(start, end):
             opt = opts[i]
             bullet = f"{AMBER}❯{RESET} " if i == sel else "  "
-            line = f"{bullet}{RED}{opt} (disabled){RESET}" if (i == 0 and not active and "Turn Off" in opt) else f"{bullet}{GREEN}{opt} (active){RESET}" if (opt == current and active) else f"{bullet}{opt}"
+            line = f"{bullet}{RED}{opt} (disabled){RESET}" if (i == 0 and not active and "Turn Off" in opt) else f"{bullet}{GREEN}{opt} (active){RESET}" if (_is_cur(opt) and active) else f"{bullet}{opt}"
             sys.stdout.write(f"     {BOLD if i == sel else ''}{line}{RESET}\n")
 
         ind = " ▲ ▼ " if (start > 0 and end < len(opts)) else " ▼ more " if end < len(opts) else " ▲ more " if start > 0 else ""

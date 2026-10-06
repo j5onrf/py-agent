@@ -528,7 +528,7 @@ def agentic_turn(
                                 if is_calm and spinner:
                                     spinner.stop(leave_on_screen=False)
                                 elif not is_sub:
-                                    stream_pfx = prefix or ("Agent:" if is_agent else "AI:")
+                                    stream_pfx = prefix if prefix is not None else ""
                                     streamer = RichStreamer(prefix=stream_pfx, spinner=spinner, round_idx=_round)
                                     streamer.start()
 
@@ -624,14 +624,15 @@ def agentic_turn(
                     clean_reply = raw_fallback.splitlines()[-1].strip() if raw_fallback else ""
 
             render_md = bool(get_state("render_markdown", False))
-            p_prefix = prefix or ("Agent: " if is_agent else "AI: ")
+            p_prefix = prefix if prefix is not None else ""
             p_style = "bold green" if "Agent" in p_prefix else "bold cyan"
 
             try:
                 if is_calm and ans_text:
                     if clean_reply:
                         clean_reply = prepare_markdown(clean_reply.strip())
-                        _console.print(f"[{p_style}]{p_prefix}[/{p_style}] ", end="")
+                        if p_prefix:
+                            _console.print(f"[{p_style}]{p_prefix}[/{p_style}] ", end="")
                         if render_md:
                             code_th = str(get_state("code_theme", "monokai"))
                             _console.print(Markdown(clean_reply, code_theme=code_th, justify="default"))
@@ -654,16 +655,17 @@ def agentic_turn(
 
                     clean_reply = prepare_markdown(clean_reply.strip())
                     code_th = str(get_state("code_theme", "monokai"))
-                    p_header = f"[{p_style}]{p_prefix.strip()}[/{p_style}]"
-                    if clean_reply.startswith(("```", "#", "---")):
-                        _console.print(f"{p_header}\n")
-                        _console.print(Markdown(clean_reply, code_theme=code_th, justify="default"))
-                    else:
-                        _console.print(f"{p_header} ", end="")
-                        _console.print(Markdown(clean_reply, code_theme=code_th, justify="default"))
+                    if p_prefix:
+                        p_header = f"[{p_style}]{p_prefix.strip()}[/{p_style}]"
+                        if clean_reply.startswith(("```", "#", "---")):
+                            _console.print(f"{p_header}\n")
+                        else:
+                            _console.print(f"{p_header} ", end="")
+                    _console.print(Markdown(clean_reply, code_theme=code_th, justify="default"))
                 elif clean_reply and (not streamer or not getattr(streamer, "ans_started", False)) and not is_sub:
                     clean_reply = prepare_markdown(clean_reply.strip())
-                    _console.print(f"[{p_style}]{p_prefix}[/{p_style}]", end=" ")
+                    if p_prefix:
+                        _console.print(f"[{p_style}]{p_prefix}[/{p_style}]", end=" ")
                     if render_md:
                         code_th = str(get_state("code_theme", "monokai"))
                         _console.print(Markdown(clean_reply, code_theme=code_th, justify="default"))
@@ -894,7 +896,7 @@ def agentic_turn(
 
 def stream_response(
     messages: list[dict[str, Any]],
-    prefix: str = "AI: ",
+    prefix: str = "",
     show_stats: bool | None = None,
     thinking_budget: int = 0,
     is_agent: bool = False,

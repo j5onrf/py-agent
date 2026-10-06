@@ -480,7 +480,7 @@ def run_interactive_chat(args: list[str]) -> None:
             sys.stdout.write("\n")
             sys.stdout.flush()
 
-            if ans := core.stream_response(chat_history, prefix="Agent:" if is_agent else "AI:", show_stats=show_stats, thinking_budget=reasoning_budget if reasoning_active else 0, is_agent=is_agent):
+            if ans := core.stream_response(chat_history, prefix="", show_stats=show_stats, thinking_budget=reasoning_budget if reasoning_active else 0, is_agent=is_agent):
                 clean_ans = RE_THINK_TAGS.sub("", ans).strip()
                 chat_history.append({"role": "assistant", "content": clean_ans or ans})
 
@@ -582,7 +582,7 @@ def run_direct_query(args: list[str]) -> None:
             pass
 
     messages = [{"role": "system", "content": active_p}, {"role": "user", "content": f"<context>\n{sys_ctx}\n</context>\n\n{query}" if sys_ctx else query}]
-    core.stream_response(messages, prefix="AI:", show_stats=False, thinking_budget=thinking_budget)
+    core.stream_response(messages, prefix="", show_stats=False, thinking_budget=thinking_budget)
     sys.exit(0)
 
 
