@@ -1,6 +1,6 @@
 # Py-Agent Workspace & Session Manual
 
-Autonomous local developer agent with OKF memory, iPython, and codebase index-map.
+Local workspace developer agent with Open Knowledge Format (OKF) memory, an IPython kernel, and codebase index mapping.
 
 ```console
 ~ ❯ ling
@@ -74,7 +74,7 @@ Workspace metadata is isolated inside `project/.agent/`.
 
 ## 2. Profile Selector (`ai init`)
 
-`ai init <path>` opens the profile selector with RAM frontmatter pre-caching.
+`ai init <path>` opens the profile selector with cached frontmatter defaults.
 
 ```console
 [ai init] Select default Agent Profile for workspace session-test:
@@ -106,13 +106,13 @@ Workspace metadata is isolated inside `project/.agent/`.
 ```
 
 * **Customize Profiles:** `.md` files in `~/.config/py-agent/skills/profiles/`.
-* **Navigation:** `Up`/`Down` synchronizes toggles to the profile's frontmatter defaults.
+* **Navigation:** `Up`/`Down` aligns toggles to the profile's frontmatter defaults.
 * **Overrides:**
   * **`Tab`** -> YOLO Mode (`[ON]` disables tool confirmation prompts).
   * **`m`** -> Codebase Map (12 tools + AST graph).
   * **`d`** -> Session Memory & OKF directives.
   * **`p`** -> IPython Kernel (`exec_python` tool execution).
-  * **`a`** -> Universal Self-Healing Adapters (`/adp`).
+  * **`a`** -> Tool call argument repair (`/adp`).
 
 ---
 
@@ -165,9 +165,9 @@ Workspace metadata is isolated inside `project/.agent/`.
 
 ---
 
-## 4. Adaptive Resilience (/adp)
+## 4. Tool Adapters (/adp)
 
-The `/adp` layer rescues malformed JSON, unclosed quotes, and sequence drift on Turn 1 with zero runtime overhead on compliant models.
+The `/adp` layer handles malformed JSON, unclosed quotes, and parameter aliases on Turn 1 with zero runtime overhead on schema-compliant models.
 
 | Benchmark Challenge | Without `/adp` | With `/adp` Active | Efficiency Gain |
 | :--- | :---: | :---: | :--- |
@@ -195,16 +195,16 @@ File ceilings dynamically adapt to `AI_MAX_TOKENS`:
 | **64k** | DeepSeek / Claude / GPT | **2,000 lines** | ~90,000 chars |
 | **>= 128k** | High-Capacity Cloud | **4,000 lines** | ~180,000 chars |
 
-* **Zero-Trust Safety (`agent_security.py`):** Privileged mutations (`sudo`, `pacman`, `systemctl`) and out-of-bounds paths strictly require interactive `[y/N]` confirmation regardless of YOLO mode.
+* **Security Kernel (`agent_security.py`):** Privileged commands (`sudo`, `pacman`, `systemctl`) and out-of-bounds paths require interactive `[y/N]` confirmation, even in YOLO mode.
 * **Surgical Edits (`edit_file`):** 3-stage replacement (Exact -> Whitespace-tolerant -> 88% Fuzzy match).
 
 ---
 
 ## 6. Memory & Directives
 
-* **Global (`skills/system_instructions.md`):** Always-on rules applied across all workspaces.
+* **Global (`skills/system_instructions.md`):** Rules applied across all workspaces.
 * **Workspace (`<workspace>/.agent/memory/*.md`):** Project rules loaded when Memory is `[ON]`.
-  * `/mem save <topic>: <rule>` -> Save rule (e.g. `/mem save os: Arch Linux`).
+  * `/mem save <topic>: <rule>` -> Save rule (e.g., `/mem save os: Arch Linux`).
   * `/mem list` -> List active memory files and weights.
   * `/mem` -> Toggle memory injection ON / OFF.
   * `/hs` -> Hindsight audit: extracts session decisions into memory files.
@@ -213,20 +213,20 @@ File ceilings dynamically adapt to `AI_MAX_TOKENS`:
 
 ## 7. Client Surfaces
 
-* **PyCode Desktop IDE (`/pyc`, `/pyc web`):** ACP stdio JSON-RPC 2.0 with live token streaming and diff review.
-* **DeepSeek Harness (`/dsh`):** DSH Web Cockpit bound to the active workspace.
-* **llama.cpp WebAgent (`/webui`):** Autonomous tool reverse proxy for `llama-server` (`:8080`).
-* **Textual PyTUI (`/tui`):** Full-screen terminal dashboard with real-time thought shimmer.
+* **PyCode Desktop IDE (`/pyc`, `/pyc web`):** React desktop interface using ACP stdio JSON-RPC 2.0 with token streaming and diff review.
+* **DeepSeek Harness (`/dsh`):** DSH web interface connected to the active workspace.
+* **llama.cpp WebAgent (`/webui`):** Tool reverse proxy for `llama-server` (`:8080`).
+* **Textual PyTUI (`/tui`):** Full-screen terminal dashboard built on Textual and `uvloop`.
 
 ---
 
 ## 8. Sub-Agent Worktree Sandboxing
 
-Opening a secondary terminal in an active Git workspace automatically assigns `[sub-agent #1]` and provisions an isolated Git worktree (`.agent/worktrees/agent-1`).
+Opening another terminal in an active Git workspace assigns a sub-agent (`[sub-agent #1]`) and creates an isolated Git worktree (`.agent/worktrees/agent-1`).
 
-* **Zero-Blast-Radius:** File writes, command executions, and tests occur strictly on a dedicated branch (`subagent-1`), leaving the main branch pristine.
-* **Parallel Workflows:** Multiple terminals can execute independent tasks on the same codebase without file collisions.
-* **Teardown & Merge:** Exiting the sub-agent (`q` or `Ctrl+C`) prompts to `Merge` or `Discard`, cleanly deleting the worktree directory and branch.
+* **Branch Isolation:** Edits, command executions, and tests occur on a dedicated branch (`subagent-1`), leaving the main branch unchanged.
+* **Parallel Sessions:** Multiple terminals can execute independent tasks on the same codebase without collision.
+* **Merge and Cleanup:** Exiting the sub-agent (`q` or `Ctrl+C`) prompts to merge or discard changes, then cleans up the worktree and branch.
 
 ---
 

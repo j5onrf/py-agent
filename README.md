@@ -17,8 +17,8 @@
   </p>
 
   <p>
-    <b>Lightweight Python runtime (lazy <code>rich</code> + <code>requests</code>) driving a high-throughput C++ <code>llama-server</code> backend.</b><br>
-    <sub>Stateful in-memory Python batching (<code>/py</code>), self-healing tool adapters (<code>/adp</code>), and instant startup.</sub>
+    <b>Python runtime (<code>rich</code> + <code>requests</code>) driving a local C++ <code>llama-server</code> backend or cloud APIs.</b><br>
+    <sub>In-memory Python execution (<code>/py</code>), argument repair adapters (<code>/adp</code>), and local session tracking.</sub>
   </p>
 
   <br>
@@ -26,14 +26,14 @@
   <table>
     <tr>
       <td align="center" width="50%" valign="top">
-        <h3>Sub-27B Compact (SLM)</h3>
-        <p><sub>Ultra-fast tool calling, shell triage & single-turn code edits</sub></p>
+        <h3>Sub-27B (SLM)</h3>
+        <p><sub>Tool calling, shell triage, and single-turn code edits</sub></p>
         <code>Ling-3.0-tiny*</code> &nbsp;•&nbsp; <code>LFM2.5-8B</code><br>
         <code>MiniCPM5-2B</code> &nbsp;•&nbsp; <code>Qwen3.5-2B+</code>
       </td>
       <td align="center" width="50%" valign="top">
-        <h3>27B+ Autonomous (LLM)</h3>
-        <p><sub>Deep reasoning, multi-file refactoring & sub-agents</sub></p>
+        <h3>27B+ (LLM)</h3>
+        <p><sub>Reasoning, multi-file refactoring, and sub-agents</sub></p>
         <code>Qwen3.8-35B-D*</code> &nbsp;•&nbsp; <code>Ornith-1.5</code><br>
         <code>KAT-Coder-V2.5</code> &nbsp;•&nbsp; <code>Tiel-Coder-35B</code><br>
         <code>Occamy-1.0</code> &nbsp;•&nbsp; <code>Nex-N2.5-mini</code><br>
@@ -48,16 +48,15 @@
   </p>
 
   <p>
-    <sub><b>Cloud & Community Gateways:</b> Official endpoints across <a href="https://huggingface.co">Hugging Face Router</a>, <a href="https://tokenharbor.ai">TokenHarbor</a> &amp; <a href="https://openrouter.ai">OpenRouter</a><br>
+    <sub><b>Cloud Endpoints:</b> <a href="https://huggingface.co">Hugging Face Router</a>, <a href="https://tokenharbor.ai">TokenHarbor</a>, and <a href="https://openrouter.ai">OpenRouter</a><br>
     <b>Hugging Face:</b> <a href="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash"><code>DeepSeek-V4.1-Flash</code></a>, <a href="https://huggingface.co/zai-org/GLM-5.3-Flash"><code>GLM-5.3-Flash</code></a>, <a href="https://huggingface.co/inclusionAI/Ling-3.0-flash-VL"><code>Ling-3.0-flash-VL</code></a>, and <a href="https://huggingface.co/moonshotai/Kimi-K3"><code>Kimi-K3</code></a><br><br>
-    <b>Featured Free:</b> <a href="https://tokenharbor.ai"><code>mimo-v2.6-flash:free</code></a>, <a href="https://tokenharbor.ai"><code>deepseek-v4.1-flash:free</code></a> (TokenHarbor) &nbsp;•&nbsp; <a href="https://openrouter.ai/models?variant=free"><code>inclusionai/ling-3.1-flash</code></a> (OpenRouter)</sub>
+    <b>Free Endpoints:</b> <a href="https://tokenharbor.ai"><code>mimo-v2.6-flash:free</code></a>, <a href="https://tokenharbor.ai"><code>deepseek-v4.1-flash:free</code></a> (TokenHarbor) &nbsp;•&nbsp; <a href="https://openrouter.ai/models?variant=free"><code>inclusionai/ling-3.1-flash</code></a> (OpenRouter)</sub>
   </p>
 </div>
 
 <br>
 
 ---
-
 
 ```console
 ~ ❯ ai
@@ -72,7 +71,7 @@
 ```
 
 <div align="center">
-  <p><sub>Customize box themes with <code>/box [1-7]</code>. For detailed workflows, read the <a href="projects/Readme.md"><b>Workspace Manual</b></a>.</sub></p>
+  <p><sub>Select box themes with <code>/box [1-7]</code>. Workspace details in the <a href="projects/Readme.md"><b>Workspace Manual</b></a>.</sub></p>
 </div>
 
 <br>
@@ -83,12 +82,12 @@
 
 <div align="center">
 
-| Command | Mode | Operational Scope |
+| Command | Mode | Scope |
 | :--- | :---: | :---: |
 | `[query]` | **Shell Intercept** | Intent matching via [`ai-context.md`](ai-context.md) |
-| `ai "<query>"` | **Single Query** | Instant prompt execution response |
+| `ai "<query>"` | **Single Query** | Direct prompt response |
 | `ai` | **Interactive Chat** | Multi-turn chat session |
-| `ai init [path]` | **Workspace Agent** | Autonomous project session |
+| `ai init [path]` | **Workspace Agent** | Project workspace session |
 
 </div>
 
@@ -104,24 +103,19 @@
 
 <h2 align="center">Runtime Architecture</h2>
 
-* **Hardened Containment (`agent_security.py`):** Non-bypassable interactive `[y/N]` confirmation gates for system commands (`sudo`, `pacman`, `pip`, `systemctl`) and out-of-bounds file access even in YOLO mode.
-* **Git-Native & Global Memory:** Global system instructions (`skills/system_instructions.md`) and workspace directives (.agent/memory/*.md). Human-editable.
-* **Universal Self-Healing Adapters (`/adp`):** Out-of-band argument normalizer repairing malformed JSON, markdown fences, and parameter aliases across all model tiers. Zero overhead when native tool calls are compliant.
+* **Security Kernel (`agent_security.py`):** Interactive `[y/N]` confirmation gates for system commands (`sudo`, `pacman`, `pip`, `systemctl`) and out-of-bounds file access, enforced even in YOLO mode.
+* **Workspace Memory:** Global rules (`skills/system_instructions.md`) and project directives (`.agent/memory/*.md`) stored as plaintext Markdown.
+* **Tool Adapters (`/adp`):** Out-of-band argument normalizer repairing malformed JSON, markdown fences, and parameter aliases.
 
 <br>
 
 ---
 
-<h2 align="center">Benchmark & Efficiency</h2>
-
-<p align="center">
-  Decision-grade evaluation across 7-stage agentic challenges (<code>eval-stack</code>).<br>
-  <sub>Results scale with tuning: select a model foundation and optimize for your workload via profile directives, sampling flags, and <code>/adp</code>.</sub>
-</p>
+<h2 align="center">Benchmarks</h2>
 
 <div align="center">
 
-### Master Agent Leaderboard (`eval-stack`)
+### Agent Evaluation (`eval-stack`)
 
 | Rank | Model | Par Eff | Agent Index |
 | :---: | :--- | :---: | :---: |
@@ -138,7 +132,7 @@
 
 | Benchmark Challenge | Without Adapters | With `/adp` Active | Efficiency Gain |
 | :--- | :---: | :---: | :--- |
-| **AG-03 (Surgical Edit & Test)** | 16 turns | **6 turns** | **62% fewer turns** (eliminates diff-retry loops) |
+| **AG-03 (Surgical Edit & Test)** | 16 turns | **6 turns** | **62% fewer turns** (avoids diff-retry loops) |
 | **AG-07 (In-Memory Batch Loop)** | 14 turns | **2 turns** | **85% fewer turns** (executes batch script on Turn 1) |
 | **Full Suite Pass Rate** | Retries / Failures | **100% (7/7)** | **Zero unhandled syntax or format failures** |
 
@@ -167,11 +161,7 @@
 
 ---
 
-<h2 align="center">Client Surfaces & Environments</h2>
-
-<p align="center">
-  Py-Agent is surface-agnostic. Switch seamlessly between terminal, web gateway, and desktop IDE:
-</p>
+<h2 align="center">Client Surfaces</h2>
 
 <div align="center">
   <table>
@@ -180,21 +170,21 @@
         <br>
         <h3><a href="https://github.com/j5onrf/pycode">PyCode IDE</a></h3>
         <p><code>/pyc</code> · <code>/pyc web</code></p>
-        <sub>Local-first React desktop workspace with ACP JSON-RPC 2.0.</sub>
+        <sub>React desktop workspace using ACP JSON-RPC 2.0.</sub>
         <br><br>
       </td>
       <td align="center" width="210" valign="top">
         <br>
         <h3>Textual PyTUI</h3>
         <p><code>/tui</code></p>
-        <sub>Full-screen reactive terminal workspace with <code>uvloop</code>, socket IPC.</sub>
+        <sub>Terminal workspace built with Textual and <code>uvloop</code>.</sub>
         <br><br>
       </td>
       <td align="center" width="210" valign="top">
         <br>
         <h3>llama.cpp WebAgent</h3>
         <p><code>/webui</code> · <code>/web</code></p>
-        <sub>Autonomous tool reverse proxy for official <code>llama-server</code>.</sub>
+        <sub>Tool reverse proxy for <code>llama-server</code>.</sub>
         <br><br>
       </td>
     </tr>
@@ -209,7 +199,7 @@
 
 ---
 
-<h2 align="center">Setup & Installation</h2>
+<h2 align="center">Installation</h2>
 
 ### 1. Install py-agent
 
@@ -237,7 +227,7 @@ cp ~/.config/py-agent/.env.example ~/.config/py-agent/.env
 ```
 
 <details>
-<summary><b>📋 View Example <code>(~/.config/py-agent/.env.example)</code></b></summary>
+<summary><b>View Example (<code>~/.config/py-agent/.env.example</code>)</b></summary>
 
 ```env
 # ==============================================================================
@@ -302,4 +292,4 @@ AI_MAX_TOKENS="8192"
 
 * **<a href="projects/Readme.md">Workspace Manual</a>**
 * **<a href="modules/Readme.md">System Architecture</a>**
-* Licensed under the permissive **[MODIFIED MIT LICENSE](LICENSE)**
+* Licensed under the **[MODIFIED MIT LICENSE](LICENSE)**
