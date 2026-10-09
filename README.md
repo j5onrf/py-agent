@@ -5,7 +5,7 @@
   <h1>Py Agent</h1>
 
   <p>
-    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.51.svg?variant=secondary" alt="Version"></a>
+    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.52.svg?variant=secondary" alt="Version"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/Python.svg?variant=branded&brand=python" alt="Language"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/C%2B%2B.svg?variant=branded&brand=cplusplus" alt="C++"></a>
     <a href="https://github.com/j5onrf/py-agent/blob/main/LICENSE"><img src="https://shieldcn.dev/badge/license-MIT-green.svg" alt="License"></a>
@@ -18,7 +18,7 @@
 
   <p>
     <b>Python runtime (<code>rich</code> + <code>requests</code>) driving a local C++ <code>llama-server</code> backend or cloud APIs.</b><br>
-    <sub>In-memory Python execution (<code>/py</code>), argument repair adapters (<code>/adp</code>), and local session tracking.</sub>
+    <sub>In-memory Python execution (<code>/py</code>), argument repair adapters (<code>/adp</code>), and instant startup.</sub>
   </p>
 
   <br>
