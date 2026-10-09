@@ -283,6 +283,63 @@ AGENTIC_BENCHMARKS = [
     },
 ]
 
+PUREBASH_BENCHMARKS = [
+    {
+        "id": "PB-01",
+        "name": "File Create & Overwrite",
+        "tools_tested": "run_command (shell create & overwrite)",
+        "par_turns": 4,
+        "prompt": "1. Create 'config.json' with {\"version\": 1}.\n2. Update 'config.json' to {\"version\": 2, \"status\": \"ready\"}.\n3. Conclude immediately with your task complete marker.",
+        "verify_fn": _verify_ag02,
+    },
+    {
+        "id": "PB-02",
+        "name": "Surgical Edit & Test",
+        "tools_tested": "run_command (shell inspect, sed, verify)",
+        "par_turns": 6,
+        "setup_fn": lambda ws: _write_fixture(
+            ws,
+            "calc.py",
+            "def multiply(a, b):\n    return a + b\n\nif __name__ == '__main__':\n    assert multiply(3, 4) == 12, 'Test failed'\n    print('PASSED')\n",
+        ),
+        "prompt": "The file 'calc.py' has a bug where multiply(a, b) returns a + b instead of a * b. Inspect it, fix the formula, verify it with 'python calc.py', and finish with your task complete marker.",
+        "verify_fn": _verify_ag03,
+    },
+    {
+        "id": "PB-03",
+        "name": "Code Search & Multi-File",
+        "tools_tested": "run_command (grep, sed multi-file)",
+        "par_turns": 4,
+        "setup_fn": lambda ws: (
+            _write_fixture(ws, "mod_a.py", "API_KEY = 'OLD_KEY'\n"),
+            _write_fixture(ws, "mod_b.py", "TARGET = 'OLD_KEY'\n"),
+        ),
+        "prompt": "Search for 'OLD_KEY' across all files and replace it with 'NEW_KEY' in every matched file. Finish with your task complete marker.",
+        "verify_fn": _verify_ag04,
+    },
+    {
+        "id": "PB-04",
+        "name": "One-and-Done Discipline",
+        "tools_tested": "run_command (shell write & halt)",
+        "par_turns": 2,
+        "prompt": "Create a file named 'done.txt' containing 'PROCESSED'. Once written, STOP immediately and output: 'Task complete: done.txt created'",
+        "verify_fn": _verify_ag05,
+    },
+    {
+        "id": "PB-05",
+        "name": "Whitespace-Tolerant Edit",
+        "tools_tested": "run_command (in-place sed)",
+        "par_turns": 4,
+        "setup_fn": lambda ws: _write_fixture(
+            ws,
+            "format_test.py",
+            "def greet(name):\n  # 2-space indentation\n  msg = f'Hello, {name}'\n  return msg\n",
+        ),
+        "prompt": "In 'format_test.py', replace msg = f'Hello, {name}' with msg = f'Welcome, {name}!'. Preserve file syntax and complete the task.",
+        "verify_fn": _verify_ag06,
+    },
+]
+
 
 def list_available_profiles() -> list[tuple[str, str]]:
     skills_dir = os.path.join(CFG_DIR, "skills")
@@ -638,7 +695,13 @@ def main():
 
     model_name, endpoint = get_current_model_info()
 
-    mode_label = "Dual (Python + Native)" if is_py_enabled else "Native 6-Tool"
+    if is_purebash_enabled:
+        mode_label = "Pure Bash (1-Tool Shell)"
+    elif is_py_enabled:
+        mode_label = "Dual (Python + Native)"
+    else:
+        mode_label = "Native 6-Tool"
+
     adp_status = "ON" if adapters_on else "OFF"
     console.print(f"Target Model: [bold]{model_name}[/bold]")
     console.print(f"Target Endpoint: {endpoint}")
@@ -653,9 +716,10 @@ def main():
     evaluated_count = 0
     task_scores = []
     spinner = MinimalSpinner()
+    active_benchmarks = PUREBASH_BENCHMARKS if is_purebash_enabled else AGENTIC_BENCHMARKS
 
     try:
-        for idx, bench in enumerate(AGENTIC_BENCHMARKS, start=1):
+        for idx, bench in enumerate(active_benchmarks, start=1):
             if bench.get("requires_ipython") and not is_py_enabled:
                 results.append((
                     bench["id"],

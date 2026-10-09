@@ -43,22 +43,6 @@ RE_XML_TOOL_TAGS = re.compile(
     r"<\|?[a-zA-Z_]+_call_?(?:start|end)?\|?>|</?tool_call>|</?function[^>]*>|</?parameter[^>]*>|</?arg_key>|</?arg_value>|</?function_calls>|</?[|｜]DSML[|｜]?(?:invoke)?>",
     re.DOTALL,
 )
-RE_THINK_BLOCK = re.compile(
-    r"<(?:think|thought)>[\s\S]*?</(?:think|thought)>",
-    re.IGNORECASE,
-)
-RE_CONTROL_OR_THINK = re.compile(
-    r"</?(?:think|thought)>|<\|[^>\n]+?\|>|</?(?:tool_call|function|parameter|arg_key|arg_value|function_calls)[^>]*>|</?[|｜]DSML[|｜]?(?:invoke)?>",
-    re.IGNORECASE,
-)
-RE_TASK_COMPLETE_LINE = re.compile(
-    r"^(?:✓\s*)?(?:task\s+complete|task\s+completed|all\s+tasks\s+completed|task\s+finished)\b",
-    re.IGNORECASE,
-)
-RE_CONVERSATIONAL_PREFIX = re.compile(
-    r"^(?:here\s+is|i\s+will|i\s+have|let's|now\s+we|note:|explanation:|this\s+will|this\s+replaces)\b",
-    re.IGNORECASE,
-)
 RE_PATH_EXTRACT = re.compile(
     r"([a-zA-Z0-9_\-\./]+\.(?:py|json|md|txt|sh|html|css|js|ts|cpp|c|h|rs|go))"
 )
@@ -556,29 +540,8 @@ def heal_tool_call(fname: str, raw_args: str | dict[str, Any]) -> tuple[str, dic
         if len(cmd_full) > 100_000:
             return fname, healed_dict
 
-        if RE_CONTROL_OR_THINK.search(cmd_full) or "<think>" in cmd_full.lower():
-            cmd_full = RE_THINK_BLOCK.sub("", cmd_full)
-            cmd_full = re.sub(r"^[\s\S]*?</(?:think|thought)>\s*", "", cmd_full, flags=re.IGNORECASE)
-            cmd_full = re.sub(r"\s*<(?:think|thought)>[\s\S]*$", "", cmd_full, flags=re.IGNORECASE)
-            scrubbed_lines = []
-            for cl in cmd_full.splitlines():
-                cl_clean = RE_CONTROL_OR_THINK.sub("", cl)
-                if cl_clean.strip():
-                    scrubbed_lines.append(cl_clean)
-            cmd_full = "\n".join(scrubbed_lines).strip()
-            healed_dict["command"] = cmd_full
-
         has_touch = bool(re.match(r"^\s*touch\s+\S+\s*(&&|;)\s*", cmd_full))
         cmd_raw = re.sub(r"^\s*touch\s+\S+\s*(&&|;)\s*", "", cmd_full).strip() if has_touch else cmd_full
-
-        from agent_state import get_state
-        if (
-            get_state("purebash_mode", False)
-            or get_state("miniswe_mode", False)
-            or os.environ.get("AI_PUREBASH_MODE") == "1"
-            or os.environ.get("AI_MINISWE_MODE") == "1"
-        ):
-            return fname, healed_dict
 
         # Inline python -c -> exec_python
         if cmd_raw.startswith(("python3 -c", "python -c")):
@@ -650,20 +613,19 @@ def heal_tool_call(fname: str, raw_args: str | dict[str, Any]) -> tuple[str, dic
                 if not any(exp in file_content for exp in ("$(", "${", "`")):
                     return "write_file", normalize_params({"path": target_path.strip(), "content": file_content})
 
-        if not any(sep in cmd_raw for sep in ("&&", "||", ";", "\n")):
-            if echo_m := RE_ECHO_REDIRECT.match(cmd_raw):
-                cmd_type = echo_m.group("cmd")
-                is_single = echo_m.group("quote") == "'"
-                is_echo_e = bool(echo_m.group("flags") and "-e" in echo_m.group("flags"))
-                if res := _safe_shell_write(cmd_type, echo_m.group("content"), echo_m.group("target"), is_single_quote=(is_single and not is_echo_e), is_echo_e=is_echo_e, append_nl=(cmd_type == "echo")):
-                    return res
+        if echo_m := RE_ECHO_REDIRECT.match(cmd_raw):
+            cmd_type = echo_m.group("cmd")
+            is_single = echo_m.group("quote") == "'"
+            is_echo_e = bool(echo_m.group("flags") and "-e" in echo_m.group("flags"))
+            if res := _safe_shell_write(cmd_type, echo_m.group("content"), echo_m.group("target"), is_single_quote=(is_single and not is_echo_e), is_echo_e=is_echo_e, append_nl=(cmd_type == "echo")):
+                return res
 
-            if tee_echo_m := RE_ECHO_TEE.match(cmd_raw):
-                cmd_type = tee_echo_m.group("cmd")
-                is_single = tee_echo_m.group("quote") == "'"
-                is_echo_e = bool(tee_echo_m.group("flags") and "-e" in tee_echo_m.group("flags"))
-                if res := _safe_shell_write(cmd_type, tee_echo_m.group("content"), tee_echo_m.group("target"), is_single_quote=(is_single and not is_echo_e), is_echo_e=is_echo_e, append_nl=(cmd_type == "echo")):
-                    return res
+        if tee_echo_m := RE_ECHO_TEE.match(cmd_raw):
+            cmd_type = tee_echo_m.group("cmd")
+            is_single = tee_echo_m.group("quote") == "'"
+            is_echo_e = bool(tee_echo_m.group("flags") and "-e" in tee_echo_m.group("flags"))
+            if res := _safe_shell_write(cmd_type, tee_echo_m.group("content"), tee_echo_m.group("target"), is_single_quote=(is_single and not is_echo_e), is_echo_e=is_echo_e, append_nl=(cmd_type == "echo")):
+                return res
 
     return fname, healed_dict
 
@@ -765,15 +727,6 @@ def heal_json_args(raw: str | dict[str, Any]) -> dict[str, Any]:
 # ── 5. AST-Based Python Function Call Parser ──────────────────────────────────
 
 def _extract_ast_python_calls(text: str) -> list[dict[str, Any]]:
-    from agent_state import get_state
-    if (
-        get_state("purebash_mode", False)
-        or get_state("miniswe_mode", False)
-        or os.environ.get("AI_PUREBASH_MODE") == "1"
-        or os.environ.get("AI_MINISWE_MODE") == "1"
-    ):
-        return []
-
     calls = []
     tool_names = {
         "read_file",
@@ -1019,9 +972,8 @@ def extract_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
                     "function": {"name": fname.strip(), "arguments": json.dumps(healed, default=str)},
                 }
             )
-        elif any(k in obj for k in ("commands", "executed")) and isinstance(obj.get("commands", obj.get("executed")), list):
-            cmd_list = obj.get("commands") or obj.get("executed") or []
-            for cmd_item in cmd_list:
+        elif "commands" in obj and isinstance(obj["commands"], list):
+            for cmd_item in obj["commands"]:
                 if isinstance(cmd_item, dict):
                     raw_cmd = (
                         cmd_item.get("command")
@@ -1029,22 +981,20 @@ def extract_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
                         or cmd_item.get("cmd")
                         or ""
                     )
-                else:
-                    raw_cmd = str(cmd_item)
-                if isinstance(raw_cmd, (list, tuple)):
-                    raw_cmd = " ".join(str(x) for x in raw_cmd)
-                cmd_str = str(raw_cmd).strip()
-                if cmd_str and not cmd_str.startswith("echo 'Replacement"):
-                    calls.append(
-                        {
-                            "id": f"call_liquid_plan_{i}_{int(time.time())}",
-                            "type": "function",
-                            "function": {
-                                "name": "run_command",
-                                "arguments": json.dumps({"command": cmd_str}, default=str),
-                            },
-                        }
-                    )
+                    if isinstance(raw_cmd, (list, tuple)):
+                        raw_cmd = " ".join(str(x) for x in raw_cmd)
+                    cmd_str = str(raw_cmd).strip()
+                    if cmd_str:
+                        calls.append(
+                            {
+                                "id": f"call_liquid_plan_{i}_{int(time.time())}",
+                                "type": "function",
+                                "function": {
+                                    "name": "run_command",
+                                    "arguments": json.dumps({"command": cmd_str}, default=str),
+                                },
+                            }
+                        )
 
     # Format 6: AST-Parsed Python Function Calls
     calls.extend(_extract_ast_python_calls(text))
@@ -1070,105 +1020,5 @@ def extract_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
                     },
                 })
                 break
-
-    # Format 8: Standalone Bash/Shell Markdown Code Block Auto-Execution
-    if not calls and re.search(r"```(?:bash|sh|shell)?\s*?\n", text, re.IGNORECASE):
-        sh_blocks = re.findall(
-            r"```(?:bash|sh|shell)?[a-zA-Z0-9_+-]*[ \t]*\n([\s\S]+?)(?:\n```|\Z)", text, re.IGNORECASE
-        )
-        for i, sh_block in enumerate(sh_blocks):
-            sh_sanitized = RE_THINK_BLOCK.sub("", sh_block)
-            sh_sanitized = re.sub(r"^[\s\S]*?</(?:think|thought)>\s*", "", sh_sanitized, flags=re.IGNORECASE)
-            sh_sanitized = re.sub(r"\s*<(?:think|thought)>[\s\S]*$", "", sh_sanitized, flags=re.IGNORECASE)
-
-            clean_lines = []
-            in_heredoc = False
-            heredoc_delim = ""
-
-            for line in sh_sanitized.splitlines():
-                had_control_tag = bool(RE_CONTROL_OR_THINK.search(line))
-                line_clean = RE_CONTROL_OR_THINK.sub("", line)
-                l_str = line_clean.strip()
-
-                if had_control_tag and not l_str:
-                    continue
-                if not clean_lines and not l_str:
-                    continue
-
-                if in_heredoc:
-                    clean_lines.append(line_clean)
-                    if l_str == heredoc_delim:
-                        in_heredoc = False
-                        heredoc_delim = ""
-                    continue
-
-                m_hd = re.search(r"<<\s*['\"]?([a-zA-Z0-9_]+)['\"]?", l_str)
-                if m_hd and not l_str.startswith("#"):
-                    in_heredoc = True
-                    heredoc_delim = m_hd.group(1)
-
-                if l_str.lower() in ("bash", "sh", "shell") or re.match(r"^```[a-zA-Z0-9_+-]*$", l_str):
-                    continue
-
-                if RE_TASK_COMPLETE_LINE.match(l_str):
-                    continue
-                if RE_CONVERSATIONAL_PREFIX.match(l_str):
-                    continue
-
-                if l_str.startswith("`") and l_str.endswith("`") and len(l_str) >= 2 and l_str[1:-1].count("`") == 0:
-                    line_clean = l_str[1:-1]
-                    l_str = line_clean.strip()
-
-                clean_lines.append(line_clean)
-
-            if clean_lines:
-                full_cmd = _close_unterminated_quote("\n".join(clean_lines).strip())
-                if full_cmd:
-                    calls.append({
-                        "id": f"call_bash_block_{i}_{int(time.time())}",
-                        "type": "function",
-                        "function": {
-                            "name": "run_command",
-                            "arguments": json.dumps({"command": full_cmd}, default=str),
-                        },
-                    })
-
-    # Format 9: PureBash Raw Command Line Auto-Capture
-    is_purebash_active = (
-        get_state("purebash_mode", False)
-        or get_state("miniswe_mode", False)
-        or os.environ.get("AI_PUREBASH_MODE") == "1"
-        or os.environ.get("AI_MINISWE_MODE") == "1"
-    )
-    if not calls and is_purebash_active:
-        clean_raw_text = RE_THINK_BLOCK.sub("", text)
-        clean_raw_text = re.sub(r"^[\s\S]*?</(?:think|thought)>\s*", "", clean_raw_text, flags=re.IGNORECASE)
-        clean_raw_text = re.sub(r"\s*<(?:think|thought)>[\s\S]*$", "", clean_raw_text, flags=re.IGNORECASE)
-
-        raw_cmd_lines = []
-        for l in clean_raw_text.splitlines():
-            l_clean = RE_CONTROL_OR_THINK.sub("", l).strip()
-            if not l_clean:
-                continue
-            if l_clean.startswith("`") and l_clean.endswith("`") and l_clean[1:-1].count("`") == 0:
-                l_clean = l_clean[1:-1].strip()
-            if RE_TASK_COMPLETE_LINE.match(l_clean) or RE_CONVERSATIONAL_PREFIX.match(l_clean):
-                continue
-            if l_clean.startswith((
-                "echo ", "cat ", "sed ", "grep ", "find ", "python ",
-                "python3 ", "pytest ", "touch ", "mkdir ", "cp ", "mv ", "rm "
-            )):
-                raw_cmd_lines.append(l_clean)
-
-        if raw_cmd_lines:
-            full_raw_cmd = _close_unterminated_quote("\n".join(raw_cmd_lines).strip())
-            calls.append({
-                "id": f"call_raw_sh_{int(time.time())}",
-                "type": "function",
-                "function": {
-                    "name": "run_command",
-                    "arguments": json.dumps({"command": full_raw_cmd}, default=str),
-                },
-            })
 
     return deduplicate_tool_calls(calls)

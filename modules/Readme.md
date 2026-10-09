@@ -61,12 +61,13 @@ Workspace capabilities (`/map`, `/mem`, `/yolo`, SQLite checkpoints) apply acros
       TIER 1: Sub-27B SLM                            TIER 2: 27B+ MoE / LLM
       Baseline: Ling-3.0-tiny                        Baseline: Qwen3.8-35B-D
      ─────────────────────────                      ─────────────────────────────
-     • Profiles: lingtiny, purebash                 • Profile: qwen38d.md
-     • Execution: Native (6) / Purebash (1)         • Execution: Dual-Mode (/py + Native)
-     • /py: OFF (Avoids escaped code)               • /py: ON (In-Memory REPL & Testing)
-     • Adapters: Opt-In (/adp Active)               • Adapters: OFF (Not Used by Default)
-     • Reasoning: Dynamic /t (0-500t)               • Reasoning: Dynamic /t (300-500t)
-     • Strength: Shell triage & direct diffs        • Strength: Multi-file edits & logic
+     • Profile: lingtiny.md (Default)               • Profile: qwen38d.md
+     • Execution: Native 6-Tools (Default)          • Execution: Dual-Mode (/py + Native)
+     • Purebash: Optional (1-Tool Shell, ~110t)     • /py: ON (In-Memory REPL & Testing)
+     • /py: OFF (Avoids escaped code)               • Adapters: OFF (Not Used by Default)
+     • Adapters: Opt-In (/adp Active)               • Reasoning: Dynamic /t (300-500t)
+     • Reasoning: Dynamic /t (0-500t)               • Strength: Multi-file edits & logic
+     • Strength: Shell triage & direct diffs
 ```
 
 ### Technical Implementation
