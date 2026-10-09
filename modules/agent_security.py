@@ -219,6 +219,24 @@ def is_in_system_dir(path: str) -> bool:
     return False
 
 
+PY_AGENT_ROOT: str = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+TRUSTED_HARNESS_TREES: tuple[str, ...] = (
+    os.path.realpath(os.path.join(PY_AGENT_ROOT, "plugins")),
+    os.path.realpath(os.path.join(PY_AGENT_ROOT, "tools")),
+)
+
+
+def is_harness_tool(norm_path: str) -> bool:
+    """Permits execution of py-agent's first-party plugins and tools across any clone."""
+    for tree in TRUSTED_HARNESS_TREES:
+        try:
+            if os.path.commonpath([tree, norm_path]) == tree:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def is_outside(workspace: str, full_path: str) -> bool:
     """Determines whether full_path breaks outside the workspace root boundary. Fails closed."""
     if not full_path or not str(full_path).strip():
@@ -438,7 +456,7 @@ def check_command(workspace: str, cmd: str) -> str | None:
                 script_token = pos_args[0]
                 if script_token != "-" and (script_token.startswith(("/", "~")) or ".." in script_token):
                     norm_script = os.path.realpath(os.path.expanduser(script_token))
-                    if is_outside(root_ws, norm_script):
+                    if not is_harness_tool(norm_script) and is_outside(root_ws, norm_script):
                         return f"Python script path outside workspace: '{script_token}'"
 
         for raw_t in tokens:
@@ -471,7 +489,7 @@ def check_command(workspace: str, cmd: str) -> str | None:
                     return f"System directory reference: '{raw_t}'"
 
                 if ".." in clean_t or clean_t.startswith("~/") or clean_t.startswith("/") or expanded_t.startswith("/"):
-                    if is_outside(root_ws, norm_path):
+                    if not is_harness_tool(norm_path) and is_outside(root_ws, norm_path):
                         return f"Path outside workspace: '{raw_t}'"
 
     return None

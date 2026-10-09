@@ -1,8 +1,8 @@
-# CODEBASE INDEX MAP | Generated: 2026-10-05 17:18 | Workspace: py-agent | Path: ~/.config/py-agent
+# CODEBASE INDEX MAP | Generated: 2026-10-08 17:47 | Workspace: py-agent | Path: ~/.config/py-agent
 # Active symbols and structural connections mapped in the local index.
 # -----------------------------------------------------------------------------------------
 # Codebase Modules & Active Architecture:
-#   ├── .active_cd.361166        - home/j5/.config/py-agent/projects/ling-tiny
+#   ├── .active_cd.759209        - home/j5/.config/py-agent/projects/photocraft
 #   ├── .env                     - ~/.config/py-agent/.env
 #   ├── .env.example             - ==============================================================================
 #   ├── .gitignore               - Secrets & Credentials
@@ -77,13 +77,14 @@
 [python:modules/agent_ui.py] imp:agent_cloud,agent_core,agent_skills,collections,json,os,re,rich,select,sys,termios,threading,time,tty,typing,urllib | cls:InlineSpinner,CalmBoatSpinner | fn:__init__,_get_theme_color,_glimmer,_spin,update,start,stop,__init__,update_context,update,_sail,start,stop,_read_fd,get_key,get_local_model_name,draw_session_box,confirm_tool,run_interactive_selection,show_help,select_workspace_profile
 [python:modules/agent_vision.py] imp:base64,ipaddress,json,os,re,socket,typing,urllib | fn:_get_img_config,_is_safe_url,describe_image_gemini,preprocess_multimodal_messages
 [python:modules/agent_voice.py] imp:agent_core,base64,http,json,os,re,socket,ssl,subprocess,sys,time,urllib | cls:VoiceHandler | fn:_get_or_create_token,is_bridge_running,load_voice_env,transcribe_gemini,get_prompt_input,log_message,_is_authorized,do_POST,do_GET,run_server,toggle_voice_bridge
-[python:modules/model-select.py] imp:asyncio,atexit,copy,json,os,re,select,shutil,sys,termios,tty,urllib | fn:cleanup_terminal,load_json,save_json,_atomic_write_env,ensure_env_exists,load_env_vars,get_custom_indices,get_provider_keys,get_active_key_set,update_env_multiple,isolate_active_key,deactivate_key,toggle_single_provider,toggle_independent_key,toggle_env_api_keys,detect_provider,parse_endpoint_url,async_fetch_remote,_fetch,async_get_key,_read,prompt_user_input,run_interactive_menu,filter_items,async_main,fmt
+[python:modules/model-select.py] imp:asyncio,atexit,copy,json,os,re,select,shutil,sys,termios,tty,urllib | fn:cleanup_terminal,load_json,save_json,_atomic_write_env,ensure_env_exists,load_env_vars,get_custom_indices,get_provider_keys,get_active_key_set,update_env_multiple,isolate_active_key,deactivate_key,toggle_single_provider,toggle_independent_key,toggle_env_api_keys,detect_provider,parse_endpoint_url,async_fetch_remote,_fetch,async_get_key,_read,prompt_user_input,run_interactive_menu,filter_items,_is_cur,async_main,fmt
 [markdown:plugins/Readme.md] title:Plugins: `plugins/`
 [markdown:plugins/audio/Readme.md] title:Kokoro Neural Text-to-Speech & Selection Speaker Plugin
 [shell:plugins/audio/koko-speak.sh] sum:High-Performance Kokoro Selection Speaker (RAM-disk execution)
 [markdown:plugins/dsh/Readme.md] title:DeepSeek Harness (DSH)
 [python:plugins/dsh/dsh-bridge.py] imp:agent_adapters,agent_cloud,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tools,agent_tts,json,os,requests,sys,threading,time,typing,uuid | fn:send_rpc_response,send_acp_chunk,validate_workspace,detect_workspace_mode,make_confirm_gate,confirm_gate,assemble_system_prompt,_prune_history,handle_acp_prompt,main
 [shell:plugins/dsh/run-dsh.sh] sum:==============================================================================
+[markdown:plugins/mcp/PhotoCraft/Readme.md] title:PhotoCraft MCP Integration
 [python:plugins/mcp/mcp_client.py] imp:json,os,sqlite3,subprocess,sys,typing | cls:MCPSession | fn:load_dotenv,load_servers_config,_ensure_sqlite_target,__init__,__enter__,__exit__,_send_rpc,_send_notification,_initialize,list_tools,call_tool,run_call,run_list,export_schemas,main
 [json:plugins/mcp/servers.json] keys:servers
 [markdown:plugins/open-code-review/Readme.md] title:Open Code Review
@@ -146,6 +147,7 @@
 [markdown:skills/profiles/nexn25.md] title:nexn25
 [markdown:skills/profiles/occamy.md] title:occamy
 [markdown:skills/profiles/ornith.md] title:ornith
+[markdown:skills/profiles/photocraft-gem.md] title:photocraft-gem
 [markdown:skills/profiles/q2bu.md] title:q2bu
 [markdown:skills/profiles/qwen38d.md] title:qwen38d
 [markdown:skills/profiles/sysadmin.md] title:sysadmin

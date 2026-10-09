@@ -22,6 +22,21 @@
       "args": ["-y", "@upstash/context7-mcp"],
       "env": {}
     },
+    "photocraft": {
+      "command": "photocraft-cli",
+      "args": [
+        "mcp",
+        "--bridge",
+        "127.0.0.1:7878",
+        "--control-token-file",
+        "${HOME}/.config/photocraft/control.token",
+        "--automation-read-root",
+        "${HOME}",
+        "--automation-write-root",
+        "${HOME}"
+      ],
+      "env": {}
+    },
     "firecrawl": {
       "command": "npx",
       "args": ["-y", "firecrawl-mcp"],

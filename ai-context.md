@@ -39,6 +39,7 @@
 
 ```properties
 # --- Workspaces ---
+ai init ~/.config/py-agent/projects/photocraft ---> photocraft
 ai init ~/.config/py-agent/projects/tielcoder ---> tielcoder
 ai init ~/.config/py-agent/projects/qwen38d ---> qwen38d
 ai init ~/.config/py-agent/projects/nemotron ---> nemotron
@@ -65,6 +66,7 @@ ai init ~/.config/py-agent/projects/session-test ---> session test, projects ses
 ~/.config/py-agent/plugins/open-code-review/run-review ---> open code review, cr
 # --- Model Context Protocol (MCP) ---
 ~/.config/py-agent/plugins/mcp/mcp_client.py list ---> mcp list, mcp tools, mcpl
+# --- PhotoCraft (MCP) ---
 ```
 
 ## 4. Apps (Tools & Utilities)

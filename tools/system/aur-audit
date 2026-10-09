@@ -91,7 +91,7 @@ Output Format:
 if [[ "${AI_CONTEXT_RUN:-0}" != "0" ]]; then
     printf "%s\n" "$PROMPT"
 else
-    printf "\033[2m[sys] Auditing '%s' via local model...\033[0m\n" "$PKG_NAME" >&2
+    printf "\033[2m[sys] Auditing '%s' via AI agent...\033[0m\n" "$PKG_NAME" >&2
     export AI_SHOW_THINKING=0
     export AI_THINKING_BUDGET=0
     printf "%s\n" "$PROMPT" | python3 "$ALIAS_AI_SCRIPT" --talk - --aur-audit
