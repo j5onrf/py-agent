@@ -615,10 +615,13 @@ def main():
 
     adapters_on = str(meta.get("adapters", meta.get("adp", ""))).lower() in ("true", "1", "yes", "on")
     is_py_enabled = str(meta.get("ipython", meta.get("py", ""))).lower() in ("true", "1", "yes", "on")
+    is_purebash_enabled = str(meta.get("purebash", meta.get("miniswe", meta.get("swe", "")))).lower() in ("true", "1", "yes", "on")
     reasoning_budget = int(meta.get("reasoning_budget", 0)) if meta.get("reasoning_budget") else 0
 
     core.save_state("adapters_active", adapters_on)
     core.save_state("ipython_mode", is_py_enabled)
+    core.save_state("purebash_mode", is_purebash_enabled)
+    core.save_state("miniswe_mode", is_purebash_enabled)
     core.save_state("reasoning_budget", reasoning_budget)
 
     console.print(

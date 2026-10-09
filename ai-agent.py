@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.51] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production Ready]"""
+"""Py Agent [j5onrf] [v0.9.9.52] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production Ready]"""
 
 import json
 import os
@@ -304,14 +304,19 @@ def run_interactive_chat(args: list[str]) -> None:
             except Exception:
                 pass
 
+        is_purebash = (clean_name in ("purebash", "miniswe", "swe", "bash") or "purebash" in clean_name or "miniswe" in clean_name)
         core.save_state("use_map", use_map)
         core.save_state("yolo_mode", is_yolo)
         core.save_state("ipython_mode", is_py)
         core.save_state("memory_active", memory_active)
         core.save_state("adapters_active", adapters_active)
+        core.save_state("purebash_mode", is_purebash)
+        core.save_state("miniswe_mode", is_purebash)
 
         os.environ["AI_USE_MAP"] = "1" if use_map else "0"
         os.environ["AI_IPYTHON_MODE"] = "1" if is_py else "0"
+        os.environ["AI_PUREBASH_MODE"] = "1" if is_purebash else "0"
+        os.environ["AI_MINISWE_MODE"] = "1" if is_purebash else "0"
         if is_yolo:
             os.environ["AI_CONFIRM_GATES"] = "0"
 

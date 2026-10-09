@@ -5,7 +5,7 @@
   <h1>Py Agent</h1>
 
   <p>
-    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.52.svg?variant=secondary" alt="Version"></a>
+    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.53.svg?variant=secondary" alt="Version"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/Python.svg?variant=branded&brand=python" alt="Language"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/C%2B%2B.svg?variant=branded&brand=cplusplus" alt="C++"></a>
     <a href="https://github.com/j5onrf/py-agent/blob/main/LICENSE"><img src="https://shieldcn.dev/badge/license-MIT-green.svg" alt="License"></a>
@@ -150,6 +150,7 @@
 | Operational Tier | Py-Agent | DeepSeek (`dsh`) |
 | :--- | :---: | :---: |
 | **Pure Chat** | **211 tokens** (`ai`) | ~450+ tokens |
+| **Pure Bash** | **~110 tokens** (`PUREBASH_TOOLS`) | — |
 | **Native Core** | **~680 tokens** (`SMOL_TOOLS`) | ~632 tokens |
 | **Dual Mode** | **~760 tokens** (`python + native`) | ~1,200+ tokens |
 | **Full Graph** | **~1,100 tokens** (12 tools + AST) | 2,500–4,000+ tokens |
@@ -293,3 +294,4 @@ AI_MAX_TOKENS="8192"
 * **<a href="projects/Readme.md">Workspace Manual</a>**
 * **<a href="modules/Readme.md">System Architecture</a>**
 * Licensed under the **[MODIFIED MIT LICENSE](LICENSE)**
+

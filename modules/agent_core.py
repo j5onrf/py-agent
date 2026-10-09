@@ -358,10 +358,15 @@ def agentic_turn(
         use_gnd = st.get("grounding_active", False) and bool(os.environ.get("GND_KEY") or os.environ.get("GEMINI_API_KEY"))
 
         if is_agent and not tools_disabled:
+            is_purebash = st.get("purebash_mode", False) or st.get("miniswe_mode", False) or os.environ.get("AI_PUREBASH_MODE", "0") == "1" or os.environ.get("AI_MINISWE_MODE", "0") == "1"
             is_py_mode = st.get("ipython_mode", False)
             use_map = st.get("use_map", False) or os.environ.get("AI_USE_MAP", "0") == "1"
 
-            if is_py_mode:
+            if is_purebash:
+                active_tools = list(getattr(tools, "PUREBASH_TOOLS", getattr(tools, "MINISWE_TOOLS", []))) or [
+                    t for t in tools.SMOL_TOOLS if t["function"]["name"] == "run_command"
+                ]
+            elif is_py_mode:
                 try:
                     import agent_ipython as ipython
                     active_tools = list(ipython.IPYTHON_TOOL) + [

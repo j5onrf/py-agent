@@ -76,27 +76,32 @@ Workspace metadata is isolated inside `project/.agent/`.
 `ai init <path>` opens the profile selector with cached frontmatter defaults.
 
 ```console
-[ai init] Select default Agent Profile for workspace session-test:
+[ai init] Select default Agent Profile for workspace ling-tiny:
 
   ─── Cloud ─────────────────────────
   >  1. Cloud                (~633t)
      2. Deepseek             (~431t)
+     3. Photocraft Gem       (~611t)
 
   ─── Local ─────────────────────────
-     1. Katcoder             (~574t)
+     1. Katcoder             (~682t)
      2. Lfm2                 (~588t)
-     3. Lingtiny             (~458t)
+     3. Lingtiny             (~461t)
      4. Minicpm              (~464t)
      5. Nexn25               (~606t)
      6. Occamy               (~575t)
      7. Ornith               (~677t)
-     8. Q2Bu                 (~466t)
-     9. Qwen38D              (~444t)
-    10. Tielcoder            (~522t)
+     8. Photocraft Loc       (~410t)
+     9. Q2Bu                 (~466t)
+    10. Qwen38D              (~525t)
+    11. Tielcoder            (~522t)
 
   ─── Roles ─────────────────────────
      1. Sysadmin             (~442t)
      2. Tini Cybersec        (~664t)
+
+  ─── Custom ────────────────────────
+     1. Purebash             (~281t)
 
     Tools: python + native (7 tools, ~760t)
 
@@ -180,6 +185,7 @@ The `/adp` layer handles malformed JSON, unclosed quotes, and parameter aliases 
 
 ### 5.1 Operational Tiers
 * **Pure Chat (`ai`):** **211 tokens** (zero tools).
+* **Pure Bash Mode (`purebash: true`):** **1 tool (`PUREBASH_TOOLS`)**, ~110t schema for minimal-scaffold SLM execution.
 * **Native Mode (`Py: OFF`):** **6 tools (`SMOL_TOOLS`)**, ~680t schema.
 * **Dual Mode (`Py: ON`):** **7 tools (`python + native`)**, ~760t schema with ~95% KV cache hits.
 * **Index-Map Mode (`Map: ON`):** **12 tools (`EDIT_TOOLS`)**, ~1.1kt schema.
@@ -241,6 +247,7 @@ yolo: true
 map: true
 memory: true
 ipython: true
+purebash: false            # Optional: Single-tool shell mode (~110t schema)
 adapters: true
 reasoning_budget: 500
 ---

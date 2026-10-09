@@ -222,6 +222,12 @@ SMOL_TOOLS: list[dict[str, Any]] = [
     t for t in EDIT_TOOLS if t["function"]["name"] in ("read_file", "search_code", "edit_file", "write_file", "list_dir", "run_command")
 ]
 
+# Minimalist Single-Tool Set for Pure Bash SLMs (~110 tokens)
+PUREBASH_TOOLS: list[dict[str, Any]] = [
+    t for t in EDIT_TOOLS if t["function"]["name"] == "run_command"
+]
+MINISWE_TOOLS = PUREBASH_TOOLS
+
 TOOL_VERBS = {
     "delegate_task": "delegating sub-task",
     "read_symbol": "tracing symbol snippet",
