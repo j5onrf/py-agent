@@ -61,7 +61,6 @@ Workspace metadata is isolated inside `project/.agent/`.
 | :--- | :--- |
 | `~/.config/py-agent/projects/.database/*.db` | SQLite session checkpoints (`-save` / `-load`) and turn rollbacks. |
 | `~/.config/py-agent/.active_sessions/` | Active process PID tracking files. |
-| `~/.config/py-agent/.spend_ledger.json` | Cloud API token spend ledger. |
 | `~/<workspace>/.agent/config.json` | Workspace runtime profile, YOLO, Map, Py, and Memory state. |
 | `~/<workspace>/.agent/memory/*.md` | Git-native Open Knowledge Format (OKF) Markdown files. |
 | `~/<workspace>/.agent/history.md` | Chronological session conversation log. |
