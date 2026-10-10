@@ -111,7 +111,12 @@
 
 ---
 
-<h2 align="center">Benchmarks</h2>
+<h2 align="center">Benchmark & Efficiency</h2>
+
+<p align="center">
+  Decision-grade evaluation across 7-stage agentic challenges (<code>eval-stack</code>).<br>
+  <sub>Results scale with tuning: select a model foundation and optimize for your workload via profile directives, sampling flags, and <code>/adp</code>.</sub>
+</p>
 
 <div align="center">
 
@@ -163,6 +168,10 @@
 ---
 
 <h2 align="center">Client Surfaces</h2>
+
+<p align="center">
+  Py-Agent is surface-agnostic. Switch seamlessly between terminal, web gateway, and desktop IDE:
+</p>
 
 <div align="center">
   <table>
