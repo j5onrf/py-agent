@@ -150,7 +150,7 @@
 | Operational Tier | Py-Agent | DeepSeek (`dsh`) |
 | :--- | :---: | :---: |
 | **Pure Chat** | **211 tokens** (`ai`) | ~450+ tokens |
-| **Pure Bash** | **~110 tokens** (`PUREBASH_TOOLS`) | — |
+| **Pure Bash** | **~110 tokens** (`PUREBASH_TOOLS` · 167% Par, A+) | — |
 | **Native Core** | **~680 tokens** (`SMOL_TOOLS`) | ~632 tokens |
 | **Dual Mode** | **~760 tokens** (`python + native`) | ~1,200+ tokens |
 | **Full Graph** | **~1,100 tokens** (12 tools + AST) | 2,500–4,000+ tokens |
