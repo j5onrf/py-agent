@@ -17,7 +17,7 @@
   </p>
 
   <p>
-    <b>Lightweight Python runtime (lazy <code>rich</code> + <code>requests</code>) driving a local C++ <code>llama-server</code> backend or cloud APIs.</b><br>
+    <b>Python runtime (lazy <code>rich</code> + <code>requests</code>) driving a local C++ <code>llama-server</code> backend or cloud APIs.</b><br>
     <sub>In-memory Python execution (<code>/py</code>), argument repair adapters (<code>/adp</code>), and instant startup.</sub>
   </p>
 
