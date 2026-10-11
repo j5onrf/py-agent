@@ -90,12 +90,17 @@ def _show_transient_status(tag: str) -> None:
 _flash_status = _show_transient_status
 
 
-def _clear_transient_status(query: str) -> None:
+def _clear_transient_status(query: str = "") -> None:
     """Erases the ephemeral slash command block and repositions the real query prompt with breathing room."""
     global _transient_cmd_count
     if _transient_cmd_count > 0:
         try:
-            sys.stdout.write(f"\033[{_transient_cmd_count + 1}A\r\x1b[0J❯ {query}\n")
+            if query:
+                # Normal query: cursor is on line below prompt, rewrite with query
+                sys.stdout.write(f"\033[{_transient_cmd_count + 1}A\r\x1b[0J❯ {query}\n")
+            else:
+                # Exiting: cursor is directly on prompt, wipe command without eating empty line above
+                sys.stdout.write(f"\033[{_transient_cmd_count}A\r\x1b[0J")
             sys.stdout.flush()
         except OSError:
             pass
@@ -168,6 +173,7 @@ def _sweep_dead_session_locks() -> None:
 
 def clean_exit(safe_name: str | None = None, workspace_path: str | None = None, sub_id: int | None = None) -> None:
     """Cleans active session locks and worktrees, then exits cleanly."""
+    _clear_transient_status("")
     if safe_name:
         try:
             if sub_id is not None and sub_id > 0 and workspace_path:
@@ -179,7 +185,7 @@ def clean_exit(safe_name: str | None = None, workspace_path: str | None = None, 
         except Exception:
             pass
     _sweep_dead_session_locks()
-    ui._console.print("\n[yellow]Exiting conversation.[/yellow]")
+    ui._console.print("[yellow]Exiting session.[/yellow]")
     sys.exit(0)
 
 

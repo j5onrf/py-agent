@@ -228,21 +228,31 @@ def show_memory_status(
     from rich.panel import Panel
     from rich.text import Text
 
+    # Inherit dynamic border color and box geometry from active /box preset
+    try:
+        from agent_state import get_state
+        import agent_ui as ui
+        b_style = get_state("box_style", 1)
+        b_border = ui.STYLES.get(b_style, ui.STYLES[1])[2]
+        b_box = ui.STYLES.get(b_style, ui.STYLES[1])[1]
+    except Exception:
+        b_border, b_box = "cyan", ROUNDED
+
     console = Console()
     console.print(Panel(
         Group(
             Text.assemble(
-                ("Context Window: ", "dim"),
+                ("Context Window: ", ""),
                 (f"{total_toks}", f"bold {color}"),
-                (f"/{max_context} tokens ", "dim"),
+                (f"/{max_context} tokens ", ""),
                 (f"({pct:.1f}%)", f"bold {color}"),
             ),
             Text(f"[{bar}]", style=color),
         ),
-        title="Memory & Context Status",
+        title=Text("Memory & Context Status", style="bold"),
         title_align="left",
-        border_style="bright_black",
-        box=ROUNDED,
+        border_style=b_border,
+        box=b_box,
         expand=False,
     ))
 
