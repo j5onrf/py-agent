@@ -43,10 +43,10 @@ Switch CLI box styles using `/box [1-9]` (or `/box` to cycle). Persists in `~/.c
 
 | Box Style | Preset Name | Thinking Box Geometry |
 | :---: | :--- | :---: |
-| **#1** | **Minimal Wave (Rounded)** *(Default)* | **Rounded** (`╭` and `╰`) |
-| **#2** | **Minimal Wave (Square)** | **Square** (`┌` and `└`) |
-| **#3** | **Glyph Wave (Rounded)** | **Rounded** (`╭` and `╰`) |
-| **#4** | **Glyph Wave (Square)** | **Square** (`┌` and `└`) |
+| **#1** | **Minimal Wave ** *(Default)* | **Rounded** (`╭` and `╰`) |
+| **#2** | **Minimal Wave ** | **Square** (`┌` and `└`) |
+| **#3** | **Glyph Wave ** | **Rounded** (`╭` and `╰`) |
+| **#4** | **Glyph Wave ** | **Square** (`┌` and `└`) |
 | **#5** | **Double Border** | **Square** (`┌` and `└`) |
 | **#6** | **Dual-Chamber Inset** | **Rounded** (`╭` and `╰`) |
 | **#7** | **Classic Rounded** | **Rounded** (`╭` and `╰`) |
