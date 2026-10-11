@@ -48,7 +48,7 @@
   </p>
 
   <p>
-    <sub><b>Cloud Endpoints:</b> <a href="https://huggingface.co">Hugging Face Space</a>, <a href="https://tokenharbor.ai">TokenHarbor</a>, and <a href="https://openrouter.ai">OpenRouter</a><br>
+    <sub><b>Cloud Endpoints:</b> <a href="https://huggingface.co/spaces?category=text-generation">Hugging Face Spaces</a>, <a href="https://tokenharbor.ai">TokenHarbor</a>, and <a href="https://openrouter.ai">OpenRouter</a><br>
     <b>Free Endpoints:</b> <a href="https://tokenharbor.ai"><code>mimo-v2.6-flash:free</code></a>, <a href="https://tokenharbor.ai"><code>deepseek-v4.1-flash:free</code></a> (TokenHarbor) &nbsp;•&nbsp; <a href="https://openrouter.ai/models?variant=free"><code>openrouter/free</code></a> (OpenRouter)</sub>
   </p>
 </div>
