@@ -48,14 +48,14 @@
   </p>
 
   <p>
-    <sub><b>Cloud Endpoints:</b> <a href="https://huggingface.co">Hugging Face Spaces</a>, <a href="https://tokenharbor.ai">TokenHarbor</a>, and <a href="https://openrouter.ai">OpenRouter</a><br>
+    <sub><b>Cloud Endpoints:</b> <a href="https://huggingface.co">Hugging Face Space</a>, <a href="https://tokenharbor.ai">TokenHarbor</a>, and <a href="https://openrouter.ai">OpenRouter</a><br>
     <b>Free Endpoints:</b> <a href="https://tokenharbor.ai"><code>mimo-v2.6-flash:free</code></a>, <a href="https://tokenharbor.ai"><code>deepseek-v4.1-flash:free</code></a> (TokenHarbor) &nbsp;•&nbsp; <a href="https://openrouter.ai/models?variant=free"><code>openrouter/free</code></a> (OpenRouter)</sub>
   </p>
 </div>
 
-<br>
+<br><br>
 
----
+
 
 ```console
 ~ ❯ ai
@@ -75,7 +75,7 @@
 
 <br>
 
----
+<br>
 
 <h2 align="center">Execution Surfaces</h2>
 
@@ -91,14 +91,14 @@
 </div>
 
 <p align="center">
-  <sub><code>/yolo</code> &nbsp;•&nbsp; <code>/py</code> repl &nbsp;•&nbsp; <code>/adp</code> adapters &nbsp;•&nbsp; <code>/t</code> reasoning &nbsp;•&nbsp; <code>/task</code> loop goal &nbsp;•&nbsp; <code>/s</code> skills &nbsp;•&nbsp; <code>/a</code> all meta &nbsp;•&nbsp; <code>/md</code> markdown</sub><br>
-  <sub><code>/m</code> map &nbsp;•&nbsp; <code>file</code> load &nbsp;•&nbsp; <code>/mem</code> memory &nbsp;•&nbsp; <code>/com</code> compact &nbsp;•&nbsp; <code>/gnd</code> search &nbsp;•&nbsp; <code>/hs</code> hindsight &nbsp;•&nbsp; <code>/tok</code> tokens &nbsp;•&nbsp; <code>/sync</code> map</sub><br>
+  <sub><code>/yolo</code> gate &nbsp;•&nbsp; <code>/py</code> repl &nbsp;•&nbsp; <code>/adp</code> adapters &nbsp;•&nbsp; <code>/t</code> reasoning &nbsp;•&nbsp; <code>/task</code> loop goal &nbsp;•&nbsp; <code>/s</code> skills &nbsp;•&nbsp; <code>/a</code> all meta &nbsp;•&nbsp; <code>/md</code> markdown</sub><br>
+  <sub><code>/m</code> map &nbsp;•&nbsp; <code>file</code> load &nbsp;•&nbsp; <code>/mem</code> memory &nbsp;•&nbsp; <code>/com</code> compact &nbsp;•&nbsp; <code>/gnd</code> search &nbsp;•&nbsp; <code>/hs</code> hindsight &nbsp;•&nbsp; <code>/tok</code> tokens &nbsp;•&nbsp; <code>/sync</code> index-map</sub><br>
   <sub><code>/tui</code> &nbsp;•&nbsp; <code>/pyc</code> &nbsp;•&nbsp; <code>/dsh</code> &nbsp;•&nbsp; <code>/zed</code> &nbsp;•&nbsp; <code>/webui</code> &nbsp;•&nbsp; <code>/calm</code> &nbsp;•&nbsp; <code>/v</code> &nbsp;•&nbsp; <code>/tts</code> &nbsp;•&nbsp; <code>/box</code> &nbsp;•&nbsp; <code>/stats</code> &nbsp;•&nbsp; <code>-save</code> / <code>-load</code> &nbsp;•&nbsp; <code>/c</code> &nbsp;•&nbsp; <code>/r</code></sub>
 </p>
 
 <br>
 
----
+<br>
 
 <h2 align="center">Runtime Architecture</h2>
 
@@ -108,7 +108,7 @@
 
 <br>
 
----
+<br>
 
 <h2 align="center">Benchmark & Efficiency</h2>
 
@@ -164,7 +164,7 @@
 
 <br>
 
----
+<br>
 
 <h2 align="center">Client Surfaces</h2>
 
@@ -206,9 +206,9 @@
 
 <br>
 
----
+<br>
 
-<h2 align="center">Installation</h2>
+<h2 align="center">Setup & Installation</h2>
 
 ### 1. Install py-agent
 
@@ -295,12 +295,13 @@ AI_MAX_TOKENS="8192"
 
 <br>
 
----
+<br>
 
 <h2 align="center">Documentation & License</h2>
 
 * **<a href="projects/Readme.md">Workspace Manual</a>**
 * **<a href="modules/Readme.md">System Architecture</a>**
 * Licensed under the **[MODIFIED MIT LICENSE](LICENSE)**
+
 
 
