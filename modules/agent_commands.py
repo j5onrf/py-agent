@@ -417,8 +417,12 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
         return True, None
 
     if cmd in ("/box"):
-        cur_box = core.get_state("box_style", 2)
-        val = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() and 1 <= int(parts[1]) <= 8 else (cur_box % 8) + 1
+        max_boxes = len(ui.STYLES)
+        cur_box = core.get_state("box_style", 1)
+        if len(parts) > 1 and parts[1].isdigit() and int(parts[1]) in ui.STYLES:
+            val = int(parts[1])
+        else:
+            val = (cur_box % max_boxes) + 1
         core.save_state("box_style", val)
         ctx.flash_status(f"box: #{val}")
         return True, None

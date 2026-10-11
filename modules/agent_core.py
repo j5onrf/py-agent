@@ -230,7 +230,28 @@ def _log_turn_usage(
         if model_tag:
             parts.append(model_tag)
 
-        sys.stdout.write(f"\033[90m [ {' · '.join(parts)} ]\033[0m\n\n")
+        # Dynamic accent color matching the active box border (soft & dimmed)
+        try:
+            import agent_ui as ui
+            box_idx = get_state("box_style", 1)
+            b_col = "green" if box_idx == 6 else ui.STYLES.get(box_idx, ui.STYLES[1])[2]
+            col_map = {
+                "cyan": "\033[2;36m",
+                "bright_cyan": "\033[2;96m",
+                "green": "\033[2;32m",
+                "bright_green": "\033[2;92m",
+                "blue": "\033[2;34m",
+                "bright_blue": "\033[2;94m",
+                "magenta": "\033[2;35m",
+                "bright_magenta": "\033[2;95m",
+                "yellow": "\033[2;33m",
+                "bright_yellow": "\033[2;93m",
+            }
+            stats_color = col_map.get(b_col, "\033[2;96m")
+        except Exception:
+            stats_color = "\033[2;96m"
+
+        sys.stdout.write(f"{stats_color} [ {' · '.join(parts)} ]\033[0m\n\n")
         sys.stdout.flush()
     except Exception:
         pass
@@ -362,12 +383,12 @@ def agentic_turn(
         use_gnd = st.get("grounding_active", False) and bool(os.environ.get("GND_KEY") or os.environ.get("GEMINI_API_KEY"))
 
         if is_agent and not tools_disabled:
-            is_purebash = st.get("purebash_mode", False) or st.get("miniswe_mode", False) or os.environ.get("AI_PUREBASH_MODE", "0") == "1" or os.environ.get("AI_MINISWE_MODE", "0") == "1"
+            is_purebash = st.get("purebash_mode", False) or os.environ.get("AI_PUREBASH_MODE", "0") == "1"
             is_py_mode = st.get("ipython_mode", False)
             use_map = st.get("use_map", False) or os.environ.get("AI_USE_MAP", "0") == "1"
 
             if is_purebash:
-                active_tools = list(getattr(tools, "PUREBASH_TOOLS", getattr(tools, "MINISWE_TOOLS", []))) or [
+                active_tools = list(getattr(tools, "PUREBASH_TOOLS", [])) or [
                     t for t in tools.SMOL_TOOLS if t["function"]["name"] == "run_command"
                 ]
             elif is_py_mode:

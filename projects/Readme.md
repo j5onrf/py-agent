@@ -39,7 +39,7 @@ Let me verify the file was created correctly and then provide a summary.
 
 ## UI Box Themes
 
-Switch CLI box styles using `/box [1-8]` (or `/box` to cycle). Persists in `~/.config/py-agent/.state.json`.
+Switch CLI box styles using `/box [1-9]` (or `/box` to cycle). Persists in `~/.config/py-agent/.state.json`.
 
 | Box Style | Preset Name | Thinking Box Geometry |
 | :---: | :--- | :---: |
@@ -51,6 +51,7 @@ Switch CLI box styles using `/box [1-8]` (or `/box` to cycle). Persists in `~/.c
 | **#6** | **Dual-Chamber Inset** | **Rounded** (`╭` and `╰`) |
 | **#7** | **Classic Rounded** | **Rounded** (`╭` and `╰`) |
 | **#8** | **Classic Minimal** | **Rounded** (`╭` and `╰`) |
+| **#9** | **Full-Width Wave** | **Rounded** (`╭ ... ╮` and `╰ ... ╯`) |
 
 ---
 

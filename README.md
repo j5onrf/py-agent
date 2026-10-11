@@ -71,7 +71,7 @@
 ```
 
 <div align="center">
-  <p><sub>Select box themes with <code>/box [1-8]</code>. Workspace details in the <a href="projects/Readme.md"><b>Workspace Manual</b></a>.</sub></p>
+  <p><sub>Select box themes with <code>/box [1-9]</code>. Workspace details in the <a href="projects/Readme.md"><b>Workspace Manual</b></a>.</sub></p>
 </div>
 
 <br>

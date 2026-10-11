@@ -30,13 +30,15 @@ _console = Console()
 RE_UNSAFE_SHELL_CHARS: re.Pattern = re.compile(r'[\[\]{}()=\'"",;|<>#`$&*!\\\r\n]')
 
 STYLES = {
-    1: ("∿", ROUNDED, "bright_cyan", "bold"),         # #1 Minimal (No Icons, Rounded)
-    2: ("∿", SQUARE, "bright_cyan", "bold"),          # #2 Minimal (No Icons, Square)
-    3: ("∿", ROUNDED, "bright_cyan", "bold"),         # #3 Minimal (With Icons, Rounded)
-    4: ("∿", SQUARE, "bright_cyan", "bold"),          # #4 Minimal (With Icons, Square)
+    1: ("∿", ROUNDED, "bright_cyan", "bold"),         # #1 Minimal (No Icons, Rounded) - Compact Default
+    2: ("∿", SQUARE, "bright_cyan", "bold"),          # #2 Minimal (No Icons, Square) - Compact
+    3: ("∿", ROUNDED, "bright_cyan", "bold"),         # #3 Minimal (With Icons, Rounded) - Compact
+    4: ("∿", SQUARE, "bright_cyan", "bold"),          # #4 Minimal (With Icons, Square) - Compact
     5: ("∿ Py Agent", DOUBLE, "bright_blue", "bold bright_blue"),
     6: ("∿ Py Agent", HEAVY, "bright_cyan", "bold bright_white"),
     7: ("∿ Py Agent", ROUNDED, "green", "bold bright_green"),
+    8: ("∿", ROUNDED, "green", "bold bright_green"),
+    9: ("∿", ROUNDED, "bright_cyan", "bold"),         # #9 Full-Width Screen (No Icons, Rounded)
 }
 
 RICH_TO_ANSI = {
@@ -380,15 +382,7 @@ def draw_session_box(
     except Exception:
         model_name = get_local_model_name()
 
-    table = Table(show_header=False, box=None, padding=(0, 2, 0, 0))
-    table.add_column("Key", style="dim cyan", justify="right")
-    table.add_column("Value", style="green")
-
     display_profile = (clean_name or "chat").replace("custom/", "", 1)
-    m_style = "bold red" if ("not loaded" in model_name or "offline" in model_name) else "green"
-    table.add_row("model:", Text(model_name, style=m_style))
-    table.add_row("directory:", display_dir)
-    table.add_row("profile:", display_profile)
 
     if is_agent:
         try:
@@ -408,14 +402,12 @@ def draw_session_box(
     else:
         db_status = "session"
 
-    table.add_row("database:", db_status)
-
-    # Style #1-4: Minimal Wave Boxes (1,2: No Icons | 3,4: With Icons)
-    if box_style in (1, 2, 3, 4):
+    # Style #1-4 (Compact) & #9 (Full-Width): Minimal Wave Boxes
+    if box_style in (1, 2, 3, 4, 9):
         base_title, box_type, border_col, title_style = STYLES.get(box_style, STYLES[1])
         show_icons = box_style in (3, 4)
+        is_full = (box_style == 9)
 
-        # padding: (top=0, right=1 if icons else 0, bottom=0, left=1 for the margin space)
         icon_table = Table(show_header=False, box=None, padding=(0, 1 if show_icons else 0, 0, 1))
         if show_icons:
             icon_table.add_column("Icon", style=border_col, justify="left")
@@ -433,7 +425,6 @@ def draw_session_box(
             icon_table.add_row(display_profile)
             icon_table.add_row(db_status)
 
-        # Dynamic ANSI Palette with Option 2 Arch (Adapts automatically to Omarchy!)
         logo_text = Text.from_markup(
             "[bold bright_cyan]  ╭───╮ \n[/]"
             "[bright_cyan]╭─╯ [/][cyan]╭─╯ \n[/]"
@@ -441,12 +432,18 @@ def draw_session_box(
             "[bold blue]  ╰───● [/]"
         )
 
-        grid = Table.grid(padding=(0, 2))
-        grid.add_column(vertical="middle")
-        grid.add_column(justify="center", vertical="middle")
-        grid.add_row(icon_table, logo_text)
+        if is_full:
+            # Full-width responsive layout for Box 9 only (adds 1 space right cushion)
+            grid = Table.grid(expand=True, padding=(0, 1, 0, 0), pad_edge=True)
+            grid.add_column(ratio=1, vertical="middle", no_wrap=True)
+            grid.add_column(justify="right", vertical="middle", no_wrap=True)
+        else:
+            # Compact layout for Boxes 1-4 (Completely unaffected)
+            grid = Table.grid(padding=(0, 2))
+            grid.add_column(vertical="middle")
+            grid.add_column(justify="center", vertical="middle")
 
-        base_title, box_type, border_col, title_style = STYLES.get(box_style, STYLES[1])
+        grid.add_row(icon_table, logo_text)
         title_text = f"{base_title} [sub-agent #{sub_id}]" if sub_id else base_title
 
         panel = Panel(
@@ -455,31 +452,42 @@ def draw_session_box(
             title_align="left",
             border_style=border_col,
             box=box_type,
-            expand=False,
-        )
-    # Style #6: Dual-Chamber Inset Panel
-    elif box_style == 6:
-        title_str = f"  ∿ Py Agent [sub-agent #{sub_id}]" if sub_id else "  ∿ Py Agent"
-        max_val_len = max(len(model_name), len(display_dir), len(display_profile), len(db_status), 16)
-        sep_str = " " + "─" * (10 + 2 + max_val_len)
-        panel = Panel(
-            Group(Text(title_str, style="bold bright_green"), Text(sep_str, style="dim green"), table),
-            border_style="green",
-            box=ROUNDED,
-            expand=False,
+            expand=is_full,
         )
     else:
-        base_title, box_type, border_col, title_style = STYLES.get(box_style, STYLES[1])
-        title_text = f"{base_title} [sub-agent #{sub_id}]" if sub_id else base_title
+        # Styles 5-8: Classic Key-Value Table
+        table = Table(show_header=False, box=None, padding=(0, 2, 0, 0))
+        table.add_column("Key", style="dim cyan", justify="right")
+        table.add_column("Value", style="green")
 
-        panel = Panel(
-            table,
-            title=Text(title_text, style=title_style),
-            title_align="left",
-            border_style=border_col,
-            box=box_type,
-            expand=False,
-        )
+        m_style = "bold red" if ("not loaded" in model_name or "offline" in model_name) else "green"
+        table.add_row("model:", Text(model_name, style=m_style))
+        table.add_row("directory:", display_dir)
+        table.add_row("profile:", display_profile)
+        table.add_row("database:", db_status)
+
+        if box_style == 6:
+            # Style #6: Dual-Chamber Inset Panel
+            title_str = f"  ∿ Py Agent [sub-agent #{sub_id}]" if sub_id else "  ∿ Py Agent"
+            max_val_len = max(len(model_name), len(display_dir), len(display_profile), len(db_status), 16)
+            sep_str = " " + "─" * (10 + 2 + max_val_len)
+            panel = Panel(
+                Group(Text(title_str, style="bold bright_green"), Text(sep_str, style="dim green"), table),
+                border_style="green",
+                box=ROUNDED,
+                expand=False,
+            )
+        else:
+            base_title, box_type, border_col, title_style = STYLES.get(box_style, STYLES[1])
+            title_text = f"{base_title} [sub-agent #{sub_id}]" if sub_id else base_title
+            panel = Panel(
+                table,
+                title=Text(title_text, style=title_style),
+                title_align="left",
+                border_style=border_col,
+                box=box_type,
+                expand=False,
+            )
 
     _console.print(panel)
     _console.print()
@@ -611,7 +619,7 @@ def show_help() -> None:
         ("/m, /map", "Toggle Codebase index-map"),
         ("/mem \\[save|list]", "Toggle & manage OKF memory files"),
         ("/hs, /hindsight", "Retrospective session memory audit"),
-        ("/box \\[1-7]", "Box style preset"),
+        ("/box \\[1-9]", "Box style preset (1-4: Compact, 9: Full-width)"),
         ("/task \\[goal]", "Autonomous task loop"),
         ("/t \\[N|show|hide]", "Reasoning budget & display"),
         ("/g, /yolo", "Toggle confirmation gates (YOLO)"),

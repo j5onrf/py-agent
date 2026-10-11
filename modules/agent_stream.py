@@ -3,6 +3,7 @@
 
 import os
 import re
+import shutil
 import sys
 import threading
 from typing import Any
@@ -131,8 +132,19 @@ class RichStreamer:
         self.acc_think, self.acc_ans, self.phase, self.think_hdr_printed, self.ans_started = "", "", "INIT", False, False
         self.in_post_think = False
         self.round_idx = round_idx
-        is_sq = get_state("box_style", 1) not in (1, 6, 7)
-        self.c_top, self.c_bot = ("┌", "└") if is_sq else ("╭", "╰")
+        self.box_style = get_state("box_style", 1)
+
+    def _get_think_borders(self) -> tuple[str, str]:
+        term_width = shutil.get_terminal_size((80, 24)).columns
+        if self.box_style == 9:
+            # Full-width: dashes connect directly into the corners with zero gaps
+            top_dashes = max(10, term_width - 6)
+            bot_dashes = max(10, term_width - 2)
+            return f"╭─ ∿ {'─' * top_dashes}╮", f"╰{'─' * bot_dashes}╯"
+        elif self.box_style in (2, 4):
+            return f"┌─ ∿ {'─' * 52}", f"└{'─' * 56}"
+        else:
+            return f"╭─ ∿ {'─' * 52}", f"╰{'─' * 56}"
 
     def _stop_spinner(self, done_msg: str | None = None) -> None:
         if self.spinner:
@@ -185,7 +197,8 @@ class RichStreamer:
                 self.update(parts[0])
             if show_think and self.think_hdr_printed and not self.ans_started:
                 sep = "" if self.acc_think.endswith("\n") else "\r\n"
-                _console_err.print(f"{sep}[dim]{self.c_bot}────────────────────────────────────────────────────────[/dim]\n")
+                _, bot_border = self._get_think_borders()
+                _console_err.print(f"{sep}[dim]{bot_border}[/dim]\n")
                 sys.stderr.flush()
             self.phase = "ANSWER"
             self._stop_spinner()
@@ -209,7 +222,8 @@ class RichStreamer:
                 if not self.think_hdr_printed and tok.strip():
                     self.think_hdr_printed = True
                     self._stop_spinner()
-                    _console_err.print(f"[dim]{self.c_top}─ ∿ ────────────────────────────────────────────────────[/dim]")
+                    top_border, _ = self._get_think_borders()
+                    _console_err.print(f"[dim]{top_border}[/dim]")
                     tok = tok.lstrip("\r\n")
                 if tok:
                     try:
@@ -256,7 +270,8 @@ class RichStreamer:
         show_think = os.environ.get("AI_SHOW_THINKING", "1") == "1"
         if self.phase == "THINKING" and show_think and self.think_hdr_printed and not self.ans_started:
             sep = "" if self.acc_think.endswith("\n") else "\r\n"
-            _console_err.print(f"{sep}[dim]{self.c_bot}────────────────────────────────────────────────────────[/dim]\n")
+            _, bot_border = self._get_think_borders()
+            _console_err.print(f"{sep}[dim]{bot_border}[/dim]\n")
             self.phase = "ANSWER"
 
         render_md = bool(get_state("render_markdown", False))
@@ -275,19 +290,13 @@ def _process_stream_chunk(content: str, reasoning: str, in_think_block: bool) ->
         if "<|tool_call" in content:
             content = RE_TOOL_CALL_BLOCK.sub("", content).replace("<|tool_call_start|>", "").replace("<|tool_call_end|>", "")
 
+    # 1. Server emits explicit reasoning delta
     if reasoning:
         think_part = f"<think>{reasoning}" if not in_think_block else reasoning
-        if content:
-            has_closer = "</think>" in content
-            closer = "" if has_closer else "</think>"
-            new_in_think = ("<think>" in content and content.rindex("<think>") > content.rindex("</think>")) if has_closer else False
-            return f"{think_part}{closer}{content}", False, new_in_think
         return think_part, True, True
 
+    # 2. Server emits content delta
     if content:
-        if in_think_block and "</think>" not in content:
-            return f"</think>{content}", False, False
-
         if "<think>" in content and "</think>" in content:
             in_think = content.rindex("<think>") > content.rindex("</think>")
         elif "<think>" in content:
@@ -297,6 +306,7 @@ def _process_stream_chunk(content: str, reasoning: str, in_think_block: bool) ->
         else:
             in_think = in_think_block
 
+        # Never prematurely inject </think> here: let the thought stream naturally
         return content, in_think, in_think
 
     return "", False, in_think_block
