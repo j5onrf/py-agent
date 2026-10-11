@@ -198,8 +198,9 @@ def _log_turn_usage(
     r_tok: int = 0,
     elapsed: float = 0.0,
     server_tps: float | None = None,
+    model_tag: str | None = None,
 ) -> None:
-    """Renders unified compact turn metrics in exact muted gray (\\033[90m) with dialed-in single-space breathing room."""
+    """Renders unified compact turn metrics in exact muted gray (\033[90m) with dialed-in single-space breathing room."""
     if not (show_stats and sys.stdout.isatty()):
         return
     try:
@@ -225,6 +226,9 @@ def _log_turn_usage(
         speed = server_tps if (server_tps and server_tps > 0) else (out_tok / max(0.001, elapsed) if elapsed > 0 else 0.0)
         if speed > 0:
             parts.append(f"{elapsed:.1f}s @ {speed:.1f} t/s")
+
+        if model_tag:
+            parts.append(model_tag)
 
         sys.stdout.write(f"\033[90m [ {' · '.join(parts)} ]\033[0m\n\n")
         sys.stdout.flush()
@@ -712,7 +716,8 @@ def agentic_turn(
             if captured_timings and isinstance(captured_timings, dict):
                 server_tps = captured_timings.get("predicted_per_second")
 
-            _log_turn_usage(in_tok, final_out, show_stats, max_ctx, cached_tok=cached_tok, r_tok=r_tok, elapsed=elapsed_gen, server_tps=server_tps)
+            model_tag = resolved_model if (body.get("model") == "openrouter/free" and resolved_model and resolved_model != "openrouter/free") else None
+            _log_turn_usage(in_tok, final_out, show_stats, max_ctx, cached_tok=cached_tok, r_tok=r_tok, elapsed=elapsed_gen, server_tps=server_tps, model_tag=model_tag)
             return ans_text if ans_text else "(No response generated)"
 
         # ── Tool Execution Phase ─────────────────────────────────────────────

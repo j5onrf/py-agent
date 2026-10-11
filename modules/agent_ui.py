@@ -30,13 +30,13 @@ _console = Console()
 RE_UNSAFE_SHELL_CHARS: re.Pattern = re.compile(r'[\[\]{}()=\'"",;|<>#`$&*!\\\r\n]')
 
 STYLES = {
-    1: ("∿ Py Agent", ROUNDED, "green", "bold bright_green"),
-    2: ("∿ Py Agent", SQUARE, "green", "bold bright_green"),
+    1: ("∿", ROUNDED, "bright_cyan", "bold"),
+    2: ("∿", SQUARE, "bright_cyan", "bold"),
     3: ("∿ Py Agent", DOUBLE, "bright_blue", "bold bright_blue"),
     4: ("∿ Py Agent", HEAVY, "bright_cyan", "bold bright_white"),
     5: ("∿ Py Agent", HORIZONTALS, "dim white", "bold cyan"),
     6: ("∿ Py Agent", ROUNDED, "green", "bold bright_green"),
-    7: ("∿", ROUNDED, "green", "bold bright_green"),
+    7: ("∿ Py Agent", ROUNDED, "green", "bold bright_green"),
 }
 
 RICH_TO_ANSI = {
@@ -410,8 +410,46 @@ def draw_session_box(
 
     table.add_row("database:", db_status)
 
+    # Style #1 (Default Rounded) & #2 (Square): Minimal Wave Logo Box
+    if box_style in (1, 2):
+        base_title, box_type, border_col, title_style = STYLES.get(box_style, STYLES[1])
+
+        icon_table = Table(show_header=False, box=None, padding=(0, 1, 0, 0))
+        icon_table.add_column("Icon", style=border_col, justify="left")  # Dynamic theme color, not dim!
+        icon_table.add_column("Value", justify="left")                   # Inherits native terminal text
+
+        m_style = "bold red" if ("not loaded" in model_name or "offline" in model_name) else "bold"
+        icon_table.add_row("◈", Text(model_name, style=m_style))
+        icon_table.add_row("⌂", display_dir)
+        icon_table.add_row("⌥", display_profile)
+        icon_table.add_row("≡", db_status)
+
+        # Dynamic ANSI Palette (Adapts automatically to Omarchy theme changes!)
+        logo_text = Text.from_markup(
+            "[bold bright_cyan]  ●───╮ \n[/]"
+            "[bright_cyan]╭─╯ [/][cyan]╭─╯ \n[/]"
+            "[cyan]╰─╮ [/][blue]╰─╮ \n[/]"
+            "[bold blue]  ╰───● [/]"
+        )
+
+        grid = Table.grid(padding=(0, 2))
+        grid.add_column(vertical="middle")
+        grid.add_column(justify="center", vertical="middle")
+        grid.add_row(icon_table, logo_text)
+
+        base_title, box_type, border_col, title_style = STYLES.get(box_style, STYLES[1])
+        title_text = f"{base_title} [sub-agent #{sub_id}]" if sub_id else base_title
+
+        panel = Panel(
+            grid,
+            title=Text(title_text, style=title_style),
+            title_align="left",
+            border_style=border_col,
+            box=box_type,
+            expand=False,
+        )
     # Style #6: Dual-Chamber Inset Panel
-    if box_style == 6:
+    elif box_style == 6:
         title_str = f"  ∿ Py Agent [sub-agent #{sub_id}]" if sub_id else "  ∿ Py Agent"
         max_val_len = max(len(model_name), len(display_dir), len(display_profile), len(db_status), 16)
         sep_str = " " + "─" * (10 + 2 + max_val_len)
@@ -424,8 +462,9 @@ def draw_session_box(
     else:
         base_title, box_type, border_col, title_style = STYLES.get(box_style, STYLES[1])
         title_text = f"{base_title} [sub-agent #{sub_id}]" if sub_id else base_title
+
         panel = Panel(
-            table,
+            grid,
             title=Text(title_text, style=title_style),
             title_align="left",
             border_style=border_col,

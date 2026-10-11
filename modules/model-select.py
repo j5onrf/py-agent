@@ -20,7 +20,8 @@ ENV_EXAMPLE = os.path.expanduser("~/.config/py-agent/.env.example")
 CACHE_PATH = os.path.expanduser("~/.config/py-agent/.openrouter_cache_v2.json")
 CUSTOM_SPACES_FILE = os.path.expanduser("~/.config/py-agent/custom_spaces.json")
 LAST_KEY_FILE = os.path.expanduser("~/.config/py-agent/.last_cloud_key.txt")
-HF_ROUTER_URL = "https://router.huggingface.co/v1/chat/completions"
+LOCAL_DEFAULT_URL = "http://127.0.0.1:8080/v1/chat/completions"
+LOCAL_DEFAULT_MODEL = "local-model"
 
 ORIGINAL_TERMIOS = termios.tcgetattr(sys.stdin.fileno()) if sys.stdin.isatty() else None
 
@@ -361,6 +362,12 @@ def detect_provider(url: str, model: str) -> tuple[str, str]:
 
 def parse_endpoint_url(raw_url: str) -> tuple[str, str, str]:
     url = raw_url.strip()
+    if "127.0.0.1" in url or "localhost" in url:
+        port = "8080"
+        if ":" in url.split("://")[-1]:
+            port = url.split("://")[-1].split(":")[1].split("/")[0]
+        t_url = url if url.endswith("/chat/completions") else f"{url.rstrip('/')}/v1/chat/completions"
+        return (f"Local Server (Port {port})", t_url, "local-model")
     if "huggingface.co/spaces/" in url:
         parts = url.split("huggingface.co/spaces/", 1)[1].strip("/").split("/")
         if len(parts) >= 2:
@@ -382,10 +389,9 @@ def parse_endpoint_url(raw_url: str) -> tuple[str, str, str]:
 async def async_fetch_remote(env_vars: dict, spaces: dict):
     def _fetch():
         api_key_or = env_vars.get("OPENROUTER_API_KEY", "")
-        api_key_hf = env_vars.get("CUSTOM_API_KEY", "")
         api_key_gem = env_vars.get("GEMINI_API_KEY", "")
 
-        free_c, paid_c, hf_res = [], [], list(spaces.keys())
+        free_c, paid_c = [], []
         gem_models = []
 
         if api_key_gem and len(api_key_gem) > 8 and "your" not in api_key_gem.lower():
@@ -440,23 +446,11 @@ async def async_fetch_remote(env_vars: dict, spaces: dict):
         free_c.sort(key=lambda s: s.lower())
         free_c.insert(0, "openrouter/free")
 
-        try:
-            req_hf = urlreq.Request("https://router.huggingface.co/v1/models", headers={"Authorization": f"Bearer {api_key_hf}"} if (api_key_hf and "your" not in api_key_hf.lower()) else {})
-            with urlreq.urlopen(req_hf, timeout=8) as res:
-                if res.status == 200:
-                    for it in json.loads(res.read().decode("utf-8")).get("data", []):
-                        if (m_id := it.get("id")) and m_id not in hf_res:
-                            hf_res.append(m_id)
-                            if len(hf_res) >= 25:
-                                break
-        except (urlerr.URLError, json.JSONDecodeError, OSError):
-            pass
-
         return {
             "gemini": gem_models or DEFAULTS["gemini"],
             "free": free_c or DEFAULTS["free"],
             "paid": paid_c or DEFAULTS["paid"],
-            "custom": hf_res,
+            "custom": list(spaces.keys()),
         }
 
     return await asyncio.to_thread(_fetch)
@@ -582,7 +576,7 @@ async def async_main():
     free_list.insert(0, "openrouter/free")
     cache["free"] = free_list
 
-    custom_list = list(spaces.keys()) + [x for x in cache.get("custom", []) if x not in spaces]
+    custom_list = list(spaces.keys())
 
     menu_idx, message = 0, ""
     while True:
@@ -593,8 +587,8 @@ async def async_main():
 
         col_w = 25
 
-        # ── Custom 1 (Local / HF) Status ──
-        custom_curr = env.get("CUSTOM_MODEL", "default")
+        # ── Custom 1 (Local / Spaces) Status ──
+        custom_curr = env.get("CUSTOM_MODEL", LOCAL_DEFAULT_MODEL)
         for k, v in spaces.items():
             if custom_curr == v.get("model") or env.get("CUSTOM_URL") == v.get("url"):
                 custom_curr = k
@@ -625,10 +619,10 @@ async def async_main():
         # 0: Cloud Connection Master Toggle
         items.append({"type": "cloud", "render": f"🔌  {'Cloud Connection':<{col_w}} {status_all}"})
 
-        # 1: Custom 1
+        # 1: Custom 1 (Local / Spaces)
         items.append({
             "type": "custom1",
-            "render": f"🤗  {'Custom 1 (Local / HF)':<{col_w}} {fmt(custom_curr, 'CUSTOM_API_KEY')}\n       {DIM}Local llama-server, Ollama, HF Spaces & official HF Router{RESET}"
+            "render": f"🤗  {'Custom 1 (Local / Spaces)':<{col_w}} {fmt(custom_curr, 'CUSTOM_API_KEY')}\n       {DIM}Local llama-server, vLLM, Ollama or custom HF Spaces{RESET}"
         })
 
         # 2..N: Dynamic CUSTOM<N> Generic Endpoints
@@ -668,14 +662,13 @@ async def async_main():
         # Tokens, Rounds, Refresh & Exit (Compact)
         items.append({"type": "tokens", "render": f"🧠  {'Context Budget':<{col_w}} {GREEN}{ctx_curr} tokens{RESET}"})
         items.append({"type": "rounds", "render": f"🔄  {'Max Agent Rounds':<{col_w}} {GREEN}{rounds_curr} rounds{RESET}"})
-        items.append({"type": "refresh", "render": f"↺  Refresh API Lists        {DIM}Sync live endpoints (Gemini, OpenRouter, HF){RESET}"})
+        items.append({"type": "refresh", "render": f"↺  Refresh API Lists        {DIM}Sync live endpoints (Gemini, OpenRouter){RESET}"})
         items.append({"type": "exit", "render": "✕  Save & Close"})
 
         # ── Render Terminal UI ──
         sys.stdout.write(f"\x1b[H\x1b[2J\n   {BOLD}  LOCAL-AI CONFIGURATION{RESET}\n   {DIM}{'─'*60}{RESET}\n\n")
 
         for i, itm in enumerate(items):
-            # Dynamic dividers based on item types
             if itm["type"] == "aux" and (i == 0 or items[i-1]["type"] != "aux"):
                 sys.stdout.write(f"   {DIM}{'─'*19}  Auxiliary Services  {'─'*19}{RESET}\n\n")
             elif itm["type"] == "tokens":
@@ -703,8 +696,8 @@ async def async_main():
             ttype = target["type"]
 
             if ttype == "custom1":
-                now_on = toggle_single_provider("CUSTOM_API_KEY", "CUSTOM_MODEL", "Qwen/Qwen3.8-27B")
-                message = f"✓ Custom 1/HF: {GREEN+'ENABLED'+RESET if now_on else RED+'DISABLED'+RESET}"
+                now_on = toggle_single_provider("CUSTOM_API_KEY", "CUSTOM_MODEL", LOCAL_DEFAULT_MODEL)
+                message = f"✓ Custom 1 (Local / Spaces): {GREEN+'ENABLED'+RESET if now_on else RED+'DISABLED'+RESET}"
             elif ttype == "custom_generic":
                 n = target["n"]
                 d_mod = target["model"] or "default"
@@ -782,7 +775,7 @@ async def async_main():
 
             elif ttype in ("custom1", "gemini", "or_free", "or_paid"):
                 if ttype == "custom1":
-                    title, model_items, cur_val, key_name, extra_opts = ("Custom 1 / HuggingFace", custom_list, custom_curr, "CUSTOM_API_KEY", ["🚫 Turn Off Custom 1", "➕ [Add Endpoint / Space URL]", "🗑  [Delete Custom Space]"])
+                    title, model_items, cur_val, key_name, extra_opts = ("Custom 1 (Local / Spaces)", custom_list, custom_curr, "CUSTOM_API_KEY", ["🚫 Turn Off Custom 1", "➕ [Add Space / Endpoint URL]", "🗑  [Delete Custom Space]"])
                 elif ttype == "gemini":
                     title, model_items, cur_val, key_name, extra_opts = ("Gemini", cache.get("gemini", DEFAULTS["gemini"]), env.get("GEMINI_MODEL", ""), "GEMINI_API_KEY", ["🚫 Turn Off Gemini"])
                 elif ttype == "or_free":
@@ -796,7 +789,7 @@ async def async_main():
                 if res.startswith("🚫 Turn Off"):
                     deactivate_key(key_name)
                     message = f"✓ {title} disabled."
-                elif res == "➕ [Add Endpoint / Space URL]":
+                elif res == "➕ [Add Space / Endpoint URL]":
                     if url_in := prompt_user_input("Paste Space / Endpoint URL"):
                         disp_name, target_url, model_name = parse_endpoint_url(url_in)
                         spaces[disp_name] = {"url": target_url, "model": model_name}
@@ -817,7 +810,7 @@ async def async_main():
                 else:
                     isolate_active_key(key_name)
                     if ttype == "custom1":
-                        sp = spaces.get(res, {"url": HF_ROUTER_URL, "model": res})
+                        sp = spaces.get(res, {"url": LOCAL_DEFAULT_URL, "model": LOCAL_DEFAULT_MODEL})
                         update_env_multiple({"CUSTOM_URL": sp["url"], "CUSTOM_MODEL": sp["model"]})
                     else:
                         target_var = "GEMINI_MODEL" if ttype == "gemini" else "OPENROUTER_MODEL"
@@ -906,7 +899,7 @@ async def async_main():
                 remote_data = await async_fetch_remote(env, spaces)
                 cache.update(remote_data)
                 save_json(CACHE_PATH, cache)
-                custom_list = list(spaces.keys()) + [x for x in cache.get("custom", []) if x not in spaces]
+                custom_list = list(spaces.keys())
                 message = "✓ Synchronized endpoints live."
 
             elif ttype == "exit":
