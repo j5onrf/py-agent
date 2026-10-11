@@ -30,12 +30,12 @@ _console = Console()
 RE_UNSAFE_SHELL_CHARS: re.Pattern = re.compile(r'[\[\]{}()=\'"",;|<>#`$&*!\\\r\n]')
 
 STYLES = {
-    1: ("∿", ROUNDED, "bright_cyan", "bold"),
-    2: ("∿", SQUARE, "bright_cyan", "bold"),
-    3: ("∿ Py Agent", DOUBLE, "bright_blue", "bold bright_blue"),
-    4: ("∿ Py Agent", HEAVY, "bright_cyan", "bold bright_white"),
-    5: ("∿ Py Agent", HORIZONTALS, "dim white", "bold cyan"),
-    6: ("∿ Py Agent", ROUNDED, "green", "bold bright_green"),
+    1: ("∿", ROUNDED, "bright_cyan", "bold"),         # #1 Minimal (No Icons, Rounded)
+    2: ("∿", SQUARE, "bright_cyan", "bold"),          # #2 Minimal (No Icons, Square)
+    3: ("∿", ROUNDED, "bright_cyan", "bold"),         # #3 Minimal (With Icons, Rounded)
+    4: ("∿", SQUARE, "bright_cyan", "bold"),          # #4 Minimal (With Icons, Square)
+    5: ("∿ Py Agent", DOUBLE, "bright_blue", "bold bright_blue"),
+    6: ("∿ Py Agent", HEAVY, "bright_cyan", "bold bright_white"),
     7: ("∿ Py Agent", ROUNDED, "green", "bold bright_green"),
 }
 
@@ -404,29 +404,38 @@ def draw_session_box(
         elif memory_active:
             db_status = f"active ({mem_count} memories, {db_turns} turns)"
         else:
-            db_status = "stateless"
+            db_status = "session"
     else:
-        db_status = "stateless"
+        db_status = "session"
 
     table.add_row("database:", db_status)
 
-    # Style #1 (Default Rounded) & #2 (Square): Minimal Wave Logo Box
-    if box_style in (1, 2):
+    # Style #1-4: Minimal Wave Boxes (1,2: No Icons | 3,4: With Icons)
+    if box_style in (1, 2, 3, 4):
         base_title, box_type, border_col, title_style = STYLES.get(box_style, STYLES[1])
+        show_icons = box_style in (3, 4)
 
-        icon_table = Table(show_header=False, box=None, padding=(0, 1, 0, 0))
-        icon_table.add_column("Icon", style=border_col, justify="left")  # Dynamic theme color, not dim!
-        icon_table.add_column("Value", justify="left")                   # Inherits native terminal text
+        # padding: (top=0, right=1 if icons else 0, bottom=0, left=1 for the margin space)
+        icon_table = Table(show_header=False, box=None, padding=(0, 1 if show_icons else 0, 0, 1))
+        if show_icons:
+            icon_table.add_column("Icon", style=border_col, justify="left")
+        icon_table.add_column("Value", justify="left")
 
         m_style = "bold red" if ("not loaded" in model_name or "offline" in model_name) else "bold"
-        icon_table.add_row("◈", Text(model_name, style=m_style))
-        icon_table.add_row("⌂", display_dir)
-        icon_table.add_row("⌥", display_profile)
-        icon_table.add_row("≡", db_status)
+        if show_icons:
+            icon_table.add_row("✦", Text(model_name, style=m_style))
+            icon_table.add_row("⌖", display_dir)
+            icon_table.add_row("⌥", display_profile)
+            icon_table.add_row("≡", db_status)
+        else:
+            icon_table.add_row(Text(model_name, style=m_style))
+            icon_table.add_row(display_dir)
+            icon_table.add_row(display_profile)
+            icon_table.add_row(db_status)
 
-        # Dynamic ANSI Palette (Adapts automatically to Omarchy theme changes!)
+        # Dynamic ANSI Palette with Option 2 Arch (Adapts automatically to Omarchy!)
         logo_text = Text.from_markup(
-            "[bold bright_cyan]  ●───╮ \n[/]"
+            "[bold bright_cyan]  ╭───╮ \n[/]"
             "[bright_cyan]╭─╯ [/][cyan]╭─╯ \n[/]"
             "[cyan]╰─╮ [/][blue]╰─╮ \n[/]"
             "[bold blue]  ╰───● [/]"
@@ -464,7 +473,7 @@ def draw_session_box(
         title_text = f"{base_title} [sub-agent #{sub_id}]" if sub_id else base_title
 
         panel = Panel(
-            grid,
+            table,
             title=Text(title_text, style=title_style),
             title_align="left",
             border_style=border_col,

@@ -7,12 +7,12 @@ Local workspace developer agent with Open Knowledge Format (OKF) memory, an IPyt
 [01/01] > [ling-tiny] ai init ~/ling-tiny
 ✓ Profile set to: Lingtiny [Yolo: ON] [Adp: ON]
 
-╭─ ∿ Py Agent ────────────────────────────────────────╮
-│     model:  Ling-3.0-tiny                           │
-│ directory:  ~/.config/py-agent/projects/ling-tiny   │
-│   profile:  lingtiny                                │
-│  database:  stateless                               │
-╰─────────────────────────────────────────────────────╯
+╭─ ∿ ───────────────────────────────────────────────╮
+│  Ling-3.0-tiny                             ╭───╮  │
+│  ~/.config/py-agent/projects/ling-tiny   ╭─╯ ╭─╯  │
+│  lingtiny                                ╰─╮ ╰─╮  │
+│  session                                   ╰───●  │
+╰───────────────────────────────────────────────────╯
 
 ❯ write a python binary search tree with insert and search methods
 
@@ -39,17 +39,18 @@ Let me verify the file was created correctly and then provide a summary.
 
 ## UI Box Themes
 
-Switch CLI box styles using `/box [1-7]` (or `/box` to cycle). Persists in `~/.config/py-agent/.state.json`.
+Switch CLI box styles using `/box [1-8]` (or `/box` to cycle). Persists in `~/.config/py-agent/.state.json`.
 
 | Box Style | Preset Name | Thinking Box Geometry |
 | :---: | :--- | :---: |
-| **#1** | **Codex Rounded** *(Default)* | **Rounded** (`╭` and `╰`) |
-| **#2** | **Crisp Square** | **Square** (`┌` and `└`) |
-| **#3** | **Double Border** | **Square** (`┌` and `└`) |
-| **#4** | **Heavy Square** | **Square** (`┌` and `└`) |
-| **#5** | **Minimalist Line** | **Square** (`┌` and `└`) |
+| **#1** | **Minimal Wave (Rounded)** *(Default)* | **Rounded** (`╭` and `╰`) |
+| **#2** | **Minimal Wave (Square)** | **Square** (`┌` and `└`) |
+| **#3** | **Glyph Wave (Rounded)** | **Rounded** (`╭` and `╰`) |
+| **#4** | **Glyph Wave (Square)** | **Square** (`┌` and `└`) |
+| **#5** | **Double Border** | **Square** (`┌` and `└`) |
 | **#6** | **Dual-Chamber Inset** | **Rounded** (`╭` and `╰`) |
-| **#7** | **Minimalist Clean** | **Rounded** (`╭` and `╰`) |
+| **#7** | **Classic Rounded** | **Rounded** (`╭` and `╰`) |
+| **#8** | **Classic Minimal** | **Rounded** (`╭` and `╰`) |
 
 ---
 
