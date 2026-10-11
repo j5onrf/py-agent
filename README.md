@@ -35,7 +35,7 @@
         <h3>27B+ (LLM)</h3>
         <p><sub>Reasoning, multi-file refactoring, and sub-agents</sub></p>
         <code>Qwen3.8-35B-D*</code> &nbsp;•&nbsp; <code>Ornith-1.5</code><br>
-        <code>KAT-Coder-V2.5</code> &nbsp;•&nbsp; <code>Tiel-Coder-35B</code><br>
+        <code>KAT-Coder-V2.5</code> &nbsp;•&nbsp; <code>Tiel-Coder</code><br>
         <code>Occamy-1.0</code> &nbsp;•&nbsp; <code>Nex-N2.5-mini</code><br>
         <code>Qwen3.8-27B</code> &nbsp;•&nbsp; <code>Qwen3.8-Flash</code><br>
         <code>DeepSeek&#8209;V4.1</code>
@@ -48,13 +48,14 @@
   </p>
 
   <p>
-    <sub><b>Cloud Endpoints:</b> <a href="https://huggingface.co/spaces?category=text-generation">Hugging Face Spaces</a>, <a href="https://tokenharbor.ai">TokenHarbor</a>, and <a href="https://openrouter.ai">OpenRouter</a><br>
+    <sub><b>Cloud Endpoints:</b> <a href="https://huggingface.co/spaces?category=text-generation&sort=trending">Hugging Face Spaces</a>, <a href="https://tokenharbor.ai">TokenHarbor</a>, and <a href="https://openrouter.ai">OpenRouter</a><br>
     <b>Free Endpoints:</b> <a href="https://tokenharbor.ai"><code>mimo-v2.6-flash:free</code></a>, <a href="https://tokenharbor.ai"><code>deepseek-v4.1-flash:free</code></a> (TokenHarbor) &nbsp;•&nbsp; <a href="https://openrouter.ai/models?variant=free"><code>openrouter/free</code></a> (OpenRouter)</sub>
   </p>
 </div>
 
-<br><br>
+<br>
 
+---
 
 
 ```console
@@ -75,7 +76,7 @@
 
 <br>
 
-<br>
+---
 
 <h2 align="center">Execution Surfaces</h2>
 
@@ -98,7 +99,7 @@
 
 <br>
 
-<br>
+---
 
 <h2 align="center">Runtime Architecture</h2>
 
@@ -108,7 +109,7 @@
 
 <br>
 
-<br>
+---
 
 <h2 align="center">Benchmark & Efficiency</h2>
 
@@ -164,7 +165,7 @@
 
 <br>
 
-<br>
+---
 
 <h2 align="center">Client Surfaces</h2>
 
@@ -206,9 +207,9 @@
 
 <br>
 
-<br>
+---
 
-<h2 align="center">Setup & Installation</h2>
+<h2 align="center">Installation</h2>
 
 ### 1. Install py-agent
 
@@ -295,13 +296,12 @@ AI_MAX_TOKENS="8192"
 
 <br>
 
-<br>
+---
 
 <h2 align="center">Documentation & License</h2>
 
 * **<a href="projects/Readme.md">Workspace Manual</a>**
 * **<a href="modules/Readme.md">System Architecture</a>**
 * Licensed under the **[MODIFIED MIT LICENSE](LICENSE)**
-
 
 
