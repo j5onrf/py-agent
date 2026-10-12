@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Native Tool Engine - Handles file editing, search, commands, & graph intelligence [Hardened Production Ready]"""
+"""Native Tool Engine - Handles file editing, search, commands, & graph intelligence [OCR 0.01]"""
 
 import ast
+import codecs
 import contextvars
 import difflib
 import json
@@ -10,6 +11,7 @@ import re
 import select
 import shlex
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -98,6 +100,17 @@ SHELL_METACHARS: frozenset[str] = frozenset(
 _SESSION_READ_FILES: set[str] = set()
 _SESSION_MODIFIED_FILES: set[str] = set()
 _SUBAGENT_DEPTH: contextvars.ContextVar[int] = contextvars.ContextVar("subagent_depth", default=0)
+
+
+def _coerce_bool(val: Any) -> bool:
+    """Strict boolean coercer: prevents 'false'/'no' strings from evaluating to True."""
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.strip().lower() in ("true", "1", "yes", "on")
+    if isinstance(val, (int, float)):
+        return bool(val)
+    return False
 
 
 def get_modified_files() -> list[str]:
@@ -325,7 +338,9 @@ def _check_command_security(cmd: str, workspace: str) -> str | None:
     return security.check_command(workspace, cmd)
 
 
-def _search_codebase(pattern: str, search_root: str, workspace: str, max_results: int = 30) -> str:
+def _search_codebase(
+    pattern: str, search_root: str, workspace: str, max_results: int = 30, allow_outside: bool = False
+) -> str:
     """Fast, sandboxed regex and string search across workspace text files."""
     if not pattern or not pattern.strip():
         return "[error] Parameter 'pattern' cannot be empty."
@@ -333,7 +348,7 @@ def _search_codebase(pattern: str, search_root: str, workspace: str, max_results
     target_path = _safe_path(workspace, search_root)
     real_target = os.path.realpath(target_path)
 
-    if _is_outside_workspace(workspace, real_target):
+    if not allow_outside and _is_outside_workspace(workspace, real_target):
         return f"[error] Refusing to search '{search_root}': it resolves outside the workspace."
 
     try:
@@ -345,7 +360,7 @@ def _search_codebase(pattern: str, search_root: str, workspace: str, max_results
     files_searched = 0
 
     if os.path.isfile(target_path):
-        if os.path.islink(target_path) or _is_outside_workspace(workspace, real_target):
+        if not allow_outside and (os.path.islink(target_path) or _is_outside_workspace(workspace, real_target)):
             return f"[error] Refusing to search '{search_root}': it resolves outside the workspace."
         if os.path.splitext(target_path)[1].lower() in BINARY_EXTENSIONS:
             return f"[error] Refusing to search binary file '{search_root}'."
@@ -362,7 +377,7 @@ def _search_codebase(pattern: str, search_root: str, workspace: str, max_results
             for f in files:
                 if os.path.splitext(f)[1].lower() not in BINARY_EXTENSIONS and not f.startswith("."):
                     fp = os.path.join(root, f)
-                    if os.path.islink(fp) or _is_outside_workspace(workspace, os.path.realpath(fp)):
+                    if not allow_outside and (os.path.islink(fp) or _is_outside_workspace(workspace, os.path.realpath(fp))):
                         continue
                     try:
                         if os.path.getsize(fp) <= 2 * 1024 * 1024:
@@ -764,10 +779,12 @@ def run_tool(
         search_root = args.get("path", ".") or "."
         target_path = _safe_path(workspace, search_root)
         real_target = os.path.realpath(target_path)
+        approved_outside = False
         if _is_outside_workspace(workspace, real_target):
             if not _security_gate(f"OUT-OF-BOUNDS SEARCH: {real_target}"):
                 return f"[denied] User declined search of '{search_root}' outside workspace."
-        out = _search_codebase(pattern, search_root, workspace)
+            approved_outside = True
+        out = _search_codebase(pattern, search_root, workspace, allow_outside=approved_outside)
         if print_output_fn:
             print_output_fn(out)
         return out
@@ -807,7 +824,7 @@ def run_tool(
             _SESSION_READ_FILES.add(rel_f)
 
         try:
-            with open(full, "r", encoding="utf-8", errors="replace") as f:
+            with open(full, "r", encoding="utf-8", errors="replace", newline="") as f:
                 if has_range:
                     try:
                         start_idx = (int(str(l_start).strip()) - 1) if l_start is not None else 0
@@ -887,7 +904,7 @@ def run_tool(
             st_before = os.stat(full)
             stat_before = (st_before.st_mtime_ns, st_before.st_size)
             try:
-                with open(full, "r", encoding="utf-8", errors="strict") as f:
+                with open(full, "r", encoding="utf-8", errors="strict", newline="") as f:
                     original = f.read()
             except UnicodeDecodeError:
                 return (
@@ -929,8 +946,14 @@ def run_tool(
 
             tmp_target = f"{full}.tmp.{os.getpid()}"
             try:
-                with open(tmp_target, "w", encoding="utf-8") as f:
+                with open(tmp_target, "w", encoding="utf-8", newline="") as f:
                     f.write(new_content)
+
+                # Preserve original file mode (+x, restricted modes)
+                try:
+                    os.chmod(tmp_target, stat.S_IMODE(st_before.st_mode))
+                except OSError:
+                    pass
 
                 # Re-verify stat immediately before replace to eliminate the TOCTOU window
                 st_now = os.stat(full)
@@ -970,19 +993,20 @@ def run_tool(
             return f"[error] Cannot write to '{raw_path}': Target is a directory or workspace root."
 
         content = args.get("content", "")
-        is_overwrite = bool(args.get("overwrite", False) or args.get("force", False))
+        is_overwrite = _coerce_bool(args.get("overwrite")) or _coerce_bool(args.get("force"))
 
+        existing_stat = None
         if os.path.exists(full):
             try:
-                with open(full, "r", encoding="utf-8", errors="strict") as f:
+                existing_stat = os.stat(full)
+                with open(full, "r", encoding="utf-8", errors="strict", newline="") as f:
                     existing_len = sum(1 for _ in f)
                 if not is_overwrite and existing_len > 0:
                     return f"[error] File '{raw_path}' already exists ({existing_len} lines). To make targeted changes, use edit_file(path, old_str, new_str). If you intend to overwrite the entire file, pass overwrite=true."
             except UnicodeDecodeError:
                 return f"[error] File '{raw_path}' is not valid UTF-8. Overwriting would destroy non-UTF-8 or binary content. Convert or re-encode it explicitly before overwriting."
             except OSError as e:
-                if not is_overwrite:
-                    return f"[error] File '{raw_path}' already exists, but reading it failed: {e}. Pass overwrite=true to force overwrite."
+                return f"[error] Cannot verify existing '{raw_path}' ({e}); refusing destructive overwrite."
 
         if full.endswith(".py"):
             try:
@@ -997,7 +1021,7 @@ def run_tool(
 
         if sys.stdout.isatty() and not _is_calm() and os.path.exists(full):
             try:
-                with open(full, "r", encoding="utf-8", errors="strict") as f:
+                with open(full, "r", encoding="utf-8", errors="strict", newline="") as f:
                     old = f.read()
                 if diff := "\n".join(
                     difflib.unified_diff(
@@ -1020,8 +1044,13 @@ def run_tool(
             os.makedirs(os.path.dirname(full) or workspace, exist_ok=True)
             tmp_target = f"{full}.tmp.{os.getpid()}"
             try:
-                with open(tmp_target, "w", encoding="utf-8") as f:
+                with open(tmp_target, "w", encoding="utf-8", newline="") as f:
                     f.write(content)
+                if existing_stat:
+                    try:
+                        os.chmod(tmp_target, stat.S_IMODE(existing_stat.st_mode))
+                    except OSError:
+                        pass
                 os.replace(tmp_target, full)
             finally:
                 if os.path.exists(tmp_target):
@@ -1142,8 +1171,6 @@ def run_tool(
                 cwd=workspace,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                text=True,
-                errors="replace",
                 stdin=subprocess.DEVNULL,
                 start_new_session=True,
             )
@@ -1156,6 +1183,8 @@ def run_tool(
         truncated = False
         deadline = time.monotonic() + 300
         timed_out = False
+        decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        line_buffer = ""
 
         try:
             poller = select.poll()
@@ -1178,29 +1207,41 @@ def run_tool(
                 events = poller.poll(max(0, min(int(remaining_time * 1000), 1000)))
                 if not events:
                     if proc.poll() is not None:
-                        if proc.stdout:
-                            for rem_line in proc.stdout.readlines():
-                                total_chars += len(rem_line)
-                                if total_chars < cap_chars:
-                                    output_lines.append(rem_line)
                         break
                     continue
 
-                line = proc.stdout.readline() if proc.stdout else ""
-                if not line:
-                    break
+                for fd, event in events:
+                    if event & (select.POLLIN | select.POLLHUP | select.POLLERR):
+                        try:
+                            raw_chunk = os.read(fd, 8192)
+                        except OSError:
+                            raw_chunk = b""
+                        if not raw_chunk:
+                            break
 
-                total_chars += len(line)
-                if len(output_lines) < 500 and total_chars < cap_chars:
-                    output_lines.append(line)
-                elif not truncated:
-                    truncated = True
-                    try:
-                        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                    except (ProcessLookupError, PermissionError, OSError):
-                        pass
+                        text_chunk = decoder.decode(raw_chunk)
+                        total_chars += len(text_chunk)
+                        line_buffer += text_chunk
+
+                        while "\n" in line_buffer:
+                            line, line_buffer = line_buffer.split("\n", 1)
+                            if len(output_lines) < 500 and total_chars < cap_chars:
+                                output_lines.append(line + "\n")
+                            elif not truncated:
+                                truncated = True
+                                try:
+                                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                                except (ProcessLookupError, PermissionError, OSError):
+                                    pass
+                                break
+
+                if truncated:
                     break
         finally:
+            # Drain decoder and leftover line buffer
+            if line_buffer and len(output_lines) < 500 and total_chars < cap_chars:
+                output_lines.append(line_buffer)
+
             # Structured cleanup: reap child process group and close pipe descriptor
             try:
                 proc.wait(timeout=5)

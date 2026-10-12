@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.54] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Production Ready]"""
+"""Py Agent [j5onrf] [v0.9.9.55] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Open-OC Optimized 0.01]"""
 
 import json
 import os
@@ -25,7 +25,8 @@ RE_THINK_TAGS: re.Pattern = re.compile(r"<think>[\s\S]*?(?:</think>|$)", re.DOTA
 RE_AUTO_RUN: re.Pattern = re.compile(
     r"Run:\s*((?:trace symbol|blast radius|read function|find symbol)\s+\S+|architecture overview)"
 )
-RE_THINK_BIN: re.Pattern = re.compile(r"^/?(tk|[fba])(?:\s+(\d+))?$", re.IGNORECASE)
+# Requires '/' prefix for single letters (a, b, f) so plain words are not swallowed
+RE_THINK_BIN: re.Pattern = re.compile(r"^(?:/(?:[fba]|tk)|/?tk)(?:\s+(\d+))?$", re.IGNORECASE)
 RE_SHELL_META: re.Pattern = re.compile(r"[\[\]{}()='\",;|#<>]")
 
 
@@ -56,28 +57,60 @@ if (mod_dir := os.path.join(CFG_DIR, "modules")) not in sys.path:
     sys.path.append(mod_dir)
 
 try:
+    import agent_context as context
+    from agent_context import STOP_WORDS
+except ImportError as e:
+    sys.stderr.write(f"\033[1;31m[CRITICAL]: Failed to load agent_context: {e}\033[0m\n")
+    sys.exit(1)
+
+# Lazy references to heavy interactive modules to preserve sub-millisecond shell-hook startup
+commands = None
+core = None
+memories = None
+sessions = None
+skills = None
+tts = None
+ui = None
+voice = None
+
+
+def _load_agent_modules() -> None:
+    """Loads interactive modules on demand, keeping shell hook invocations sub-millisecond."""
+    global commands, core, memories, sessions, skills, tts, ui, voice
+    if commands is not None:
+        return
+    try:
+        import agent_commands as _commands
+        import agent_core as _core
+        import agent_memories as _memories
+        import agent_sessions as _sessions
+        import agent_skills as _skills
+        import agent_tts as _tts
+        import agent_ui as _ui
+        import agent_voice as _voice
+
+        commands, core, memories, sessions, skills, tts, ui, voice = (
+            _commands,
+            _core,
+            _memories,
+            _sessions,
+            _skills,
+            _tts,
+            _ui,
+            _voice,
+        )
+    except ImportError as e:
+        sys.stderr.write(f"\033[1;31m[CRITICAL]: Failed to load modules: {e}\033[0m\n")
+        sys.exit(1)
+
+
+try:
     import readline
 
     readline.parse_and_bind(r'"\e[A": previous-history')
     readline.parse_and_bind(r'"\e[B": next-history')
 except ImportError:
     pass
-
-try:
-    import agent_commands as commands
-    import agent_context as context
-    import agent_core as core
-    import agent_memories as memories
-    import agent_sessions as sessions
-    import agent_skills as skills
-    import agent_tts as tts
-    import agent_ui as ui
-    import agent_voice as voice
-    from agent_context import STOP_WORDS
-except ImportError as e:
-    sys.stderr.write(f"\033[1;31m[CRITICAL]: Failed to load modules: {e}\033[0m\n")
-    sys.exit(1)
-
 
 _transient_cmd_count: int = 0
 
@@ -99,10 +132,8 @@ def _clear_transient_status(query: str = "") -> None:
     if _transient_cmd_count > 0:
         try:
             if query:
-                # Normal query: cursor is on line below prompt, rewrite with query
                 sys.stdout.write(f"\033[{_transient_cmd_count + 1}A\r\x1b[0J❯ {query}\n")
             else:
-                # Exiting: cursor is directly on prompt, wipe command without eating empty line above
                 sys.stdout.write(f"\033[{_transient_cmd_count}A\r\x1b[0J")
             sys.stdout.flush()
         except OSError:
@@ -112,6 +143,7 @@ def _clear_transient_status(query: str = "") -> None:
 
 def workspace_db_counts(safe_name: str, workspace_path: str = "") -> tuple[int, int]:
     """Retrieves SQLite turn counts and OKF memory counts without spawning empty databases."""
+    _load_agent_modules()
     db_path = os.path.join(SESSIONS_DIR, f"{safe_name}.db")
     t = 0
     if os.path.isfile(db_path):
@@ -128,6 +160,7 @@ def workspace_db_counts(safe_name: str, workspace_path: str = "") -> tuple[int, 
 
 
 def ensure_clean_agent_dir(workspace_path: str) -> None:
+    """Moves root artifacts into .agent/ without clobbering existing destinations."""
     if not (ws_name := os.path.basename(workspace_path)):
         return
     agent_dir = os.path.join(workspace_path, ".agent")
@@ -145,11 +178,20 @@ def ensure_clean_agent_dir(workspace_path: str) -> None:
     ]
     for fname in targets:
         src = os.path.join(workspace_path, fname)
+        dst = os.path.join(agent_dir, fname)
         if os.path.exists(src):
-            try:
-                os.replace(src, os.path.join(agent_dir, fname))
-            except OSError:
-                pass
+            if not os.path.exists(dst):
+                try:
+                    os.replace(src, dst)
+                except OSError:
+                    pass
+            elif fname == "history.md":
+                try:
+                    with open(src, "r", encoding="utf-8") as sf, open(dst, "a", encoding="utf-8") as df:
+                        df.write(f"\n\n{sf.read().strip()}\n")
+                    os.remove(src)
+                except OSError:
+                    pass
 
 
 def _sweep_dead_session_locks() -> None:
@@ -157,7 +199,14 @@ def _sweep_dead_session_locks() -> None:
     sess_dir = os.path.join(CFG_DIR, ".active_sessions")
     if not os.path.isdir(sess_dir):
         return
-    for f in os.listdir(sess_dir):
+    try:
+        entries = os.listdir(sess_dir)
+    except OSError:
+        return
+    if not entries:
+        return
+
+    for f in entries:
         if not f.endswith(".session"):
             continue
         try:
@@ -170,25 +219,37 @@ def _sweep_dead_session_locks() -> None:
                 os.remove(os.path.join(sess_dir, f))
             except OSError:
                 pass
-        except (PermissionError, ValueError):
+        except (PermissionError, ValueError, OSError):
             pass
 
 
 def clean_exit(safe_name: str | None = None, workspace_path: str | None = None, sub_id: int | None = None) -> None:
-    """Cleans active session locks and worktrees, then exits cleanly."""
+    """Cleans active session locks and worktrees independently, then exits cleanly."""
     _clear_transient_status("")
+    _load_agent_modules()
+
     if safe_name:
-        try:
-            if sub_id is not None and sub_id > 0 and workspace_path:
+        if sub_id is not None and sub_id > 0 and workspace_path:
+            try:
                 merge = False
                 if ui and hasattr(ui, "confirm_tool"):
                     merge = ui.confirm_tool(f"Merge sub-agent #{sub_id} worktree into main branch")
                 sessions.cleanup_subagent_worktree(workspace_path, sub_id, merge=merge)
+            except Exception as e:
+                if os.environ.get("AI_DEBUG") == "1":
+                    sys.stderr.write(f"\r\n[debug] Worktree cleanup failed for sub-agent #{sub_id}: {e}\r\n")
+
+        try:
             sessions.cleanup_sub_agent(safe_name, os.getpid())
-        except Exception:
-            pass
+        except Exception as e:
+            if os.environ.get("AI_DEBUG") == "1":
+                sys.stderr.write(f"\r\n[debug] Session lock cleanup failed: {e}\r\n")
+
     _sweep_dead_session_locks()
-    ui._console.print("[yellow]Exiting session.[/yellow]")
+    if ui and hasattr(ui, "_console"):
+        ui._console.print("[yellow]Exiting session.[/yellow]")
+    else:
+        print("Exiting session.")
     sys.exit(0)
 
 
@@ -196,6 +257,7 @@ def _launch_surface(
     script_path: str, is_agent: bool, ws_path: str, skill: str, history: list, args: list[str] | None = None
 ) -> None:
     """Launches secondary surfaces (TUI, PyCode, WebUI) with state continuity and E2BIG protection."""
+    _load_agent_modules()
     if not os.path.exists(script_path):
         ui._console.print(f"[red][sys] Launcher script not found: {script_path}[/red]\n")
         return
@@ -243,6 +305,7 @@ def _launch_surface(
 
 def run_interactive_chat(args: list[str]) -> None:
     """Primary interactive agent and chat engine."""
+    _load_agent_modules()
     is_agent = args[0] == "--talk-chat"
     original_workspace_path = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
     workspace_path = original_workspace_path
@@ -301,7 +364,7 @@ def run_interactive_chat(args: list[str]) -> None:
     if is_agent:
         clean_name = selected_profile if selected_profile != "init" else "pi/pro"
         profile_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
-        if not profile_content and clean_name != "init":
+        if not profile_content and selected_profile != "init":
             ui._console.print(
                 f"[dim yellow][sys] Skill '{clean_name}' not found. Using minimal agent prompt.[/dim yellow]"
             )
@@ -417,12 +480,14 @@ def run_interactive_chat(args: list[str]) -> None:
     sub_id = sessions.get_sub_agent_id(safe_name, os.getpid()) if is_agent else None
 
     if sub_id is not None and sub_id > 0:
-        workspace_path = sessions.create_subagent_worktree(original_workspace_path, sub_id)
-        os.environ["AI_WORKSPACE_PATH"] = workspace_path
         try:
-            os.chdir(workspace_path)
-        except OSError:
-            pass
+            new_ws = sessions.create_subagent_worktree(original_workspace_path, sub_id)
+            os.chdir(new_ws)
+            workspace_path = new_ws
+            os.environ["AI_WORKSPACE_PATH"] = workspace_path
+        except OSError as e:
+            ui._console.print(f"[red][sys] Sub-agent worktree setup failed: {e}[/red]")
+            clean_exit(safe_name, sub_id=sub_id)
 
     # Default fallback set cleanly to 1
     ui.draw_session_box(
@@ -509,6 +574,8 @@ def run_interactive_chat(args: list[str]) -> None:
                         continue
                     except Exception as e:
                         sys.stderr.write(f"\033[1;31m[Warning] chat failed: {e}\033[0m\n")
+                else:
+                    ui._console.print("[dim yellow][sys] Chat assistant helper not found.[/dim yellow]\n")
                 continue
 
             sys_ctx = (
@@ -532,52 +599,59 @@ def run_interactive_chat(args: list[str]) -> None:
             sys.stdout.write("\n")
             sys.stdout.flush()
 
-            if ans := core.stream_response(
+            ans = core.stream_response(
                 chat_history,
                 prefix="",
                 show_stats=show_stats,
                 thinking_budget=reasoning_budget if reasoning_active else 0,
                 is_agent=is_agent,
-            ):
-                clean_ans = RE_THINK_TAGS.sub("", ans).strip()
-                chat_history.append({"role": "assistant", "content": clean_ans or ans})
+            )
 
+            if not ans:
+                # Stream failed or interrupted: roll back user turn to prevent context drift
+                if chat_history and chat_history[-1].get("role") == "user":
+                    chat_history.pop()
+                continue
+
+            clean_ans = RE_THINK_TAGS.sub("", ans).strip()
+            chat_history.append({"role": "assistant", "content": clean_ans or ans})
+
+            try:
+                tts.speak_response(clean_ans or ans)
+            except Exception as e:
+                if os.environ.get("AI_DEBUG") == "1":
+                    sys.stderr.write(f"\r\n[debug] TTS playback error: {e}\r\n")
+
+            if not show_stats:
+                print()
+
+            if is_agent:
                 try:
-                    tts.speak_response(clean_ans or ans)
+                    sessions.log_turn(safe_name, query, ans)
                 except Exception as e:
                     if os.environ.get("AI_DEBUG") == "1":
-                        sys.stderr.write(f"\r\n[debug] TTS playback error: {e}\r\n")
+                        sys.stderr.write(f"\r\n[debug] Failed to log turn to SQLite: {e}\r\n")
 
-                if not show_stats:
-                    print()
-
-                if is_agent:
+                if match := RE_AUTO_RUN.search(ans):
                     try:
-                        sessions.log_turn(safe_name, query, ans)
-                    except Exception as e:
-                        if os.environ.get("AI_DEBUG") == "1":
-                            sys.stderr.write(f"\r\n[debug] Failed to log turn to SQLite: {e}\r\n")
+                        readline.set_startup_hook(lambda: readline.insert_text(match.group(1).strip()))
+                    except Exception:
+                        pass
 
-                    if match := RE_AUTO_RUN.search(ans):
-                        try:
-                            readline.set_startup_hook(lambda: readline.insert_text(match.group(1).strip()))
-                        except Exception:
-                            pass
-
-                    agent_dir = os.path.join(workspace_path, ".agent")
-                    try:
-                        os.makedirs(agent_dir, exist_ok=True)
-                        hist_file = os.path.join(agent_dir, "history.md")
-                        mode = "a" if os.path.exists(hist_file) else "w"
-                        with open(hist_file, mode, encoding="utf-8") as hf:
-                            if mode == "w":
-                                hf.write(f"# Workspace History: {os.path.basename(workspace_path)}\n\n")
-                            hf.write(
-                                f"## [{time.strftime('%Y-%m-%d %H:%M')}] User:\n{query}\n\n### Agent:\n{ans}\n\n---\n\n"
-                            )
-                    except OSError as e:
-                        if os.environ.get("AI_DEBUG") == "1":
-                            sys.stderr.write(f"\r\n[debug] Failed to write history.md: {e}\r\n")
+                agent_dir = os.path.join(workspace_path, ".agent")
+                try:
+                    os.makedirs(agent_dir, exist_ok=True)
+                    hist_file = os.path.join(agent_dir, "history.md")
+                    mode = "a" if os.path.exists(hist_file) else "w"
+                    with open(hist_file, mode, encoding="utf-8") as hf:
+                        if mode == "w":
+                            hf.write(f"# Workspace History: {os.path.basename(workspace_path)}\n\n")
+                        hf.write(
+                            f"## [{time.strftime('%Y-%m-%d %H:%M')}] User:\n{query}\n\n### Agent:\n{ans}\n\n---\n\n"
+                        )
+                except OSError as e:
+                    if os.environ.get("AI_DEBUG") == "1":
+                        sys.stderr.write(f"\r\n[debug] Failed to write history.md: {e}\r\n")
     except KeyboardInterrupt:
         clean_exit(
             safe_name if is_agent else None,
@@ -588,6 +662,7 @@ def run_interactive_chat(args: list[str]) -> None:
 
 def run_direct_query(args: list[str]) -> None:
     """Executes instant single-turn CLI prompt without interactive session loop."""
+    _load_agent_modules()
     query_parts = args[1:]
     skill_content = ""
     clean_parts: list[str] = []
@@ -650,11 +725,13 @@ def run_direct_query(args: list[str]) -> None:
 
 
 def run_matching_search(args: list[str]) -> None:
-    """Sub-millisecond shell intent matcher for command not found hook."""
+    """Sub-millisecond shell intent matcher for command not found hook (zero eager module imports)."""
     user_input = re.sub(r"[`$]", "", " ".join(args)).strip()
     if not user_input or args[0].startswith("--"):
         sys.exit(0)
+
     if user_input.lower() in ("/help", "/h"):
+        _load_agent_modules()
         ui.show_help()
         sys.exit(0)
 
@@ -682,6 +759,7 @@ def main() -> None:
         if not args:
             run_direct_query(["--talk"])
         elif args[0] == "--interactive" and len(args) >= 2:
+            _load_agent_modules()
             shell_name = os.path.basename(os.environ.get("SHELL", ""))
             ui.run_interactive_selection(
                 " ".join(args[1:]),

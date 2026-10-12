@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local-AI Standalone IPython Kernel & RLM Harness Module [Hardened Production Ready]"""
+"""Local-AI Standalone IPython Kernel & RLM Harness Module [OCR 0.01]"""
 
 import builtins
 import contextlib
@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 import traceback
 from collections.abc import Callable
 from typing import Any
@@ -21,13 +22,11 @@ try:
     import agent_memories as memories
     import agent_security as security
     import agent_tools as tools
-    import agent_ui as ui
 except ImportError:
     core = None
     memories = None
     security = None
     tools = None
-    ui = None
 
 _shell_globals: dict[str, Any] = {}
 _shell_instance = None
@@ -44,7 +43,8 @@ except ImportError:
     capture_output = None
 
 
-class CellTimeoutError(TimeoutError):
+# Derived from BaseException so user code (except Exception:) cannot swallow cell timeout
+class CellTimeoutError(BaseException):
     pass
 
 
@@ -89,14 +89,14 @@ def bounded_repr(val: Any, max_len: int = 6000) -> str:
     s = str(val).strip()
     if len(s) > max_len:
         lines = s.splitlines()
-        head = "\n".join(lines[:15]) if len(lines) > 15 else s[: max_len // 2]
+        head = ("\n".join(lines[:15]) if len(lines) > 15 else s[: max_len // 2])[:max_len]
         return f"{head}\n... [Bounded Preview: Snipped {len(s) - len(head)} chars. Live object remains in kernel RAM]"
     return s
 
 
 class MemorySDK:
-    def __init__(self, workspace: str, safe_name: str):
-        self.workspace, self.safe_name = workspace, safe_name
+    def __init__(self, workspace: str):
+        self.workspace = workspace
 
     def search(self, query: str) -> str:
         if not memories:
@@ -155,6 +155,7 @@ def delegate(goal: str, workspace: str = ".") -> str:
     was_executing = _is_executing_cell
     _is_executing_cell = False
 
+    t_start = time.monotonic()
     has_alarm = hasattr(signal, "alarm") and threading.current_thread() is threading.main_thread()
     old_alarm = signal.alarm(0) if has_alarm else 0
 
@@ -215,7 +216,9 @@ def delegate(goal: str, workspace: str = ".") -> str:
     finally:
         sys.stdout, sys.stderr = orig_out, orig_err
         if has_alarm and old_alarm > 0:
-            signal.alarm(30)
+            elapsed = int(time.monotonic() - t_start)
+            rem_alarm = max(1, old_alarm - elapsed)
+            signal.alarm(rem_alarm)
         _is_executing_cell = was_executing
 
 
@@ -268,7 +271,7 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
             if security
             else os.path.realpath(str(path) if os.path.isabs(str(path)) else os.path.join(ws_real, str(path)))
         )
-        return _orig_listdir(full)
+        return sorted(_orig_listdir(full))
 
     def _read_file(path: str) -> str:
         if not _check_boundary(path, "READ"):
@@ -312,12 +315,7 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
     def _list_dir(path: str = ".") -> list[str]:
         if not _check_boundary(path, "LIST DIR"):
             return ["[denied] Out-of-bounds list_dir blocked."]
-        full = (
-            security.resolve_path(ws_real, path)
-            if security
-            else os.path.realpath(path if os.path.isabs(path) else os.path.join(ws_real, path))
-        )
-        return sorted(_orig_listdir(full))
+        return safe_listdir(path)
 
     def _search_code(pattern: str, path: str = ".") -> str:
         return tools._search_codebase(pattern, path, ws_real) if tools else ""
@@ -338,8 +336,7 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
         except Exception as e:
             return f"[error] Command execution failed: {e}"
 
-    safe_name = os.path.basename(ws_real)
-    mem_sdk = MemorySDK(ws_real, safe_name)
+    mem_sdk = MemorySDK(ws_real)
     graph_sdk = GraphSDK(ws_real)
 
     def _save_memory_fn(title: str, content: str, mem_type: str = "note") -> str:
@@ -350,6 +347,8 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
 
     sdk = {
         "open": safe_open,
+        "listdir": safe_listdir,
+        "safe_listdir": safe_listdir,
         "read_file": _read_file,
         "edit_file": _edit_file,
         "write_file": _write_file,
@@ -434,6 +433,10 @@ def run_cell(code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] |
                     # store_history=False prevents disk SQLite writes to ~/.ipython/
                     res = _shell_instance.run_cell(code, store_history=False)
                     if res.error_in_exec:
+                        if isinstance(res.error_in_exec, CellTimeoutError):
+                            return f"[timeout] {res.error_in_exec}"
+                        if isinstance(res.error_in_exec, PermissionError):
+                            return f"[denied] {res.error_in_exec}"
                         traceback.print_exception(
                             type(res.error_in_exec), res.error_in_exec, res.error_in_exec.__traceback__
                         )
@@ -454,11 +457,21 @@ def run_cell(code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] |
                 stdout_buf = io.StringIO()
                 eval_result = None
                 with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stdout_buf):
+                    is_eval = True
                     try:
-                        eval_result = eval(code, _shell_globals)
+                        compiled = compile(code, "<cell>", "eval")
                     except SyntaxError:
-                        eval_result = None
-                        exec(code, _shell_globals)
+                        is_eval = False
+                        try:
+                            compiled = compile(code, "<cell>", "exec")
+                        except SyntaxError as e:
+                            return f"[error] Python syntax error in code cell: {e}"
+
+                    if is_eval:
+                        eval_result = eval(compiled, _shell_globals)
+                    else:
+                        exec(compiled, _shell_globals)
+
                 out = stdout_buf.getvalue().strip()
 
                 if _final_answer_val is not None:

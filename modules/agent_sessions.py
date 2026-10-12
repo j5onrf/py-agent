@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SQLite-backed session, checkpoint, and turn logger with sub-agent registry [Production Ready]"""
+"""SQLite-backed session, checkpoint, and turn logger with sub-agent registry [OCR 0.01]"""
 
 import glob
 import json
@@ -74,33 +74,40 @@ def _sanitize_workspace(ws: str) -> str:
 
 
 def get_key() -> str:
-    """Self-contained, low-latency keyboard reader."""
+    """Self-contained, low-latency keyboard reader with leak-proof descriptor handling."""
     if not _HAS_TERMIOS:
         return sys.stdin.read(1) if sys.stdin.isatty() else ""
 
-    fd = None
+    f = None
     close_file = False
-    if not sys.stdin.isatty():
-        try:
-            f = open("/dev/tty", "r")
-            fd = f.fileno()
-            close_file = True
-        except Exception:
-            return ""
-    else:
-        fd = sys.stdin.fileno()
-
-    old = termios.tcgetattr(fd)
     try:
-        tty.setraw(fd)
-        r = os.read(fd, 1)
-        if r == b"\x1b" and select.select([fd], [], [], 0.05)[0]:
-            r += os.read(fd, 2)
-        return r.decode("utf-8", errors="ignore")
-    except Exception:
-        return ""
+        if not sys.stdin.isatty():
+            try:
+                f = open("/dev/tty", "r")
+                fd = f.fileno()
+                close_file = True
+            except Exception:
+                return ""
+        else:
+            fd = sys.stdin.fileno()
+
+        try:
+            old = termios.tcgetattr(fd)
+        except (termios.error, OSError):
+            return ""
+
+        try:
+            tty.setraw(fd)
+            r = os.read(fd, 1)
+            if r == b"\x1b" and select.select([fd], [], [], 0.05)[0]:
+                r += os.read(fd, 2)
+            return r.decode("utf-8", errors="ignore")
+        finally:
+            try:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old)
+            except (termios.error, OSError):
+                pass
     finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old)
         if close_file and f:
             try:
                 f.close()
@@ -139,8 +146,6 @@ def connect_db(db_path: str) -> sqlite3.Connection:
             ");"
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_turns_workspace ON turns (workspace);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_checkpoints_workspace ON checkpoints (workspace);")
-        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_checkpoints_ws_tag ON checkpoints (workspace, tag);")
         conn.commit()
     except sqlite3.Error as exc:
         conn.close()
@@ -153,7 +158,12 @@ def cleanup_all_stale_locks() -> None:
     """Universal reaper: cleans orphaned .session and .active_cd.* files for dead processes."""
     session_dir = os.path.join(CFG_DIR, ".active_sessions")
     if os.path.isdir(session_dir):
-        for fpath in glob.glob(os.path.join(session_dir, "*.session")):
+        try:
+            session_files = glob.glob(os.path.join(session_dir, "*.session"))
+        except OSError:
+            session_files = []
+
+        for fpath in session_files:
             try:
                 fname = os.path.basename(fpath).replace(".session", "")
                 if m := re.search(r"-(\d+)$", fname):
@@ -169,7 +179,12 @@ def cleanup_all_stale_locks() -> None:
             except (ValueError, OSError):
                 pass
 
-    for fpath in glob.glob(os.path.join(CFG_DIR, ".active_cd.*")):
+    try:
+        cd_files = glob.glob(os.path.join(CFG_DIR, ".active_cd.*"))
+    except OSError:
+        cd_files = []
+
+    for fpath in cd_files:
         try:
             pid = int(fpath.rsplit(".", 1)[-1])
             os.kill(pid, 0)
@@ -183,7 +198,7 @@ def cleanup_all_stale_locks() -> None:
 
 
 def get_sub_agent_id(workspace: str, target_pid: int | None = None) -> int:
-    """Calculates active sub-agent index (0 = primary agent, 1+ = sub-agent) with atomic lock claims."""
+    """Calculates active sub-agent index with exact anchored regex matching to prevent prefix collisions."""
     cleanup_all_stale_locks()
     session_dir = os.path.join(CFG_DIR, ".active_sessions")
     os.makedirs(session_dir, exist_ok=True)
@@ -194,34 +209,34 @@ def get_sub_agent_id(workspace: str, target_pid: int | None = None) -> int:
     try:
         fd = os.open(session_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         os.close(fd)
-    except FileExistsError:
-        pass
-    except OSError:
+    except (FileExistsError, OSError):
         pass
 
     active_pids: list[int] = []
-    escaped_ws = glob.escape(ws_clean)
-    for fpath in glob.glob(os.path.join(session_dir, f"{escaped_ws}-*.session")):
-        pid: int | None = None
+    session_pattern = re.compile(rf"^{re.escape(ws_clean)}-(\d+)\.session$")
+
+    try:
+        candidates = os.listdir(session_dir)
+    except OSError:
+        candidates = []
+
+    for fname in candidates:
+        m = session_pattern.match(fname)
+        if not m:
+            continue
+        pid = int(m.group(1))
+        fpath = os.path.join(session_dir, fname)
         try:
-            fname = os.path.basename(fpath).replace(".session", "")
-            if m := re.search(r"-(\d+)$", fname):
-                pid = int(m.group(1))
-                os.kill(pid, 0)
-                if pid not in active_pids:
-                    active_pids.append(pid)
-            else:
-                try:
-                    os.remove(fpath)
-                except OSError:
-                    pass
+            os.kill(pid, 0)
+            if pid not in active_pids:
+                active_pids.append(pid)
         except ProcessLookupError:
             try:
                 os.remove(fpath)
             except OSError:
                 pass
-        except (ValueError, OSError):
-            if pid is not None and pid not in active_pids:
+        except (PermissionError, ValueError, OSError):
+            if pid not in active_pids:
                 active_pids.append(pid)
 
     if current_pid not in active_pids:
@@ -239,22 +254,25 @@ def get_sub_agent_id(workspace: str, target_pid: int | None = None) -> int:
 
 
 def cleanup_sub_agent(workspace: str, target_pid: int | None = None) -> None:
-    """Removes all session lockfiles associated with the exact target PID."""
+    """Removes all session lockfiles associated with the exact target PID and workspace."""
     session_dir = os.path.join(CFG_DIR, ".active_sessions")
     if not os.path.isdir(session_dir):
         return
     ws_clean = _sanitize_workspace(workspace)
     current_pid = target_pid or os.getpid()
 
-    escaped_ws = glob.escape(ws_clean)
-    for fpath in glob.glob(os.path.join(session_dir, f"{escaped_ws}-*.session")):
-        fname = os.path.basename(fpath).replace(".session", "")
-        if m := re.search(r"-(\d+)$", fname):
-            if int(m.group(1)) == current_pid:
-                try:
-                    os.remove(fpath)
-                except OSError:
-                    pass
+    session_pattern = re.compile(rf"^{re.escape(ws_clean)}-{current_pid}\.session$")
+    try:
+        candidates = os.listdir(session_dir)
+    except OSError:
+        candidates = []
+
+    for fname in candidates:
+        if session_pattern.match(fname):
+            try:
+                os.remove(os.path.join(session_dir, fname))
+            except OSError:
+                pass
 
     direct = os.path.join(session_dir, f"{ws_clean}-{current_pid}.session")
     if os.path.exists(direct):
@@ -294,7 +312,7 @@ def _is_valid_project_git_repo(workspace: str) -> bool:
 
 
 def create_subagent_worktree(workspace: str, agent_id: int) -> str:
-    """Spawns an isolated git worktree for a sub-agent only if workspace is a valid project repo."""
+    """Spawns an isolated git worktree for a sub-agent. Fails loudly on error to protect main repo."""
     if agent_id == 0 or not _is_valid_project_git_repo(workspace):
         return workspace
 
@@ -303,29 +321,60 @@ def create_subagent_worktree(workspace: str, agent_id: int) -> str:
 
     os.makedirs(os.path.dirname(wt_dir), exist_ok=True)
     if not os.path.exists(wt_dir):
-        subprocess.run(
-            ["git", "worktree", "add", "-b", branch_name, wt_dir, "HEAD"], cwd=workspace, capture_output=True
+        res = subprocess.run(
+            ["git", "worktree", "add", "-b", branch_name, wt_dir, "HEAD"],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
         )
+        if res.returncode != 0:
+            err_msg = res.stderr.strip()
+            sys.stderr.write(f"\033[1;31m[sub-agent] Failed to create git worktree '{wt_dir}': {err_msg}\033[0m\n")
+            raise RuntimeError(f"Sub-agent worktree creation failed: {err_msg}")
 
-    return wt_dir if os.path.exists(wt_dir) else workspace
+    if not os.path.exists(wt_dir):
+        raise RuntimeError(f"Sub-agent worktree path '{wt_dir}' was not created.")
+
+    return wt_dir
 
 
 def cleanup_subagent_worktree(workspace: str, agent_id: int, merge: bool = False) -> None:
-    """Removes the worktree, merges if requested, and guaranteed-deletes the temporary branch."""
+    """Removes the worktree. On merge conflict, aborts merge and preserves worktree to prevent data loss."""
     if agent_id == 0:
         return
 
     wt_dir = os.path.join(workspace, ".agent", "worktrees", f"agent-{agent_id}")
     branch_name = f"subagent-{agent_id}"
 
+    merge_success = True
+    if merge and os.path.exists(wt_dir) and _is_valid_project_git_repo(workspace):
+        res_merge = subprocess.run(
+            ["git", "merge", branch_name],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+        )
+        if res_merge.returncode != 0:
+            merge_success = False
+            err_msg = res_merge.stderr.strip()
+            sys.stderr.write(
+                f"\033[1;31m[sub-agent] Merge conflict or failure on branch '{branch_name}': {err_msg}\033[0m\n"
+            )
+            subprocess.run(["git", "merge", "--abort"], cwd=workspace, capture_output=True)
+            sys.stderr.write(
+                f"\033[1;33m[sub-agent] Preserved worktree '{wt_dir}' and branch '{branch_name}' for manual review.\033[0m\n"
+            )
+            return
+
     try:
-        if merge and os.path.exists(wt_dir) and _is_valid_project_git_repo(workspace):
-            subprocess.run(["git", "merge", branch_name], cwd=workspace, capture_output=True)
-    finally:
         if os.path.exists(wt_dir):
             subprocess.run(["git", "worktree", "remove", "--force", wt_dir], cwd=workspace, capture_output=True)
-        subprocess.run(["git", "branch", "-D", branch_name], cwd=workspace, capture_output=True)
+        if merge_success:
+            subprocess.run(["git", "branch", "-D", branch_name], cwd=workspace, capture_output=True)
         subprocess.run(["git", "worktree", "prune"], cwd=workspace, capture_output=True)
+    except Exception as e:
+        if os.environ.get("AI_DEBUG") == "1":
+            sys.stderr.write(f"\r\n[debug] Error during worktree pruning: {e}\r\n")
 
 
 def init_db(workspace: str) -> None:
@@ -363,7 +412,7 @@ def save_checkpoint(workspace: str, tag: str, history_obj: Any = None) -> None:
 
 
 def rollback_checkpoint(workspace: str) -> list[dict[str, Any]] | None:
-    """Interactive checkpoint selector with arrow-key navigation and clone support."""
+    """Interactive checkpoint selector with read-only global browsing and loop safety."""
     ws_clean = _sanitize_workspace(workspace)
     db_path = os.path.join(SESSIONS_DIR, f"{ws_clean}.db")
     rows, global_rows = [], []
@@ -382,15 +431,16 @@ def rollback_checkpoint(workspace: str) -> list[dict[str, Any]] | None:
     if is_global and os.path.exists(SESSIONS_DIR):
         for f in os.listdir(SESSIONS_DIR):
             if f.endswith(".db") and f != f"{ws_clean}.db":
+                db_target = os.path.join(SESSIONS_DIR, f)
                 try:
-                    with closing(connect_db(os.path.join(SESSIONS_DIR, f))) as conn_g:
+                    with closing(sqlite3.connect(f"file:{db_target}?mode=ro", uri=True, timeout=2.0)) as conn_g:
                         for tag, history, ts in (
                             conn_g.cursor()
                             .execute("SELECT tag, history, timestamp FROM checkpoints ORDER BY timestamp DESC LIMIT 5")
                             .fetchall()
                         ):
                             global_rows.append((tag, history, ts, f[:-3]))
-                except sqlite3.Error:
+                except Exception:
                     pass
 
     if not rows and not global_rows:
@@ -434,7 +484,7 @@ def rollback_checkpoint(workspace: str) -> list[dict[str, Any]] | None:
 
             key = get_key()
 
-            if key in ("\x03", "\x1b", "q", "Q"):
+            if not key or key in ("\x03", "\x1b", "q", "Q"):
                 sys.stderr.write("\n\033[1;33mCancelled.\033[0m\n")
                 return None
 
@@ -493,8 +543,9 @@ def get_turns_count(workspace: str) -> int:
                 return (
                     conn.cursor().execute("SELECT COUNT(*) FROM turns WHERE workspace = ?", (ws_clean,)).fetchone()[0]
                 )
-        except (sqlite3.Error, TypeError):
-            pass
+        except (sqlite3.Error, TypeError) as exc:
+            if os.environ.get("AI_DEBUG") == "1":
+                sys.stderr.write(f"\r\n[debug] SQLite error in get_turns_count: {exc}\r\n")
     return 0
 
 
@@ -507,8 +558,9 @@ def clear_turns(workspace: str) -> None:
             with closing(connect_db(db_path)) as conn:
                 conn.cursor().execute("DELETE FROM turns WHERE workspace = ?", (ws_clean,))
                 conn.commit()
-        except sqlite3.Error:
-            pass
+        except sqlite3.Error as exc:
+            if os.environ.get("AI_DEBUG") == "1":
+                sys.stderr.write(f"\r\n[debug] SQLite error in clear_turns: {exc}\r\n")
 
 
 if __name__ == "__main__":

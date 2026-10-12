@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Streaming SSE, ANSI Geometry & Terminal Rendering Engine [Hardened Production Ready]"""
+"""Streaming SSE, ANSI Geometry & Terminal Rendering Engine [Open-CO-CR Optimized .01]"""
 
 import os
 import re

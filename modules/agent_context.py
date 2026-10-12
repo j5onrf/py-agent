@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Context Search, Indexing & Compaction Engine [Hardened Production Ready]
+"""Context Search, Indexing & Compaction Engine [OC 0.01]
 
 Handles Jaccard semantic intent matching, accurate token counting heuristics,
 context window monitoring, and the 3-Zone Context Compactor.
@@ -10,6 +10,7 @@ import os
 import re
 import sys
 import threading
+import time
 from typing import Any
 
 try:
@@ -18,11 +19,15 @@ except ImportError:
     tools = None
 
 _cache_lock = threading.Lock()
-_CACHE_KEY: tuple[str, float, frozenset[str]] | None = None
-_CACHED_ENTRIES: list[dict[str, Any]] | None = None
+_CACHE_KEY: tuple[str, int, int, frozenset[str]] | None = None
+_CACHED_ENTRIES: tuple[dict[str, Any], ...] | None = None
+
+_cached_server_ctx: tuple[int, float] = (0, 0.0)
 
 RE_WORD: re.Pattern = re.compile(r"\b\w+\b")
 RE_SILENT_FLAG: re.Pattern = re.compile(r"(?<!\S)--s(?!\S)")
+
+MAX_CONTEXT_FILE_BYTES: int = 2 * 1024 * 1024  # 2 MB size guard
 
 STOP_WORDS: frozenset[str] = frozenset(
     {
@@ -73,20 +78,26 @@ def tokenize(text: str, stop_words: frozenset[str] | set[str] = STOP_WORDS) -> l
     return [w for w in RE_WORD.findall(text.lower()) if len(w) > 1 and w not in stop_words]
 
 
-def load_context_entries(context_file: str, stop_words: frozenset[str] | set[str] = STOP_WORDS) -> list[dict[str, Any]]:
-    """Reads context blueprint and parses intent mappings with strict mtime and stopword caching."""
+def load_context_entries(
+    context_file: str, stop_words: frozenset[str] | set[str] = STOP_WORDS
+) -> tuple[dict[str, Any], ...]:
+    """Reads context blueprint and parses intent mappings with strict mtime, size, and stopword caching."""
     global _CACHE_KEY, _CACHED_ENTRIES
     if not os.path.exists(context_file):
-        return []
+        return ()
 
     try:
-        current_mtime = os.path.getmtime(context_file)
+        st = os.stat(context_file)
+        if st.st_size > MAX_CONTEXT_FILE_BYTES:
+            sys.stderr.write(f"\033[1;33m[sys] Context blueprint exceeds size limit ({st.st_size} bytes); ignored.\033[0m\n")
+            return ()
+
         frozen_stop = frozenset(stop_words)
-        cache_key = (context_file, current_mtime, frozen_stop)
+        cache_key = (context_file, st.st_mtime_ns, st.st_size, frozen_stop)
 
         with _cache_lock:
             if _CACHED_ENTRIES is not None and cache_key == _CACHE_KEY:
-                return list(_CACHED_ENTRIES)
+                return _CACHED_ENTRIES
 
         parsed: list[dict[str, Any]] = []
         with open(context_file, "r", encoding="utf-8") as f:
@@ -102,25 +113,28 @@ def load_context_entries(context_file: str, stop_words: frozenset[str] | set[str
                     continue
 
                 primary_intent = intents[0]
-                parsed.extend(
-                    {
-                        "cmd": cmd_clean,
-                        "intent": intent,
-                        "primary": primary_intent,
-                        "tokens": tokens,
-                        "tokens_set": frozenset(tokens),
-                    }
-                    for intent in intents
-                    if (tokens := tokenize(intent, frozen_stop))
-                )
+                for intent in intents:
+                    tokens = tokenize(intent, frozen_stop)
+                    if not tokens:
+                        continue
+                    parsed.append(
+                        {
+                            "cmd": cmd_clean,
+                            "intent": intent,
+                            "primary": primary_intent,
+                            "tokens": tuple(tokens),
+                            "tokens_set": frozenset(tokens),
+                            "regex": re.compile(rf"\b{re.escape(intent.lower())}\b"),
+                        }
+                    )
 
         with _cache_lock:
             _CACHE_KEY = cache_key
-            _CACHED_ENTRIES = parsed
-            return list(_CACHED_ENTRIES)
+            _CACHED_ENTRIES = tuple(parsed)
+            return _CACHED_ENTRIES
     except OSError as e:
         sys.stderr.write(f"\033[1;31m[sys] Error reading context file: {e}\033[0m\n")
-        return []
+        return ()
 
 
 def jaccard_search(
@@ -129,7 +143,7 @@ def jaccard_search(
     stop_words: frozenset[str] | set[str] = STOP_WORDS,
     threshold: float = 0.45,
 ) -> str | None:
-    """Computes Jaccard index intersections with boundary-guarded substring bonuses."""
+    """Computes Jaccard index intersections with precompiled boundary-guarded bonuses."""
     q_clean = query.strip().lower()
     q_tokens = frozenset(tokenize(query, stop_words))
     if not q_tokens or not (entries := load_context_entries(context_file, stop_words)):
@@ -147,11 +161,12 @@ def jaccard_search(
 
         has_sub = False
         if not is_exact:
-            if len(ent_clean) >= 3 and ent_clean in q_clean or len(q_clean) >= 3 and q_clean in ent_clean:
+            # Word-boundary check preventing short words from matching inside longer words
+            ent_regex = entry.get("regex")
+            if ent_regex and ent_regex.search(q_clean):
                 has_sub = True
-            elif len(ent_clean) < 3:
-                if re.search(rf"\b{re.escape(ent_clean)}\b", q_clean):
-                    has_sub = True
+            elif len(q_clean) >= 3 and re.search(rf"\b{re.escape(q_clean)}\b", ent_clean):
+                has_sub = True
 
         if not inter_len and not has_sub and not is_exact:
             continue
@@ -219,12 +234,15 @@ def get_accurate_token_count(text: Any, *args: Any, **kwargs: Any) -> int:
 estimate_token_count = get_accurate_token_count
 
 
-def show_memory_status(
-    messages: list[dict[str, Any]],
-    max_context: int = 8192,
-    server_url: str = "http://localhost:8080",
-) -> None:
-    """Queries upstream server context props and renders Rich context usage meter."""
+def _get_server_n_ctx(server_url: str, max_age: float = 30.0) -> int | None:
+    """Queries upstream llama.cpp server context props with a 30s TTL cache."""
+    global _cached_server_ctx
+    now = time.monotonic()
+    val, last_time = _cached_server_ctx
+    if val > 0 and (now - last_time < max_age):
+        return val
+
+    import urllib.error as urlerr
     import urllib.request as urlreq
 
     try:
@@ -233,8 +251,23 @@ def show_memory_status(
             srv_settings = json.loads(r.read().decode("utf-8")).get("default_generation_settings", {})
             srv_ctx = srv_settings.get("n_ctx")
             if isinstance(srv_ctx, int) and srv_ctx > 0:
-                max_context = srv_ctx
-    except Exception:
+                _cached_server_ctx = (srv_ctx, now)
+                return srv_ctx
+    except (urlerr.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError):
+        pass
+    return None
+
+
+def show_memory_status(
+    messages: list[dict[str, Any]],
+    max_context: int = 8192,
+    server_url: str = "http://localhost:8080",
+) -> None:
+    """Renders Rich context usage meter with cached upstream server context props."""
+    srv_ctx = _get_server_n_ctx(server_url)
+    if srv_ctx:
+        max_context = srv_ctx
+    else:
         max_context = _get_int_env("AI_MAX_TOKENS", max_context)
 
     if not isinstance(max_context, int) or max_context <= 0:
@@ -252,7 +285,6 @@ def show_memory_status(
     from rich.panel import Panel
     from rich.text import Text
 
-    # Inherit dynamic border color and box geometry from active /box preset
     try:
         from agent_state import get_state
         import agent_ui as ui
@@ -260,7 +292,7 @@ def show_memory_status(
         b_style = get_state("box_style", 1)
         b_border = ui.STYLES.get(b_style, ui.STYLES[1])[2]
         b_box = ui.STYLES.get(b_style, ui.STYLES[1])[1]
-    except Exception:
+    except (ImportError, AttributeError, KeyError):
         b_border, b_box = "cyan", ROUNDED
 
     console = Console()
@@ -299,14 +331,14 @@ def prune_history(history: list[dict[str, Any]], max_tokens: int | None = None) 
     limit = max_tokens or _get_int_env("AI_MAX_TOKENS", 8192)
     sys_msg = history[0]
 
+    # Walk backward so recent_tail never starts on a lone tool response
     tail_idx = max(1, len(history) - 4)
     while tail_idx > 1 and history[tail_idx].get("role") == "tool":
         tail_idx -= 1
 
-    if tail_idx == 1 and len(history) > 3:
-        tail_idx = 2
-        while tail_idx < len(history) - 1 and history[tail_idx].get("role") == "tool":
-            tail_idx += 1
+    # Include the initiating assistant tool_calls message if adjacent to the tail boundary
+    if tail_idx > 1 and history[tail_idx - 1].get("role") == "assistant" and history[tail_idx - 1].get("tool_calls"):
+        tail_idx -= 1
 
     recent_tail = history[tail_idx:]
     middle_msgs = history[1:tail_idx]
@@ -355,7 +387,7 @@ def prune_history(history: list[dict[str, Any]], max_tokens: int | None = None) 
         try:
             if mod_files := tools.get_modified_files():
                 anchors.append(f"[Active Session Modified Files: {', '.join(mod_files)}]")
-        except Exception:
+        except (AttributeError, OSError):
             pass
     if completed_actions:
         deduped = list(dict.fromkeys(completed_actions))[-6:]

@@ -96,6 +96,26 @@ def prune_history(msg_list: list[dict[str, Any]], max_tokens: int | None = None)
     return msg_list
 
 
+def _sanitize_tool_history(msg_list: list[dict[str, Any]]) -> None:
+    """Ensures tool-call and tool-result pairing integrity after history compaction."""
+    valid_cids = set()
+    cleaned = []
+    for m in msg_list:
+        role = m.get("role")
+        if role == "assistant" and m.get("tool_calls"):
+            for tc in m["tool_calls"]:
+                if cid := tc.get("id"):
+                    valid_cids.add(cid)
+            cleaned.append(m)
+        elif role == "tool":
+            cid = m.get("tool_call_id")
+            if cid in valid_cids:
+                cleaned.append(m)
+        else:
+            cleaned.append(m)
+    msg_list[:] = cleaned
+
+
 _local_session = threading.local()
 
 
@@ -140,18 +160,19 @@ def _heal_tool_args(raw: Any) -> dict[str, Any]:
     """Heals malformed JSON tool arguments via modular adapter or safe decode."""
     if isinstance(raw, dict):
         return raw
-    if isinstance(raw, str):
-        s = raw.strip()
-        if not s or s == "{}":
-            return {}
-    elif not raw:
+    if not raw or not isinstance(raw, (str, dict)):
+        return {"_parse_error": f"Expected mapping for tool arguments, got {type(raw).__name__}", "_raw_args": str(raw)}
+
+    s = raw.strip()
+    if not s or s == "{}":
         return {}
 
     if get_state("adapters_active", False):
-        return adapters.heal_json_args(raw) if isinstance(raw, str) else (raw or {})
+        res = adapters.heal_json_args(raw)
+        return res if isinstance(res, dict) else {"_parse_error": "Adapter returned non-dict", "_raw_args": str(raw)}
 
     try:
-        parsed = json.loads(raw) if isinstance(raw, str) else raw
+        parsed = json.loads(s)
         if isinstance(parsed, dict):
             if len(parsed) == 1:
                 sole_key, sole_val = next(iter(parsed.items()))
@@ -378,7 +399,7 @@ def agentic_turn(
         for m in msg_list:
             total += get_accurate_token_count(m.get("content") or "")
             for tc in m.get("tool_calls", []):
-                fn = tc.get("function", {})
+                fn = tc.get("function") or {}
                 total += get_accurate_token_count(fn.get("name", ""))
                 total += get_accurate_token_count(fn.get("arguments", ""))
         return total
@@ -400,6 +421,7 @@ def agentic_turn(
 
         if curr_tok > int(max_ctx * 0.75):
             messages[:] = prune_history(messages, max_tokens=int(max_ctx * 0.55))
+            _sanitize_tool_history(messages)
             last_prompt_tokens = 0
 
         if consecutive_tool_failures >= 2:
@@ -472,7 +494,117 @@ def agentic_turn(
         turn_start_time = time.monotonic()
         gen_start_time = None
         max_turn_wall_clock = float(timeout * 2 if timeout > 0 else 600.0)
-        timeout_tuple = (15, max(timeout, 120))
+
+        # Bounded read timeout that respects remaining turn wall-clock budget
+        rem_clock = max(5.0, max_turn_wall_clock - (time.monotonic() - turn_start_time))
+        read_timeout = max(10, min(max(timeout, 120), int(rem_clock)))
+        timeout_tuple = (15, read_timeout)
+
+        def _handle_sse_payload(payload_str: str) -> None:
+            nonlocal captured_usage, captured_timings, resolved_model, first_chunk, gen_start_time, streamer, in_think_block
+            if not payload_str or payload_str == "[DONE]":
+                return
+            try:
+                data = json.loads(payload_str)
+            except json.JSONDecodeError:
+                return
+
+            captured_usage = data.get("usage") or captured_usage
+            captured_timings = data.get("timings") or (data.get("usage") or {}).get("timings") or captured_timings
+
+            if m_candidate := (
+                data.get("model") or (data.get("choices", [{}])[0].get("model") if data.get("choices") else None)
+            ):
+                if not resolved_model or resolved_model == "openrouter/free" or m_candidate != "openrouter/free":
+                    resolved_model = m_candidate
+
+            choices = data.get("choices") or [{}]
+            if not choices:
+                return
+
+            delta = choices[0].get("delta") or {}
+            content = delta.get("content", "") or ""
+            reasoning = (
+                delta.get("reasoning_content", "")
+                or delta.get("thinking", "")
+                or delta.get("reasoning", "")
+                or ""
+            )
+
+            has_tool_deltas = bool(delta.get("tool_calls"))
+            has_xml_tool_tag = False
+            if not has_tool_deltas and content:
+                stripped_c = content.lstrip()
+                has_xml_tool_tag = any(
+                    stripped_c.startswith(tag)
+                    for tag in ("<tool_call>", "<tool_call ", "<function=", "<｜DSML｜", "<|tool_call|>")
+                )
+
+            is_tool_incoming = has_tool_deltas or has_xml_tool_tag
+            if is_tool_incoming and not is_calm and not is_sub:
+                if streamer:
+                    streamer.stop()
+                    streamer = None
+                    first_chunk = True
+                if spinner and not spinner.active:
+                    spinner.start("Drafting tool action...")
+
+            chunk_to_stream, is_thinking, in_think_block = _process_stream_chunk(
+                content, reasoning, in_think_block
+            )
+
+            if chunk_to_stream:
+                acc_content.append(chunk_to_stream)
+
+                if first_chunk:
+                    first_chunk = False
+                    gen_start_time = time.monotonic()
+                    if is_calm and spinner:
+                        spinner.stop(leave_on_screen=False)
+                    elif not is_sub:
+                        stream_pfx = prefix if prefix is not None else ""
+                        streamer = RichStreamer(prefix=stream_pfx, spinner=spinner, round_idx=_round)
+                        streamer.start()
+
+                if streamer and not is_calm and not is_sub:
+                    streamer.update(chunk_to_stream)
+            elif has_xml_tool_tag:
+                acc_content.append(content)
+                if not is_calm and not is_sub and spinner and not spinner.active:
+                    spinner.start("Drafting tool action...")
+
+            for tc in delta.get("tool_calls") or []:
+                if not isinstance(tc, dict):
+                    continue
+                raw_idx = tc.get("index", 0)
+                try:
+                    idx = int(raw_idx)
+                except (TypeError, ValueError):
+                    idx = 0
+                tc_entry = tool_calls_map.setdefault(
+                    idx,
+                    {
+                        "id": tc.get("id", ""),
+                        "type": "function",
+                        "function": {"name": (tc.get("function") or {}).get("name", ""), "arguments": ""},
+                    },
+                )
+                if tc.get("id"):
+                    tc_entry["id"] = tc["id"]
+                fn_obj = tc.get("function") or {}
+                if fn_obj.get("name"):
+                    tc_entry["function"]["name"] = fn_obj["name"]
+                for k in (
+                    "thought_signature",
+                    "thoughtSignature",
+                    "extra_content",
+                    "provider_specific_fields",
+                ):
+                    if k in tc:
+                        tc_entry[k] = tc[k]
+                arg_chunk = fn_obj.get("arguments", "")
+                if arg_chunk:
+                    tc_entry["function"]["arguments"] += arg_chunk
 
         try:
             res = session.post(
@@ -493,9 +625,12 @@ def agentic_turn(
                         )
                     except Exception:
                         err_text = res.text[:200] if hasattr(res, "text") else ""
-                    err_text = err_text.replace("\n", " ").strip()
 
-                    if res.status_code == 400 and ("exceed" in err_text.lower() or "context" in err_text.lower()):
+                    # Sanitize server error text to prevent terminal control injection
+                    err_text = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", err_text)
+                    err_clean = "".join(c for c in err_text if c.isprintable() or c in " \t").strip()
+
+                    if res.status_code == 400 and ("exceed" in err_clean.lower() or "context" in err_clean.lower()):
                         consecutive_context_overflows += 1
                         if consecutive_context_overflows >= 2:
                             if spinner:
@@ -511,12 +646,13 @@ def agentic_turn(
                             "\r\033[1;33m[sys] Context window full. Auto-compacting conversation history...\033[0m\r\n"
                         )
                         messages[:] = prune_history(messages, max_tokens=int(max_ctx * 0.5))
+                        _sanitize_tool_history(messages)
                         last_prompt_tokens = 0
                         continue
 
                     if spinner:
                         spinner.stop(leave_on_screen=False)
-                    sys.stderr.write(f"\r\033[1;31m[error] Server HTTP {res.status_code}: {err_text}\033[0m\r\n")
+                    sys.stderr.write(f"\r\033[1;31m[error] Server HTTP {res.status_code}: {err_clean}\033[0m\r\n")
                     return None
 
                 consecutive_context_overflows = 0
@@ -552,120 +688,16 @@ def agentic_turn(
                         break
 
                     try:
-                        data = json.loads(data_str)
-                    except json.JSONDecodeError:
-                        continue
-
-                    try:
-                        captured_usage = data.get("usage") or captured_usage
-                        captured_timings = (
-                            data.get("timings") or (data.get("usage") or {}).get("timings") or captured_timings
-                        )
-
-                        if m_candidate := (
-                            data.get("model")
-                            or (data.get("choices", [{}])[0].get("model") if data.get("choices") else None)
-                        ):
-                            if (
-                                not resolved_model
-                                or resolved_model == "openrouter/free"
-                                or m_candidate != "openrouter/free"
-                            ):
-                                resolved_model = m_candidate
-
-                        choices = data.get("choices", [{}])
-                        if not choices:
-                            continue
-
-                        delta = choices[0].get("delta", {})
-                        content = delta.get("content", "") or ""
-                        reasoning = (
-                            delta.get("reasoning_content", "")
-                            or delta.get("thinking", "")
-                            or delta.get("reasoning", "")
-                            or ""
-                        )
-
-                        has_tool_deltas = bool(delta.get("tool_calls"))
-                        has_xml_tool_tag = False
-                        if not has_tool_deltas and content:
-                            stripped_c = content.lstrip()
-                            has_xml_tool_tag = any(
-                                stripped_c.startswith(tag)
-                                for tag in ("<tool_call>", "<tool_call ", "<function=", "<｜DSML｜", "<|tool_call|>")
-                            )
-
-                        is_tool_incoming = has_tool_deltas or has_xml_tool_tag
-                        if is_tool_incoming and not is_calm and not is_sub:
-                            if streamer:
-                                streamer.stop()
-                                streamer = None
-                                first_chunk = True
-                            if spinner and not spinner.active:
-                                spinner.start("Drafting tool action...")
-
-                        chunk_to_stream, is_thinking, in_think_block = _process_stream_chunk(
-                            content, reasoning, in_think_block
-                        )
-
-                        if chunk_to_stream:
-                            acc_content.append(chunk_to_stream)
-
-                            if first_chunk:
-                                first_chunk = False
-                                gen_start_time = time.monotonic()
-                                if is_calm and spinner:
-                                    spinner.stop(leave_on_screen=False)
-                                elif not is_sub:
-                                    stream_pfx = prefix if prefix is not None else ""
-                                    streamer = RichStreamer(prefix=stream_pfx, spinner=spinner, round_idx=_round)
-                                    streamer.start()
-
-                            if streamer and not is_calm and not is_sub:
-                                streamer.update(chunk_to_stream)
-                        elif has_xml_tool_tag:
-                            acc_content.append(content)
-                            if not is_calm and not is_sub and spinner and not spinner.active:
-                                spinner.start("Drafting tool action...")
-
-                        for tc in delta.get("tool_calls", []):
-                            raw_idx = tc.get("index", 0)
-                            try:
-                                idx = int(raw_idx)
-                            except (TypeError, ValueError):
-                                idx = 0
-                            tc_entry = tool_calls_map.setdefault(
-                                idx,
-                                {
-                                    "id": tc.get("id", ""),
-                                    "type": "function",
-                                    "function": {"name": tc.get("function", {}).get("name", ""), "arguments": ""},
-                                },
-                            )
-                            if tc.get("id"):
-                                tc_entry["id"] = tc["id"]
-                            if tc.get("function", {}).get("name"):
-                                tc_entry["function"]["name"] = tc["function"]["name"]
-                            for k in (
-                                "thought_signature",
-                                "thoughtSignature",
-                                "extra_content",
-                                "provider_specific_fields",
-                            ):
-                                if k in tc:
-                                    tc_entry[k] = tc[k]
-                            arg_chunk = tc.get("function", {}).get("arguments", "")
-                            if arg_chunk:
-                                tc_entry["function"]["arguments"] += arg_chunk
+                        _handle_sse_payload(data_str)
                     except Exception as e:
                         if os.environ.get("AI_DEBUG") == "1":
-                            _console_err.print(f"[dim][debug] Stream chunk error: {e}[/dim]")
+                            _console_err.print(f"[dim][debug] Stream chunk error: {_escape_markup(str(e))}[/dim]")
 
+                # Process any trailing buffered SSE payload including final delta/choices
                 if remaining := _flush_sse_event():
                     if remaining != "[DONE]":
                         try:
-                            rem_data = json.loads(remaining)
-                            captured_usage = rem_data.get("usage") or captured_usage
+                            _handle_sse_payload(remaining)
                         except Exception:
                             pass
 
@@ -825,11 +857,12 @@ def agentic_turn(
 
         # ── Tool Execution Phase ─────────────────────────────────────────────
         healed_calls = []
+        healed_args_list: list[dict[str, Any]] = []
         seen_cids: set[str] = set()
 
         for call_idx, tc in enumerate(calls):
-            raw_fname = tc.get("function", {}).get("name", "")
-            raw_args = tc.get("function", {}).get("arguments") or ""
+            raw_fname = (tc.get("function") or {}).get("name", "")
+            raw_args = (tc.get("function") or {}).get("arguments") or ""
             if adapters_on:
                 fname, healed_dict = adapters.heal_tool_call(raw_fname, raw_args)
             else:
@@ -862,6 +895,7 @@ def agentic_turn(
                     "extra_content": {"google": {"thought_signature": sig}},
                 }
             )
+            healed_args_list.append(healed_dict)
 
         clean_ans_text = re.sub(r"<think>[\s\S]*?(?:</think>|$)", "", ans_text).strip()
         messages.append({"role": "assistant", "content": clean_ans_text or "", "tool_calls": healed_calls})
@@ -870,7 +904,11 @@ def agentic_turn(
         try:
             for call_idx, tc in enumerate(healed_calls):
                 fname = tc.get("function", {}).get("name", "")
-                args = json.loads(tc.get("function", {}).get("arguments", "{}"))
+                args = (
+                    healed_args_list[call_idx]
+                    if call_idx < len(healed_args_list)
+                    else json.loads(tc.get("function", {}).get("arguments", "{}"))
+                )
                 brief = str(
                     args.get("code")
                     or args.get("symbol")
@@ -904,16 +942,19 @@ def agentic_turn(
                     except Exception as e:
                         result = f"[tool error] {e}"
 
-                    is_denied = False
                     if isinstance(result, (list, tuple)):
                         res_str = "\n".join(str(x) for x in result)
-                        is_denied = any(isinstance(x, str) and x.strip().startswith("[denied]") for x in result)
-                    elif isinstance(result, str):
-                        res_str = result
-                        is_denied = res_str.strip().startswith("[denied]") or "[denied]" in res_str[:60]
                     else:
                         res_str = str(result) if result is not None else ""
-                        is_denied = "[denied]" in res_str[:60]
+
+                    # Precision denial check preventing false positives from inspected file contents
+                    stripped_res = res_str.strip()
+                    is_denied = (
+                        stripped_res.startswith(
+                            ("[denied] User declined", "[denied] Action cancelled", "[denied] Prior action declined")
+                        )
+                        or (stripped_res.startswith("[denied]") and "declined" in stripped_res[:60].lower())
+                    )
 
                     if not is_calm and not is_sub and spinner and getattr(spinner, "active", False):
                         spinner.stop()

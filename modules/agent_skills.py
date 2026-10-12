@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified library & executable for static, dynamic, universal YAML, and on-demand skills [Hardened Production Ready]"""
+"""Unified library & executable for static, dynamic, universal YAML, and on-demand skills [OCR 0.01]"""
 
 import json
 import os
@@ -21,6 +21,8 @@ RE_SKILL_BLOCK: re.Pattern = re.compile(
 )
 
 DANGEROUS_ENV_SUBSTRINGS = ("API_KEY", "TOKEN", "SECRET", "PASSWORD", "AUTH", "CREDENTIAL")
+MAX_SKILL_BYTES = 1024 * 1024  # 1 MB size guard
+MAX_STDIN_BYTES = 2 * 1024 * 1024  # 2 MB size guard
 
 
 def ensure_mysys_exists(skills_dir: str, cfg_dir: str) -> None:
@@ -29,11 +31,15 @@ def ensure_mysys_exists(skills_dir: str, cfg_dir: str) -> None:
         gen_tool = os.path.join(cfg_dir, "tools", "generate-profile")
         if os.path.isfile(gen_tool):
             try:
-                res = subprocess.run([sys.executable, gen_tool], check=False, capture_output=True, text=True)
+                res = subprocess.run(
+                    [sys.executable, gen_tool], check=False, capture_output=True, text=True, timeout=15
+                )
                 if res.returncode != 0:
                     sys.stderr.write(
                         f"\033[1;31m[sys] generate-profile failed (exit {res.returncode}): {res.stderr.strip()}\033[0m\n"
                     )
+            except subprocess.TimeoutExpired:
+                sys.stderr.write("\033[1;31m[sys] generate-profile timed out (15s limit).\033[0m\n")
             except (OSError, subprocess.SubprocessError) as e:
                 sys.stderr.write(f"\033[1;31m[sys] Failed to launch generate-profile: {e}\033[0m\n")
 
@@ -158,8 +164,13 @@ def load_skill_content(skills_str: str, skills_dir: str, cfg_dir: str) -> str:
 
         if sf := find_skill_file(skills_dir, skill):
             try:
+                st = os.stat(sf)
+                if st.st_size > MAX_SKILL_BYTES:
+                    sys.stderr.write(f"\033[1;33m[sys] Skill '{skill}' exceeds 1MB limit; ignored.\033[0m\n")
+                    continue
+
                 with open(sf, "r", encoding="utf-8") as f:
-                    raw = f.read().strip()
+                    raw = f.read(MAX_SKILL_BYTES + 1).strip()
                 meta, body = parse_frontmatter(raw)
 
                 if meta:
@@ -167,32 +178,36 @@ def load_skill_content(skills_str: str, skills_dir: str, cfg_dir: str) -> str:
                         import agent_core
 
                         for k, v in meta.items():
-                            k_l = str(k).lower().strip()
-                            if k_l == "yolo":
-                                if "AI_CONFIRM_GATES" not in os.environ:
-                                    agent_core.save_state("yolo_mode", str(v).lower() in ("true", "1", "yes", "on"))
-                            elif k_l in ("reasoning_budget", "thinking_budget", "budget"):
-                                try:
-                                    # Clamp budget to safe bounds [0, 32000]
+                            try:
+                                k_l = str(k).lower().strip()
+                                if k_l == "yolo":
+                                    if "AI_CONFIRM_GATES" not in os.environ:
+                                        agent_core.save_state("yolo_mode", str(v).lower() in ("true", "1", "yes", "on"))
+                                elif k_l in ("reasoning_budget", "thinking_budget", "budget"):
                                     b_val = min(max(0, int(v)), 32000)
                                     agent_core.save_state("reasoning_budget", b_val)
-                                except (ValueError, TypeError):
-                                    pass
-                            elif k_l in ("map", "use_map", "index_map"):
-                                if "AI_USE_MAP" not in os.environ:
-                                    agent_core.save_state("use_map", str(v).lower() in ("true", "1", "yes", "on"))
-                            elif k_l in ("ipython", "py", "exec_python", "kernel"):
-                                if "AI_IPYTHON_MODE" not in os.environ:
-                                    agent_core.save_state("ipython_mode", str(v).lower() in ("true", "1", "yes", "on"))
+                                elif k_l in ("map", "use_map", "index_map"):
+                                    if "AI_USE_MAP" not in os.environ:
+                                        agent_core.save_state("use_map", str(v).lower() in ("true", "1", "yes", "on"))
+                                elif k_l in ("ipython", "py", "exec_python", "kernel"):
+                                    if "AI_IPYTHON_MODE" not in os.environ:
+                                        agent_core.save_state("ipython_mode", str(v).lower() in ("true", "1", "yes", "on"))
+                            except (ValueError, TypeError) as field_err:
+                                if os.environ.get("AI_DEBUG") == "1":
+                                    sys.stderr.write(f"\033[2m[sys] Skill meta key '{k}' error: {field_err}\033[0m\n")
 
-                        adp_val = meta.get("adapters") or meta.get("adp") or meta.get("adapter")
-                        agent_core.save_state(
-                            "adapters_active",
-                            str(adp_val).lower() in ("true", "1", "yes", "on") if adp_val is not None else False,
-                        )
-                    except (ImportError, AttributeError) as e:
+                        try:
+                            adp_val = meta.get("adapters") or meta.get("adp") or meta.get("adapter")
+                            agent_core.save_state(
+                                "adapters_active",
+                                str(adp_val).lower() in ("true", "1", "yes", "on") if adp_val is not None else False,
+                            )
+                        except Exception as adp_err:
+                            if os.environ.get("AI_DEBUG") == "1":
+                                sys.stderr.write(f"\033[2m[sys] Failed to update adapters_active: {adp_err}\033[0m\n")
+                    except ImportError as imp_err:
                         if os.environ.get("AI_DEBUG") == "1":
-                            sys.stderr.write(f"\033[2m[sys] Skill state update failed: {e}\033[0m\n")
+                            sys.stderr.write(f"\033[2m[sys] agent_core unavailable: {imp_err}\033[0m\n")
 
                 contents.append(body or raw)
             except (OSError, UnicodeDecodeError) as e:
@@ -207,15 +222,16 @@ def _exec_tool_cmd(cmd: str, interactive: bool = False) -> str:
             return "__ABORT_TURN__"
         workspace = os.environ.get("AI_WORKSPACE_PATH") or os.getcwd()
 
-        # Security check: validate command against zero-trust boundary
+        # Security check: fail closed if security module is missing or command is blocked
         try:
             import agent_security as security
 
             if sec_err := security.check_command(workspace, sanitized):
                 sys.stderr.write(f"\033[1;31m[security] Context command blocked: {sec_err}\033[0m\n")
                 return "__ABORT_TURN__"
-        except ImportError:
-            pass
+        except ImportError as e:
+            sys.stderr.write(f"\033[1;31m[security] Security kernel unavailable ({e}); command execution blocked.\033[0m\n")
+            return "__ABORT_TURN__"
 
         # Scrub sensitive credentials from child process environment
         safe_env = {k: v for k, v in os.environ.items() if not any(d in k.upper() for d in DANGEROUS_ENV_SUBSTRINGS)}
@@ -339,8 +355,12 @@ def load_skill_blueprints(base_skills_dir: str, stop_words: set[str] | frozenset
                 if f.lower().endswith(".md"):
                     path = os.path.join(root, f)
                     try:
+                        st = os.stat(path)
+                        if st.st_size > MAX_SKILL_BYTES:
+                            continue
+
                         with open(path, "r", encoding="utf-8") as sf:
-                            content = sf.read().strip()
+                            content = sf.read(MAX_SKILL_BYTES + 1).strip()
                         if not content:
                             continue
 
@@ -432,18 +452,22 @@ def run_skill_selector(
 ) -> tuple[list[dict[str, Any]], str | None]:
     """Interactive arrow-key skill loading overlay across all global and workspace skill subdirectories."""
     if chat_history is not None:
-        hist: list[dict[str, Any]] = list(chat_history)
+        hist: list[dict[str, Any]] = [dict(m) for m in chat_history]
     else:
         hist = [{"role": "system", "content": ""}]
         if not sys.stdin.isatty():
             try:
-                raw_in = sys.stdin.read().strip()
-                if raw_in:
+                raw_in = sys.stdin.read(MAX_STDIN_BYTES + 1).strip()
+                if len(raw_in) > MAX_STDIN_BYTES:
+                    sys.stderr.write("\033[1;33m[sys] Stdin input exceeds 2MB limit; ignoring.\033[0m\n")
+                elif raw_in:
                     loaded = json.loads(raw_in)
                     if isinstance(loaded, list):
-                        hist = loaded
-            except Exception:
-                pass
+                        hist = [dict(m) for m in loaded]
+            except json.JSONDecodeError as exc:
+                sys.stderr.write(f"\033[1;33m[sys] Invalid JSON history on stdin: {exc}\033[0m\n")
+            except OSError as exc:
+                sys.stderr.write(f"\033[1;33m[sys] Stdin read error: {exc}\033[0m\n")
 
     if not hist:
         hist = [{"role": "system", "content": ""}]
@@ -511,8 +535,13 @@ def run_skill_selector(
                 if num_opts > 0:
                     _, sel = candidates[current_idx]
                     try:
+                        st = os.stat(sel["path"])
+                        if st.st_size > MAX_SKILL_BYTES:
+                            sys.stderr.write(f"{clear_2_lines}\033[1;31m[sys] Skill file exceeds 1MB limit.\033[0m\n")
+                            return hist, None
+
                         with open(sel["path"], "r", encoding="utf-8") as sf:
-                            raw_file = sf.read().strip()
+                            raw_file = sf.read(MAX_SKILL_BYTES + 1).strip()
                         _, body = parse_frontmatter(raw_file)
                         body = body or raw_file
 
@@ -544,14 +573,17 @@ def run_skill_selector(
                         new_blocks = "\n\n".join(
                             f"### Loaded On-Demand Skill [{c}]: {n}\n{b}" for c, n, b in active_skills
                         )
-                        hist[0]["content"] = f"{base_p}\n\n{new_blocks}\n" if base_p else f"{new_blocks}\n"
+                        hist[0] = {
+                            **hist[0],
+                            "content": f"{base_p}\n\n{new_blocks}\n" if base_p else f"{new_blocks}\n",
+                        }
 
                         s_name = sel["name"].replace(" ", "-")
                         sys.stderr.write(
                             f"{clear_2_lines}\033[1;32m✓ Skill '{sel['name']}' successfully loaded.\033[0m\n\n"
                         )
                         return hist, s_name
-                    except Exception as e:
+                    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
                         sys.stderr.write(f"{clear_2_lines}\033[1;31m[sys] Failed to load skill: {e}\033[0m\n")
                 else:
                     sys.stderr.write(f"{clear_2_lines}No skill selected.\n")

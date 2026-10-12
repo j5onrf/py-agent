@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Modular Command Dispatcher & Slash Action Registry for Py-Agent [Production Ready]"""
+"""Modular Command Dispatcher & Slash Action Registry for Py-Agent [OCR 0.01]"""
 
 import json
 import os
@@ -54,7 +54,7 @@ def update_workspace_config(cfg_file: str, updates: dict[str, Any]) -> None:
     """Atomically updates settings inside .agent/config.json with cleanup on error."""
     if not os.path.exists(cfg_file):
         return
-    tmp = f"{cfg_file}.tmp"
+    tmp = f"{cfg_file}.tmp.{os.getpid()}"
     try:
         data = {}
         with open(cfg_file, "r", encoding="utf-8") as cf:
@@ -72,7 +72,33 @@ def update_workspace_config(cfg_file: str, updates: dict[str, Any]) -> None:
         ui._console.print("[dim yellow][sys] Failed to persist workspace config.[/dim yellow]")
 
 
-def handle_map_toggle(ctx: SessionContext, parts: list[str]) -> bool:
+def apply_codespace_map(ctx: SessionContext, new_map: str) -> None:
+    """Injects or updates the codespace map block inside the system message safely."""
+    if not ctx.chat_history:
+        ctx.chat_history.append({"role": "system", "content": ctx.active_system_prompt})
+
+    has_map = False
+    for msg in ctx.chat_history:
+        content = msg.get("content") or ""
+        if "### CODESPACE MAP:" in content:
+            msg["content"] = content.split("### CODESPACE MAP:")[0] + f"### CODESPACE MAP:\n{new_map}"
+            has_map = True
+            break
+
+    if not has_map:
+        first_content = ctx.chat_history[0].get("content") or ""
+        ctx.chat_history[0]["content"] = f"{first_content}\n\n### CODESPACE MAP:\n{new_map}".strip()
+
+
+def remove_codespace_map(ctx: SessionContext) -> None:
+    """Removes codespace map block from chat history."""
+    for msg in ctx.chat_history:
+        content = msg.get("content") or ""
+        if "### CODESPACE MAP:" in content:
+            msg["content"] = content.split("### CODESPACE MAP:")[0].strip()
+
+
+def handle_map_toggle(ctx: SessionContext) -> bool:
     ctx.use_map = not ctx.use_map
     core.save_state("use_map", ctx.use_map)
     os.environ["AI_USE_MAP"] = "1" if ctx.use_map else "0"
@@ -96,27 +122,17 @@ def handle_map_toggle(ctx: SessionContext, parts: list[str]) -> bool:
             try:
                 with open(txt_p, "r", encoding="utf-8") as mf:
                     new_map = mf.read().strip()
-                has_map = False
-                for msg in ctx.chat_history:
-                    if "### CODESPACE MAP:" in msg["content"]:
-                        msg["content"] = (
-                            msg["content"].split("### CODESPACE MAP:")[0] + f"### CODESPACE MAP:\n{new_map}"
-                        )
-                        has_map = True
-                if not has_map:
-                    ctx.chat_history[0]["content"] += f"\n\n### CODESPACE MAP:\n{new_map}"
-            except Exception:
-                pass
+                apply_codespace_map(ctx, new_map)
+            except OSError as e:
+                ui._console.print(f"[dim yellow][sys] Map load failed: {e}[/dim yellow]\n")
     else:
-        for msg in ctx.chat_history:
-            if "### CODESPACE MAP:" in msg["content"]:
-                msg["content"] = msg["content"].split("### CODESPACE MAP:")[0].strip()
+        remove_codespace_map(ctx)
 
     ctx.flash_status(f"map: {'on' if ctx.use_map else 'off'}")
     return True
 
 
-def handle_memory_cmd(ctx: SessionContext, query: str, parts: list[str]) -> bool:
+def handle_memory_cmd(ctx: SessionContext, query: str) -> bool:
     sub_parts = query.split(maxsplit=2)
     sub_action = sub_parts[1].lower() if len(sub_parts) > 1 else ""
 
@@ -337,9 +353,11 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
     if q_lower.rstrip(".") in ("stop speech", "stop talking", "kill tts"):
         try:
             tts.stop_tts()
-        except Exception:
-            pass
-        subprocess.run("killall -9 pw-play koko 2>/dev/null || true", shell=True)
+        except Exception as e:
+            if os.environ.get("AI_DEBUG") == "1":
+                sys.stderr.write(f"\r\n[debug] Error stopping TTS: {e}\r\n")
+        subprocess.run(["pkill", "-TERM", "-x", "pw-play"], capture_output=True)
+        subprocess.run(["pkill", "-TERM", "-x", "koko"], capture_output=True)
         return True, None
 
     if q_lower in ("exit", "quit", "q"):
@@ -350,10 +368,10 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
     cmd = parts[0].lower() if parts else ""
 
     if cmd in ("/m", "/map"):
-        return handle_map_toggle(ctx, parts), None
+        return handle_map_toggle(ctx), None
 
     if cmd in ("/mem", "/memory"):
-        return handle_memory_cmd(ctx, q_strip, parts), None
+        return handle_memory_cmd(ctx, q_strip), None
 
     if cmd in ("/gnd", "/ground"):
         return handle_grounding_cmd(ctx, parts), None
@@ -364,10 +382,10 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
         ctx.flash_status(f"voice: {'auto' if auto_mode else ('on' if active else 'off')}")
         return True, None
 
-    if cmd in ("/tts"):
+    if cmd in ("/tts", "/speech"):
         return handle_tts_cmd(ctx, parts), None
 
-    if cmd in ("/adp"):
+    if cmd in ("/adp", "/adapters"):
         cur_adp = core.get_state("adapters_active", False)
         new_adp = not cur_adp
         core.save_state("adapters_active", new_adp)
@@ -497,7 +515,7 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
             ctx.flash_status("zed: launch failed")
         return True, None
 
-    if cmd in ("/box"):
+    if cmd in ("/box", "/boxes"):
         max_boxes = len(ui.STYLES)
         cur_box = core.get_state("box_style", 1)
         if len(parts) > 1 and parts[1].isdigit() and int(parts[1]) in ui.STYLES:
@@ -572,11 +590,18 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
         sys.stdout.flush()
         imap_bin = os.path.join(CFG_DIR, "tools", "index-map", "index-map")
         if os.path.isfile(imap_bin):
-            res_sync = subprocess.run(
-                [sys.executable, imap_bin, "--agent", ctx.workspace_path], capture_output=True, text=True
-            )
-            if res_sync.returncode != 0:
-                ui._console.print(f"\r\x1b[2K[red][sys] Sync failed: {res_sync.stderr.strip()[:100]}[/red]\n")
+            try:
+                res_sync = subprocess.run(
+                    [sys.executable, imap_bin, "--agent", ctx.workspace_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=180,
+                )
+                if res_sync.returncode != 0:
+                    ui._console.print(f"\r\x1b[2K[red][sys] Sync failed: {res_sync.stderr.strip()[:100]}[/red]\n")
+                    return True, None
+            except subprocess.TimeoutExpired:
+                ui._console.print("\r\x1b[2K[red][sys] Sync timed out (180s limit).[/red]\n")
                 return True, None
         else:
             ui._console.print(f"\r\x1b[2K[red][sys] index-map tool not found: {imap_bin}[/red]\n")
@@ -599,18 +624,10 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
             try:
                 with open(txt_p, "r", encoding="utf-8") as mf:
                     new_map = mf.read().strip()
-                has_map = False
-                for msg in ctx.chat_history:
-                    if "### CODESPACE MAP:" in msg["content"]:
-                        msg["content"] = (
-                            msg["content"].split("### CODESPACE MAP:")[0] + f"### CODESPACE MAP:\n{new_map}"
-                        )
-                        has_map = True
-                if not has_map:
-                    ctx.chat_history[0]["content"] += f"\n\n### CODESPACE MAP:\n{new_map}"
+                apply_codespace_map(ctx, new_map)
                 ctx.flash_status("map: synced")
-            except Exception as e:
-                ui._console.print(f"\r\x1b[2K[red][sys] Sync parse failed: {e}[/red]\n")
+            except OSError as e:
+                ui._console.print(f"\r\x1b[2K[red][sys] Sync read failed: {e}[/red]\n")
         return True, None
 
     if q_lower in ("/clear", "/c"):
@@ -622,20 +639,25 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
         return True, None
 
     if q_lower in ("/reset", "/r"):
+        agent_dir = os.path.join(ctx.workspace_path, ".agent")
+        db_p = os.path.join(SESSIONS_DIR, f"{ctx.safe_name}.db")
+        if os.path.exists(agent_dir):
+            try:
+                shutil.rmtree(agent_dir)
+            except OSError as e:
+                ui._console.print(f"[red][sys] Partial reset: failed to remove .agent: {e}[/red]\n")
+                return True, None
+        if os.path.exists(db_p):
+            try:
+                os.remove(db_p)
+            except OSError as e:
+                ui._console.print(f"[red][sys] Partial reset: failed to remove database: {e}[/red]\n")
+        sessions.clear_turns(ctx.safe_name)
+        memories.clear_memories(ctx.workspace_path)
         ctx.chat_history.clear()
         ctx.chat_history.append({"role": "system", "content": ctx.active_system_prompt})
         if ctx.is_agent:
             ctx.chat_history.append({"role": "assistant", "content": "Agent: Workspace loaded. Awaiting instructions."})
-        agent_dir, db_p = os.path.join(ctx.workspace_path, ".agent"), os.path.join(SESSIONS_DIR, f"{ctx.safe_name}.db")
-        if os.path.exists(agent_dir):
-            shutil.rmtree(agent_dir, ignore_errors=True)
-        if os.path.exists(db_p):
-            try:
-                os.remove(db_p)
-            except OSError:
-                pass
-        sessions.clear_turns(ctx.safe_name)
-        memories.clear_memories(ctx.workspace_path)
         ctx.flash_status("workspace: reset")
         return True, None
 
@@ -683,7 +705,7 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
         ctx.flash_status(f"checkpoint: {tag}")
         return True, None
 
-    if q_strip in ("-load"):
+    if q_strip == "-load":
         try:
             if restored_hist := sessions.rollback_checkpoint(ctx.safe_name):
                 ctx.chat_history[:] = restored_hist

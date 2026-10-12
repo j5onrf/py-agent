@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tool Format Adapters & Self-Healing Parser [Hardened Production Ready]"""
+"""Tool Format Adapters & Self-Healing Parser [Open-CO Optimized 0.01]"""
 
 import ast
 import json
@@ -63,8 +63,9 @@ RE_ROOT_SANDBOX = re.compile(
     r"^[\"']?(?:/home/(?:user|developer|runner|admin)|/workspace|/app)(?:/(.*))?$",
     re.IGNORECASE,
 )
-RE_CD_COMMAND = re.compile(
-    r"^\s*cd\s+[\"']?(?:/[^;&|\n]*|\~[^;&|\n]*|\.)[\"']?\s*(?:&&|;)\s*",
+# Safely only strip cd when target is verifiably the current working directory or sandbox root
+RE_SAFE_CD_COMMAND = re.compile(
+    r"^\s*cd\s+[\"']?(?:\.|\~|/workspace|/app|/home/(?:user|developer|runner|admin))[\"']?\s*(?:&&|;)\s*",
     re.IGNORECASE,
 )
 
@@ -82,7 +83,7 @@ RE_BOGUS_IMPORTS = re.compile(
     re.MULTILINE,
 )
 
-RE_GUTTER_LINE = re.compile(r"^\s*\d+[:|│\t ]\s?")
+RE_GUTTER_LINE = re.compile(r"^\s*(\d+)[:|│\t ]\s?")
 
 
 def _close_unterminated_quote(cmd_str: str) -> str:
@@ -108,7 +109,7 @@ def _close_unterminated_quote(cmd_str: str) -> str:
 
 
 def _strip_line_number_gutters(text: str) -> str:
-    """Strips copied editor line number gutters from old_str or new_str only when monotonic numbering is detected."""
+    """Strips copied editor line number gutters from old_str or new_str in a single pass."""
     if not text:
         return text
 
@@ -122,45 +123,39 @@ def _strip_line_number_gutters(text: str) -> str:
     if len(non_empty) < 2:
         return text
 
-    gutter_nums = [int(m.group(1)) for l in non_empty if (m := re.match(r"^\s*(\d+)[:|│\t ]", l))]
+    gutter_nums = []
+    for l in non_empty:
+        if m := RE_GUTTER_LINE.match(l):
+            gutter_nums.append(int(m.group(1)))
 
     if len(gutter_nums) >= 2 and len(gutter_nums) / len(non_empty) >= 0.6:
         is_monotonic = all(b - a in (1, 2) for a, b in zip(gutter_nums, gutter_nums[1:]))
         if is_monotonic:
-            cleaned = []
-            for line in lines:
-                if RE_GUTTER_LINE.match(line):
-                    cleaned.append(RE_GUTTER_LINE.sub("", line, count=1))
-                else:
-                    cleaned.append(line)
-            return "".join(cleaned)
+            return "".join(RE_GUTTER_LINE.sub("", l, count=1) for l in lines)
 
     return text
 
 
 def _extract_diff_hunk(diff_text: str) -> tuple[str, str] | None:
-    """Extracts (old_str, new_str) from unified diff or git patch hunks."""
+    """Extracts (old_str, new_str) from unified diff or git patch hunks with strict header state tracking."""
     if not diff_text:
         return None
 
     lines = diff_text.replace("\r\n", "\n").splitlines()
-    has_hunk_header = any(re.match(r"^@@\s+-\d+(?:,\d+)?\s+\+\d+(?:,\d+)?\s+@@", l) for l in lines)
-    if not has_hunk_header and not any(l.startswith(("--- ", "+++ ")) for l in lines):
-        return None
-
     old_lines: list[str] = []
     new_lines: list[str] = []
     in_hunk = False
 
     for line in lines:
-        if line.startswith("@@"):
-            if in_hunk:
+        if not in_hunk:
+            if line.startswith(("---", "+++")):
+                continue
+            if line.startswith("@@"):
+                in_hunk = True
+                continue
+        else:
+            if line.startswith("@@"):
                 break
-            in_hunk = True
-            continue
-        if line.startswith(("---", "+++")):
-            continue
-        if in_hunk:
             if line.startswith("-"):
                 old_lines.append(line[1:])
             elif line.startswith("+"):
@@ -229,7 +224,6 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
                             clean_v = inner
                 clean_v = clean_v.strip()
 
-            # Schema anchor bleed repair (e.g. "^calc.py$" -> "calc.py")
             if k not in ("pattern", "regex") and len(clean_v) > 2 and clean_v.startswith("^") and clean_v.endswith("$"):
                 clean_v = clean_v[1:-1].strip()
 
@@ -278,6 +272,11 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
             if os.path.splitext(stem)[1] or os.path.exists(stem):
                 cleaned["path"] = stem.strip()
 
+        # Reject path traversal tokens
+        norm_p = os.path.normpath(cleaned["path"])
+        if ".." in norm_p.split(os.sep):
+            cleaned["path"] = os.path.basename(cleaned["path"])
+
     # 2. Command Aliases
     if "command" not in cleaned:
         for alt in ("cmd", "exec", "shell_command", "bash"):
@@ -287,7 +286,7 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
 
     if "command" in cleaned and isinstance(cleaned["command"], str):
         c = cleaned["command"].strip()
-        c = RE_CD_COMMAND.sub("", c).strip()
+        c = RE_SAFE_CD_COMMAND.sub("", c).strip()
         cleaned["command"] = _close_unterminated_quote(c)
 
     # 3. Search Pattern Aliases
@@ -417,7 +416,7 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _extract_balanced_json(text: str) -> list[dict[str, Any]]:
-    """Extracts top-level JSON objects safely by balancing braces with linear bail-out."""
+    """Extracts top-level JSON objects safely by balancing braces with linear bailout."""
     if not text or len(text) > 200_000:
         return []
 
@@ -426,8 +425,7 @@ def _extract_balanced_json(text: str) -> list[dict[str, Any]]:
     while i < n:
         if text[i] == "{":
             if text.find("}", i) == -1:
-                i += 1
-                continue
+                break
             start = i
             depth, in_str, esc, valid = 0, False, False, False
             for j in range(i, n):
@@ -461,11 +459,12 @@ def _extract_balanced_json(text: str) -> list[dict[str, Any]]:
             if valid:
                 i = j + 1
             else:
+                if depth > 0 and j == n - 1:
+                    break
                 i += 1
         elif text[i] == "[":
             if text.find("]", i) == -1:
-                i += 1
-                continue
+                break
             start = i
             depth, in_str, esc, valid_list = 0, False, False, False
             for j in range(i, n):
@@ -499,6 +498,8 @@ def _extract_balanced_json(text: str) -> list[dict[str, Any]]:
             if valid_list:
                 i = j + 1
             else:
+                if depth > 0 and j == n - 1:
+                    break
                 i += 1
         else:
             i += 1
@@ -515,38 +516,24 @@ def _parse_heredoc(cmd: str) -> tuple[str, str, bool] | None:
         return None
     first = lines[0].strip()
 
-    m1 = re.match(r"^cat\s*<<\s*(?P<q>['\"]?)(\w+)(?P=q)\s*>\s*(\S+)$", first)
-    if m1:
-        is_quoted = bool(m1.group("q"))
-        delim, path = m1.group(2), m1.group(3)
-        target_lines = []
-        for l in lines[1:]:
-            if l.strip() == delim:
-                return path.strip(), "\n".join(target_lines), is_quoted
-            target_lines.append(l)
-        return None
+    patterns = (
+        r"^cat\s*<<\s*(?P<q>['\"]?)(\w+)(?P=q)\s*>\s*(\S+)$",
+        r"^cat\s*>\s*(\S+)\s*<<\s*(?P<q>['\"]?)(\w+)(?P=q)$",
+        r"^cat\s*<<\s*(?P<q>['\"]?)(\w+)(?P=q)\s*\|\s*(?:sudo\s+)?tee\s+(\S+)$",
+    )
 
-    m2 = re.match(r"^cat\s*>\s*(\S+)\s*<<\s*(?P<q>['\"]?)(\w+)(?P=q)$", first)
-    if m2:
-        is_quoted = bool(m2.group("q"))
-        path, delim = m2.group(1), m2.group(3)
-        target_lines = []
-        for l in lines[1:]:
-            if l.strip() == delim:
-                return path.strip(), "\n".join(target_lines), is_quoted
-            target_lines.append(l)
-        return None
-
-    m3 = re.match(r"^cat\s*<<\s*(?P<q>['\"]?)(\w+)(?P=q)\s*\|\s*(?:sudo\s+)?tee\s+(\S+)$", first)
-    if m3:
-        is_quoted = bool(m3.group("q"))
-        delim, path = m3.group(2), m3.group(3)
-        target_lines = []
-        for l in lines[1:]:
-            if l.strip() == delim:
-                return path.strip(), "\n".join(target_lines), is_quoted
-            target_lines.append(l)
-        return None
+    for pat in patterns:
+        m = re.match(pat, first)
+        if m:
+            is_quoted = bool(m.group("q"))
+            delim = m.group(2) if pat != patterns[1] else m.group(3)
+            path = m.group(3) if pat != patterns[1] else m.group(1)
+            target_lines = []
+            for l in lines[1:]:
+                if l.strip() == delim:
+                    return path.strip(), "\n".join(target_lines), is_quoted
+                target_lines.append(l)
+            return None
 
     return None
 
@@ -595,11 +582,7 @@ def heal_tool_call(fname: str, raw_args: str | dict[str, Any]) -> tuple[str, dic
             cmd_full = RE_THINK_BLOCK.sub("", cmd_full)
             cmd_full = re.sub(r"^[\s\S]*?</(?:think|thought)>\s*", "", cmd_full, flags=re.IGNORECASE)
             cmd_full = re.sub(r"\s*<(?:think|thought)>[\s\S]*$", "", cmd_full, flags=re.IGNORECASE)
-            scrubbed_lines = []
-            for cl in cmd_full.splitlines():
-                cl_clean = RE_CONTROL_OR_THINK.sub("", cl)
-                if cl_clean.strip():
-                    scrubbed_lines.append(cl_clean)
+            scrubbed_lines = [cl_clean for cl in cmd_full.splitlines() if (cl_clean := RE_CONTROL_OR_THINK.sub("", cl)).strip()]
             cmd_full = "\n".join(scrubbed_lines).strip()
             healed_dict["command"] = cmd_full
 
@@ -669,6 +652,9 @@ def heal_tool_call(fname: str, raw_args: str | dict[str, Any]) -> tuple[str, dic
                 return None
             if cmd_type == "printf" and re.search(r"%[a-zA-Z]", raw_content):
                 return None
+            clean_path = path.strip()
+            if ".." in os.path.normpath(clean_path).split(os.sep):
+                return None
 
             if is_single_quote:
                 unescaped = raw_content.replace(r"'\''", "'")
@@ -683,16 +669,17 @@ def heal_tool_call(fname: str, raw_args: str | dict[str, Any]) -> tuple[str, dic
             else:
                 unescaped = raw_content.replace("\\\\", "\x00").replace(r"\"", '"').replace("\x00", "\\")
 
-            norm = normalize_params({"path": path.strip(), "content": unescaped})
+            norm = normalize_params({"path": clean_path, "content": unescaped})
             if append_nl and isinstance(norm.get("content"), str) and not norm["content"].endswith("\n"):
                 norm["content"] += "\n"
             return "write_file", norm
 
         if heredoc_res := _parse_heredoc(cmd_raw):
             target_path, file_content, is_quoted = heredoc_res
-            if is_quoted or not re.search(r"[\$`*?]", file_content):
-                if not any(exp in file_content for exp in ("$(", "${", "`")):
-                    return "write_file", normalize_params({"path": target_path.strip(), "content": file_content})
+            if ".." not in os.path.normpath(target_path).split(os.sep):
+                if is_quoted or not re.search(r"[\$`*?]", file_content):
+                    if not any(exp in file_content for exp in ("$(", "${", "`")):
+                        return "write_file", normalize_params({"path": target_path.strip(), "content": file_content})
 
         if not any(sep in cmd_raw for sep in ("&&", "||", ";", "\n")):
             if echo_m := RE_ECHO_REDIRECT.match(cmd_raw):
@@ -780,9 +767,9 @@ def heal_json_args(raw: str | dict[str, Any]) -> dict[str, Any]:
             stack.pop()
 
     if _in_str:
+        if _esc:
+            cleaned = cleaned[:-1]
         healed = cleaned + '"'
-        if stack and stack[-1] == "{":
-            stack.pop()
     else:
         healed = cleaned
 
@@ -855,7 +842,11 @@ def _extract_ast_python_calls(text: str) -> list[dict[str, Any]]:
     }
 
     last_end = 0
+    max_ast_parses = 15
+
     for m in re.finditer(r"\b(?P<name>[a-zA-Z_]\w*)\s*\(", text):
+        if len(calls) >= max_ast_parses:
+            break
         fname = m.group("name")
         if fname not in tool_names:
             continue
@@ -897,6 +888,7 @@ def _extract_ast_python_calls(text: str) -> list[dict[str, Any]]:
                     break
 
         if end_idx is None:
+            last_end = max_lookahead
             continue
 
         last_end = end_idx

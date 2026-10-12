@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Graph-Enabled Index-Map Workspace Intelligence Engine FTS5 [Production Ready]"""
+"""Graph-Enabled Index-Map Workspace Intelligence Engine FTS5 [OCR 0.01]"""
 
 import ast
 import fnmatch
@@ -11,28 +11,59 @@ import struct
 import sys
 import time
 
+C_KEYWORDS = frozenset({"if", "else", "while", "for", "switch", "return", "catch", "do", "sizeof"})
+
 LANG_RULES = {
-    'rust': {'class': r'\b(?:struct|enum|trait|union)\s+(\w+)', 'func': r'\b(?:async\s+)?(?:pub(?:\([^)]+\))?\s+)?fn\s+(\w+)'},
-    'go': {'class': r'\btype\s+(\w+)\s+struct\b', 'func': r'\bfunc\s+(?:\([^)]+\)\s+)?(\w+)'},
-    'lua': {'class': r'\b(\w+)\s*=\s*\{\}', 'func': r'\bfunction\s+([\w.:]+)'},
-    'javascript': {'class': r'\bclass\s+(\w+)', 'func': r'\b(?:async\s+)?(?:function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[^\s=]+)\s*=>)'},
-    'typescript': {'class': r'\b(?:class|interface|type)\s+(\w+)', 'func': r'\b(?:async\s+)?(?:function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[^\s=]+)\s*=>)'},
-    'cpp': {'class': r'\b(?:class|struct)\s+(\w+)', 'func': r'\b\w+(?:<[^>]+>)?\s+(\w+)\s*\([^)]*\)\s*\{'},
-    'c': {'class': r'\bstruct\s+(\w+)', 'func': r'\b\w+\s+(\w+)\s*\([^)]*\)\s*\{'}
+    "rust": {
+        "class": r"\b(?:struct|enum|trait|union)\s+(\w+)",
+        "func": r"\b(?:async\s+)?(?:pub(?:\([^)]+\))?\s+)?fn\s+(\w+)",
+    },
+    "go": {"class": r"\btype\s+(\w+)\s+struct\b", "func": r"\bfunc\s+(?:\([^)]+\)\s+)?(\w+)"},
+    "lua": {"class": r"\b(\w+)\s*=\s*\{\}", "func": r"\bfunction\s+([\w.:]+)"},
+    "javascript": {
+        "class": r"\bclass\s+(\w+)",
+        "func": r"\b(?:async\s+)?(?:function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[^\s=]+)\s*=>)",
+    },
+    "typescript": {
+        "class": r"\b(?:class|interface|type)\s+(\w+)",
+        "func": r"\b(?:async\s+)?(?:function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[^\s=]+)\s*=>)",
+    },
+    "cpp": {"class": r"\b(?:class|struct)\s+(\w+)", "func": r"\b\w+(?:<[^>]+>)?\s+(\w+)\s*\([^)]*\)\s*\{"},
+    "c": {"class": r"\bstruct\s+(\w+)", "func": r"\b\w+\s+(\w+)\s*\([^)]*\)\s*\{"},
 }
 COMPILED_LANG_RULES = {l: {k: re.compile(v) for k, v in r.items()} for l, r in LANG_RULES.items()}
 
-DEFAULT_IGNORED = frozenset({
-    '.git', '__pycache__', 'logs', '.auto-f', 'node_modules', 'venv', '.venv',
-    'SSD_BACKUPS', '.cargo', '.rustup', '.cache', '.npm', '.local', '.mozilla',
-    'target', '.agent', '.idea', '.vscode', 'projects', 'dist', 'build'
-})
+DEFAULT_IGNORED = frozenset(
+    {
+        ".git",
+        "__pycache__",
+        "logs",
+        ".auto-f",
+        "node_modules",
+        "venv",
+        ".venv",
+        "ssd_backups",
+        ".cargo",
+        ".rustup",
+        ".cache",
+        ".npm",
+        ".local",
+        ".mozilla",
+        "target",
+        ".agent",
+        ".idea",
+        ".vscode",
+        "projects",
+        "dist",
+        "build",
+    }
+)
 
-RE_MD_TITLE = re.compile(r'^#\s+(.*)', re.M)
-RE_MD_FRONTMATTER = re.compile(r'^---\s*\n(.*?)\n---\s*\n', re.DOTALL)
-RE_MD_TAGS = re.compile(r'tags\s*:\s*[\[\']?([^\]\']+)\]?', re.I)
-RE_MD_WIKI_LINKS = re.compile(r'\[\[([^#\]|]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]')
-RE_MD_STD_LINKS = re.compile(r'\[[^\]]+\]\(([^)]+\.(?:md|txt|py|sh|rs|go|lua))\)')
+RE_MD_TITLE = re.compile(r"^#\s+(.*)", re.M)
+RE_MD_FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+RE_MD_TAGS = re.compile(r"tags\s*:\s*[\[\']?([^\]\']+)\]?", re.I)
+RE_MD_WIKI_LINKS = re.compile(r"\[\[([^#\]|]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]")
+RE_MD_STD_LINKS = re.compile(r"\[[^\]]+\]\(([^)]+\.(?:md|txt|py|sh|rs|go|lua))\)")
 RE_SVG_WIDTH = re.compile(r'width\s*=\s*["\']([^"\']+)["\']')
 RE_SVG_HEIGHT = re.compile(r'height\s*=\s*["\']([^"\']+)["\']')
 
@@ -41,31 +72,55 @@ def load_gitignore_patterns(target_dir: str) -> list[str]:
     p = os.path.join(target_dir, ".gitignore")
     if os.path.isfile(p):
         try:
-            with open(p, 'r', encoding='utf-8', errors='ignore') as f:
-                return [l.strip() for l in f if l.strip() and not l.strip().startswith(('#', '!'))]
-        except Exception:
+            with open(p, "r", encoding="utf-8", errors="ignore") as f:
+                return [l.strip() for l in f if l.strip() and not l.strip().startswith(("#", "!"))]
+        except (OSError, UnicodeDecodeError):
             pass
     return []
 
 
 def should_ignore(rel_path: str, is_dir: bool, gitignore_patterns: list[str]) -> bool:
-    parts = rel_path.replace(os.sep, '/').lower().split('/')
-    if any(p in DEFAULT_IGNORED for p in parts):
+    norm = rel_path.replace(os.sep, "/")
+    parts = norm.split("/")
+    parts_lower = [p.lower() for p in parts]
+
+    if any(p in DEFAULT_IGNORED for p in parts_lower):
         return True
-    fn = parts[-1]
-    if (fn in ('history.md', 'tpm.md', 'task_log.md', 'session.jsonl', '.spend_ledger.json', '.state.json', '.ds_store', 'thumbs.db') or
-            fn.startswith('index-map-') or
-            any(fn.endswith(ext) for ext in ('.db', '.db-wal', '.db-shm', '.sqlite', '.sqlite3', '.log', '.tmp'))):
+
+    fn = parts[-1].lower()
+    if (
+        fn
+        in (
+            "history.md",
+            "tpm.md",
+            "task_log.md",
+            "session.jsonl",
+            ".spend_ledger.json",
+            ".state.json",
+            ".ds_store",
+            "thumbs.db",
+            ".last_cloud_key.txt",
+        )
+        or fn.startswith("index-map-")
+        or fn.startswith(".env")
+        or any(
+            fn.endswith(ext)
+            for ext in (".db", ".db-wal", ".db-shm", ".sqlite", ".sqlite3", ".log", ".tmp", ".key", ".pem")
+        )
+    ):
         return True
 
     for pattern in gitignore_patterns:
-        pat, dir_only = pattern.rstrip('/'), pattern.endswith('/')
+        pat, dir_only = pattern.rstrip("/"), pattern.endswith("/")
         if dir_only and not is_dir:
             continue
-        target = '/'.join(parts) if not dir_only else '/'.join(parts).rstrip('/')
-        if pat.startswith('/'):
+        target = "/".join(parts) if not dir_only else "/".join(parts).rstrip("/")
+        if pat.startswith("/"):
             p_clean = pat[1:]
-            if fnmatch.fnmatchcase(target, p_clean) or (len(parts) >= len(p_clean.split('/')) and fnmatch.fnmatchcase('/'.join(parts[:len(p_clean.split('/'))]), p_clean)):
+            if fnmatch.fnmatchcase(target, p_clean) or (
+                len(parts) >= len(p_clean.split("/"))
+                and fnmatch.fnmatchcase("/".join(parts[: len(p_clean.split("/ "))]), p_clean)
+            ):
                 return True
         else:
             if any(fnmatch.fnmatchcase(part, pat) for part in parts):
@@ -75,25 +130,30 @@ def should_ignore(rel_path: str, is_dir: bool, gitignore_patterns: list[str]) ->
 
 def is_binary(filepath: str) -> bool:
     try:
-        with open(filepath, 'rb') as f:
-            return b'\x00' in f.read(1024)
-    except Exception:
+        with open(filepath, "rb") as f:
+            return b"\x00" in f.read(1024)
+    except (OSError, PermissionError):
         return True
 
 
 def get_file_summary(filepath: str, limit: int = 10) -> str:
-    """Streams first N lines to extract high-signal file headers with O(1) memory."""
+    """Streams first N lines to extract high-signal file headers with bounded chunk memory."""
     if not os.path.isfile(filepath) or is_binary(filepath):
         return ""
     try:
-        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-            for idx, line in enumerate(f):
-                if idx >= limit:
+        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+            for _ in range(limit):
+                line = f.readline(4096)
+                if not line:
                     break
                 s = line.strip()
-                if s and not s.startswith("#!") and not s.lower().startswith(("file:", "path:", "description:", "author:", "license:")):
-                    return s.strip('#"\'/ \t')[:100].strip()
-    except Exception:
+                if (
+                    s
+                    and not s.startswith("#!")
+                    and not s.lower().startswith(("file:", "path:", "description:", "author:", "license:"))
+                ):
+                    return s.strip("#\"'/ \t")[:100].strip()
+    except (OSError, UnicodeDecodeError):
         pass
     return ""
 
@@ -121,7 +181,7 @@ class PythonGraphVisitor(ast.NodeVisitor):
             elif isinstance(b, ast.Attribute):
                 bases.append(f"{getattr(b.value, 'id', '')}.{b.attr}")
         doc = ast.get_docstring(node) or ""
-        self.classes.append((node.name, node.lineno, getattr(node, 'end_lineno', node.lineno), bases, doc))
+        self.classes.append((node.name, node.lineno, getattr(node, "end_lineno", node.lineno), bases, doc))
         self.generic_visit(node)
 
     def visit_FunctionDef(self, node):
@@ -133,87 +193,118 @@ class PythonGraphVisitor(ast.NodeVisitor):
     def visit_any_func(self, node):
         doc = ast.get_docstring(node) or ""
         args = [a.arg for a in node.args.args]
-        self.functions.append((node.name, node.lineno, getattr(node, 'end_lineno', node.lineno), args, doc))
+        self.functions.append((node.name, node.lineno, getattr(node, "end_lineno", node.lineno), args, doc))
         self.generic_visit(node)
 
 
 def parse_non_python_file(filepath: str, ext: str) -> dict:
-    lang = {'.rs': 'rust', '.go': 'go', '.lua': 'lua', '.js': 'javascript', '.ts': 'typescript', '.cpp': 'cpp', '.hpp': 'cpp', '.c': 'c', '.h': 'c'}.get(ext)
-    empty = {'classes': [], 'functions': []}
+    lang = {
+        ".rs": "rust",
+        ".go": "go",
+        ".lua": "lua",
+        ".js": "javascript",
+        ".ts": "typescript",
+        ".cpp": "cpp",
+        ".hpp": "cpp",
+        ".c": "c",
+        ".h": "c",
+    }.get(ext)
+    empty = {"classes": [], "functions": []}
     if not lang or lang not in COMPILED_LANG_RULES:
         return empty
     rules, classes, functions = COMPILED_LANG_RULES[lang], [], []
 
     try:
-        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
             lines = f.readlines()
-    except Exception:
+    except (OSError, UnicodeDecodeError):
         return empty
 
     for idx, line in enumerate(lines, 1):
         clean = line.strip()
-        if not clean or clean[:2] in ('//', '/*', '--') or clean[0] == '#':
+        if not clean or clean[:2] in ("//", "/*", "--") or clean[0] == "#":
             continue
-        if cm := rules['class'].search(clean):
+        if cm := rules["class"].search(clean):
             classes.append((cm.group(1), idx, idx, [], ""))
-        if fm := rules['func'].search(clean):
+        if fm := rules["func"].search(clean):
             if fn_name := next((g for g in fm.groups() if g), None):
-                functions.append((fn_name, idx, idx, [], ""))
+                if fn_name not in C_KEYWORDS:
+                    functions.append((fn_name, idx, idx, [], ""))
 
-    return {'classes': classes, 'functions': functions}
+    return {"classes": classes, "functions": functions}
 
 
 def analyze_markdown_file(filepath: str) -> dict:
     try:
-        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-            content = f.read()
+        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read(1024 * 1024)
         tm, tags, links = RE_MD_TITLE.search(content), set(), set()
         if fm_match := RE_MD_FRONTMATTER.search(content):
             if tags_match := RE_MD_TAGS.search(fm_match.group(1)):
-                tags.update(t.strip().lower() for t in tags_match.group(1).split(',') if t.strip())
+                tags.update(t.strip().lower() for t in tags_match.group(1).split(",") if t.strip())
         for w in RE_MD_WIKI_LINKS.findall(content):
             links.add(w.strip())
         for ml in RE_MD_STD_LINKS.findall(content):
             if not ml.startswith(("http", "https")):
                 links.add(os.path.basename(ml))
-        return {"type": "markdown", "title": tm.group(1).strip() if tm else os.path.splitext(os.path.basename(filepath))[0], "tags": sorted(list(tags)), "links": sorted(list(links))}
-    except Exception:
+        return {
+            "type": "markdown",
+            "title": tm.group(1).strip() if tm else os.path.splitext(os.path.basename(filepath))[0],
+            "tags": sorted(list(tags)),
+            "links": sorted(list(links)),
+        }
+    except (OSError, UnicodeDecodeError):
         return {"type": "markdown", "title": os.path.splitext(os.path.basename(filepath))[0]}
 
 
 def analyze_image_file(filepath: str) -> dict:
-    ext, size_bytes = os.path.splitext(filepath)[1].lstrip('.').lower(), os.path.getsize(filepath)
-    size_str = f"{size_bytes / 1024:.1f}KB" if size_bytes < 1024 * 1024 else f"{size_bytes / (1024 * 1024):.1f}MB"
     try:
-        with open(filepath, 'rb') as f:
-            head = f.read(512)
+        size_bytes = os.path.getsize(filepath)
+        size_str = (
+            f"{size_bytes / 1024:.1f}KB" if size_bytes < 1024 * 1024 else f"{size_bytes / (1024 * 1024):.1f}MB"
+        )
+    except OSError:
+        return {"type": "image", "size": "unknown"}
+
+    ext = os.path.splitext(filepath)[1].lstrip(".").lower()
+    try:
+        with open(filepath, "rb") as f:
+            head = f.read(2048)
         w, h = 0, 0
-        if ext == "png" and head.startswith(b'\x89PNG\r\n\x1a\n'):
-            w, h = struct.unpack('>II', head[16:24])
-        elif ext == "gif" and head.startswith((b'GIF87a', b'GIF89a')):
-            w, h = struct.unpack('<HH', head[6:10])
-        elif ext in ("jpg", "jpeg") and head.startswith(b'\xff\xd8'):
+        if ext == "png" and head.startswith(b"\x89PNG\r\n\x1a\n"):
+            w, h = struct.unpack(">II", head[16:24])
+        elif ext == "gif" and head.startswith((b"GIF87a", b"GIF89a")):
+            w, h = struct.unpack("<HH", head[6:10])
+        elif ext in ("jpg", "jpeg") and head.startswith(b"\xff\xd8"):
             idx = 2
-            while idx < len(head):
-                marker, length = struct.unpack('>HH', head[idx:idx + 4])
-                if 0xffc0 <= marker <= 0xffc3:
-                    w, h = struct.unpack('>HH', head[idx + 5:idx + 9])
+            while idx < len(head) - 4:
+                marker, length = struct.unpack(">HH", head[idx : idx + 4])
+                if 0xFFC0 <= marker <= 0xFFC3:
+                    w, h = struct.unpack(">HH", head[idx + 5 : idx + 9])
                     break
-                idx += length + 2
+                idx += max(2, length + 2)
         elif ext == "svg":
             text = head.decode("utf-8", errors="ignore")
             wm, hm = RE_SVG_WIDTH.search(text), RE_SVG_HEIGHT.search(text)
-            return {"type": "image/svg", "dim": f"{wm.group(1) if wm else ''}x{hm.group(1) if hm else ''}", "size": size_str}
-        return {"type": f"image/{ext}", "dim": f"{w}x{h}", "size": size_str} if w and h else {"type": f"image/{ext}", "size": size_str}
+            return {
+                "type": "image/svg",
+                "dim": f"{wm.group(1) if wm else ''}x{hm.group(1) if hm else ''}",
+                "size": size_str,
+            }
+        return (
+            {"type": f"image/{ext}", "dim": f"{w}x{h}", "size": size_str}
+            if w and h
+            else {"type": f"image/{ext}", "size": size_str}
+        )
     except Exception:
         return {"type": f"image/{ext}", "size": size_str}
 
 
 def analyze_json_file(filepath: str) -> dict:
     try:
-        if os.path.getsize(filepath) > 10 * 1024 * 1024:
-            return {"type": "json", "summary": "Large JSON file (>10MB)"}
-        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+        if os.path.getsize(filepath) > 5 * 1024 * 1024:
+            return {"type": "json", "summary": "Large JSON file (>5MB)"}
+        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
             data = json.load(f)
         return {"type": "json", "keys": list(data.keys()) if isinstance(data, dict) else []}
     except Exception:
@@ -225,7 +316,14 @@ def analyze_shell_file(filepath: str) -> dict:
 
 
 def analyze_generic_file(filepath: str) -> dict:
-    return {"type": f"binary/{os.path.splitext(filepath)[1].lstrip('.') or 'bin'}"} if is_binary(filepath) else {"type": os.path.splitext(filepath)[1].lstrip('.') or "file", "summary": get_file_summary(filepath, 15) or "Empty file"}
+    return (
+        {"type": f"binary/{os.path.splitext(filepath)[1].lstrip('.') or 'bin'}"}
+        if is_binary(filepath)
+        else {
+            "type": os.path.splitext(filepath)[1].lstrip(".") or "file",
+            "summary": get_file_summary(filepath, 15) or "Empty file",
+        }
+    )
 
 
 def init_db(db_path: str) -> sqlite3.Connection:
@@ -234,7 +332,9 @@ def init_db(db_path: str) -> sqlite3.Connection:
     cur = conn.cursor()
     cur.execute("PRAGMA journal_mode=WAL;")
     cur.execute("PRAGMA synchronous=NORMAL;")
-    cur.execute("CREATE VIRTUAL TABLE IF NOT EXISTS nodes USING fts5(id, name, type, filepath, language, signature, doc, lines);")
+    cur.execute(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS nodes USING fts5(id, name, type, filepath, language, signature, doc, lines);"
+    )
     cur.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);")
     conn.commit()
     return conn
@@ -245,7 +345,18 @@ def find_db_path(start_dir: str | None = None) -> str | None:
     while True:
         for check in (os.path.join(curr, ".agent"), curr):
             if os.path.isdir(check):
-                if found := next((os.path.join(check, f) for f in os.listdir(check) if f.startswith("index-map-memory-") and f.endswith(".db")), None):
+                try:
+                    entries = os.listdir(check)
+                except OSError:
+                    continue
+                if found := next(
+                    (
+                        os.path.join(check, f)
+                        for f in entries
+                        if f.startswith("index-map-memory-") and f.endswith(".db")
+                    ),
+                    None,
+                ):
                     return found
         if (parent := os.path.dirname(curr)) == curr:
             break
@@ -253,20 +364,37 @@ def find_db_path(start_dir: str | None = None) -> str | None:
     return None
 
 
-def compile_ascii_tree(target_dir: str) -> str:
+def compile_ascii_tree(target_dir: str, patterns: list[str] | None = None) -> str:
+    """Compiles directory tree strictly filtering ignored files to prevent leaking secrets."""
+    if patterns is None:
+        patterns = load_gitignore_patterns(target_dir)
+
     files = []
     modules_dir = os.path.join(target_dir, "modules")
+
     for root in (target_dir, modules_dir):
         if os.path.isdir(root):
-            is_modules = (os.path.realpath(root) == os.path.realpath(modules_dir))
+            is_modules = os.path.realpath(root) == os.path.realpath(modules_dir)
             sub = "modules" if is_modules else ""
-            files.extend((sub, f, os.path.join(root, f)) for f in sorted(os.listdir(root)) if os.path.isfile(os.path.join(root, f)) and not f.startswith("index-map-") and not f.endswith(('.db', '.tmp', '.log')))
+            try:
+                entries = sorted(os.listdir(root))
+            except OSError:
+                continue
+
+            for f in entries:
+                full_p = os.path.join(root, f)
+                rel_p = os.path.relpath(full_p, target_dir)
+                if not os.path.isfile(full_p) or should_ignore(rel_p, False, patterns):
+                    continue
+                files.append((sub, f, full_p))
 
     if not files:
         return ""
+
     lines = ["# Codebase Modules & Active Architecture:"]
     for idx, (subdir, name, path) in enumerate(files):
-        disp, desc = os.path.join(subdir, name) if subdir else name, get_file_summary(path)
+        disp = os.path.join(subdir, name) if subdir else name
+        desc = get_file_summary(path)
         connector = "└── " if idx == len(files) - 1 else "├── "
         lines.append(f"#   {connector}{disp:<24} - {desc}" if desc else f"#   {connector}{disp}")
     return "\n".join(lines) + "\n# -----------------------------------------------------------------------------------------\n"
@@ -277,60 +405,82 @@ def compile_flat_shorthand(skeleton: dict) -> str:
     for rel_path, data in sorted(skeleton.items()):
         t = data.get("type", "file")
         if t == "python":
-            parts = [f"imp:{','.join(data['imports'])}" if data.get('imports') else "", f"cls:{','.join(data['classes'])}" if data.get('classes') else "", f"fn:{','.join(data['functions'])}" if data.get('functions') else ""]
+            parts = [
+                f"imp:{','.join(data['imports'])}" if data.get("imports") else "",
+                f"cls:{','.join(data['classes'])}" if data.get("classes") else "",
+                f"fn:{','.join(data['functions'])}" if data.get("functions") else "",
+            ]
         elif t in ("rust", "go", "lua", "javascript", "typescript", "cpp", "c"):
-            parts = [f"cls:{','.join(data['classes'])}" if data.get('classes') else "", f"fn:{','.join(data['functions'])}" if data.get('functions') else ""]
+            parts = [
+                f"cls:{','.join(data['classes'])}" if data.get("classes") else "",
+                f"fn:{','.join(data['functions'])}" if data.get("functions") else "",
+            ]
         elif t == "markdown":
-            parts = [f"title:{data['title']}" if data.get('title') else "", f"tags:{','.join(data['tags'])}" if data.get('tags') else "", f"links:{','.join(data['links'])}" if data.get('links') else ""]
+            parts = [
+                f"title:{data['title']}" if data.get("title") else "",
+                f"tags:{','.join(data['tags'])}" if data.get("tags") else "",
+                f"links:{','.join(data['links'])}" if data.get("links") else "",
+            ]
         elif t.startswith("image/"):
-            parts = [f"dim:{data['dim']}" if data.get('dim') else "", f"size:{data['size']}" if data.get('size') else ""]
+            parts = [
+                f"dim:{data['dim']}" if data.get("dim") else "",
+                f"size:{data['size']}" if data.get("size") else "",
+            ]
         elif t == "json":
-            parts = [f"keys:{','.join(data['keys'])}" if data.get('keys') else ""]
+            parts = [f"keys:{','.join(data['keys'])}" if data.get("keys") else ""]
         else:
-            parts = [f"sum:{data.get('summary', '').replace('\n', ' ').strip()}" if data.get('summary') else ""]
+            parts = [f"sum:{data.get('summary', '').replace(chr(10), ' ').strip()}" if data.get("summary") else ""]
 
         meta = " | ".join(filter(None, parts))
         lines.append(f"[{t}:{rel_path}] {meta}" if meta else f"[{t}:{rel_path}]")
     return "\n".join(lines)
 
 
-def run_indexing(target_dir: str, force: bool = False, is_agent: bool = False, no_db: bool = False, print_output: bool = False) -> None:
+def run_indexing(
+    target_dir: str,
+    force: bool = False,
+    is_agent: bool = False,
+    no_db: bool = False,
+    print_output: bool = False,
+) -> None:
     if os.path.basename(target_dir) == ".agent":
         target_dir = os.path.dirname(target_dir)
     proj_name = os.path.basename(target_dir)
 
-    if is_agent:
-        out_dir = os.path.join(target_dir, ".agent")
-    else:
-        out_dir = target_dir
-        if not any(flag in sys.argv for flag in ("--db", "--with-db")):
-            no_db = True
-
+    out_dir = os.path.join(target_dir, ".agent") if is_agent else target_dir
     os.makedirs(out_dir, exist_ok=True)
     output_file = os.path.join(out_dir, f"index-map-{proj_name}.txt")
     db_path = os.path.join(out_dir, f"index-map-memory-{proj_name}.db")
 
     patterns = load_gitignore_patterns(target_dir)
 
-    # Staleness guard: skip re-indexing if output is fresh and force=False
+    # Staleness check: verify existing file mtimes
     if not force and os.path.isfile(output_file) and (no_db or os.path.isfile(db_path)):
         try:
             map_mtime = os.path.getmtime(output_file)
             is_stale = False
             for root, dirs, files in os.walk(target_dir):
-                dirs[:] = [d for d in dirs if not should_ignore(os.path.relpath(os.path.join(root, d), target_dir), True, patterns)]
+                dirs[:] = [
+                    d
+                    for d in dirs
+                    if not should_ignore(os.path.relpath(os.path.join(root, d), target_dir), True, patterns)
+                ]
                 for file in files:
                     fp = os.path.join(root, file)
                     rel_path = os.path.relpath(fp, target_dir)
                     if not should_ignore(rel_path, False, patterns):
-                        if os.path.getmtime(fp) > map_mtime:
+                        try:
+                            if os.path.getmtime(fp) > map_mtime:
+                                is_stale = True
+                                break
+                        except OSError:
                             is_stale = True
                             break
                 if is_stale:
                     break
             if not is_stale:
                 if print_output:
-                    with open(output_file, 'r', encoding='utf-8') as f:
+                    with open(output_file, "r", encoding="utf-8") as f:
                         sys.stdout.write(f.read())
                         sys.stdout.flush()
                 return
@@ -338,94 +488,186 @@ def run_indexing(target_dir: str, force: bool = False, is_agent: bool = False, n
             pass
 
     db_conn = None
-    if not no_db:
-        db_conn = init_db(db_path)
+    try:
+        if not no_db:
+            db_conn = init_db(db_path)
 
-    skeleton = {}
-    db_rows = []
+        skeleton = {}
+        db_rows = []
 
-    for root, dirs, files in os.walk(target_dir):
-        dirs[:] = [d for d in dirs if not should_ignore(os.path.relpath(os.path.join(root, d), target_dir), True, patterns)]
-        for file in files:
-            fp = os.path.join(root, file)
-            rel_path = os.path.relpath(fp, target_dir)
-            if should_ignore(rel_path, False, patterns):
-                continue
+        dispatch = {
+            ".md": analyze_markdown_file,
+            ".sh": analyze_shell_file,
+            ".json": analyze_json_file,
+            ".png": analyze_image_file,
+            ".jpg": analyze_image_file,
+            ".jpeg": analyze_image_file,
+            ".gif": analyze_image_file,
+            ".svg": analyze_image_file,
+        }
 
-            ext = os.path.splitext(file)[1].lower()
-            is_py_shebang = False
-            if not ext and not is_binary(fp):
-                try:
-                    with open(fp, 'r', encoding='utf-8', errors='ignore') as f:
-                        first_line = f.readline()
-                        second_line = f.readline()
-                        if first_line.startswith("#!") and ("python" in first_line or "python" in second_line):
-                            is_py_shebang = True
-                except Exception:
-                    pass
+        for root, dirs, files in os.walk(target_dir):
+            dirs[:] = [
+                d
+                for d in dirs
+                if not should_ignore(os.path.relpath(os.path.join(root, d), target_dir), True, patterns)
+            ]
+            for file in files:
+                fp = os.path.join(root, file)
+                rel_path = os.path.relpath(fp, target_dir)
+                if should_ignore(rel_path, False, patterns):
+                    continue
 
-            if ext == '.py' or is_py_shebang:
-                try:
-                    with open(fp, 'r', encoding='utf-8', errors='replace') as f:
-                        content = f.read()
-                    tree = ast.parse(content, filename=fp)
-                    v = PythonGraphVisitor(rel_path)
-                    v.visit(tree)
+                ext = os.path.splitext(file)[1].lower()
+                is_py_shebang = False
+                if not ext and not is_binary(fp):
+                    try:
+                        with open(fp, "r", encoding="utf-8", errors="ignore") as f:
+                            first_line = f.readline(256)
+                            second_line = f.readline(256)
+                            if first_line.startswith("#!") and ("python" in first_line or "python" in second_line):
+                                is_py_shebang = True
+                    except (OSError, UnicodeDecodeError):
+                        pass
+
+                if ext == ".py" or is_py_shebang:
+                    try:
+                        with open(fp, "r", encoding="utf-8", errors="replace") as f:
+                            content = f.read()
+                        tree = ast.parse(content, filename=fp)
+                        v = PythonGraphVisitor(rel_path)
+                        v.visit(tree)
+                        skeleton[rel_path] = {
+                            "type": "python",
+                            "imports": sorted(list({i[0].split(".")[0] for i in v.imports})),
+                            "classes": [c[0] for c in v.classes],
+                            "functions": [f[0] for f in v.functions],
+                        }
+                        if db_conn:
+                            for cname, start, end, bases, doc in v.classes:
+                                db_rows.append(
+                                    (
+                                        f"class:{rel_path}:{cname}",
+                                        cname,
+                                        "class",
+                                        rel_path,
+                                        "python",
+                                        f"class {cname}({', '.join(bases)})",
+                                        doc,
+                                        f"{start}-{end}",
+                                    )
+                                )
+                            for fname, start, end, args, doc in v.functions:
+                                db_rows.append(
+                                    (
+                                        f"func:{rel_path}:{fname}",
+                                        fname,
+                                        "function",
+                                        rel_path,
+                                        "python",
+                                        f"{fname}({', '.join(args)})",
+                                        doc,
+                                        f"{start}-{end}",
+                                    )
+                                )
+                    except Exception as e:
+                        skeleton[rel_path] = {"type": "python", "error": f"AST error: {e}"}
+                elif ext in (".rs", ".go", ".lua", ".js", ".ts", ".cpp", ".hpp", ".c", ".h"):
+                    parsed = parse_non_python_file(fp, ext)
                     skeleton[rel_path] = {
-                        "type": "python",
-                        "imports": sorted(list({i[0].split('.')[0] for i in v.imports})),
-                        "classes": [c[0] for c in v.classes],
-                        "functions": [f[0] for f in v.functions]
+                        "type": ext.lstrip("."),
+                        "classes": [c[0] for c in parsed["classes"]],
+                        "functions": [f[0] for f in parsed["functions"]],
                     }
                     if db_conn:
-                        for cname, start, end, bases, doc in v.classes:
-                            db_rows.append((f"class:{rel_path}:{cname}", cname, "class", rel_path, "python", f"class {cname}({', '.join(bases)})", doc, f"{start}-{end}"))
-                        for fname, start, end, args, doc in v.functions:
-                            db_rows.append((f"func:{rel_path}:{fname}", fname, "function", rel_path, "python", f"{fname}({', '.join(args)})", doc, f"{start}-{end}"))
-                except Exception as e:
-                    skeleton[rel_path] = {"type": "python", "error": f"AST error: {e}"}
-            elif ext in ('.rs', '.go', '.lua', '.js', '.ts', '.cpp', '.hpp', '.c', '.h'):
-                parsed = parse_non_python_file(fp, ext)
-                skeleton[rel_path] = {"type": ext.lstrip('.'), "classes": [c[0] for c in parsed['classes']], "functions": [f[0] for f in parsed['functions']]}
-                if db_conn:
-                    for cname, start, end, _, doc in parsed['classes']:
-                        db_rows.append((f"class:{rel_path}:{cname}", cname, "class", rel_path, ext.lstrip('.'), cname, doc, f"{start}-{end}"))
-                    for fname, start, end, _, doc in parsed['functions']:
-                        db_rows.append((f"func:{rel_path}:{fname}", fname, "function", rel_path, ext.lstrip('.'), fname, doc, f"{start}-{end}"))
-            else:
-                dispatch = {'.md': analyze_markdown_file, '.sh': analyze_shell_file, '.json': analyze_json_file, '.png': analyze_image_file, '.jpg': analyze_image_file, '.svg': analyze_image_file}
-                res = dispatch.get(ext, analyze_generic_file)(fp)
-                skeleton[rel_path] = res
-                if db_conn and res.get("title"):
-                    db_rows.append((f"doc:{rel_path}", res.get("title", ""), "markdown", rel_path, "markdown", res.get("title", ""), ", ".join(res.get("tags", [])), "1-1"))
+                        for cname, start, end, _, doc in parsed["classes"]:
+                            db_rows.append(
+                                (
+                                    f"class:{rel_path}:{cname}",
+                                    cname,
+                                    "class",
+                                    rel_path,
+                                    ext.lstrip("."),
+                                    cname,
+                                    doc,
+                                    f"{start}-{end}",
+                                )
+                            )
+                        for fname, start, end, _, doc in parsed["functions"]:
+                            db_rows.append(
+                                (
+                                    f"func:{rel_path}:{fname}",
+                                    fname,
+                                    "function",
+                                    rel_path,
+                                    ext.lstrip("."),
+                                    fname,
+                                    doc,
+                                    f"{start}-{end}",
+                                )
+                            )
+                else:
+                    res = dispatch.get(ext, analyze_generic_file)(fp)
+                    skeleton[rel_path] = res
+                    if db_conn and res.get("title"):
+                        db_rows.append(
+                            (
+                                f"doc:{rel_path}",
+                                res.get("title", ""),
+                                "markdown",
+                                rel_path,
+                                "markdown",
+                                res.get("title", ""),
+                                ", ".join(res.get("tags", [])),
+                                "1-1",
+                            )
+                        )
 
-    if db_conn:
-        try:
+        if db_conn:
             cur = db_conn.cursor()
             cur.execute("DELETE FROM nodes;")
             if db_rows:
                 cur.executemany("INSERT INTO nodes VALUES (?, ?, ?, ?, ?, ?, ?, ?)", db_rows)
-            cur.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('root_dir', ?)", (os.path.realpath(target_dir),))
+            cur.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('root_dir', ?)", (os.path.realpath(target_dir),)
+            )
             db_conn.commit()
-        finally:
-            db_conn.close()
+    finally:
+        if db_conn:
+            try:
+                db_conn.close()
+            except sqlite3.Error:
+                pass
 
-    disp_dir = target_dir.replace(os.path.expanduser("~"), "~", 1) if target_dir.startswith(os.path.expanduser("~")) else target_dir
-    header = f"# CODEBASE INDEX MAP | Generated: {time.strftime('%Y-%m-%d %H:%M')} | Workspace: {proj_name} | Path: {disp_dir}\n# Active symbols and structural connections mapped in the local index.\n# -----------------------------------------------------------------------------------------\n"
-    header += compile_ascii_tree(target_dir) or "# -----------------------------------------------------------------------------------------\n\n"
+    disp_dir = (
+        target_dir.replace(os.path.expanduser("~"), "~", 1)
+        if target_dir.startswith(os.path.expanduser("~"))
+        else target_dir
+    )
+    header = (
+        f"# CODEBASE INDEX MAP | Generated: {time.strftime('%Y-%m-%d %H:%M')} | Workspace: {proj_name} | Path: {disp_dir}\n"
+        "# Active symbols and structural connections mapped in the local index.\n"
+        "# -----------------------------------------------------------------------------------------\n"
+    )
+    header += (
+        compile_ascii_tree(target_dir, patterns)
+        or "# -----------------------------------------------------------------------------------------\n\n"
+    )
     flat_map = header + compile_flat_shorthand(skeleton)
 
     try:
-        tmp = f"{output_file}.tmp"
-        with open(tmp, 'w', encoding='utf-8') as f:
+        tmp = f"{output_file}.tmp.{os.getpid()}"
+        with open(tmp, "w", encoding="utf-8") as f:
             f.write(flat_map)
         os.replace(tmp, output_file)
         if print_output:
             sys.stdout.write(flat_map)
             sys.stdout.flush()
         elif not is_agent:
-            sys.stderr.write(f"\r\x1b[2K\033[1;32m[ok] Mapping complete! [{proj_name} index-map {'& SQLite database updated' if not no_db else 'updated'}]\033[0m\n")
-    except Exception as e:
+            sys.stderr.write(
+                f"\r\x1b[2K\033[1;32m[ok] Mapping complete! [{proj_name} index-map {'& SQLite database updated' if not no_db else 'updated'}]\033[0m\n"
+            )
+    except OSError as e:
         sys.stderr.write(f"\r\x1b[2K\033[1;31m[error] Failed to write map: {e}\033[0m\n")
 
 
@@ -434,12 +676,12 @@ def search_symbols(pattern: str, workspace: str | None = None) -> str:
     if not db:
         return "[error] Index database not found. Initialize with 'ai init' or 'index-map init --db'."
 
-    # Strip wildcards from pattern before appending prefix operators
-    clean_query = re.sub(r'[^a-zA-Z0-9_ ]', ' ', pattern).strip()
+    clean_query = re.sub(r"[^a-zA-Z0-9_ ]", " ", pattern).strip()
     if not clean_query:
         return "[error] Empty search pattern."
 
-    fts_terms = " OR ".join(f"{w}*" for w in clean_query.split())
+    # Quote each token to prevent FTS5 keyword collision (AND, OR, NOT, NEAR)
+    fts_terms = " OR ".join(f'"{w}"*' for w in clean_query.split())
     sql = "SELECT id, type, filepath, signature, doc, lines, bm25(nodes) as rank FROM nodes WHERE nodes MATCH ? ORDER BY rank LIMIT 15"
 
     conn = sqlite3.connect(db, timeout=15.0)
@@ -447,11 +689,11 @@ def search_symbols(pattern: str, workspace: str | None = None) -> str:
         cur = conn.cursor()
         try:
             rows = cur.execute(sql, (fts_terms,)).fetchall()
-        except Exception:
-            escaped_like = clean_query.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        except sqlite3.OperationalError:
+            escaped_like = clean_query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             rows = cur.execute(
                 "SELECT id, type, filepath, signature, doc, lines, 0 FROM nodes WHERE name LIKE ? ESCAPE '\\' LIMIT 15",
-                (f"%{escaped_like}%",)
+                (f"%{escaped_like}%",),
             ).fetchall()
     finally:
         conn.close()
@@ -461,7 +703,8 @@ def search_symbols(pattern: str, workspace: str | None = None) -> str:
 
     res = [f"\n\033[1;32m[Matches for: '{pattern}']\033[0m"]
     for nid, ntype, fpath, sig, doc, lines, _ in rows:
-        doc_snippet = f" • [italic]{doc.splitlines()[0][:60]}[/italic]" if doc else ""
+        doc_lines = [l.strip() for l in doc.splitlines() if l.strip()]
+        doc_snippet = f" • \033[3m{doc_lines[0][:60]}\033[0m" if doc_lines else ""
         res.append(f"  • \033[1;36m{sig}\033[0m [{ntype}] in \033[33m{fpath}:{lines}\033[0m{doc_snippet}")
     return "\n".join(res)
 
@@ -471,14 +714,14 @@ def extract_snippet(symbol: str, workspace: str | None = None) -> str:
     if not db:
         return "[error] Database not found."
 
-    escaped_sym = symbol.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+    escaped_sym = symbol.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     conn = sqlite3.connect(db, timeout=15.0)
     try:
         cur = conn.cursor()
         rows = cur.execute(
             "SELECT filepath, lines, type, name FROM nodes WHERE name = ? OR id LIKE ? ESCAPE '\\' LIMIT 5",
-            (symbol, f"%:{escaped_sym}")
+            (symbol, f"%:{escaped_sym}"),
         ).fetchall()
 
         root_dir = None
@@ -495,34 +738,61 @@ def extract_snippet(symbol: str, workspace: str | None = None) -> str:
         return f"[error] Symbol '{symbol}' not found."
 
     if not root_dir:
-        root_dir = os.path.dirname(os.path.dirname(db)) if os.path.basename(os.path.dirname(db)) == ".agent" else os.path.dirname(db)
+        root_dir = (
+            os.path.dirname(os.path.dirname(db))
+            if os.path.basename(os.path.dirname(db)) == ".agent"
+            else os.path.dirname(db)
+        )
 
+    root_real = os.path.realpath(root_dir)
     res = []
+
     for filepath, lines_str, node_type, name in rows:
         if not lines_str or "-" not in lines_str:
             continue
-        l_start, l_end = map(int, lines_str.split("-"))
-        full_path = os.path.join(root_dir, filepath)
-        if not os.path.isfile(full_path):
+        try:
+            l_start, l_end = map(int, lines_str.split("-"))
+        except (ValueError, TypeError):
+            continue
+
+        full_path = os.path.realpath(os.path.join(root_dir, filepath))
+        if os.path.commonpath([root_real, full_path]) != root_real or not os.path.isfile(full_path):
             continue
 
         res.append(f"\n\033[1;36m[Snippet] {node_type.upper()} {name} in {filepath} (Lines {l_start} to {l_end}):\033[0m")
         try:
-            with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
                 lines = f.readlines()
-            res.append("".join(lines[max(0, l_start - 1):l_end]))
-        except Exception as e:
+            res.append("".join(lines[max(0, l_start - 1) : l_end]))
+        except OSError as e:
             res.append(f"[error] Extract failed: {e}")
     return "\n".join(res)
 
 
 def main():
     raw_args = sys.argv[1:]
+    flags = {
+        "--agent",
+        "--db",
+        "--with-db",
+        "--no-db",
+        "--txt-only",
+        "--force",
+        "-f",
+        "--cat",
+        "-p",
+        "--print",
+        "--show",
+    }
     is_agent = "--agent" in raw_args
     force = "--force" in raw_args or "-f" in raw_args
     no_db = "--no-db" in raw_args or "--txt-only" in raw_args
-    print_cat = any(f in raw_args for f in ("--cat", "-p", "--print", "--show", "cat", "show"))
-    args = [a for a in raw_args if a not in ("--agent", "--db", "--with-db", "--no-db", "--txt-only", "--force", "-f", "--cat", "-p", "--print", "--show", "cat", "show")]
+    print_cat = any(f in raw_args for f in ("--cat", "-p", "--print", "--show"))
+
+    args = [a for a in raw_args if a not in flags]
+    if args and args[0].lower() in ("cat", "show"):
+        print_cat = True
+        args = args[1:]
 
     if not args:
         run_indexing(os.getcwd(), force=force, is_agent=is_agent, no_db=no_db, print_output=print_cat)
@@ -530,18 +800,22 @@ def main():
 
     cmd = args[0].lower()
     if cmd in ("--help", "-h"):
-        print("Usage: index-map [init | search <pattern> | snippet <symbol>] [--db] [--force]")
+        print("Usage: index-map [init | search <pattern> | snippet <symbol>] [--db] [--force] [--cat]")
     elif cmd == "init":
         target = os.path.abspath(os.path.expanduser(args[1])) if len(args) > 1 else os.getcwd()
-        run_indexing(target, force=force, is_agent=is_agent, no_db=no_db)
+        run_indexing(target, force=force, is_agent=is_agent, no_db=no_db, print_output=print_cat)
     elif cmd == "search":
-        print(search_symbols(args[1], workspace=args[2] if len(args) > 2 else None)) if len(args) > 1 else print("[error] Search pattern required.")
+        print(search_symbols(args[1], workspace=args[2] if len(args) > 2 else None)) if len(args) > 1 else print(
+            "[error] Search pattern required."
+        )
     elif cmd == "snippet":
-        print(extract_snippet(args[1], workspace=args[2] if len(args) > 2 else None)) if len(args) > 1 else print("[error] Symbol required.")
+        print(extract_snippet(args[1], workspace=args[2] if len(args) > 2 else None)) if len(args) > 1 else print(
+            "[error] Symbol required."
+        )
     else:
         path_test = os.path.abspath(os.path.expanduser(args[0]))
         if os.path.isdir(path_test):
-            run_indexing(path_test, force=force, is_agent=is_agent, no_db=no_db)
+            run_indexing(path_test, force=force, is_agent=is_agent, no_db=no_db, print_output=print_cat)
         else:
             print(f"[error] Unknown command: {args[0]}")
 

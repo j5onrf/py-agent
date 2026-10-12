@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Zero-Trust Security & Boundary Enforcement Kernel [Hardened Production Ready]"""
+"""Zero-Trust Security & Boundary Enforcement Kernel [OCR 0.01]"""
 
 import ast
 import os
@@ -96,6 +96,40 @@ EXEC_WRAPPERS: frozenset[str] = frozenset(
     }
 )
 
+# Flags consuming following arguments across wrappers
+WRAPPER_VALUE_FLAGS: dict[str, frozenset[str]] = {
+    "timeout": frozenset({"-k", "-s"}),
+    "nice": frozenset({"-n"}),
+    "ionice": frozenset({"-c", "-n", "-p"}),
+    "xargs": frozenset({"-P", "-n", "-L", "-d", "-E", "-I", "-s"}),
+    "env": frozenset({"-C", "-S", "-u"}),
+    "stdbuf": frozenset({"-i", "-o", "-e"}),
+}
+
+# Shell reserved words and grouping operators that precede command binaries
+SHELL_RESERVED_WORDS: frozenset[str] = frozenset(
+    {
+        "if",
+        "then",
+        "else",
+        "elif",
+        "fi",
+        "do",
+        "done",
+        "while",
+        "until",
+        "for",
+        "in",
+        "time",
+        "!",
+        "{",
+        "}",
+        "(",
+        ")",
+        "function",
+    }
+)
+
 # Secondary shell interpreters that accept inline -c script arguments
 INTERPRETER_BINARIES: frozenset[str] = frozenset(
     {
@@ -183,9 +217,21 @@ DANGEROUS_SUBPROCESS_OPS: frozenset[str] = frozenset(
 DANGEROUS_PATHLIB_OPS: frozenset[str] = frozenset(
     {"unlink", "rmdir", "chmod", "lchmod", "rename", "replace", "write_bytes", "write_text", "open"}
 )
-DANGEROUS_IO_OPS: frozenset[str] = frozenset({"open", "FileIO"})
+DANGEROUS_IO_OPS: frozenset[str] = frozenset({"open", "FileIO", "open_code"})
 DANGEROUS_BUILTINS: frozenset[str] = frozenset(
-    {"exec", "eval", "compile", "__import__", "getattr", "setattr", "delattr", "__getattribute__"}
+    {
+        "open",
+        "file",
+        "FileIO",
+        "exec",
+        "eval",
+        "compile",
+        "__import__",
+        "getattr",
+        "setattr",
+        "delattr",
+        "__getattribute__",
+    }
 )
 
 # Destructive methods forbidden on any object or receiver
@@ -228,7 +274,6 @@ RE_ROOT_SANDBOX: re.Pattern = re.compile(
     re.IGNORECASE,
 )
 RE_ENV_VAR_PREFIX: re.Pattern = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*")
-RE_CMD_SUBSTITUTION: re.Pattern = re.compile(r"[\$<>]\(([\s\S]*?)\)|`([^`]+)`")
 
 _ui_instance: Any = None
 _ui_checked: bool = False
@@ -349,21 +394,70 @@ def resolve_path(workspace: str, target: str) -> str:
     return os.path.realpath(clean if os.path.isabs(clean) else os.path.join(ws_real, clean))
 
 
-def _extract_commands(cmd_str: str) -> list[list[str]]:
-    """Recursively parses pipelines, sequential lists, and command substitutions into token arrays."""
-    extracted: list[str] = []
+def _extract_balanced_substitutions(text: str) -> tuple[str, list[str]]:
+    """Extracts command substitutions $(...), <(...), >(...), and `...` with balanced nesting."""
+    subs: list[str] = []
+    cleaned: list[str] = []
+    i, n = 0, len(text)
+    in_single = False
 
-    for m in RE_CMD_SUBSTITUTION.finditer(cmd_str):
-        sub_body = m.group(1) or m.group(2)
-        if sub_body and sub_body.strip():
-            extracted.append(sub_body.strip())
+    while i < n:
+        ch = text[i]
+        if ch == "'" and (i == 0 or text[i - 1] != "\\"):
+            in_single = not in_single
+            cleaned.append(ch)
+            i += 1
+            continue
 
-    cleaned_parent = RE_CMD_SUBSTITUTION.sub(" ", cmd_str)
-    extracted.insert(0, cleaned_parent)
+        if not in_single:
+            if ch in ("$", "<", ">") and i + 1 < n and text[i + 1] == "(":
+                i += 2
+                depth = 1
+                sub_chars = []
+                while i < n and depth > 0:
+                    c = text[i]
+                    if c == "(" and (i == 0 or text[i - 1] != "\\"):
+                        depth += 1
+                    elif c == ")" and (i == 0 or text[i - 1] != "\\"):
+                        depth -= 1
+                        if depth == 0:
+                            i += 1
+                            break
+                    sub_chars.append(c)
+                    i += 1
+                sub_body = "".join(sub_chars)
+                if sub_body.strip():
+                    subs.append(sub_body.strip())
+                cleaned.append(" ")
+                continue
 
+            if ch == "`" and (i == 0 or text[i - 1] != "\\"):
+                i += 1
+                bt_chars = []
+                while i < n and not (text[i] == "`" and text[i - 1] != "\\"):
+                    bt_chars.append(text[i])
+                    i += 1
+                if i < n:
+                    i += 1
+                bt_body = "".join(bt_chars)
+                if bt_body.strip():
+                    subs.append(bt_body.strip())
+                cleaned.append(" ")
+                continue
+
+        cleaned.append(ch)
+        i += 1
+
+    return "".join(cleaned), subs
+
+
+def _extract_commands(cmd_str: str) -> tuple[list[list[str]], str | None]:
+    """Recursively parses pipelines, lists, and balanced substitutions into token arrays. Fails closed."""
+    parent_clean, subs = _extract_balanced_substitutions(cmd_str)
+    all_exprs = [parent_clean] + subs
     parsed_cmds: list[list[str]] = []
-    for expr in extracted:
-        # Pre-split on newlines and carriage returns so multiline commands are never collapsed
+
+    for expr in all_exprs:
         for segment in re.split(r"[\r\n]+", expr):
             seg = segment.strip()
             if not seg:
@@ -372,8 +466,8 @@ def _extract_commands(cmd_str: str) -> list[list[str]]:
                 lexer = shlex.shlex(seg, posix=True, punctuation_chars=True)
                 lexer.whitespace_split = True
                 tokens = list(lexer)
-            except ValueError:
-                tokens = seg.split()
+            except ValueError as e:
+                return [], f"Unbalanced quotes or shell syntax error in command: {e}"
 
             cur_cmd: list[str] = []
             for t in tokens:
@@ -386,32 +480,43 @@ def _extract_commands(cmd_str: str) -> list[list[str]]:
             if cur_cmd:
                 parsed_cmds.append(cur_cmd)
 
-    return parsed_cmds
+    return parsed_cmds, None
 
 
-def check_command(workspace: str, cmd: str) -> str | None:
+def check_command(workspace: str, cmd: str, current_depth: int = 0) -> str | None:
     """Inspects shell commands for privilege escalation, package mutations, or system path escapes."""
+    if current_depth > 8:
+        return "Command execution recursion depth limit exceeded (max 8 levels)"
     if not cmd or not cmd.strip():
         return "Empty command"
 
     root_ws = os.path.realpath(workspace)
-    command_groups = _extract_commands(cmd.strip())
+    command_groups, parse_err = _extract_commands(cmd.strip())
+    if parse_err:
+        return parse_err
+
+    local_vars: dict[str, str] = {}
 
     for tokens in command_groups:
         if not tokens:
             continue
 
-        # Iteratively peel environment variable assignments and execution wrappers to a fixed point
+        # Iteratively peel environment variables, execution wrappers, and shell reserved words
         unwrapping = True
         while tokens and unwrapping:
             unwrapping = False
+
+            while tokens and (tokens[0].lower() in SHELL_RESERVED_WORDS or tokens[0] in ("!", "{", "}", "(", ")")):
+                tokens.pop(0)
+                unwrapping = True
 
             while tokens and RE_ENV_VAR_PREFIX.match(tokens[0]):
                 var_token = tokens.pop(0)
                 unwrapping = True
                 if "=" in var_token:
-                    _, val = var_token.split("=", 1)
+                    k, val = var_token.split("=", 1)
                     clean_val = val.strip("'\"`")
+                    local_vars[k] = clean_val
                     if clean_val and (clean_val.startswith(("/", "~")) or ".." in clean_val):
                         norm_val = os.path.realpath(os.path.expanduser(clean_val))
                         if is_in_system_dir(norm_val):
@@ -422,12 +527,16 @@ def check_command(workspace: str, cmd: str) -> str | None:
             if tokens and os.path.basename(tokens[0]).lower() in EXEC_WRAPPERS:
                 wrapper = os.path.basename(tokens.pop(0)).lower()
                 unwrapping = True
+                val_flags = WRAPPER_VALUE_FLAGS.get(wrapper, frozenset())
+
                 while tokens and (tokens[0].startswith("-") or tokens[0] == "--"):
                     opt = tokens.pop(0)
-                    if opt in ("--", "-i", "-0"):
-                        continue
-                    if opt in ("-u", "-k", "-s", "-n", "-I") and tokens:
+                    if opt == "--":
+                        break
+                    if opt in val_flags and tokens:
                         tokens.pop(0)
+                    elif any(opt.startswith(f"{vf}=") for vf in val_flags):
+                        continue
                     elif (opt in ("-S", "--split-string") and tokens) or opt.startswith(("-S", "--split-string=")):
                         if opt.startswith("--split-string="):
                             split_val = opt.split("=", 1)[1]
@@ -443,8 +552,8 @@ def check_command(workspace: str, cmd: str) -> str | None:
                                 sub_lex = shlex.shlex(split_val, posix=True, punctuation_chars=True)
                                 sub_lex.whitespace_split = True
                                 tokens = list(sub_lex) + tokens
-                            except ValueError:
-                                tokens = split_val.split() + tokens
+                            except ValueError as e:
+                                return f"Unbalanced quotes in wrapper split-string: {e}"
 
                 if wrapper in ("timeout", "nice", "ionice") and tokens:
                     if re.match(r"^\d+(\.\d+)?[smhd]?$", tokens[0]):
@@ -482,17 +591,20 @@ def check_command(workspace: str, cmd: str) -> str | None:
         elif binary in FORBIDDEN_GLOBAL_COMMANDS:
             return f"Global system/package binary: '{binary}'"
 
-        # Intercept shell interpreters with inline scripts
+        # Intercept shell interpreters with inline script clusters (-c, -lc, -ec, -xc)
         if binary in INTERPRETER_BINARIES:
             for idx, tok in enumerate(tokens[1:], start=1):
                 shell_code = None
                 if tok == "-c" and idx + 1 < len(tokens):
                     shell_code = tokens[idx + 1]
-                elif tok.startswith("-c") and len(tok) > 2:
-                    shell_code = tok[2:]
+                elif re.match(r"^-[a-zA-Z]*c$", tok) and idx + 1 < len(tokens):
+                    shell_code = tokens[idx + 1]
+                elif re.match(r"^-[a-zA-Z]*c(.+)$", tok):
+                    m = re.match(r"^-[a-zA-Z]*c(.+)$", tok)
+                    shell_code = m.group(1) if m else None
 
                 if shell_code is not None:
-                    if err := check_command(workspace, shell_code):
+                    if err := check_command(workspace, shell_code, current_depth + 1):
                         return f"Nested shell -c execution blocked: {err}"
 
         # Intercept Python module and code invocations
@@ -510,8 +622,11 @@ def check_command(workspace: str, cmd: str) -> str | None:
                 py_code = None
                 if tok == "-c" and idx + 1 < len(tokens):
                     py_code = tokens[idx + 1]
-                elif tok.startswith("-c") and len(tok) > 2:
-                    py_code = tok[2:]
+                elif re.match(r"^-[a-zA-Z]*c$", tok) and idx + 1 < len(tokens):
+                    py_code = tokens[idx + 1]
+                elif re.match(r"^-[a-zA-Z]*c(.+)$", tok):
+                    m = re.match(r"^-[a-zA-Z]*c(.+)$", tok)
+                    py_code = m.group(1) if m else None
 
                 if py_code is not None:
                     if ast_err := check_ast(py_code):
@@ -541,8 +656,18 @@ def check_command(workspace: str, cmd: str) -> str | None:
 
             for part in split_targets:
                 clean_t = re.sub(r"/+", "/", part.strip("'\"`"))
-                expanded_t = os.path.expandvars(clean_t)
 
+                # Resolve variables defined in the same command before path inspection
+                if re.search(r"\$[A-Za-z_]|\$\{[A-Za-z_]", clean_t):
+                    def _sub_var(m):
+                        vname = m.group(1) or m.group(2)
+                        return local_vars.get(vname, os.environ.get(vname, ""))
+
+                    clean_t = re.sub(r"\$\{([A-Za-z0-9_]+)\}|\$([A-Za-z0-9_]+)", _sub_var, clean_t)
+                    if re.search(r"\$[A-Za-z_]|\$\{[A-Za-z_]", clean_t):
+                        return f"Unresolved shell variable in command path: '{raw_t}'"
+
+                expanded_t = os.path.expandvars(clean_t)
                 norm_path = os.path.realpath(os.path.expanduser(expanded_t))
                 if norm_path in SYSTEM_DEVICES:
                     continue
@@ -554,7 +679,14 @@ def check_command(workspace: str, cmd: str) -> str | None:
                 if is_in_system_dir(norm_path):
                     return f"System directory reference: '{raw_t}'"
 
-                if ".." in clean_t or clean_t.startswith("~/") or clean_t.startswith("/") or expanded_t.startswith("/"):
+                # Check all non-flag path references against workspace boundaries
+                if (
+                    ".." in clean_t
+                    or clean_t.startswith("~")
+                    or clean_t.startswith("/")
+                    or expanded_t.startswith("/")
+                    or (os.path.islink(norm_path) and is_outside(root_ws, norm_path))
+                ):
                     if not is_harness_tool(norm_path) and is_outside(root_ws, norm_path):
                         return f"Path outside workspace: '{raw_t}'"
 
@@ -569,8 +701,8 @@ def check_ast(code: str) -> str | None:
 
     try:
         tree = ast.parse(code)
-    except SyntaxError as e:
-        return f"[error] Python syntax error in code cell: {e}"
+    except (SyntaxError, ValueError, RecursionError, MemoryError) as e:
+        return f"[error] Python AST syntax or structure error in code cell: {e}"
 
     aliases: dict[str, str] = {}
     for node in ast.walk(tree):
@@ -598,8 +730,16 @@ def check_ast(code: str) -> str | None:
                             fn_name = aliases.get(val.func.id, val.func.id)
                         elif isinstance(val.func, ast.Attribute):
                             fn_name = val.func.attr
+
                         if fn_name in ("Path", "pathlib.Path"):
                             aliases[target.id] = "pathlib"
+                        elif fn_name in ("__import__", "importlib.import_module"):
+                            if (
+                                val.args
+                                and isinstance(val.args[0], ast.Constant)
+                                and isinstance(val.args[0].value, str)
+                            ):
+                                aliases[target.id] = val.args[0].value
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Subscript):
@@ -620,6 +760,17 @@ def check_ast(code: str) -> str | None:
 
                 if func_id in DANGEROUS_BUILTINS:
                     return f"PYTHON DANGEROUS OP: {func_id}() cell execution"
+                if resolved in (
+                    "open",
+                    "io.open",
+                    "_io.open",
+                    "codecs.open",
+                    "builtins.open",
+                    "__builtins__.open",
+                    "io.FileIO",
+                    "_io.FileIO",
+                ):
+                    return f"PYTHON DANGEROUS OP: {resolved}() file access"
                 if resolved.startswith("os.") and resolved.split(".", 1)[1] in DANGEROUS_OS_OPS:
                     return f"OUT-OF-BOUNDS KERNEL EXECUTION: {resolved}()"
                 if resolved.startswith("shutil.") and resolved.split(".", 1)[1] in DANGEROUS_SHUTIL_OPS:
@@ -637,7 +788,7 @@ def check_ast(code: str) -> str | None:
                 if isinstance(val_node, ast.Name):
                     mod_name = aliases.get(val_node.id, val_node.id)
                 elif isinstance(val_node, ast.Call):
-                    if isinstance(val_node.func, ast.Name) and val_node.func.id == "__import__":
+                    if isinstance(val_node.func, ast.Name) and val_node.func.id in ("__import__", "importlib.import_module"):
                         if (
                             val_node.args
                             and isinstance(val_node.args[0], ast.Constant)
@@ -645,8 +796,13 @@ def check_ast(code: str) -> str | None:
                         ):
                             mod_name = val_node.args[0].value
                         else:
-                            return "PYTHON DANGEROUS OP: dynamic __import__() execution"
+                            return "PYTHON DANGEROUS OP: dynamic module import"
 
+                if (
+                    mod_name in ("io", "_io", "codecs", "builtins", "__builtins__")
+                    and attr_name in ("open", "FileIO", "open_code")
+                ):
+                    return f"PYTHON DANGEROUS OP: {mod_name}.{attr_name}() file access"
                 if attr_name in DANGEROUS_METHOD_CALLS:
                     return f"OUT-OF-BOUNDS KERNEL EXECUTION: .{attr_name}() dangerous call or mutation"
                 if attr_name in DANGEROUS_BUILTINS:

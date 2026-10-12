@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Production Py-Agent Shell Hook (Sub-Millisecond Startup)
+# Production Py-Agent Shell Hook (Sub-Millisecond Startup)(OCR 0.01)
 
 [[ $- == *i* && -f "$HOME/.config/py-agent/ai-agent.py" ]] || return 0 2>/dev/null || exit 0
 
@@ -18,7 +18,7 @@ _ai_teleport() {
         local target=""
         IFS= read -r target < "$f" 2>/dev/null
         rm -f "$f"
-        [[ -n "$target" && -d "$target" ]] && cd "$target" 2>/dev/null
+        [[ -n "$target" && -d "$target" ]] && cd -- "$target" 2>/dev/null
     fi
 }
 
@@ -47,7 +47,8 @@ ai_handle_missing() {
     cmd=$("$_AI_PY" "$_AI_DIR/ai-agent.py" --interactive "$@") || return 127
     [[ -z "$cmd" ]] && return 127
 
-    exp=$(printf '%s' "$cmd" | sed -E $'s/\x1b\\][^\x07\x1b]*(\x07|\x1b\\\\)|\x1b\\[[0-9;?]*[a-zA-Z~]|\r//g' | LC_ALL=C tr -d '\000-\010\013-\037\177')
+    # Full ECMA-48 CSI/OSC stripper using # delimiter to avoid collision with [ -/]
+    exp=$(printf '%s' "$cmd" | sed -E $'s#\x1b\\][^\x07\x1b]*(\x07|\x1b\\\\)|\x1b\\[[0-9;?]*[ -/]*[@-~]|\r##g; s#^\\[[0-9;?]*[a-zA-Z~]##g' | LC_ALL=C tr -d '\000-\010\013-\037\177')
     [[ -z "$exp" ]] && return 127
 
     _AI_HANDLED=1
@@ -144,9 +145,14 @@ ai() {
             if ! kill -0 "$pid" 2>/dev/null; then
                 rm -f "$old"
             else
-                local comm
-                comm=$(ps -p "$pid" -o comm= 2>/dev/null | tr -d ' -')
-                if [[ -n "$comm" && ! "$comm" =~ (bash|zsh|sh)$ ]]; then
+                local comm=""
+                if [[ -r "/proc/$pid/comm" ]]; then
+                    IFS= read -r comm < "/proc/$pid/comm" 2>/dev/null
+                else
+                    comm=$(ps -p "$pid" -o comm= 2>/dev/null)
+                fi
+                comm=$(printf '%s' "$comm" | tr -d ' -')
+                if [[ -n "$comm" && ! "$comm" =~ ^(bash|zsh|sh)$ ]]; then
                     rm -f "$old"
                 fi
             fi
@@ -157,49 +163,54 @@ ai() {
 
     if [[ "${1:-}" == "init" ]]; then
         shift
-        local path skills=() name map db
-        path=$(pwd)
+        # Use ws_path to prevent clobbering Zsh special $path ($PATH) variable
+        local ws_path skills=() name map db
+        ws_path=$(pwd)
 
         if [[ -n "${1:-}" && "$1" != -* ]]; then
-            path="$1"
+            ws_path="$1"
             shift
         fi
         skills=("$@")
 
-        [[ -d "$path" ]] || mkdir -p "$path" 2>/dev/null
-        path=$(CDPATH= cd "$path" 2>/dev/null && pwd -P) || return 1
+        if [[ ! -d "$ws_path" ]]; then
+            if ! mkdir -p "$ws_path" 2>/dev/null; then
+                echo "ai: failed to create workspace directory '$ws_path'" >&2
+                return 1
+            fi
+        fi
+        ws_path=$(CDPATH= cd -- "$ws_path" 2>/dev/null && pwd -P) || return 1
 
         local lockfile="$_AI_DIR/.active_cd.$$"
-        echo "$path" > "$lockfile"
-        name=$(basename "$path")
-
         local _saved_traps
-        _saved_traps=$(trap -p INT TERM 2>/dev/null)
-        trap 'rm -f "'"$lockfile"'" 2>/dev/null; eval "${_saved_traps:-trap - INT TERM}"' INT TERM
+        _saved_traps=$(trap -p INT TERM HUP 2>/dev/null)
+        trap 'rm -f "'"$lockfile"'" 2>/dev/null' INT TERM HUP
+        echo "$ws_path" > "$lockfile"
+        name=$(basename "$ws_path")
 
-        local cfg="$path/.agent/config.json"
+        local cfg="$ws_path/.agent/config.json"
         local use_map=0
         if [[ -f "$cfg" ]] && grep -qiE '"(map|use_map)"\s*:\s*(true|1)' "$cfg" 2>/dev/null; then
             use_map=1
         fi
 
         if [[ "$use_map" -eq 1 ]]; then
-            map="$path/.agent/index-map-$name.txt"; [[ -f "$map" ]] || map="$path/index-map-$name.txt"
-            db="$path/.agent/index-map-memory-$name.db"; [[ -f "$db" ]] || db="$path/index-map-memory-$name.db"
+            map="$ws_path/.agent/index-map-$name.txt"; [[ -f "$map" ]] || map="$ws_path/index-map-$name.txt"
+            db="$ws_path/.agent/index-map-memory-$name.db"; [[ -f "$db" ]] || db="$ws_path/index-map-memory-$name.db"
 
             if [[ ! -f "$map" || ! -f "$db" ]]; then
-                "$_AI_PY" "$_AI_DIR/tools/index-map/index-map" --agent "$path" 2>/dev/null || true
+                "$_AI_PY" "$_AI_DIR/tools/index-map/index-map" --agent "$ws_path" 2>/dev/null || true
             fi
         fi
 
-        AI_ACTIVE_SKILL="${skills[*]}" AI_WORKSPACE_PATH="$path" "$_AI_PY" "$_AI_DIR/ai-agent.py" --talk-chat
+        AI_ACTIVE_SKILL="${skills[*]}" AI_WORKSPACE_PATH="$ws_path" "$_AI_PY" "$_AI_DIR/ai-agent.py" --talk-chat
         _ai_teleport
         rm -f "$lockfile" 2>/dev/null
 
         if [[ -n "$_saved_traps" ]]; then
             eval "$_saved_traps"
         else
-            trap - INT TERM
+            trap - INT TERM HUP
         fi
     else
         "$_AI_PY" "$_AI_DIR/ai-agent.py" --talk "$@"

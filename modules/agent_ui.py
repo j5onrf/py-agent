@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""UI Module - Spinners, session boxes, and interactive menus [Production Ready]"""
+"""UI Module - Spinners, session boxes, and interactive menus [Open-CO-CR Optimized .01]"""
 
 import json
 import os
@@ -339,8 +339,8 @@ def _read_fd(fd: int) -> str:
         # TCSADRAIN preserves buffered type-ahead keystrokes without dropping them
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
         try:
-            sys.stdout.write("\033[0m")
-            sys.stdout.flush()
+            sys.stderr.write("\033[0m")
+            sys.stderr.flush()
         except Exception:
             pass
 
