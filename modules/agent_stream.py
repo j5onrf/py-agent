@@ -283,30 +283,48 @@ class RichStreamer:
                 pass
 
 
-def _process_stream_chunk(content: str, reasoning: str, in_think_block: bool) -> tuple[str, bool, bool]:
+def _process_stream_chunk(content: str, reasoning: str, in_think_block: Any = False) -> tuple[str, bool, Any]:
     if content:
         if "Final Answer:" in content:
             content = RE_FINAL_ANSWER.sub("", content).lstrip()
         if "<|tool_call" in content:
             content = RE_TOOL_CALL_BLOCK.sub("", content).replace("<|tool_call_start|>", "").replace("<|tool_call_end|>", "")
 
+    # Normalize incoming think state:
+    # "reasoning" -> started by server reasoning delta
+    # "content"   -> started by literal <think> tag in content stream
+    # "" / False  -> not currently in a think block
+    think_mode = in_think_block if isinstance(in_think_block, str) else ("reasoning" if in_think_block else "")
+
     # 1. Server emits explicit reasoning delta
     if reasoning:
-        think_part = f"<think>{reasoning}" if not in_think_block else reasoning
-        return think_part, True, True
+        prefix = "<think>" if not think_mode else ""
+        if content:
+            # Transition occurred in a single chunk
+            return f"{prefix}{reasoning}</think>{content}", False, ""
+        return f"{prefix}{reasoning}", True, "reasoning"
 
     # 2. Server emits content delta
     if content:
+        if think_mode == "reasoning":
+            # Transition from server reasoning delta to answer content: close <think>
+            if "</think>" in content:
+                parts = content.split("</think>", 1)
+                rem = parts[1]
+                in_rem = "<think>" in rem
+                return content, in_rem, ("content" if in_rem else "")
+            return f"</think>{content}", False, ""
+
+        # Content-based thinking (raw <think> tags in content stream)
         if "<think>" in content and "</think>" in content:
-            in_think = content.rindex("<think>") > content.rindex("</think>")
+            is_in = content.rindex("<think>") > content.rindex("</think>")
+            return content, is_in, ("content" if is_in else "")
         elif "<think>" in content:
-            in_think = True
+            return content, True, "content"
         elif "</think>" in content:
-            in_think = False
+            return content, False, ""
         else:
-            in_think = in_think_block
+            is_in = bool(think_mode)
+            return content, is_in, think_mode
 
-        # Never prematurely inject </think> here: let the thought stream naturally
-        return content, in_think, in_think
-
-    return "", False, in_think_block
+    return "", False, think_mode

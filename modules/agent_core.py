@@ -623,6 +623,9 @@ def agentic_turn(
             streamer.stop()
 
         ans_text = "".join(acc_content)
+        if "<think>" in ans_text and "</think>" not in ans_text:
+            ans_text += "</think>"
+
         in_tok, out_tok = _calc_turn_tokens(ans_text, body_messages, captured_usage, is_local)
         if captured_usage and "prompt_tokens" in captured_usage:
             last_prompt_tokens = captured_usage["prompt_tokens"]
