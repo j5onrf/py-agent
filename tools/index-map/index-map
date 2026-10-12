@@ -786,7 +786,8 @@ def main():
     }
     is_agent = "--agent" in raw_args
     force = "--force" in raw_args or "-f" in raw_args
-    no_db = "--no-db" in raw_args or "--txt-only" in raw_args
+    with_db = any(f in raw_args for f in ("--db", "--with-db"))
+    no_db = ("--no-db" in raw_args or "--txt-only" in raw_args) or (not is_agent and not with_db)
     print_cat = any(f in raw_args for f in ("--cat", "-p", "--print", "--show"))
 
     args = [a for a in raw_args if a not in flags]
