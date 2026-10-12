@@ -5,6 +5,7 @@ import json
 import os
 import re
 import select
+import shutil
 import sys
 import threading
 import time
@@ -12,7 +13,7 @@ import urllib.request as urlreq
 from collections.abc import Callable
 from typing import Any
 
-from rich.box import DOUBLE, HEAVY, ROUNDED, SQUARE
+from rich.box import DOUBLE, HEAVY, HORIZONTALS, ROUNDED, SQUARE
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
@@ -21,7 +22,6 @@ from rich.text import Text
 try:
     import termios
     import tty
-
     _HAS_TERMIOS = True
 except ImportError:
     _HAS_TERMIOS = False
@@ -30,16 +30,17 @@ CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
 _console = Console()
 RE_UNSAFE_SHELL_CHARS: re.Pattern = re.compile(r'[\[\]{}()=\'"",;|<>#`$&*!\\\r\n]')
 
+# (title, box_type, border_col, title_style, show_icons, is_full)
 STYLES = {
-    1: ("∿", ROUNDED, "bright_cyan", "bold"),  # #1 Minimal (No Icons, Rounded) - Compact Default
-    2: ("∿", SQUARE, "bright_cyan", "bold"),  # #2 Minimal (No Icons, Square) - Compact
-    3: ("∿", ROUNDED, "bright_cyan", "bold"),  # #3 Minimal (With Icons, Rounded) - Compact
-    4: ("∿", SQUARE, "bright_cyan", "bold"),  # #4 Minimal (With Icons, Square) - Compact
-    5: ("∿ Py Agent", DOUBLE, "bright_blue", "bold bright_blue"),
-    6: ("∿ Py Agent", HEAVY, "bright_cyan", "bold bright_white"),
-    7: ("∿ Py Agent", ROUNDED, "green", "bold bright_green"),
-    8: ("∿", ROUNDED, "green", "bold bright_green"),
-    9: ("∿", ROUNDED, "bright_cyan", "bold"),  # #9 Full-Width Screen (No Icons, Rounded)
+    1: ("∿", ROUNDED, "bright_cyan", "bold", False, False),         # Minimal Rounded
+    2: ("∿", SQUARE, "bright_cyan", "bold", False, False),          # Minimal Square
+    3: ("∿", ROUNDED, "bright_cyan", "bold", True, False),          # Glyphs Rounded
+    4: ("∿", SQUARE, "bright_cyan", "bold", True, False),          # Glyphs Square
+    5: ("∿ Py Agent", DOUBLE, "bright_blue", "bold bright_blue", False, False),
+    6: ("∿ Py Agent", HEAVY, "bright_cyan", "bold bright_white", False, False),
+    7: ("∿ Py Agent", ROUNDED, "green", "bold bright_green", False, False),
+    8: ("∿", ROUNDED, "green", "bold bright_green", False, False),
+    9: ("∿", ROUNDED, "bright_cyan", "bold", False, True),          # Full-Width Responsive
 }
 
 RICH_TO_ANSI = {
@@ -58,25 +59,24 @@ RICH_TO_ANSI = {
 }
 
 _core_module = None
+_cached_local_model: tuple[str, float] = ("", 0.0)
 
 
 class InlineSpinner:
-    def __init__(
-        self, chars: tuple[str, ...] | list[str] | str = ("✦ [∿ · ·]", "✦ [· ∿ ·]", "✦ [· · ∿]", "✦ [· ∿ ·]")
-    ) -> None:
+    def __init__(self, chars: tuple[str, ...] | list[str] | str = ("✦ [∿ · ·]", "✦ [· ∿ ·]", "✦ [· · ∿]", "✦ [· ∿ ·]")) -> None:
         self.chars = chars
         self.active = False
         self.thread = None
         self.message = "Thinking..."
         self.start_time = 0.0
         self._lock = threading.Lock()
+        self._stop_event = threading.Event()
 
     def _get_theme_color(self) -> str:
         global _core_module
         try:
             if _core_module is None:
                 import agent_core
-
                 _core_module = agent_core
             box = _core_module.get_state("box_style", 1)
             border_col = "green" if box == 6 else STYLES.get(box, STYLES[1])[2]
@@ -86,27 +86,31 @@ class InlineSpinner:
 
     def _glimmer(self, text: str, t: float, color: str) -> str:
         pos = (t * 2.2) % (len(text) + 8) - 4
-        rendered = []
+        parts, cur_style = [], None
         for i, ch in enumerate(text):
             dist = abs(i - pos)
-            if dist < 1.0:
-                rendered.append(f"\033[1;37m{ch}\033[0m")
-            elif dist < 2.5:
-                rendered.append(f"{color}\033[1m{ch}\033[0m")
-            else:
-                rendered.append(f"\033[2m{ch}\033[0m")
-        return "".join(rendered)
+            style = "\033[1;37m" if dist < 1.0 else (f"{color}\033[1m" if dist < 2.5 else "\033[2m")
+            if style != cur_style:
+                parts.append(style)
+                cur_style = style
+            parts.append(ch)
+        parts.append("\033[0m")
+        return "".join(parts)
 
     def _spin(self) -> None:
         idx, char_len, tick = 0, len(self.chars), 0.0
         color = self._get_theme_color()
-        while self.active:
+        while not self._stop_event.is_set() and self.active:
             try:
-                char, elapsed = self.chars[int(idx) % char_len], time.time() - self.start_time
+                char = self.chars[int(idx) % char_len]
+                elapsed = time.time() - self.start_time
                 with self._lock:
                     msg = self.message
                 glim_msg = self._glimmer(msg, tick, color)
-                sys.stderr.write(f"\r\x1b[K{color}{char}\033[0m {glim_msg} \033[2m{elapsed:.1f}s\033[0m")
+                if self._stop_event.is_set() or not self.active:
+                    break
+                frame = f"\r\x1b[K{color}{char}\033[0m {glim_msg} \033[2m{elapsed:.1f}s\033[0m"
+                sys.stderr.write(frame)
                 sys.stderr.flush()
             except OSError:
                 pass
@@ -128,6 +132,7 @@ class InlineSpinner:
             self.message = message
             if not self.active:
                 self.active = True
+                self._stop_event.clear()
                 self.start_time = time.time()
                 try:
                     sys.stderr.write("\033[?25l")
@@ -142,17 +147,16 @@ class InlineSpinner:
             if not self.active:
                 return
             self.active = False
+            self._stop_event.set()
             elapsed = time.time() - self.start_time if getattr(self, "start_time", None) else 0.0
 
         if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=0.2)
+            self.thread.join(timeout=0.3)
             self.thread = None
 
         try:
             if done_msg:
-                sys.stderr.write(
-                    f"\r\x1b[2K\033[1;32mOK\033[0m \033[1;36m{done_msg}\033[0m \033[2m({elapsed:.1f}s)\033[0m\n"
-                )
+                sys.stderr.write(f"\r\x1b[2K\033[1;32mOK\033[0m \033[1;36m{done_msg}\033[0m \033[2m({elapsed:.1f}s)\033[0m\n")
             else:
                 sys.stderr.write("\r\x1b[2K\r")
             sys.stderr.write("\033[?25h")
@@ -165,6 +169,7 @@ class CalmBoatSpinner:
     _boat_lock = threading.Lock()
     _last_x: int = 0
     _last_dir: int = 1
+    _WAVE_PATTERN: str = "-~~~" * 32
 
     def __init__(self, tokens_used: int = 0, max_tokens: int = 8192) -> None:
         self.active = False
@@ -179,8 +184,8 @@ class CalmBoatSpinner:
             if max_tokens:
                 self.max_tokens = max(1, max_tokens)
 
-    def update(self, message: str = "") -> None:
-        pass
+    def update(self, *args: Any, **kwargs: Any) -> None:
+        """CalmBoatSpinner renders physical wave progress; textual message updates are no-op."""
 
     def _sail(self) -> None:
         with CalmBoatSpinner._boat_lock:
@@ -229,14 +234,18 @@ class CalmBoatSpinner:
             sail = "<|" if direction == 1 else "|>"
             sail_line = (" " * (x + 2)) + f"\033[1;33m{sail}\033[0m"
 
-            water_pattern = ("-~~~" * 16)[w_offset : w_offset + width]
+            water_pattern = self._WAVE_PATTERN[w_offset : w_offset + width]
             left_water = water_pattern[:x]
             right_water = water_pattern[x + 5 : width]
             hull = r"\___/"
 
             w_col = "\033[34m" if pct < 70 else ("\033[33m" if pct < 88 else "\033[31m")
 
-            water_line = f"{w_col}{left_water}\033[0m\033[1;33m{hull}\033[0m{w_col}{right_water}\033[0m"
+            water_line = (
+                f"{w_col}{left_water}\033[0m"
+                f"\033[1;33m{hull}\033[0m"
+                f"{w_col}{right_water}\033[0m"
+            )
 
             try:
                 sys.stderr.write(f"\r\x1b[2K{sail_line}\n\r\x1b[2K{water_line}\033[1A")
@@ -280,14 +289,18 @@ class CalmBoatSpinner:
             dock_x = min(width - 5, max(0, int((pct / 100.0) * (width - 5))))
 
             sail_line = (" " * (dock_x + 2)) + "\033[1;33m|>\033[0m"
-            water_pattern = ("-~~~" * 16)[:width]
+            water_pattern = self._WAVE_PATTERN[:width]
             left_water = water_pattern[:dock_x]
             right_water = water_pattern[dock_x + 5 : width]
             hull = r"\___/"
 
             w_col = "\033[34m" if pct < 70 else ("\033[33m" if pct < 88 else "\033[31m")
 
-            docked_line = f"{w_col}{left_water}\033[0m\033[1;33m{hull}\033[0m{w_col}{right_water}\033[0m"
+            docked_line = (
+                f"{w_col}{left_water}\033[0m"
+                f"\033[1;33m{hull}\033[0m"
+                f"{w_col}{right_water}\033[0m"
+            )
 
             try:
                 sys.stderr.write(f"\r\x1b[2K{sail_line}\n\r\x1b[2K{docked_line}\n\n")
@@ -311,17 +324,20 @@ def _read_fd(fd: int) -> str:
     old = termios.tcgetattr(fd)
     try:
         tty.setraw(fd)
-        termios.tcflush(fd, termios.TCIFLUSH)
         char_bytes = os.read(fd, 1)
         if not char_bytes:
             return ""
         if char_bytes == b"\x03":
             raise KeyboardInterrupt
         if char_bytes == b"\x1b" and select.select([fd], [], [], 0.05)[0]:
-            char_bytes += os.read(fd, 2)
+            more = os.read(fd, 2)
+            char_bytes += more
+            if len(more) == 1 and more in (b"[", b"O") and select.select([fd], [], [], 0.03)[0]:
+                char_bytes += os.read(fd, 1)
         return char_bytes.decode("utf-8", errors="ignore")
     finally:
-        termios.tcsetattr(fd, termios.TCSAFLUSH, old)
+        # TCSADRAIN preserves buffered type-ahead keystrokes without dropping them
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
         try:
             sys.stdout.write("\033[0m")
             sys.stdout.flush()
@@ -346,13 +362,24 @@ def get_key() -> str:
         return ""
 
 
-def get_local_model_name() -> str:
+def get_local_model_name(max_age: float = 30.0) -> str:
+    """Retrieves local model name with 30s TTL cache to avoid stalling render on slow/offline servers."""
+    global _cached_local_model
+    now = time.monotonic()
+    val, last_time = _cached_local_model
+    if val and (now - last_time < max_age):
+        return val
+
     try:
         req = urlreq.Request("http://localhost:8080/v1/models", method="GET")
-        with urlreq.urlopen(req, timeout=0.5) as r:
-            return os.path.basename(json.loads(r.read().decode("utf-8"))["data"][0]["id"])
+        with urlreq.urlopen(req, timeout=0.25) as r:
+            m_name = os.path.basename(json.loads(r.read().decode("utf-8"))["data"][0]["id"])
+            _cached_local_model = (m_name, now)
+            return m_name
     except Exception:
-        return "model not loaded (offline :8080)"
+        fallback = "model not loaded (offline :8080)"
+        _cached_local_model = (fallback, now)
+        return fallback
 
 
 def draw_session_box(
@@ -367,11 +394,14 @@ def draw_session_box(
     sub_id: int | None = None,
     box_style: int = 1,
 ) -> None:
-    display_dir = workspace_path.replace(home_dir, "~", 1) if workspace_path.startswith(home_dir) else workspace_path
+    display_dir = (
+        workspace_path.replace(home_dir, "~", 1)
+        if (home_dir and workspace_path.startswith(home_dir))
+        else workspace_path
+    )
 
     try:
         import agent_cloud
-
         configs = agent_cloud.get_active_configs([])
         model_name = configs[0][2].get("model", "local-model") if configs else get_local_model_name()
     except Exception:
@@ -382,7 +412,6 @@ def draw_session_box(
     if is_agent:
         try:
             import agent_core as core
-
             use_map = bool(core.get_state("use_map", False)) or os.environ.get("AI_USE_MAP") == "1"
         except Exception:
             use_map = os.environ.get("AI_USE_MAP") == "1"
@@ -400,9 +429,7 @@ def draw_session_box(
 
     # Style #1-4 (Compact) & #9 (Full-Width): Minimal Wave Boxes
     if box_style in (1, 2, 3, 4, 9):
-        base_title, box_type, border_col, title_style = STYLES.get(box_style, STYLES[1])
-        show_icons = box_style in (3, 4)
-        is_full = box_style == 9
+        base_title, box_type, border_col, title_style, show_icons, is_full = STYLES.get(box_style, STYLES[1])
 
         icon_table = Table(show_header=False, box=None, padding=(0, 1 if show_icons else 0, 0, 1))
         if show_icons:
@@ -429,12 +456,10 @@ def draw_session_box(
         )
 
         if is_full:
-            # Full-width responsive layout for Box 9 only (adds 1 space right cushion)
             grid = Table.grid(expand=True, padding=(0, 1, 0, 0), pad_edge=True)
             grid.add_column(ratio=1, vertical="middle", no_wrap=True)
             grid.add_column(justify="right", vertical="middle", no_wrap=True)
         else:
-            # Compact layout for Boxes 1-4 (Completely unaffected)
             grid = Table.grid(padding=(0, 2))
             grid.add_column(vertical="middle")
             grid.add_column(justify="center", vertical="middle")
@@ -451,7 +476,7 @@ def draw_session_box(
             expand=is_full,
         )
     else:
-        # Styles 5-8: Classic Key-Value Table
+        base_title, box_type, border_col, title_style = STYLES.get(box_style, STYLES[1])[:4]
         table = Table(show_header=False, box=None, padding=(0, 2, 0, 0))
         table.add_column("Key", style="dim cyan", justify="right")
         table.add_column("Value", style="green")
@@ -463,7 +488,6 @@ def draw_session_box(
         table.add_row("database:", db_status)
 
         if box_style == 6:
-            # Style #6: Dual-Chamber Inset Panel
             title_str = f"  ∿ Py Agent [sub-agent #{sub_id}]" if sub_id else "  ∿ Py Agent"
             max_val_len = max(len(model_name), len(display_dir), len(display_profile), len(db_status), 16)
             sep_str = " " + "─" * (10 + 2 + max_val_len)
@@ -474,7 +498,6 @@ def draw_session_box(
                 expand=False,
             )
         else:
-            base_title, box_type, border_col, title_style = STYLES.get(box_style, STYLES[1])
             title_text = f"{base_title} [sub-agent #{sub_id}]" if sub_id else base_title
             panel = Panel(
                 table,
@@ -526,8 +549,9 @@ def run_interactive_selection(
 
     try:
         while True:
-            current_intent, current_cmd = options[current_idx].split("|||", 1)
-            current_cmd = clean_tool_prefix_fn(current_cmd)
+            intent_part, sep, cmd_part = options[current_idx].partition("|||")
+            current_intent = intent_part.strip() if sep else "run"
+            current_cmd = clean_tool_prefix_fn((cmd_part if sep else intent_part).strip())
             is_danger = current_cmd.startswith("DANGER_FLAGGED:")
             cmd_to_show = current_cmd.replace("DANGER_FLAGGED:", "")
             display_cmd = (
@@ -676,20 +700,10 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                     tok_count = max(1, (len(body or raw_content) * 10) // 36)
                     tok_lbl = f"~{tok_count / 1000:.1f}kt" if tok_count >= 1000 else f"~{tok_count}t"
                     defaults["yolo"] = str(meta.get("yolo", "")).lower() in ("true", "1", "yes", "on")
-                    defaults["map"] = str(meta.get("map", meta.get("use_map", ""))).lower() in (
-                        "true",
-                        "1",
-                        "yes",
-                        "on",
-                    )
+                    defaults["map"] = str(meta.get("map", meta.get("use_map", ""))).lower() in ("true", "1", "yes", "on")
                     defaults["py"] = str(meta.get("ipython", meta.get("py", ""))).lower() in ("true", "1", "yes", "on")
                     defaults["mem"] = str(meta.get("memory", meta.get("mem", ""))).lower() in ("true", "1", "yes", "on")
-                    defaults["adp"] = str(meta.get("adapters", meta.get("adp", meta.get("adapter", "")))).lower() in (
-                        "true",
-                        "1",
-                        "yes",
-                        "on",
-                    )
+                    defaults["adp"] = str(meta.get("adapters", meta.get("adp", meta.get("adapter", "")))).lower() in ("true", "1", "yes", "on")
                     cat = meta.get("category")
                 except Exception as e:
                     sys.stderr.write(f"\033[1;33m[ai init]\033[0m Failed to parse {sf}: {e}\n")
@@ -722,9 +736,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
         sys.stderr.write(f"\033[1;33m[ai init]\033[0m No agent profiles found in {profiles_dir}. Using defaults.\n")
         return "chat", False, False, False, False, False
 
-    sys.stderr.write(
-        f"\n\033[1;36m[ai init]\033[0m Select default Agent Profile for workspace \033[1;33m{workspace_name}\033[0m:\n\n\033[?25l"
-    )
+    sys.stderr.write(f"\n\033[1;36m[ai init]\033[0m Select default Agent Profile for workspace \033[1;33m{workspace_name}\033[0m:\n\n\033[?25l")
     sys.stderr.flush()
 
     current_idx, num_opts = 0, len(options)
@@ -751,7 +763,9 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
     if os.path.isdir(mem_dir):
         try:
             mem_toks = sum(
-                (os.path.getsize(os.path.join(mem_dir, f)) * 10) // 36 for f in os.listdir(mem_dir) if f.endswith(".md")
+                (os.path.getsize(os.path.join(mem_dir, f)) * 10) // 36
+                for f in os.listdir(mem_dir)
+                if f.endswith(".md")
             )
         except OSError:
             pass
@@ -767,9 +781,6 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
 
     try:
         while True:
-            if last_rendered_lines > 0:
-                sys.stderr.write(f"\033[{last_rendered_lines}A\r\033[J")
-
             cur_key = options[current_idx][0]
             cur_meta = profile_cache.get(cur_key, {})
             if "yolo" not in user_overrides:
@@ -783,32 +794,30 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
             if "adp" not in user_overrides:
                 is_adp = cur_meta.get("adp", False)
 
-            lines_count = 0
+            # Build whole frame atomically into single buffer to eliminate redraw screen flicker
+            frame_lines = []
             sub_idx = 1
             for idx, (k, lbl, d, cat) in enumerate(options):
                 if cat:
                     sub_idx = 1
                     if idx > 0:
-                        sys.stderr.write("\r\x1b[K\n")
-                        lines_count += 1
+                        frame_lines.append("\r\x1b[K\n")
                     dashes = "─" * max(5, 30 - len(cat))
-                    sys.stderr.write(f"\r\x1b[K\033[1;36m  ─── {cat} {dashes}\033[0m\n")
-                    lines_count += 1
+                    frame_lines.append(f"\r\x1b[K\033[1;36m  ─── {cat} {dashes}\033[0m\n")
 
                 if idx == current_idx:
-                    sys.stderr.write(f"\r\x1b[K\033[1;32m  > {sub_idx:2d}. {lbl:<20}\033[0m \033[1;36m({d})\033[0m\n")
+                    frame_lines.append(f"\r\x1b[K\033[1;32m  > {sub_idx:2d}. {lbl:<20}\033[0m \033[1;36m({d})\033[0m\n")
                 else:
-                    sys.stderr.write(f"\r\x1b[K\033[37m    {sub_idx:2d}. {lbl:<20}\033[0m \033[2m({d})\033[0m\n")
-                lines_count += 1
+                    frame_lines.append(f"\r\x1b[K\033[37m    {sub_idx:2d}. {lbl:<20}\033[0m \033[2m({d})\033[0m\n")
                 sub_idx += 1
 
             b_on = "\033[1;36m[ON]\033[0m"
             b_off = "\033[37m[OFF]\033[0m"
             yolo_badge = b_on if is_yolo else b_off
-            map_badge = b_on if use_map else b_off
-            mem_badge = b_on if is_mem else b_off
-            py_badge = b_on if is_py else b_off
-            adp_badge = b_on if is_adp else b_off
+            map_badge  = b_on if use_map  else b_off
+            mem_badge  = b_on if is_mem   else b_off
+            py_badge   = b_on if is_py    else b_off
+            adp_badge  = b_on if is_adp else b_off
 
             if is_py:
                 tool_label = "python + native (7 tools, ~760t)"
@@ -819,10 +828,10 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
 
             addons = []
             if use_map:
-                m_str = f"~{map_toks}t" if map_toks < 1000 else f"~{map_toks / 1000:.1f}kt"
+                m_str = f"~{map_toks}t" if map_toks < 1000 else f"~{map_toks/1000:.1f}kt"
                 addons.append(f"+Map: {m_str}")
             if is_mem:
-                mem_str = f"~{mem_toks}t" if mem_toks < 1000 else f"~{mem_toks / 1000:.1f}kt"
+                mem_str = f"~{mem_toks}t" if mem_toks < 1000 else f"~{mem_toks/1000:.1f}kt"
                 addons.append(f"+Mem: {mem_str}")
 
             addon_info = f"  \033[90m[{' | '.join(addons)}]\033[0m" if addons else ""
@@ -841,20 +850,37 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                 f"\033[37mp: Py\033[0m {py_badge}    "
                 f"\033[37ma: Adp\033[0m {adp_badge}"
             )
-            sys.stderr.write(bottom_text)
-            lines_count += bottom_text.count("\n")
-            sys.stderr.flush()
+            frame_lines.append(bottom_text)
 
+            full_frame = "".join(frame_lines)
+            lines_count = full_frame.count("\n")
+
+            if last_rendered_lines > 0:
+                sys.stderr.write(f"\033[{last_rendered_lines}A\r\033[J")
+
+            sys.stderr.write(full_frame)
+            sys.stderr.flush()
             last_rendered_lines = lines_count
 
             char = get_key()
-            if char in ("\t", "y", "Y"):
+            if not char:
+                # Terminal closed or piped EOF: abort cleanly without spinning CPU
+                sys.stderr.write("\r\x1b[2K\n\033[1;33m[ai init] Input closed. Aborting.\033[0m\n")
+                sys.stderr.flush()
+                sys.exit(0)
+
+            if char == "\x03":
+                # Ctrl+C aborts explicitly; does not accept default
+                sys.stderr.write("\r\x1b[2K\n\033[1;33mCancelled.\033[0m\n")
+                sys.stderr.flush()
+                raise KeyboardInterrupt
+            elif char in ("\t", "y", "Y"):
                 is_yolo = not is_yolo
                 user_overrides.add("yolo")
-            elif char == "m":
+            elif char in ("m", "M"):
                 use_map = not use_map
                 user_overrides.add("map")
-            elif char in ("d", "D", "M"):
+            elif char in ("d", "D"):
                 is_mem = not is_mem
                 user_overrides.add("mem")
             elif char in ("p", "P"):
@@ -863,26 +889,13 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
             elif char in ("a", "A"):
                 is_adp = not is_adp
                 user_overrides.add("adp")
-            elif char in ("\x03", "\x1b"):
-                key, label = options[0][0], options[0][1]
-                badge_col = "\033[1;36m"
-                b_yolo = f" {badge_col}[Yolo: ON]\033[0m" if is_yolo else ""
-                b_map = f" {badge_col}[Map: ON]\033[0m" if use_map else ""
-                b_mem = f" {badge_col}[Mem: ON]\033[0m" if is_mem else ""
-                b_py = f" {badge_col}[Py: ON]\033[0m" if is_py else ""
-                b_adp = f" {badge_col}[Adp: ON]\033[0m" if is_adp else ""
-                sys.stderr.write(
-                    f"\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}{b_adp}\n\n"
-                )
-                sys.stderr.flush()
-                return key, is_yolo, use_map, is_py, is_mem, is_adp
-            elif char in ("\r", "\n"):
-                key, label = options[current_idx][0], options[current_idx][1]
-                sys.stderr.write(f"\x1b[{last_rendered_lines + 3}A\r\x1b[J")
-                if not is_yolo:
-                    sys.stderr.write(
-                        f"\033[1;36mEnable Autonomous YOLO mode for {label}? [y/N] \033[2m(Esc/Left: back)\033[0m: \033[0m"
-                    )
+            elif char in ("\x1b", "\r", "\n"):
+                is_enter = char in ("\r", "\n")
+                key, label = options[current_idx if is_enter else 0][:2]
+
+                if is_enter and not is_yolo:
+                    sys.stderr.write(f"\x1b[{last_rendered_lines}A\r\x1b[J")
+                    sys.stderr.write(f"\033[1;36mEnable Autonomous YOLO mode for {label}? [y/N] \033[2m(Esc/Left: back)\033[0m: \033[0m")
                     sys.stderr.flush()
                     raw_c = get_key()
                     c = raw_c.lower()
@@ -901,15 +914,13 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                     if c == "y":
                         is_yolo = True
                     sys.stderr.write("\x1b[1A\r\x1b[2K")
-                badge_col = "\033[1;36m"
-                b_yolo = f" {badge_col}[Yolo: ON]\033[0m" if is_yolo else ""
-                b_map = f" {badge_col}[Map: ON]\033[0m" if use_map else ""
-                b_mem = f" {badge_col}[Mem: ON]\033[0m" if is_mem else ""
-                b_py = f" {badge_col}[Py: ON]\033[0m" if is_py else ""
-                b_adp = f" {badge_col}[Adp: ON]\033[0m" if is_adp else ""
-                sys.stderr.write(
-                    f"\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}{b_adp}\n\n"
+
+                active_badges = "".join(
+                    f" \033[1;36m[{tag}: ON]\033[0m"
+                    for tag, active in [("Yolo", is_yolo), ("Map", use_map), ("Mem", is_mem), ("Py", is_py), ("Adp", is_adp)]
+                    if active
                 )
+                sys.stderr.write(f"\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{active_badges}\n\n")
                 sys.stderr.flush()
                 return key, is_yolo, use_map, is_py, is_mem, is_adp
             elif char in ("\x1b[A", "\x1b[B"):

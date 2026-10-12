@@ -6,7 +6,11 @@ import re
 import shutil
 import sys
 import threading
+import time
 from typing import Any
+
+from rich.cells import cell_len
+from rich.markup import escape as rich_escape
 
 from agent_state import get_state
 
@@ -14,19 +18,38 @@ RE_THINKING_TITLE = re.compile(r"^\s*Thinking Process:\s*", re.IGNORECASE)
 RE_FINAL_ANSWER = re.compile(r"^\s*Final Answer:\s*", re.IGNORECASE)
 RE_MULTIPLE_NEWLINES = re.compile(r"\n{2,}")
 RE_TOOL_CALL_BLOCK = re.compile(
-    r"<\|tool_call_start\|>.*?<\|tool_call_end\|>|<tool_call>[\s\S]*?</tool_call>|<arg_key>[\s\S]*?</arg_value>",
+    r"<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>|<tool_call>[\s\S]*?</tool_call>|<arg_key>[\s\S]*?</arg_key>|<arg_value>[\s\S]*?</arg_value>",
     re.DOTALL,
 )
 
-_markdown_initialized: bool = False
+TOOL_MARKERS = ("<|tool_call", "<tool_call", "<arg_key", "<arg_value")
+
+_markdown_class: type | None = None
 _console_lock = threading.Lock()
+_cached_code_theme: str = ""
+_cached_code_theme_time: float = 0.0
 
 
-def _init_rich_markdown() -> None:
-    global _markdown_initialized
+def _get_code_theme(max_age: float = 10.0) -> str:
+    """Caches resolved code theme for 10s to avoid threading lock and disk stat per code block."""
+    global _cached_code_theme, _cached_code_theme_time
+    now = time.monotonic()
+    if _cached_code_theme and (now - _cached_code_theme_time < max_age):
+        return _cached_code_theme
+    _cached_code_theme = str(get_state("code_theme", "monokai"))
+    _cached_code_theme_time = now
+    return _cached_code_theme
+
+
+def _get_markdown_class() -> type:
+    global _markdown_class
+    if _markdown_class is not None:
+        return _markdown_class
+
     with _console_lock:
-        if _markdown_initialized:
-            return
+        if _markdown_class is not None:
+            return _markdown_class
+
         from rich.markdown import CodeBlock, Markdown as _RM
         from rich.segment import Segment
         from rich.syntax import Syntax
@@ -35,7 +58,7 @@ def _init_rich_markdown() -> None:
             def __rich_console__(self, console: Any, options: Any) -> Any:
                 code = str(self.text).rstrip()
                 lexer = getattr(self, "lexer_name", "text") or "text"
-                theme = getattr(self, "theme", "") or str(get_state("code_theme", "monokai"))
+                theme = getattr(self, "theme", "") or _get_code_theme()
                 syntax = Syntax(
                     code,
                     lexer,
@@ -53,45 +76,56 @@ def _init_rich_markdown() -> None:
                     yield from line
                     yield Segment.line()
 
-        _RM.elements["fence"] = CleanCodeBlock
-        _RM.elements["code_block"] = CleanCodeBlock
-        _markdown_initialized = True
+        class AgentMarkdown(_RM):
+            elements = {
+                **_RM.elements,
+                "fence": CleanCodeBlock,
+                "code_block": CleanCodeBlock,
+            }
+
+        _markdown_class = AgentMarkdown
+        return _markdown_class
 
 
 def Markdown(*args: Any, **kwargs: Any) -> Any:
-    _init_rich_markdown()
-    from rich.markdown import Markdown as _RM
-
-    return _RM(*args, **kwargs)
+    md_cls = _get_markdown_class()
+    return md_cls(*args, **kwargs)
 
 
 def prepare_markdown(text: str) -> str:
-    """Repairs unclosed fences and wraps bare code emitted by small SLMs."""
+    """Repairs unclosed fences and wraps bare code blocks without false-positive triggers."""
     if not text:
         return ""
     if text.count("```") % 2 != 0:
         text = text.rstrip() + "\n```"
     elif "```" not in text:
         code_kw = ("import ", "from ", "def ", "class ", "return ", "print(")
-        if any(l.lstrip().startswith(code_kw) for l in text.splitlines()):
+        code_lines = sum(1 for line in text.splitlines() if line.lstrip().startswith(code_kw))
+        has_def_or_class = any(line.lstrip().startswith(("def ", "class ")) for line in text.splitlines())
+        if code_lines >= 2 or has_def_or_class:
             text = f"```python\n{text.strip()}\n```"
     return text
 
 
 def get_cursor_up_count(text: str, width: int) -> int:
+    """Calculates visual terminal row height based on cell width and clamps to visible viewport."""
     if not text:
         return 0
     w = max(1, width)
-    clean = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", text)
+    clean = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", text).replace("\r", "")
     raw_lines = clean.split("\n")
     up = 0
     for line in raw_lines[:-1]:
-        up += max(1, (len(line) + w - 1) // w)
+        v_width = cell_len(line)
+        up += max(1, (v_width + w - 1) // w)
     last = raw_lines[-1]
     if last:
-        last_visual = max(1, (len(last) + w - 1) // w)
+        last_width = cell_len(last)
+        last_visual = max(1, (last_width + w - 1) // w)
         up += last_visual - 1
-    return up
+
+    term_rows = shutil.get_terminal_size((80, 24)).lines
+    return min(up, max(0, term_rows - 1))
 
 
 _console_inst: Any = None
@@ -100,16 +134,18 @@ _console_err_inst: Any = None
 
 def _get_console(stderr: bool = False) -> Any:
     global _console_inst, _console_err_inst
+    if stderr and _console_err_inst is not None:
+        return _console_err_inst
+    if not stderr and _console_inst is not None:
+        return _console_inst
+
     with _console_lock:
+        from rich.console import Console
         if stderr:
             if _console_err_inst is None:
-                from rich.console import Console
-
                 _console_err_inst = Console(stderr=True)
             return _console_err_inst
         if _console_inst is None:
-            from rich.console import Console
-
             _console_inst = Console(stderr=False)
         return _console_inst
 
@@ -126,40 +162,50 @@ _console, _console_err = _LazyConsole(False), _LazyConsole(True)
 
 
 def _escape_markup(text: str) -> str:
-    return str(text).replace("[", "\\[")
+    return rich_escape(str(text))
 
 
 class RichStreamer:
     def __init__(self, prefix: str = "", active: bool = True, spinner: Any = None, round_idx: int = 0) -> None:
-        self.prefix, self.active, self.spinner = prefix, active and sys.stdout.isatty(), spinner
-        self.acc_think, self.acc_ans, self.phase, self.think_hdr_printed, self.ans_started = (
-            "",
-            "",
-            "INIT",
-            False,
-            False,
-        )
-        self.in_post_think = False
+        self.prefix = prefix
+        self.active = active and sys.stdout.isatty()
+        self.spinner = spinner
         self.round_idx = round_idx
+        self._acc_think_parts: list[str] = []
+        self._acc_ans_parts: list[str] = []
+        self.phase = "INIT"
+        self.think_hdr_printed = False
+        self.ans_started = False
+        self.in_post_think = False
         self.box_style = get_state("box_style", 1)
+        self.show_thinking = os.environ.get("AI_SHOW_THINKING", "1") == "1"
+
+    @property
+    def acc_think(self) -> str:
+        return "".join(self._acc_think_parts)
+
+    @property
+    def acc_ans(self) -> str:
+        return "".join(self._acc_ans_parts)
 
     def _get_think_borders(self) -> tuple[str, str]:
         term_width = shutil.get_terminal_size((80, 24)).columns
         if self.box_style == 9:
-            # Full-width: dashes connect directly into the corners with zero gaps
             top_dashes = max(10, term_width - 6)
             bot_dashes = max(10, term_width - 2)
             return f"╭─ ∿ {'─' * top_dashes}╮", f"╰{'─' * bot_dashes}╯"
-        elif self.box_style in (2, 4):
-            return f"┌─ ∿ {'─' * 52}", f"└{'─' * 56}"
-        else:
-            return f"╭─ ∿ {'─' * 52}", f"╰{'─' * 56}"
+
+        top_len = min(52, max(10, term_width - 6))
+        bot_len = min(56, max(10, term_width - 2))
+        if self.box_style in (2, 4):
+            return f"┌─ ∿ {'─' * top_len}", f"└{'─' * bot_len}"
+        return f"╭─ ∿ {'─' * top_len}", f"╰{'─' * bot_len}"
 
     def _stop_spinner(self, done_msg: str | None = None) -> None:
         if self.spinner:
             try:
                 self.spinner.stop(done_msg=done_msg)
-            except Exception:
+            except (AttributeError, OSError, RuntimeError):
                 pass
 
     def start(self) -> None:
@@ -172,12 +218,27 @@ class RichStreamer:
 
     def update(self, token: str) -> None:
         if not self.active:
-            if "<think>" in token and self.phase != "THINKING":
-                self.phase, token = "THINKING", token.replace("<think>", "")
+            if "<think>" in token:
+                if self.ans_started:
+                    self.in_post_think = True
+                else:
+                    self.phase = "THINKING"
+                token = token.replace("<think>", "")
+
             if "</think>" in token:
                 parts = token.split("</think>", 1)
-                self.phase, token = "ANSWER", parts[1]
-            if self.phase != "THINKING" and token:
+                if self.in_post_think:
+                    self.in_post_think = False
+                    if parts[0]:
+                        self._acc_think_parts.append(parts[0])
+                    if len(parts) > 1 and parts[1]:
+                        self.update(parts[1])
+                    return
+                self.phase = "ANSWER"
+                token = parts[1] if len(parts) > 1 else ""
+
+            if self.phase == "ANSWER" and token and not self.in_post_think:
+                self.ans_started = True
                 self._stop_spinner()
                 try:
                     sys.stdout.write(token.replace("\r\n", "\n").replace("\n", "\r\n"))
@@ -193,19 +254,19 @@ class RichStreamer:
                 self.phase = "THINKING"
             token = token.replace("<think>", "")
 
-        show_think = os.environ.get("AI_SHOW_THINKING", "1") == "1"
-
         if "</think>" in token:
             parts = token.split("</think>", 1)
             if self.in_post_think:
                 self.in_post_think = False
+                if parts[0]:
+                    self._acc_think_parts.append(parts[0])
                 if len(parts) > 1 and parts[1]:
                     self.update(parts[1])
                 return
             if parts[0]:
                 self.update(parts[0])
-            if show_think and self.think_hdr_printed and not self.ans_started:
-                sep = "" if self.acc_think.endswith("\n") else "\r\n"
+            if self.show_thinking and self.think_hdr_printed and not self.ans_started:
+                sep = "" if (self.acc_think.endswith("\n")) else "\r\n"
                 _, bot_border = self._get_think_borders()
                 _console_err.print(f"{sep}[dim]{bot_border}[/dim]\n")
                 sys.stderr.flush()
@@ -216,7 +277,7 @@ class RichStreamer:
             return
 
         if self.in_post_think:
-            self.acc_think += token
+            self._acc_think_parts.append(token)
             return
 
         if self.phase == "INIT":
@@ -226,8 +287,8 @@ class RichStreamer:
             tok = RE_MULTIPLE_NEWLINES.sub("\n", RE_THINKING_TITLE.sub("", token))
             if self.acc_think.endswith("\n") and tok.startswith("\n"):
                 tok = tok.lstrip("\r\n")
-            self.acc_think += tok
-            if show_think and tok:
+            self._acc_think_parts.append(tok)
+            if self.show_thinking and tok:
                 if not self.think_hdr_printed and tok.strip():
                     self.think_hdr_printed = True
                     self._stop_spinner()
@@ -247,7 +308,8 @@ class RichStreamer:
                 if not tok:
                     return
                 self._stop_spinner()
-                self.ans_started, p_clean = True, self.prefix.strip()
+                self.ans_started = True
+                p_clean = self.prefix.strip()
                 p_str = (
                     f"{p_clean}\n\n"
                     if (p_clean and tok.startswith(("```", "#", "---")))
@@ -260,9 +322,9 @@ class RichStreamer:
                         sys.stdout.flush()
                     except OSError:
                         pass
-                self.acc_ans += p_str
+                self._acc_ans_parts.append(p_str)
 
-            self.acc_ans += tok
+            self._acc_ans_parts.append(tok)
             if tok:
                 try:
                     sys.stdout.write(tok.replace("\r\n", "\n").replace("\n", "\r\n"))
@@ -273,6 +335,11 @@ class RichStreamer:
     def stop(self, interrupted: bool = False) -> None:
         self._stop_spinner()
         if interrupted:
+            if self.phase == "THINKING" and self.show_thinking and self.think_hdr_printed and not self.ans_started:
+                sep = "" if (self.acc_think.endswith("\n")) else "\r\n"
+                _, bot_border = self._get_think_borders()
+                _console_err.print(f"{sep}[dim]{bot_border}[/dim]\n")
+                self.phase = "ANSWER"
             try:
                 sys.stdout.write("\033[?25h\r\n")
                 sys.stdout.flush()
@@ -280,13 +347,14 @@ class RichStreamer:
                 pass
             return
 
-        show_think = os.environ.get("AI_SHOW_THINKING", "1") == "1"
-        if self.phase == "THINKING" and show_think and self.think_hdr_printed and not self.ans_started:
-            sep = "" if self.acc_think.endswith("\n") else "\r\n"
+        if self.phase == "THINKING" and self.show_thinking and self.think_hdr_printed and not self.ans_started:
+            sep = "" if (self.acc_think.endswith("\n")) else "\r\n"
             _, bot_border = self._get_think_borders()
             _console_err.print(f"{sep}[dim]{bot_border}[/dim]\n")
             self.phase = "ANSWER"
 
+        # Note: When render_markdown is active, agent_core performs a cursor rewind
+        # and re-prints Markdown cleanly; trailing newline is omitted here to prevent blank gaps.
         render_md = bool(get_state("render_markdown", False))
         if self.ans_started and not render_md:
             try:
@@ -299,11 +367,13 @@ class RichStreamer:
 def _process_stream_chunk(content: str, reasoning: str, in_think_block: Any = False) -> tuple[str, bool, Any]:
     if content:
         if "Final Answer:" in content:
-            content = RE_FINAL_ANSWER.sub("", content).lstrip()
-        if "<|tool_call" in content:
-            content = (
-                RE_TOOL_CALL_BLOCK.sub("", content).replace("<|tool_call_start|>", "").replace("<|tool_call_end|>", "")
-            )
+            content = RE_FINAL_ANSWER.sub("", content)
+        if any(marker in content for marker in TOOL_MARKERS):
+            content = RE_TOOL_CALL_BLOCK.sub("", content)
+            if "<|tool_call_start|>" in content:
+                content = content.replace("<|tool_call_start|>", "")
+            if "<|tool_call_end|>" in content:
+                content = content.replace("<|tool_call_end|>", "")
 
     # Normalize incoming think state:
     # "reasoning" -> started by server reasoning delta
@@ -315,14 +385,12 @@ def _process_stream_chunk(content: str, reasoning: str, in_think_block: Any = Fa
     if reasoning:
         prefix = "<think>" if not think_mode else ""
         if content:
-            # Transition occurred in a single chunk
             return f"{prefix}{reasoning}</think>{content}", False, ""
         return f"{prefix}{reasoning}", True, "reasoning"
 
     # 2. Server emits content delta
     if content:
         if think_mode == "reasoning":
-            # Transition from server reasoning delta to answer content: close <think>
             if "</think>" in content:
                 parts = content.split("</think>", 1)
                 rem = parts[1]
@@ -330,7 +398,6 @@ def _process_stream_chunk(content: str, reasoning: str, in_think_block: Any = Fa
                 return content, in_rem, ("content" if in_rem else "")
             return f"</think>{content}", False, ""
 
-        # Content-based thinking (raw <think> tags in content stream)
         if "<think>" in content and "</think>" in content:
             is_in = content.rindex("<think>") > content.rindex("</think>")
             return content, is_in, ("content" if is_in else "")

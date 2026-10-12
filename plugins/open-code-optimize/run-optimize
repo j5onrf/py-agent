@@ -1,0 +1,408 @@
+#!/usr/bin/env python3
+"""Open Code Optimize (oco) Runner - Python & Terminal UI Optimization Engine"""
+
+import glob
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import time
+from typing import Any
+
+try:
+    import readline
+    _HAS_READLINE = True
+except ImportError:
+    _HAS_READLINE = False
+
+try:
+    from rich.console import Console
+    from rich.markdown import Markdown
+    from rich.panel import Panel
+    _HAS_RICH = True
+except ImportError:
+    _HAS_RICH = False
+
+ENV_FILE = os.path.expanduser("~/.config/py-agent/.env")
+OPT_DIRECTIVES = os.path.expanduser("~/.config/py-agent/plugins/open-code-optimize/codeoptimize.md")
+OPT_RULES = os.path.expanduser("~/.config/py-agent/plugins/open-code-optimize/rule.json")
+SPINNER_FRAMES = ("✦ [∿ · ·]", "✦ [· ∿ ·]", "✦ [· · ∿]", "✦ [· ∿ ·]")
+
+RE_PLACEHOLDER = re.compile(
+    r"^(x+|todo|changeme|replace.?me|<.*>|your_?\w*|<api-key>)$",
+    re.IGNORECASE,
+)
+RE_RATE_LIMIT = re.compile(
+    r"\b429\b|rate.?limit|rejected by provider",
+    re.IGNORECASE,
+)
+
+
+def _init_path_completion() -> None:
+    if not _HAS_READLINE:
+        return
+
+    def _complete_path(text: str, state: int) -> str | None:
+        pattern = os.path.expanduser(text) + "*"
+        matches = glob.glob(pattern)
+        home = os.path.expanduser("~")
+        formatted = []
+        for m in sorted(matches):
+            item = m + "/" if os.path.isdir(m) else m
+            if text.startswith("~") and item.startswith(home):
+                item = "~" + item[len(home):]
+            formatted.append(item)
+        try:
+            return formatted[state]
+        except IndexError:
+            return None
+
+    readline.set_completer_delims(" \t\n\"'")
+    readline.parse_and_bind("tab: complete")
+    readline.set_completer(_complete_path)
+
+
+def _init_budget_completion() -> None:
+    if not _HAS_READLINE:
+        return
+
+    options = ("off", "low", "medium", "high", "max")
+
+    def _complete_budget(text: str, state: int) -> str | None:
+        matches = [o for o in options if o.startswith(text.lower())]
+        try:
+            return matches[state]
+        except IndexError:
+            return None
+
+    readline.set_completer_delims(" \t\n")
+    readline.parse_and_bind("tab: complete")
+    readline.set_completer(_complete_budget)
+
+
+class TelemetrySpinner:
+    def __init__(self, initial_msg: str = "Analyzing optimization targets..."):
+        self.message = initial_msg
+        self.active = False
+        self.thread = None
+        self.start_time = 0.0
+        self._lock = threading.Lock()
+
+    def update(self, msg: str):
+        with self._lock:
+            self.message = msg
+
+    def _spin(self):
+        idx = 0
+        while self.active:
+            elapsed = time.time() - self.start_time
+            m, s = divmod(int(elapsed), 60)
+            elapsed_str = f"{m}m{s:02d}s" if elapsed >= 60 else f"{elapsed:.1f}s"
+
+            with self._lock:
+                msg = self.message
+
+            try:
+                term_cols = os.get_terminal_size().columns
+            except OSError:
+                term_cols = 80
+            max_msg_len = max(20, term_cols - 35)
+            if len(msg) > max_msg_len:
+                msg = msg[:max_msg_len - 3] + "..."
+
+            frame = SPINNER_FRAMES[idx % len(SPINNER_FRAMES)]
+            with self._lock:
+                sys.stderr.write(
+                    f"\r\033[K\033[1;36m{frame}\033[0m \033[33m{msg}\033[0m \033[2m({elapsed_str})\033[0m"
+                )
+                sys.stderr.flush()
+            idx += 1
+            time.sleep(0.08)
+
+    def start(self):
+        self.active = True
+        self.start_time = time.time()
+        sys.stderr.write("\033[?25l")
+        sys.stderr.flush()
+        self.thread = threading.Thread(target=self._spin, daemon=True)
+        self.thread.start()
+
+    def stop(self, done_msg: str = "Optimization analysis complete"):
+        if not self.active:
+            return
+        self.active = False
+        elapsed = time.time() - self.start_time
+        m, s = divmod(int(elapsed), 60)
+        elapsed_str = f"{m}m{s:02d}s" if elapsed >= 60 else f"{elapsed:.1f}s"
+
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=0.3)
+        with self._lock:
+            sys.stderr.write(f"\r\033[1;32m✓ {done_msg}\033[0m \033[2m({elapsed_str})\033[0m\n\n")
+            sys.stderr.write("\033[?25h")
+            sys.stderr.flush()
+
+
+def load_env() -> tuple[dict[str, str], set[str]]:
+    env = {}
+    active_keys = set()
+    if os.path.isfile(ENV_FILE):
+        with open(ENV_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                s = line.strip()
+                if not s or s.startswith("#") or "=" not in s:
+                    continue
+                k, v = s.split("=", 1)
+                k = k.strip()
+                val = v.strip().strip('"').strip("'")
+                if val and not RE_PLACEHOLDER.search(val):
+                    active_keys.add(k)
+                env[k] = val
+    return env, active_keys
+
+
+def build_reasoning_payload(budget_val: str) -> tuple[dict[str, Any], str]:
+    val = str(budget_val).strip().lower() if budget_val else "high"
+    if val in ("def", "default", ""):
+        val = "high"
+
+    if val.isdigit():
+        tokens = int(val)
+        if tokens <= 0:
+            return {"thinking": {"type": "disabled"}, "reasoning_effort": "low"}, "off"
+        effort = "low" if tokens <= 1200 else ("medium" if tokens <= 3000 else "high")
+        return {"reasoning_effort": effort, "thinking": {"type": "enabled", "budget_tokens": tokens}}, f"{tokens} tokens"
+
+    tiers = {
+        "off": ({"thinking": {"type": "disabled"}, "reasoning_effort": "low"}, "off"),
+        "low": ({"reasoning_effort": "low", "thinking": {"type": "enabled", "budget_tokens": 1024}}, "low (~1kt)"),
+        "medium": ({"reasoning_effort": "medium", "thinking": {"type": "enabled", "budget_tokens": 2500}}, "medium (~2.5kt)"),
+        "high": ({"reasoning_effort": "high", "thinking": {"type": "enabled", "budget_tokens": 4096}}, "high (~4.1kt)"),
+        "max": ({"reasoning_effort": "high", "thinking": {"type": "enabled", "budget_tokens": 8192}}, "max (~8.2kt)"),
+    }
+    return tiers.get(val, tiers["high"])
+
+
+def sync_ocr_config(env: dict[str, str], active_keys: set[str], reasoning_input: str) -> tuple[str, str, str, str, str, str]:
+    extra_body, budget_desc = build_reasoning_payload(reasoning_input)
+
+    if "CUSTOM_API_KEY" in active_keys:
+        api_key, model = env.get("CUSTOM_API_KEY", ""), env.get("CUSTOM_MODEL", "default")
+        raw_url = env.get("CUSTOM_URL", "https://router.huggingface.co/v1")
+        base_url = raw_url.replace("/chat/completions", "").rstrip("/")
+        provider = "Custom 1"
+        default_concurrency = "2"
+    elif "CUSTOM2_API_KEY" in active_keys:
+        api_key, model = env.get("CUSTOM2_API_KEY", ""), env.get("CUSTOM2_MODEL", "default")
+        raw_url = env.get("CUSTOM2_URL", "")
+        base_url = raw_url.replace("/chat/completions", "").rstrip("/")
+        provider = "Custom 2"
+        default_concurrency = "2"
+    elif "GEMINI_API_KEY" in active_keys:
+        api_key, model = env.get("GEMINI_API_KEY", ""), env.get("GEMINI_MODEL", "default")
+        base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+        provider = "Gemini"
+        default_concurrency = "1"
+    elif "OPENROUTER_API_KEY" in active_keys:
+        api_key, model = env.get("OPENROUTER_API_KEY", ""), env.get("OPENROUTER_MODEL", "default")
+        base_url = "https://openrouter.ai/api/v1"
+        provider = "OpenRouter"
+        default_concurrency = "2"
+    else:
+        print("\033[1;31m[error] Open Code Optimize requires an active cloud API key.\033[0m")
+        sys.exit(1)
+
+    concurrency_raw = str(env.get("OCR_CONCURRENCY", default_concurrency) or "").strip()
+    concurrency = concurrency_raw if re.fullmatch(r"[1-9]\d?", concurrency_raw) else default_concurrency
+
+    subprocess.run(["ocr", "config", "unset", "provider"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    subprocess.run(["ocr", "config", "set", "llm.protocol", "openai"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    subprocess.run(["ocr", "config", "set", "llm.use_anthropic", "false"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    subprocess.run(["ocr", "config", "set", "llm.url", base_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    subprocess.run(["ocr", "config", "set", "llm.model", model], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    subprocess.run(["ocr", "config", "set", "llm.auth_token", api_key], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    subprocess.run(["ocr", "config", "set", "llm.extra_body", json.dumps(extra_body)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+
+    return provider, model, concurrency, budget_desc, api_key, base_url
+
+
+def parse_action(line: str) -> str | None:
+    clean = re.sub(r"^\[ocr\]\s*", "", line).strip()
+    if not clean:
+        return None
+    if "▶ code_search" in clean:
+        m = re.search(r"search_text=([^\s]+)", clean)
+        return f"Profiling symbol: {m.group(1)}" if m else "Profiling call paths"
+    if "▶ file_read" in clean:
+        fp = re.search(r"file_path=([^\s]+)", clean)
+        fname = os.path.basename(fp.group(1)) if fp else "file"
+        return f"Analyzing line efficiency: {fname}"
+    if "▶ code_comment" in clean:
+        return "Drafting surgical optimizations"
+    if "Summary:" in clean:
+        return "Synthesizing optimization report"
+    if "plan request" in clean or "Plan phase" in clean:
+        return "Mapping optimization targets"
+    return None
+
+
+def main():
+    rich_console = Console() if _HAS_RICH else None
+
+    if rich_console:
+        rich_console.print(
+            Panel(
+                "[bold green]Open Code Optimize (OCO) — Python & Terminal UI Refactoring Engine[/bold green]\n"
+                "[dim]Code compaction, redraw de-flicker, algorithmic speedups, and latency trimming[/dim]",
+                border_style="green",
+            )
+        )
+
+    if not shutil.which("ocr"):
+        print("\033[1;31m[error] `ocr` executable not found. Install via: npm i -g @alibaba-group/open-code-review\033[0m")
+        sys.exit(1)
+
+    cur_dir = os.getcwd()
+    target_input = sys.argv[1].strip() if len(sys.argv) > 1 else ""
+    reasoning_arg = sys.argv[2].strip() if len(sys.argv) > 2 else ""
+
+    env, active_keys = load_env()
+
+    if not target_input:
+        _init_path_completion()
+        try:
+            raw_target = input(f"Enter target file or folder to optimize [default: {cur_dir}]: ")
+            target_input = raw_target.strip().replace("\t", "")
+        except (KeyboardInterrupt, EOFError):
+            print("\nCancelled.")
+            sys.exit(0)
+
+    target_path = os.path.abspath(os.path.expanduser(target_input or cur_dir))
+    if not os.path.exists(target_path):
+        print(f"\033[1;31m[error] Path does not exist:\033[0m {target_path}")
+        sys.exit(1)
+
+    default_budget = env.get("OCR_BUDGET", "high")
+    if not reasoning_arg:
+        _init_budget_completion()
+        try:
+            user_b = input(f"Reasoning budget [off/low/medium/high/max] [default: {default_budget}]: ")
+            reasoning_choice = user_b.strip().replace("\t", "") or default_budget
+        except (KeyboardInterrupt, EOFError):
+            print("\nCancelled.")
+            sys.exit(0)
+    else:
+        reasoning_choice = reasoning_arg.replace("\t", "")
+
+    if _HAS_READLINE:
+        readline.set_completer(None)
+
+    is_file = os.path.isfile(target_path)
+    target_dir = os.path.dirname(target_path) if is_file else target_path
+
+    repo_root = None
+    if shutil.which("git"):
+        try:
+            git_res = subprocess.run(["git", "-C", target_dir, "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+            if git_res.returncode == 0:
+                repo_root = git_res.stdout.strip()
+        except OSError:
+            pass
+
+    if repo_root:
+        os.chdir(repo_root)
+        rel_target = os.path.relpath(target_path, repo_root)
+    else:
+        os.chdir(target_dir)
+        rel_target = os.path.basename(target_path) if is_file else "."
+
+    provider, model, concurrency, budget_desc, api_key, base_url = sync_ocr_config(env, active_keys, reasoning_choice)
+
+    home = os.path.expanduser("~")
+    display_target = target_path.replace(home, "~", 1) if target_path.startswith(home) else target_path
+    timeout_mins = str(env.get("OCR_TIMEOUT", "60")).strip()
+
+    print()
+    if rich_console:
+        rich_console.print(f"Optimize Target: [bold yellow]{display_target}[/bold yellow]")
+        rich_console.print(f"Engine / Model:  [bold green]{provider}[/bold green] [dim]({model})[/dim]")
+        rich_console.print(f"Reasoning Effort:[cyan]{budget_desc}[/cyan] [dim]| Workers: {concurrency}[/dim]\n")
+
+    rule_flag = ["--rule", OPT_RULES] if os.path.isfile(OPT_RULES) else []
+    timeout_flag = ["--timeout", timeout_mins]
+    is_specific_target = is_file or (rel_target != ".")
+
+    if is_specific_target:
+        cmd = ["ocr", "scan", "--path", rel_target, "--concurrency", concurrency] + rule_flag + timeout_flag
+    else:
+        has_diff = False
+        if repo_root and shutil.which("git"):
+            try:
+                has_diff = bool(subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True).stdout.strip())
+            except OSError:
+                pass
+        if has_diff:
+            bg_flag = ["--background-file", OPT_DIRECTIVES] if os.path.isfile(OPT_DIRECTIVES) else []
+            cmd = ["ocr", "review", "--concurrency", concurrency] + bg_flag + rule_flag + timeout_flag
+        else:
+            cmd = ["ocr", "scan", "--concurrency", concurrency] + rule_flag + timeout_flag
+
+    spinner = TelemetrySpinner(f"Benchmarking optimization avenues with {provider}...")
+    spinner.start()
+
+    report_lines: list[str] = []
+    child_env = {
+        **os.environ,
+        "OCR_LLM_TOKEN": api_key,
+        "OCR_LLM_URL": base_url,
+        "OCR_LLM_MODEL": model,
+        "OCR_LLM_PROTOCOL": "openai",
+        "OCR_USE_ANTHROPIC": "false",
+        "OPENAI_API_KEY": api_key,
+        "OPENAI_BASE_URL": base_url,
+    }
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            env=child_env,
+        )
+
+        for line in proc.stdout:
+            raw = line.strip()
+            if raw.startswith("[ocr]"):
+                action = parse_action(raw)
+                if action:
+                    spinner.update(action)
+            else:
+                report_lines.append(line)
+
+        proc.wait(timeout=int(timeout_mins) * 60 + 30)
+    except (KeyboardInterrupt, subprocess.TimeoutExpired):
+        if proc:
+            proc.kill()
+        spinner.stop("Cancelled")
+        sys.exit(130)
+    finally:
+        spinner.stop("Optimization recommendations ready")
+
+    report_text = "".join(report_lines).strip()
+    if report_text:
+        if _HAS_RICH:
+            Console().print(Markdown(report_text))
+        else:
+            print(report_text)
+    else:
+        print("\033[1;32m✓ Code is already optimally structured.\033[0m")
+
+
+if __name__ == "__main__":
+    main()

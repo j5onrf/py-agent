@@ -45,7 +45,7 @@ AMBER, GREEN, RED, RESET, BOLD, DIM = (
     "\033[1;31m",
     "\033[0m",
     "\033[1m",
-    "\033[90m",
+    "\033[38;2;140;140;140m",
 )
 
 DEFAULTS = {
@@ -77,7 +77,7 @@ DEFAULTS = {
     },
     "custom_presets": {
         "vercel": ["stealth/pixel-canary"],
-        "tokenharbor": ["qwen3.8-flash:free", "deepseek-v4.1-flash:free"],
+        "tokenharbor": ["qwen3.8-flash:free", "deepseek-v4.1-flash:free", "claude-haiku-5.5:free"],
         "deepseek": ["deepseek-chat", "deepseek-reasoner"],
         "x.ai": ["grok-2-latest", "grok-beta"],
         "anthropic": ["claude-3-7-sonnet-20250219", "claude-3-5-haiku-20241022"],

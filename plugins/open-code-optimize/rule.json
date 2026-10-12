@@ -1,0 +1,29 @@
+{
+  "rules": [
+{
+      "path": "modules/agent_ui.py",
+      "rule": "Specialized optimization directives for modules/agent_ui.py (Terminal UI, Spinners, Session Box, Key Reading).\nDO NOT FLAG: (1) Data-driven 6-tuple STYLES matrix; (2) Precomputed static _WAVE_PATTERN in CalmBoatSpinner and batched style-grouping in _glimmer; (3) Non-flushing multi-packet escape byte buffering with TCSADRAIN in _read_fd(); (4) Resilient string partition('|||') in run_interactive_selection(); (5) 30s TTL memoization on get_local_model_name() to prevent render stalls; (6) Atomic frame buffer accumulation in select_workspace_profile(); (7) Explicit EOF and KeyboardInterrupt guards in interactive loops; (8) Threading stop_event in InlineSpinner.\nPRIORITIZE: (1) Minimizing Rich layout recalculations in session box rendering; (2) Precomputing static color escapes.\nDO NOT SACRIFICE: (1) Raw termios single-key reading; (2) Guaranteed cursor restoration (\\033[?25h) in finally blocks; (3) Clean error propagation.",
+      "merge_system_rule": false
+    },
+{
+      "path": "modules/agent_stream.py",
+      "rule": "Specialized optimization directives for modules/agent_stream.py (Streaming SSE, ANSI Geometry & Rich Streamer).\nDO NOT FLAG: (1) Correct state transitions between reasoning deltas and answer content (closing <think> on reasoning-to-content switch); (2) Subclassing Markdown as AgentMarkdown instead of mutating global _RM.elements; (3) rich.cells.cell_len() line-width calculation and terminal viewport height clamping in get_cursor_up_count(); (4) Multi-line code keyword threshold in prepare_markdown(); (5) Instance-cached self.show_thinking on RichStreamer; (6) Narrow terminal border length clamping (<60 cols) in _get_think_borders(); (7) Multi-marker checking in TOOL_MARKERS with paired tags in RE_TOOL_CALL_BLOCK; (8) List chunk accumulators (_acc_think_parts, _acc_ans_parts) with property accessors preventing quadratic string copy; (9) 10s TTL memoization on _get_code_theme() avoiding global state locks per code block; (10) Guarded .replace() containment checks on tool markers; (11) Closing thinking borders on interrupted exit paths; (12) Preserving parts[0] pre-tag tokens in in_post_think.\nPRIORITIZE: (1) Fast token passing in _process_stream_chunk without redundant string copying; (2) Minimizing Rich layout recalculations in CleanCodeBlock and Markdown.\nDO NOT SACRIFICE: Viewport clamping math or accurate stream phase transitions.",
+      "merge_system_rule": false
+    },
+    {
+      "path": "modules/agent_core.py",
+      "rule": "Specialized optimization directives for modules/agent_core.py (Agentic Turn Loop & Stream Parsing).\nPRIORITIZE: (1) Eliminating intermediate JSON serializations where dict references suffice; (2) Reusing thread-local requests sessions and pooling adapters; (3) Fast token estimation shortcuts before falling back to full iteration; (4) Compact error logging without duplicating stack unwinds.\nDO NOT TOUCH: (1) Security confirmation gates; (2) Mandatory tool-call/result pairing integrity.",
+      "merge_system_rule": false
+    },
+    {
+      "path": "tools/subsec/apps/**",
+      "rule": "Specialized optimization directives for CLI visualizers (Media player, Stopwatch).\nPRIORITIZE: (1) Replacing math-heavy trigonometric recalculations per frame with lookup arrays; (2) Single-buffer stdout flushing using terminal alternate screens; (3) Reducing line count in ASCII banner matrices.",
+      "merge_system_rule": false
+    },
+    {
+      "path": "**/*.py",
+      "rule": "Global Python Optimization Policy:\nPRIORITIZE: (1) Making less lines do more using modern Python 3.10+ idioms (structural pattern matching, dictionary unions, comprehensions); (2) Moving heavy imports inside functions if they are not needed on the instant-start CLI path; (3) Replacing manual loops with built-in standard library utilities (itertools, collections).\nDO NOT INTRODUCE: Third-party dependencies (numpy, Cython, asyncio frameworks) outside existing py-agent stack.",
+      "merge_system_rule": true
+    }
+  ]
+}
