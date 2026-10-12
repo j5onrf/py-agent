@@ -15,7 +15,7 @@ RE_FINAL_ANSWER = re.compile(r"^\s*Final Answer:\s*", re.IGNORECASE)
 RE_MULTIPLE_NEWLINES = re.compile(r"\n{2,}")
 RE_TOOL_CALL_BLOCK = re.compile(
     r"<\|tool_call_start\|>.*?<\|tool_call_end\|>|<tool_call>[\s\S]*?</tool_call>|<arg_key>[\s\S]*?</arg_value>",
-    re.DOTALL
+    re.DOTALL,
 )
 
 _markdown_initialized: bool = False
@@ -61,6 +61,7 @@ def _init_rich_markdown() -> None:
 def Markdown(*args: Any, **kwargs: Any) -> Any:
     _init_rich_markdown()
     from rich.markdown import Markdown as _RM
+
     return _RM(*args, **kwargs)
 
 
@@ -103,10 +104,12 @@ def _get_console(stderr: bool = False) -> Any:
         if stderr:
             if _console_err_inst is None:
                 from rich.console import Console
+
                 _console_err_inst = Console(stderr=True)
             return _console_err_inst
         if _console_inst is None:
             from rich.console import Console
+
             _console_inst = Console(stderr=False)
         return _console_inst
 
@@ -129,7 +132,13 @@ def _escape_markup(text: str) -> str:
 class RichStreamer:
     def __init__(self, prefix: str = "", active: bool = True, spinner: Any = None, round_idx: int = 0) -> None:
         self.prefix, self.active, self.spinner = prefix, active and sys.stdout.isatty(), spinner
-        self.acc_think, self.acc_ans, self.phase, self.think_hdr_printed, self.ans_started = "", "", "INIT", False, False
+        self.acc_think, self.acc_ans, self.phase, self.think_hdr_printed, self.ans_started = (
+            "",
+            "",
+            "INIT",
+            False,
+            False,
+        )
         self.in_post_think = False
         self.round_idx = round_idx
         self.box_style = get_state("box_style", 1)
@@ -239,7 +248,11 @@ class RichStreamer:
                     return
                 self._stop_spinner()
                 self.ans_started, p_clean = True, self.prefix.strip()
-                p_str = f"{p_clean}\n\n" if (p_clean and tok.startswith(("```", "#", "---"))) else (f"{p_clean} " if p_clean else "")
+                p_str = (
+                    f"{p_clean}\n\n"
+                    if (p_clean and tok.startswith(("```", "#", "---")))
+                    else (f"{p_clean} " if p_clean else "")
+                )
                 p_style = "\033[1;32m" if "Agent" in p_clean else "\033[1;36m"
                 if p_str:
                     try:
@@ -288,7 +301,9 @@ def _process_stream_chunk(content: str, reasoning: str, in_think_block: Any = Fa
         if "Final Answer:" in content:
             content = RE_FINAL_ANSWER.sub("", content).lstrip()
         if "<|tool_call" in content:
-            content = RE_TOOL_CALL_BLOCK.sub("", content).replace("<|tool_call_start|>", "").replace("<|tool_call_end|>", "")
+            content = (
+                RE_TOOL_CALL_BLOCK.sub("", content).replace("<|tool_call_start|>", "").replace("<|tool_call_end|>", "")
+            )
 
     # Normalize incoming think state:
     # "reasoning" -> started by server reasoning delta

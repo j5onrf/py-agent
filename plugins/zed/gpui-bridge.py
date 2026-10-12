@@ -71,37 +71,29 @@ def send_notification(method: str, params: dict[str, Any]) -> None:
 
 
 def send_session_update(session_id: str, update: dict[str, Any]) -> None:
-    send_notification("session/update", {
-        "sessionId": session_id,
-        "update": update
-    })
+    send_notification("session/update", {"sessionId": session_id, "update": update})
 
 
 def emit_thought_chunk(session_id: str, text: str) -> None:
     clean = text.replace("<think>", "").replace("</think>", "")
     if clean:
-        send_session_update(session_id, {
-            "sessionUpdate": "agent_thought_chunk",
-            "content": {"type": "text", "text": clean}
-        })
+        send_session_update(
+            session_id, {"sessionUpdate": "agent_thought_chunk", "content": {"type": "text", "text": clean}}
+        )
 
 
 def emit_message_chunk(session_id: str, text: str) -> None:
     clean = text.replace("<think>", "").replace("</think>", "")
     if clean:
-        send_session_update(session_id, {
-            "sessionUpdate": "agent_message_chunk",
-            "content": {"type": "text", "text": clean}
-        })
+        send_session_update(
+            session_id, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": clean}}
+        )
 
 
 def emit_tool_call(session_id: str, call_id: str, title: str, status: str = "in_progress") -> None:
-    send_session_update(session_id, {
-        "sessionUpdate": "tool_call",
-        "toolCallId": call_id,
-        "title": title,
-        "status": status
-    })
+    send_session_update(
+        session_id, {"sessionUpdate": "tool_call", "toolCallId": call_id, "title": title, "status": status}
+    )
 
 
 def _request_client_permission(session_id: str, tool_call_id: str, title: str, timeout: float = 60.0) -> bool:
@@ -119,16 +111,13 @@ def _request_client_permission(session_id: str, tool_call_id: str, title: str, t
         "method": "session/request_permission",
         "params": {
             "sessionId": session_id,
-            "toolCall": {
-                "toolCallId": tool_call_id,
-                "title": title
-            },
+            "toolCall": {"toolCallId": tool_call_id, "title": title},
             "options": [
                 {"kind": "allow_once", "name": "Allow", "optionId": "allow"},
                 {"kind": "allow_always", "name": "Always Allow", "optionId": "allow_always"},
-                {"kind": "reject_once", "name": "Reject", "optionId": "reject"}
-            ]
-        }
+                {"kind": "reject_once", "name": "Reject", "optionId": "reject"},
+            ],
+        },
     }
 
     with _stdout_lock:
@@ -172,7 +161,10 @@ def _build_session_context(workspace: str) -> tuple[str, str, bool, int, bool]:
             log_debug(f"Failed to load workspace config '{cfg_file}': {e}")
 
     skills_dir = os.path.join(CFG_DIR, "skills")
-    profile_raw = skills.load_skill_content(profile_name, skills_dir, CFG_DIR) or "You are an expert autonomous software engineer."
+    profile_raw = (
+        skills.load_skill_content(profile_name, skills_dir, CFG_DIR)
+        or "You are an expert autonomous software engineer."
+    )
 
     inst_p = os.path.join(skills_dir, "system_instructions.md")
     rules_text = ""
@@ -190,18 +182,17 @@ def _build_session_context(workspace: str) -> tuple[str, str, bool, int, bool]:
 
 # ── ACP Protocol Handlers ───────────────────────────────────────────────────
 
+
 def handle_initialize(req_id: Any, params: dict[str, Any]) -> None:
     proto_version = params.get("protocolVersion", 1)
-    send_response(req_id, {
-        "protocolVersion": proto_version,
-        "agentCapabilities": {
-            "loadSession": True
+    send_response(
+        req_id,
+        {
+            "protocolVersion": proto_version,
+            "agentCapabilities": {"loadSession": True},
+            "agentInfo": {"name": "py-agent", "version": "0.9.9.48"},
         },
-        "agentInfo": {
-            "name": "py-agent",
-            "version": "0.9.9.48"
-        }
-    })
+    )
 
 
 def handle_session_new(req_id: Any, params: dict[str, Any]) -> None:
@@ -220,7 +211,7 @@ def handle_session_new(req_id: Any, params: dict[str, Any]) -> None:
         "profile_name": profile_name,
         "adapters_on": adapters_on,
         "reasoning_budget": budget,
-        "is_yolo": is_yolo
+        "is_yolo": is_yolo,
     }
 
     with _sessions_lock:
@@ -247,7 +238,7 @@ def handle_session_load(req_id: Any, params: dict[str, Any]) -> None:
                 "profile_name": profile_name,
                 "adapters_on": adapters_on,
                 "reasoning_budget": budget,
-                "is_yolo": is_yolo
+                "is_yolo": is_yolo,
             }
             log_debug(f"Re-initialized session '{session_id}' on reload | Workspace: {workspace}")
 
@@ -382,7 +373,7 @@ def _execute_acp_turn(session_id: str, req_id: Any) -> None:
             "tools": tools.SMOL_TOOLS,
             "thinking_budget_tokens": reasoning_budget,
             "reasoning_budget": reasoning_budget,
-            "chat_template_kwargs": {"enable_thinking": True}
+            "chat_template_kwargs": {"enable_thinking": True},
         }
 
         try:
@@ -391,7 +382,7 @@ def _execute_acp_turn(session_id: str, req_id: Any) -> None:
                 json=body_tools,
                 headers={"Content-Type": "application/json", "User-Agent": "py-agent-zed", **headers},
                 timeout=timeout,
-                stream=True
+                stream=True,
             )
         except Exception as e:
             emit_message_chunk(session_id, f"\n[Connection error: {e}]\n")
@@ -436,9 +427,13 @@ def _execute_acp_turn(session_id: str, req_id: Any) -> None:
                 delta = choices[0].get("delta", {})
 
                 content = delta.get("content", "") or ""
-                reasoning = delta.get("reasoning_content", "") or delta.get("thinking", "") or delta.get("reasoning", "") or ""
+                reasoning = (
+                    delta.get("reasoning_content", "") or delta.get("thinking", "") or delta.get("reasoning", "") or ""
+                )
 
-                chunk_to_stream, is_thinking, in_think_block = core._process_stream_chunk(content, reasoning, in_think_block)
+                chunk_to_stream, is_thinking, in_think_block = core._process_stream_chunk(
+                    content, reasoning, in_think_block
+                )
                 if chunk_to_stream:
                     acc_content.append(chunk_to_stream)
                     if "</think>" in chunk_to_stream:
@@ -466,7 +461,11 @@ def _execute_acp_turn(session_id: str, req_id: Any) -> None:
                         idx = 0
                     tc_entry = tool_calls_map.setdefault(
                         idx,
-                        {"id": tc.get("id", ""), "type": "function", "function": {"name": tc.get("function", {}).get("name", ""), "arguments": ""}}
+                        {
+                            "id": tc.get("id", ""),
+                            "type": "function",
+                            "function": {"name": tc.get("function", {}).get("name", ""), "arguments": ""},
+                        },
                     )
                     if tc.get("id"):
                         tc_entry["id"] = tc["id"]
@@ -503,12 +502,29 @@ def _execute_acp_turn(session_id: str, req_id: Any) -> None:
                 p_val = healed_dict["path"].strip()
                 if p_val.startswith("/"):
                     p_parts = p_val.strip("/").split("/")
-                    _sys_roots = {"etc", "usr", "root", "tmp", "var", "bin", "sbin", "boot", "dev", "proc", "sys", "home", "opt", "srv"}
+                    _sys_roots = {
+                        "etc",
+                        "usr",
+                        "root",
+                        "tmp",
+                        "var",
+                        "bin",
+                        "sbin",
+                        "boot",
+                        "dev",
+                        "proc",
+                        "sys",
+                        "home",
+                        "opt",
+                        "srv",
+                    }
                     if len(p_parts) == 1 and p_parts[0] not in _sys_roots:
                         healed_dict["path"] = p_parts[0]
 
             cid = tc.get("id") or f"call_{int(time.time())}_{call_idx}"
-            healed_calls.append({"id": cid, "type": "function", "function": {"name": fname, "arguments": json.dumps(healed_dict)}})
+            healed_calls.append(
+                {"id": cid, "type": "function", "function": {"name": fname, "arguments": json.dumps(healed_dict)}}
+            )
 
         clean_ans_text = re.sub(r"<think>[\s\S]*?(?:</think>|$)", "", ans_text).strip()
         asst_msg = {"role": "assistant", "content": clean_ans_text or "", "tool_calls": healed_calls}
@@ -530,12 +546,7 @@ def _execute_acp_turn(session_id: str, req_id: Any) -> None:
                 return _request_client_permission(session_id, tc["id"], f"{fname} {brief}")
 
             try:
-                result = tools.run_tool(
-                    fname,
-                    args,
-                    workspace,
-                    confirm_gate_fn=_confirm_gate
-                )
+                result = tools.run_tool(fname, args, workspace, confirm_gate_fn=_confirm_gate)
             except Exception as e:
                 result = f"[tool error] {e}"
 
@@ -558,6 +569,7 @@ def _execute_acp_turn(session_id: str, req_id: Any) -> None:
 
 
 # ── Main JSON-RPC Stdio Loop ────────────────────────────────────────────────
+
 
 def main():
     log_debug("Bridge process started, awaiting ACP JSON-RPC on stdin...")

@@ -37,6 +37,7 @@ _cell_lock = threading.Lock()
 try:
     from IPython.core.interactiveshell import InteractiveShell
     from IPython.utils.capture import capture_output
+
     _has_ipython = True
 except ImportError:
     _has_ipython = False
@@ -105,12 +106,18 @@ class MemorySDK:
         matches = [
             f"• {it['filename']} [{it['type']}]: {it['title']} - {it['content'][:80]}"
             for it in items
-            if q_low in it["title"].lower() or q_low in it["content"].lower() or any(q_low in t for t in it.get("tags", []))
+            if q_low in it["title"].lower()
+            or q_low in it["content"].lower()
+            or any(q_low in t for t in it.get("tags", []))
         ]
         return "\n".join(matches) if matches else "No matching memories found."
 
     def get_facts(self) -> str:
-        return memories.get_memory_context(self.workspace) or "No memory directives stored." if memories else "Memory unavailable."
+        return (
+            memories.get_memory_context(self.workspace) or "No memory directives stored."
+            if memories
+            else "Memory unavailable."
+        )
 
     def add_fact(self, key: str, value: str) -> str:
         if memories:
@@ -140,6 +147,7 @@ class GraphSDK:
 
 
 # ── Sub-Agent Delegation ──────────────────────────────────────────────────────
+
 
 def delegate(goal: str, workspace: str = ".") -> str:
     """Spawns an isolated sub-agent worker with parent context awareness."""
@@ -188,13 +196,17 @@ def delegate(goal: str, workspace: str = ".") -> str:
 
         os.environ["AI_SUBAGENT_DEPTH"] = str(current_depth + 1)
         try:
-            ans = core.stream_response(
-                sub_history,
-                prefix="SubAgent:",
-                show_stats=False,
-                thinking_budget=0,
-                is_agent=True,
-            ) if core else None
+            ans = (
+                core.stream_response(
+                    sub_history,
+                    prefix="SubAgent:",
+                    show_stats=False,
+                    thinking_budget=0,
+                    is_agent=True,
+                )
+                if core
+                else None
+            )
             return (ans or "Sub-agent completed task with no output.").strip()
         finally:
             os.environ["AI_SUBAGENT_DEPTH"] = str(current_depth)
@@ -251,7 +263,11 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
     def safe_listdir(path="."):
         if _is_executing_cell and not _check_boundary(str(path), "LIST DIR"):
             raise PermissionError(f"[denied] Out-of-bounds list_dir blocked: {path}")
-        full = security.resolve_path(ws_real, str(path)) if security else os.path.realpath(str(path) if os.path.isabs(str(path)) else os.path.join(ws_real, str(path)))
+        full = (
+            security.resolve_path(ws_real, str(path))
+            if security
+            else os.path.realpath(str(path) if os.path.isabs(str(path)) else os.path.join(ws_real, str(path)))
+        )
         return _orig_listdir(full)
 
     def _read_file(path: str) -> str:
@@ -262,7 +278,16 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
     def _edit_file(path: str, old_str: str, new_str: str) -> str:
         if not _check_boundary(path, "EDIT"):
             return "[denied] Out-of-bounds edit blocked."
-        res = tools.run_tool("edit_file", {"path": path, "old_str": old_str, "new_str": new_str}, ws_real, confirm_gate_fn=confirm_gate_fn) if tools else ""
+        res = (
+            tools.run_tool(
+                "edit_file",
+                {"path": path, "old_str": old_str, "new_str": new_str},
+                ws_real,
+                confirm_gate_fn=confirm_gate_fn,
+            )
+            if tools
+            else ""
+        )
         if not res.startswith(("[error", "[denied")):
             _invalidate_module_cache(path)
         return res
@@ -270,7 +295,16 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
     def _write_file(path: str, content: str, overwrite: bool = False) -> str:
         if not _check_boundary(path, "WRITE"):
             return "[denied] Out-of-bounds write blocked."
-        res = tools.run_tool("write_file", {"path": path, "content": content, "overwrite": overwrite}, ws_real, confirm_gate_fn=confirm_gate_fn) if tools else ""
+        res = (
+            tools.run_tool(
+                "write_file",
+                {"path": path, "content": content, "overwrite": overwrite},
+                ws_real,
+                confirm_gate_fn=confirm_gate_fn,
+            )
+            if tools
+            else ""
+        )
         if not res.startswith(("[error", "[denied")):
             _invalidate_module_cache(path)
         return res
@@ -278,7 +312,11 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
     def _list_dir(path: str = ".") -> list[str]:
         if not _check_boundary(path, "LIST DIR"):
             return ["[denied] Out-of-bounds list_dir blocked."]
-        full = security.resolve_path(ws_real, path) if security else os.path.realpath(path if os.path.isabs(path) else os.path.join(ws_real, path))
+        full = (
+            security.resolve_path(ws_real, path)
+            if security
+            else os.path.realpath(path if os.path.isabs(path) else os.path.join(ws_real, path))
+        )
         return sorted(_orig_listdir(full))
 
     def _search_code(pattern: str, path: str = ".") -> str:
@@ -378,7 +416,7 @@ def run_cell(code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] |
         _final_answer_val = None
         _is_executing_cell = True
 
-        is_main_thread = (threading.current_thread() is threading.main_thread())
+        is_main_thread = threading.current_thread() is threading.main_thread()
         has_alarm = is_main_thread and hasattr(signal, "SIGALRM")
         old_handler = None
         if has_alarm:
@@ -396,7 +434,9 @@ def run_cell(code: str, workspace: str, confirm_gate_fn: Callable[[str], bool] |
                     # store_history=False prevents disk SQLite writes to ~/.ipython/
                     res = _shell_instance.run_cell(code, store_history=False)
                     if res.error_in_exec:
-                        traceback.print_exception(type(res.error_in_exec), res.error_in_exec, res.error_in_exec.__traceback__)
+                        traceback.print_exception(
+                            type(res.error_in_exec), res.error_in_exec, res.error_in_exec.__traceback__
+                        )
                 out = (captured.stdout or "").strip()
                 err = (captured.stderr or "").strip()
                 eval_result = getattr(res, "result", None)

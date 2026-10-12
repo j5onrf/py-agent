@@ -24,10 +24,33 @@ _CACHED_ENTRIES: list[dict[str, Any]] | None = None
 RE_WORD: re.Pattern = re.compile(r"\b\w+\b")
 RE_SILENT_FLAG: re.Pattern = re.compile(r"(?<!\S)--s(?!\S)")
 
-STOP_WORDS: frozenset[str] = frozenset({
-    "is", "what", "it", "do", "any", "i", "have", "the", "a", "an", "on", "to", "for",
-    "me", "you", "my", "your", "we", "us", "are", "about", "in", "how"
-})
+STOP_WORDS: frozenset[str] = frozenset(
+    {
+        "is",
+        "what",
+        "it",
+        "do",
+        "any",
+        "i",
+        "have",
+        "the",
+        "a",
+        "an",
+        "on",
+        "to",
+        "for",
+        "me",
+        "you",
+        "my",
+        "your",
+        "we",
+        "us",
+        "are",
+        "about",
+        "in",
+        "how",
+    }
+)
 
 
 def _get_int_env(key: str, default: int) -> int:
@@ -42,6 +65,7 @@ def _get_int_env(key: str, default: int) -> int:
 
 # ── 1. Jaccard Semantic Search & Blueprint Loader ─────────────────────────────
 
+
 def tokenize(text: str, stop_words: frozenset[str] | set[str] = STOP_WORDS) -> list[str]:
     """Extracts lowercase tokens directly via C-speed regex without allocating intermediate strings."""
     if not text:
@@ -49,9 +73,7 @@ def tokenize(text: str, stop_words: frozenset[str] | set[str] = STOP_WORDS) -> l
     return [w for w in RE_WORD.findall(text.lower()) if len(w) > 1 and w not in stop_words]
 
 
-def load_context_entries(
-    context_file: str, stop_words: frozenset[str] | set[str] = STOP_WORDS
-) -> list[dict[str, Any]]:
+def load_context_entries(context_file: str, stop_words: frozenset[str] | set[str] = STOP_WORDS) -> list[dict[str, Any]]:
     """Reads context blueprint and parses intent mappings with strict mtime and stopword caching."""
     global _CACHE_KEY, _CACHED_ENTRIES
     if not os.path.exists(context_file):
@@ -81,16 +103,16 @@ def load_context_entries(
 
                 primary_intent = intents[0]
                 parsed.extend(
-                {
-                    "cmd": cmd_clean,
-                    "intent": intent,
-                    "primary": primary_intent,
-                    "tokens": tokens,
-                    "tokens_set": frozenset(tokens),
-                }
-                for intent in intents
-                if (tokens := tokenize(intent, frozen_stop))
-            )
+                    {
+                        "cmd": cmd_clean,
+                        "intent": intent,
+                        "primary": primary_intent,
+                        "tokens": tokens,
+                        "tokens_set": frozenset(tokens),
+                    }
+                    for intent in intents
+                    if (tokens := tokenize(intent, frozen_stop))
+                )
 
         with _cache_lock:
             _CACHE_KEY = cache_key
@@ -121,7 +143,7 @@ def jaccard_search(
         ent_clean = entry["intent"].strip().lower()
 
         inter_len = len(q_tokens & ent_tokens)
-        is_exact = (q_clean == ent_clean)
+        is_exact = q_clean == ent_clean
 
         has_sub = False
         if not is_exact:
@@ -178,7 +200,7 @@ def clean_tool_prefix(cmd: str) -> str:
         (" --view", "view"),
     ):
         if cleaned.endswith(flag):
-            cleaned, pager = cleaned[:-len(flag)].strip(), pg
+            cleaned, pager = cleaned[: -len(flag)].strip(), pg
             break
 
     if not pager and is_tool:
@@ -187,6 +209,7 @@ def clean_tool_prefix(cmd: str) -> str:
 
 
 # ── 2. Accurate Token Heuristics & Memory Context Status ─────────────────────
+
 
 def get_accurate_token_count(text: Any, *args: Any, **kwargs: Any) -> int:
     """Fast, accurate token heuristic for llama.cpp/OAI models (len * 10 // 36)."""
@@ -203,6 +226,7 @@ def show_memory_status(
 ) -> None:
     """Queries upstream server context props and renders Rich context usage meter."""
     import urllib.request as urlreq
+
     try:
         req = urlreq.Request(f"{server_url.rstrip('/')}/props")
         with urlreq.urlopen(req, timeout=0.25) as r:
@@ -232,6 +256,7 @@ def show_memory_status(
     try:
         from agent_state import get_state
         import agent_ui as ui
+
         b_style = get_state("box_style", 1)
         b_border = ui.STYLES.get(b_style, ui.STYLES[1])[2]
         b_box = ui.STYLES.get(b_style, ui.STYLES[1])[1]
@@ -239,25 +264,28 @@ def show_memory_status(
         b_border, b_box = "cyan", ROUNDED
 
     console = Console()
-    console.print(Panel(
-        Group(
-            Text.assemble(
-                ("Context Window: ", ""),
-                (f"{total_toks}", f"bold {color}"),
-                (f"/{max_context} tokens ", ""),
-                (f"({pct:.1f}%)", f"bold {color}"),
+    console.print(
+        Panel(
+            Group(
+                Text.assemble(
+                    ("Context Window: ", ""),
+                    (f"{total_toks}", f"bold {color}"),
+                    (f"/{max_context} tokens ", ""),
+                    (f"({pct:.1f}%)", f"bold {color}"),
+                ),
+                Text(f"[{bar}]", style=color),
             ),
-            Text(f"[{bar}]", style=color),
-        ),
-        title=Text("Memory & Context Status", style="bold"),
-        title_align="left",
-        border_style=b_border,
-        box=b_box,
-        expand=False,
-    ))
+            title=Text("Memory & Context Status", style="bold"),
+            title_align="left",
+            border_style=b_border,
+            box=b_box,
+            expand=False,
+        )
+    )
 
 
 # ── 3. 3-Zone Context Compactor with SmolCoder Active Session Anchors ─────────
+
 
 def prune_history(history: list[dict[str, Any]], max_tokens: int | None = None) -> list[dict[str, Any]]:
     """3-Zone Context Compactor: Preserves system prompt, active session anchors, and recent tail.

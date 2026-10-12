@@ -81,7 +81,17 @@ def handle_map_toggle(ctx: SessionContext, parts: list[str]) -> bool:
     if ctx.use_map:
         agent_dir = os.path.join(ctx.workspace_path, ".agent")
         ws_name = os.path.basename(ctx.workspace_path)
-        txt_p = next((p for p in (os.path.join(agent_dir, f"index-map-{ws_name}.txt"), os.path.join(ctx.workspace_path, f"index-map-{ws_name}.txt")) if os.path.exists(p)), None)
+        txt_p = next(
+            (
+                p
+                for p in (
+                    os.path.join(agent_dir, f"index-map-{ws_name}.txt"),
+                    os.path.join(ctx.workspace_path, f"index-map-{ws_name}.txt"),
+                )
+                if os.path.exists(p)
+            ),
+            None,
+        )
         if txt_p:
             try:
                 with open(txt_p, "r", encoding="utf-8") as mf:
@@ -89,7 +99,9 @@ def handle_map_toggle(ctx: SessionContext, parts: list[str]) -> bool:
                 has_map = False
                 for msg in ctx.chat_history:
                     if "### CODESPACE MAP:" in msg["content"]:
-                        msg["content"] = msg["content"].split("### CODESPACE MAP:")[0] + f"### CODESPACE MAP:\n{new_map}"
+                        msg["content"] = (
+                            msg["content"].split("### CODESPACE MAP:")[0] + f"### CODESPACE MAP:\n{new_map}"
+                        )
                         has_map = True
                 if not has_map:
                     ctx.chat_history[0]["content"] += f"\n\n### CODESPACE MAP:\n{new_map}"
@@ -114,10 +126,16 @@ def handle_memory_cmd(ctx: SessionContext, query: str, parts: list[str]) -> bool
 
     if sub_action in ("save", "add", "set", "new"):
         if len(sub_parts) < 3:
-            ui._console.print("[dim yellow][sys] Usage: /mem save <title>[: <content>]  (e.g. /mem save db: Use SQLite WAL mode)[/dim yellow]\n")
+            ui._console.print(
+                "[dim yellow][sys] Usage: /mem save <title>[: <content>]  (e.g. /mem save db: Use SQLite WAL mode)[/dim yellow]\n"
+            )
             return True
         raw_payload = sub_parts[2]
-        m_title, m_content = raw_payload.split(":", 1) if ":" in raw_payload else (raw_payload.split("|", 1) if "|" in raw_payload else (raw_payload, raw_payload))
+        m_title, m_content = (
+            raw_payload.split(":", 1)
+            if ":" in raw_payload
+            else (raw_payload.split("|", 1) if "|" in raw_payload else (raw_payload, raw_payload))
+        )
         ok, res_path = memories.save_memory_file(ctx.workspace_path, m_title.strip(), m_content.strip())
         if ok:
             ui._console.print(f"[green][sys] Saved memory: [bold]{os.path.basename(res_path)}[/bold][/green]\n")
@@ -132,7 +150,9 @@ def handle_memory_cmd(ctx: SessionContext, query: str, parts: list[str]) -> bool
         else:
             ui._console.print(f"[cyan]### Active Memory Files ({len(items)}):[/cyan]")
             for it in items:
-                ui._console.print(f"  • [bold green]{it['filename']}[/bold green] [{it['type']}]: {it['title']} [dim]({it['content'][:60]}...)[/dim]")
+                ui._console.print(
+                    f"  • [bold green]{it['filename']}[/bold green] [{it['type']}]: {it['title']} [dim]({it['content'][:60]}...)[/dim]"
+                )
             ui._console.print()
         return True
 
@@ -199,9 +219,13 @@ def handle_file_command(ctx: SessionContext, query: str, parts: list[str]) -> bo
         ui._console.print("[dim yellow][sys] Usage: file <path> (e.g. file src/main.py)[/dim yellow]\n")
         return True
 
-    raw_f = query.split(maxsplit=1)[1].strip().strip('\'"')
+    raw_f = query.split(maxsplit=1)[1].strip().strip("'\"")
     ws_real = os.path.realpath(ctx.workspace_path)
-    cand_p = os.path.expanduser(raw_f) if os.path.isabs(os.path.expanduser(raw_f)) else os.path.join(ctx.workspace_path, raw_f)
+    cand_p = (
+        os.path.expanduser(raw_f)
+        if os.path.isabs(os.path.expanduser(raw_f))
+        else os.path.join(ctx.workspace_path, raw_f)
+    )
     full_p = os.path.realpath(cand_p)
 
     if not (full_p == ws_real or full_p.startswith(ws_real + os.sep)):
@@ -223,22 +247,34 @@ def handle_file_command(ctx: SessionContext, query: str, parts: list[str]) -> bo
         ui._console.print(f"[red][sys] Access denied: Sensitive credential file '{base_f}'.[/red]\n")
         return True
 
-    if any(full_p.endswith(ext) for ext in (".db", ".sqlite", ".bin", ".png", ".jpg", ".jpeg", ".zip", ".tar", ".gz", ".pyc", ".so", ".dylib")):
+    if any(
+        full_p.endswith(ext)
+        for ext in (".db", ".sqlite", ".bin", ".png", ".jpg", ".jpeg", ".zip", ".tar", ".gz", ".pyc", ".so", ".dylib")
+    ):
         ui._console.print(f"[red][sys] Cannot load binary file: {raw_f}[/red]\n")
         return True
 
     try:
         f_size = os.path.getsize(full_p)
         if f_size > 250 * 1024:
-            ui._console.print(f"[red][sys] File too large ({f_size // 1024} KB > 250 KB limit). Use read_file slices.[/red]\n")
+            ui._console.print(
+                f"[red][sys] File too large ({f_size // 1024} KB > 250 KB limit). Use read_file slices.[/red]\n"
+            )
             return True
         with open(full_p, "r", encoding="utf-8", errors="replace") as f:
             f_content = f.read()
         rel_name = os.path.relpath(full_p, ctx.workspace_path)
         lines_cnt = len(f_content.splitlines())
         file_entry = f"### File Context: {rel_name} ({lines_cnt} lines)\n```\n{f_content}\n```"
-        ctx.chat_history.append({"role": "user", "content": f"[System Context]: User manually loaded file '{rel_name}' into context.\n\n{file_entry}"})
-        ctx.chat_history.append({"role": "assistant", "content": f"Loaded '{rel_name}' ({lines_cnt} lines) into active context."})
+        ctx.chat_history.append(
+            {
+                "role": "user",
+                "content": f"[System Context]: User manually loaded file '{rel_name}' into context.\n\n{file_entry}",
+            }
+        )
+        ctx.chat_history.append(
+            {"role": "assistant", "content": f"Loaded '{rel_name}' ({lines_cnt} lines) into active context."}
+        )
         ctx.flash_status(f"file: {rel_name} ({lines_cnt} lines)")
     except OSError as e:
         ui._console.print(f"[red][sys] Failed to read file: {e}[/red]\n")
@@ -247,7 +283,11 @@ def handle_file_command(ctx: SessionContext, query: str, parts: list[str]) -> bo
 
 
 def handle_hindsight_cmd(ctx: SessionContext) -> bool:
-    user_turns = [m for m in ctx.chat_history if m.get("role") == "user" and not m.get("content", "").startswith("[System Directive - Hindsight")]
+    user_turns = [
+        m
+        for m in ctx.chat_history
+        if m.get("role") == "user" and not m.get("content", "").startswith("[System Directive - Hindsight")
+    ]
     if not user_turns:
         ui._console.print("[dim yellow][sys] No conversation turns to audit yet.[/dim yellow]\n")
         return True
@@ -265,7 +305,13 @@ def handle_hindsight_cmd(ctx: SessionContext) -> bool:
         temp_history[0] = {"role": "system", "content": temp_history[0]["content"] + "\n\n" + hs_skill}
     temp_history.append({"role": "user", "content": audit_prompt})
 
-    ans = core.stream_response(temp_history, prefix="Agent:", show_stats=ctx.show_stats, thinking_budget=ctx.reasoning_budget if ctx.reasoning_active else 0, is_agent=ctx.is_agent)
+    ans = core.stream_response(
+        temp_history,
+        prefix="Agent:",
+        show_stats=ctx.show_stats,
+        thinking_budget=ctx.reasoning_budget if ctx.reasoning_active else 0,
+        is_agent=ctx.is_agent,
+    )
     if ans:
         clean_ans = re.sub(r"<think>[\s\S]*?</think>", "", ans).strip()
         ctx.chat_history.append({"role": "assistant", "content": clean_ans or ans})
@@ -350,7 +396,11 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
         loop_script = os.path.join(CFG_DIR, "tools", "loop", "loop.py")
         if not os.path.exists(loop_script):
             loop_script = os.path.join(CFG_DIR, "tools", "loop")
-        subprocess.run([sys.executable, loop_script, task_text], cwd=ctx.workspace_path, env={**os.environ, "AI_WORKSPACE_PATH": ctx.workspace_path})
+        subprocess.run(
+            [sys.executable, loop_script, task_text],
+            cwd=ctx.workspace_path,
+            env={**os.environ, "AI_WORKSPACE_PATH": ctx.workspace_path},
+        )
         return True, None
 
     if cmd in ("/hindsight", "/hs"):
@@ -362,23 +412,50 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
 
     if cmd == "/tui":
         ui._console.print("[dim yellow][sys] Suspending chat. Launching TUI...[/dim yellow]")
-        ctx.launch_surface_fn(f"{CFG_DIR}/modules/agent_tui.py", ctx.is_agent, ctx.workspace_path, ctx.clean_name or "chat", ctx.chat_history)
+        ctx.launch_surface_fn(
+            f"{CFG_DIR}/modules/agent_tui.py",
+            ctx.is_agent,
+            ctx.workspace_path,
+            ctx.clean_name or "chat",
+            ctx.chat_history,
+        )
         return True, None
 
     if cmd in ("/webui", "/web"):
         ui._console.print("[dim yellow][sys] Suspending CLI. Launching Py-Agent WebUI...[/dim yellow]")
-        ctx.launch_surface_fn(os.path.join(CFG_DIR, "plugins", "webui", "launch.sh"), ctx.is_agent, ctx.workspace_path, ctx.clean_name or "chat", ctx.chat_history)
+        ctx.launch_surface_fn(
+            os.path.join(CFG_DIR, "plugins", "webui", "launch.sh"),
+            ctx.is_agent,
+            ctx.workspace_path,
+            ctx.clean_name or "chat",
+            ctx.chat_history,
+        )
         return True, None
 
     if cmd in ("/pycode", "/pyc"):
         is_web = len(parts) > 1 and parts[1].lower() in ("web", "--web", "browser")
-        ui._console.print(f"[dim yellow][sys] Suspending CLI. Launching PyCode {'Browser WebUI' if is_web else 'Desktop App'}...[/dim yellow]")
-        ctx.launch_surface_fn(os.path.join(CFG_DIR, "plugins", "pycode", "launch.sh"), ctx.is_agent, ctx.workspace_path, ctx.clean_name or "chat", ctx.chat_history, args=["web"] if is_web else [])
+        ui._console.print(
+            f"[dim yellow][sys] Suspending CLI. Launching PyCode {'Browser WebUI' if is_web else 'Desktop App'}...[/dim yellow]"
+        )
+        ctx.launch_surface_fn(
+            os.path.join(CFG_DIR, "plugins", "pycode", "launch.sh"),
+            ctx.is_agent,
+            ctx.workspace_path,
+            ctx.clean_name or "chat",
+            ctx.chat_history,
+            args=["web"] if is_web else [],
+        )
         return True, None
 
     if cmd == "/dsh":
         ui._console.print("[dim yellow][sys] Suspending CLI. Launching DeepSeek Harness...[/dim yellow]")
-        ctx.launch_surface_fn(os.path.join(CFG_DIR, "plugins", "dsh", "run-dsh.sh"), ctx.is_agent, ctx.workspace_path, ctx.clean_name or "chat", ctx.chat_history)
+        ctx.launch_surface_fn(
+            os.path.join(CFG_DIR, "plugins", "dsh", "run-dsh.sh"),
+            ctx.is_agent,
+            ctx.workspace_path,
+            ctx.clean_name or "chat",
+            ctx.chat_history,
+        )
         return True, None
 
     if cmd in ("/zed", "/gpui"):
@@ -407,7 +484,11 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
             return True, None
 
         env = {**os.environ, "AI_WORKSPACE_PATH": ctx.workspace_path, "AI_ACTIVE_SKILL": ctx.clean_name or "chat"}
-        cmd_args = ["flatpak", "run", "dev.zed.Zed", ctx.workspace_path] if zed_bin == "flatpak" else [zed_bin, ctx.workspace_path]
+        cmd_args = (
+            ["flatpak", "run", "dev.zed.Zed", ctx.workspace_path]
+            if zed_bin == "flatpak"
+            else [zed_bin, ctx.workspace_path]
+        )
         try:
             subprocess.Popen(cmd_args, env=env)
             bname = "flatpak" if zed_bin == "flatpak" else os.path.basename(zed_bin)
@@ -475,7 +556,9 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
             core.save_state("reasoning_active", ctx.reasoning_active)
             ctx.flash_status(f"thinking: {ctx.reasoning_budget if ctx.reasoning_active else 'off'}")
 
-        update_workspace_config(ctx.cfg_file, {"reasoning": ctx.reasoning_active, "reasoning_budget": ctx.reasoning_budget})
+        update_workspace_config(
+            ctx.cfg_file, {"reasoning": ctx.reasoning_active, "reasoning_budget": ctx.reasoning_budget}
+        )
         return True, None
 
     if cmd == "/stats":
@@ -489,7 +572,9 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
         sys.stdout.flush()
         imap_bin = os.path.join(CFG_DIR, "tools", "index-map", "index-map")
         if os.path.isfile(imap_bin):
-            res_sync = subprocess.run([sys.executable, imap_bin, "--agent", ctx.workspace_path], capture_output=True, text=True)
+            res_sync = subprocess.run(
+                [sys.executable, imap_bin, "--agent", ctx.workspace_path], capture_output=True, text=True
+            )
             if res_sync.returncode != 0:
                 ui._console.print(f"\r\x1b[2K[red][sys] Sync failed: {res_sync.stderr.strip()[:100]}[/red]\n")
                 return True, None
@@ -499,7 +584,17 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
 
         agent_dir = os.path.join(ctx.workspace_path, ".agent")
         ws_name = os.path.basename(ctx.workspace_path)
-        txt_p = next((p for p in (os.path.join(agent_dir, f"index-map-{ws_name}.txt"), os.path.join(ctx.workspace_path, f"index-map-{ws_name}.txt")) if os.path.exists(p)), None)
+        txt_p = next(
+            (
+                p
+                for p in (
+                    os.path.join(agent_dir, f"index-map-{ws_name}.txt"),
+                    os.path.join(ctx.workspace_path, f"index-map-{ws_name}.txt"),
+                )
+                if os.path.exists(p)
+            ),
+            None,
+        )
         if txt_p:
             try:
                 with open(txt_p, "r", encoding="utf-8") as mf:
@@ -507,7 +602,9 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
                 has_map = False
                 for msg in ctx.chat_history:
                     if "### CODESPACE MAP:" in msg["content"]:
-                        msg["content"] = msg["content"].split("### CODESPACE MAP:")[0] + f"### CODESPACE MAP:\n{new_map}"
+                        msg["content"] = (
+                            msg["content"].split("### CODESPACE MAP:")[0] + f"### CODESPACE MAP:\n{new_map}"
+                        )
                         has_map = True
                 if not has_map:
                     ctx.chat_history[0]["content"] += f"\n\n### CODESPACE MAP:\n{new_map}"
@@ -548,12 +645,17 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
         after_toks = sum(core.get_accurate_token_count(m.get("content") or "") for m in ctx.chat_history)
         saved = max(0, before_toks - after_toks)
         pct = (saved / before_toks * 100) if before_toks > 0 else 0
-        ui._console.print(f"[green][sys] Context compacted: {before_toks} → {after_toks} tokens (saved {saved}t / -{pct:.1f}%).[/green]\n")
+        ui._console.print(
+            f"[green][sys] Context compacted: {before_toks} → {after_toks} tokens (saved {saved}t / -{pct:.1f}%).[/green]\n"
+        )
         return True, None
 
     if cmd == "/tok":
         from agent_context import show_memory_status
-        show_memory_status(ctx.chat_history, max_context=int(os.environ.get("AI_MAX_TOKENS", 8192)), server_url="http://localhost:8080")
+
+        show_memory_status(
+            ctx.chat_history, max_context=int(os.environ.get("AI_MAX_TOKENS", 8192)), server_url="http://localhost:8080"
+        )
         return True, None
 
     if cmd in ("file", "/file"):
@@ -568,7 +670,9 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
             ctx.flash_status(f"skill: {ctx.clean_name or 'chat'}")
             return True, None
 
-        ctx.chat_history[:], loaded_name = skills.run_skill_selector(ctx.safe_name, q_strip, SKILLS_DIR, STOP_WORDS, ctx.chat_history)
+        ctx.chat_history[:], loaded_name = skills.run_skill_selector(
+            ctx.safe_name, q_strip, SKILLS_DIR, STOP_WORDS, ctx.chat_history
+        )
         if loaded_name:
             os.environ["AI_ACTIVE_SKILL"] = f"{ctx.clean_name} {loaded_name}"
         return True, None
@@ -583,7 +687,9 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
         try:
             if restored_hist := sessions.rollback_checkpoint(ctx.safe_name):
                 ctx.chat_history[:] = restored_hist
-                ui._console.print(f"[green][session-mgr] Restored session ({len(ctx.chat_history) - 1} turns loaded).[/green]\n")
+                ui._console.print(
+                    f"[green][session-mgr] Restored session ({len(ctx.chat_history) - 1} turns loaded).[/green]\n"
+                )
         except Exception as e:
             ui._console.print(f"[red]Error loading session: {e}[/red]")
         return True, None

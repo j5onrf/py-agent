@@ -64,6 +64,8 @@ ai init ~/.config/py-agent/projects/session-test ---> session test, projects ses
 ~/.config/py-agent/plugins/pycode/setup.sh ---> install-pycode, setup-pycode, setup pycode
 # --- Open-Code-Review ---
 ~/.config/py-agent/plugins/open-code-review/run-review ---> open code review, cr
+# --- Open-Code-Optimize ---
+~/.config/py-agent/plugins/open-code-optimize/run-optimize ---> open code optimize, co
 # --- Model Context Protocol (MCP) ---
 ~/.config/py-agent/plugins/mcp/mcp_client.py list ---> mcp list, mcp tools, mcpl
 # --- PhotoCraft (MCP) ---

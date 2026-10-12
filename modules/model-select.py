@@ -69,7 +69,10 @@ DEFAULTS = {
         "qwen/qwen-2.5-72b-instruct",
     ],
     "spaces": {
-        "Local llama-server / vLLM (Port 8080)": {"url": "http://127.0.0.1:8080/v1/chat/completions", "model": "local-model"},
+        "Local llama-server / vLLM (Port 8080)": {
+            "url": "http://127.0.0.1:8080/v1/chat/completions",
+            "model": "local-model",
+        },
         "Local Ollama (Port 11434)": {"url": "http://127.0.0.1:11434/v1/chat/completions", "model": "llama3.3"},
     },
     "custom_presets": {
@@ -81,7 +84,7 @@ DEFAULTS = {
         "openai": ["gpt-4o", "o3-mini", "gpt-4o-mini"],
         "groq": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
         "mistral": ["codestral-latest", "mistral-large-latest"],
-    }
+    },
 }
 
 
@@ -199,7 +202,13 @@ def get_active_key_set() -> set[str]:
                     if s and not s.startswith("#") and "=" in s:
                         k, v = s.split("=", 1)
                         val = v.strip().strip('"').strip("'")
-                        if val and len(val) >= 8 and not any(sub in val.lower() for sub in ("your-key-here", "aizasyyour", "not-needed", "sk-your")):
+                        if (
+                            val
+                            and len(val) >= 8
+                            and not any(
+                                sub in val.lower() for sub in ("your-key-here", "aizasyyour", "not-needed", "sk-your")
+                            )
+                        ):
                             active.add(k.strip())
         except OSError:
             pass
@@ -246,7 +255,7 @@ def isolate_active_key(active_key_name: str):
         for i, l in enumerate(lines):
             for k in provider_keys:
                 if re.match(rf"^#?\s*{k}\s*=", l.strip()):
-                    should_comment = (k != active_key_name)
+                    should_comment = k != active_key_name
                     raw = re.sub(rf"^#?\s*({k}\s*=.*)$", r"\1", l.strip())
                     lines[i] = f"{'#' if should_comment else ''}{raw}\n"
 
@@ -381,7 +390,11 @@ def parse_endpoint_url(raw_url: str) -> tuple[str, str, str]:
     if ".hf.space" in url:
         host = url.split("://")[-1].split("/")[0]
         base = host.replace(".hf.space", "")
-        return (f"{base} (Space)", f"https://{host}/v1/chat/completions" if not url.endswith("/chat/completions") else url, base)
+        return (
+            f"{base} (Space)",
+            f"https://{host}/v1/chat/completions" if not url.endswith("/chat/completions") else url,
+            base,
+        )
     t_url = url if url.endswith("/chat/completions") else f"{url.rstrip('/')}/v1/chat/completions"
     return (f"Custom ({url.split('://')[-1].split('/')[0]})", t_url, "default")
 
@@ -397,24 +410,27 @@ async def async_fetch_remote(env_vars: dict, spaces: dict):
         if api_key_gem and len(api_key_gem) > 8 and "your" not in api_key_gem.lower():
             try:
                 req_gem = urlreq.Request(
-                    "https://generativelanguage.googleapis.com/v1beta/models",
-                    headers={"x-goog-api-key": api_key_gem}
+                    "https://generativelanguage.googleapis.com/v1beta/models", headers={"x-goog-api-key": api_key_gem}
                 )
                 with urlreq.urlopen(req_gem, timeout=6) as res:
                     if res.status == 200:
                         data = json.loads(res.read().decode("utf-8"))
                         for m in data.get("models", []):
                             mid = m.get("name", "").replace("models/", "")
-                            if "generateContent" in m.get("supportedGenerationMethods", []) and not any(x in mid for x in ("embedding", "aqa", "imagen", "tts")):
+                            if "generateContent" in m.get("supportedGenerationMethods", []) and not any(
+                                x in mid for x in ("embedding", "aqa", "imagen", "tts")
+                            ):
                                 gem_models.append(mid)
-                        gem_models.sort(key=lambda x: [int(c) if c.isdigit() else c for c in re.split(r'(\d+)', x)], reverse=True)
+                        gem_models.sort(
+                            key=lambda x: [int(c) if c.isdigit() else c for c in re.split(r"(\d+)", x)], reverse=True
+                        )
             except (urlerr.URLError, json.JSONDecodeError, OSError):
                 pass
 
         try:
             req = urlreq.Request(
                 "https://openrouter.ai/api/v1/models",
-                headers={"Authorization": f"Bearer {api_key_or}"} if api_key_or else {}
+                headers={"Authorization": f"Bearer {api_key_or}"} if api_key_or else {},
             )
             with urlreq.urlopen(req, timeout=10) as res:
                 if res.status == 200:
@@ -473,8 +489,24 @@ async def async_get_key():
                 return "esc"
             ch = b.decode("utf-8", errors="ignore")
             if ch == "\x1b" and select.select([fd], [], [], 0.05)[0]:
-                return {"[A": "up", "OA": "up", "[B": "down", "OB": "down", "[C": "right", "OC": "right", "[D": "left", "OD": "left"}.get(os.read(fd, 2).decode("utf-8", errors="ignore"), "esc")
-            return {"\x1b": "esc", "\r": "enter", "\n": "enter", " ": "space", "\x7f": "backspace", "\x08": "backspace"}.get(ch, ch.lower() if ch.lower() == "q" else ch)
+                return {
+                    "[A": "up",
+                    "OA": "up",
+                    "[B": "down",
+                    "OB": "down",
+                    "[C": "right",
+                    "OC": "right",
+                    "[D": "left",
+                    "OD": "left",
+                }.get(os.read(fd, 2).decode("utf-8", errors="ignore"), "esc")
+            return {
+                "\x1b": "esc",
+                "\r": "enter",
+                "\n": "enter",
+                " ": "space",
+                "\x7f": "backspace",
+                "\x08": "backspace",
+            }.get(ch, ch.lower() if ch.lower() == "q" else ch)
         except Exception:
             return "esc"
         finally:
@@ -497,7 +529,9 @@ def prompt_user_input(prompt_text: str) -> str:
         sys.stdout.flush()
 
 
-async def run_interactive_menu(title: str, items: list[str], current: str, active: bool, extras: list[str] | None = None):
+async def run_interactive_menu(
+    title: str, items: list[str], current: str, active: bool, extras: list[str] | None = None
+):
     state = {"query": "", "all": len(items) <= 50}
     extras = extras or []
 
@@ -519,7 +553,7 @@ async def run_interactive_menu(title: str, items: list[str], current: str, activ
         sel = 0
 
     while True:
-        sys.stdout.write(f"\x1b[H\x1b[2J\n   {BOLD}  SELECT {title.upper()}:{RESET}\n   {DIM}{'─'*60}{RESET}\n\n")
+        sys.stdout.write(f"\x1b[H\x1b[2J\n   {BOLD}  SELECT {title.upper()}:{RESET}\n   {DIM}{'─' * 60}{RESET}\n\n")
         if state["query"]:
             sys.stdout.write(f"   🔍  Filter: {GREEN}{state['query']}{AMBER}_{RESET}\n\n")
 
@@ -529,12 +563,28 @@ async def run_interactive_menu(title: str, items: list[str], current: str, activ
         for i in range(start, end):
             opt = opts[i]
             bullet = f"{AMBER}❯{RESET} " if i == sel else "  "
-            line = f"{bullet}{RED}{opt} (disabled){RESET}" if (i == 0 and not active and "Turn Off" in opt) else f"{bullet}{GREEN}{opt} (active){RESET}" if (_is_cur(opt) and active) else f"{bullet}{opt}"
+            line = (
+                f"{bullet}{RED}{opt} (disabled){RESET}"
+                if (i == 0 and not active and "Turn Off" in opt)
+                else f"{bullet}{GREEN}{opt} (active){RESET}"
+                if (_is_cur(opt) and active)
+                else f"{bullet}{opt}"
+            )
             sys.stdout.write(f"     {BOLD if i == sel else ''}{line}{RESET}\n")
 
-        ind = " ▲ ▼ " if (start > 0 and end < len(opts)) else " ▼ more " if end < len(opts) else " ▲ more " if start > 0 else ""
-        sys.stdout.write(f"\n   {DIM}{'─'*25 + AMBER + ind + DIM + '─'*25 if ind else '─'*60}{RESET}\n")
-        sys.stdout.write(f"   {DIM}{f'Matches: {len(opts)-len(extras)}. Backspace: edit' if state['query'] else f'Top 20 shown. ► (Right) for all {len(items)}' if not state['all'] else f'Showing all {len(items)}. ◄ (Left) for Top 20'}{RESET}\n")
+        ind = (
+            " ▲ ▼ "
+            if (start > 0 and end < len(opts))
+            else " ▼ more "
+            if end < len(opts)
+            else " ▲ more "
+            if start > 0
+            else ""
+        )
+        sys.stdout.write(f"\n   {DIM}{'─' * 25 + AMBER + ind + DIM + '─' * 25 if ind else '─' * 60}{RESET}\n")
+        sys.stdout.write(
+            f"   {DIM}{f'Matches: {len(opts) - len(extras)}. Backspace: edit' if state['query'] else f'Top 20 shown. ► (Right) for all {len(items)}' if not state['all'] else f'Showing all {len(items)}. ◄ (Left) for Top 20'}{RESET}\n"
+        )
         sys.stdout.flush()
 
         key = await async_get_key()
@@ -551,7 +601,7 @@ async def run_interactive_menu(title: str, items: list[str], current: str, activ
             else:
                 return None
         elif key in ("right", "left"):
-            state["all"] = (key == "right")
+            state["all"] = key == "right"
             opts = filter_items()
             sel = opts.index(current) if current in opts else 0
         elif key == "enter":
@@ -603,9 +653,19 @@ async def async_main():
         def fmt(curr: str, k: str, ak: set[str] = active_keys) -> str:
             return f"{GREEN}{curr}{RESET}" if k in ak else f"{RED}DISABLED{RESET}"
 
-        fmt_or_free = f"{GREEN}{env.get('OPENROUTER_MODEL', 'openrouter/free')}{RESET}" if is_free_active else f"{RED}DISABLED{RESET}"
-        fmt_or_paid = f"{GREEN}{env.get('OPENROUTER_MODEL', 'anthropic/claude-3.7-sonnet')}{RESET}" if is_paid_active else f"{RED}DISABLED{RESET}"
-        status_all = f"{GREEN}ENABLED{RESET}" if any(k in active_keys for k in provider_keys) else f"{RED}DISABLED{RESET}"
+        fmt_or_free = (
+            f"{GREEN}{env.get('OPENROUTER_MODEL', 'openrouter/free')}{RESET}"
+            if is_free_active
+            else f"{RED}DISABLED{RESET}"
+        )
+        fmt_or_paid = (
+            f"{GREEN}{env.get('OPENROUTER_MODEL', 'anthropic/claude-3.7-sonnet')}{RESET}"
+            if is_paid_active
+            else f"{RED}DISABLED{RESET}"
+        )
+        status_all = (
+            f"{GREEN}ENABLED{RESET}" if any(k in active_keys for k in provider_keys) else f"{RED}DISABLED{RESET}"
+        )
 
         gnd_curr = env.get("GND_MODEL", "gemini-2.5-flash")
         voice_curr = env.get("GEM_MODEL", "gemini-3.5-flash-lite")
@@ -620,10 +680,12 @@ async def async_main():
         items.append({"type": "cloud", "render": f"🔌  {'Cloud Connection':<{col_w}} {status_all}"})
 
         # 1: Custom 1 (Local / Spaces)
-        items.append({
-            "type": "custom1",
-            "render": f"🤗  {'Custom 1 (Local / Spaces)':<{col_w}} {fmt(custom_curr, 'CUSTOM_API_KEY')}\n       {DIM}Local llama-server, vLLM, Ollama or custom HF Spaces{RESET}"
-        })
+        items.append(
+            {
+                "type": "custom1",
+                "render": f"🤗  {'Custom 1 (Local / Spaces)':<{col_w}} {fmt(custom_curr, 'CUSTOM_API_KEY')}\n       {DIM}Local llama-server, vLLM, Ollama or custom HF Spaces{RESET}",
+            }
+        )
 
         # 2..N: Dynamic CUSTOM<N> Generic Endpoints
         for n in custom_indices:
@@ -631,56 +693,100 @@ async def async_main():
             c_mod = env.get(f"CUSTOM{n}_MODEL", "default")
             c_name, c_icon = detect_provider(c_url, c_mod)
             c_label = f"Custom {n} ({c_name})"
-            items.append({
-                "type": "custom_generic",
-                "n": n,
-                "name": c_name,
-                "url": c_url,
-                "model": c_mod,
-                "render": f"{c_icon}  {c_label:<{col_w}} {fmt(c_mod, f'CUSTOM{n}_API_KEY')}\n       {DIM}Direct endpoint via {c_url or 'OpenAI-compatible URL'}{RESET}"
-            })
+            items.append(
+                {
+                    "type": "custom_generic",
+                    "n": n,
+                    "name": c_name,
+                    "url": c_url,
+                    "model": c_mod,
+                    "render": f"{c_icon}  {c_label:<{col_w}} {fmt(c_mod, f'CUSTOM{n}_API_KEY')}\n       {DIM}Direct endpoint via {c_url or 'OpenAI-compatible URL'}{RESET}",
+                }
+            )
 
         # Gemini & OpenRouter
-        items.append({
-            "type": "gemini",
-            "render": f"✨  {'Google Gemini':<{col_w}} {fmt(env.get('GEMINI_MODEL', 'gemini-2.5-flash'), 'GEMINI_API_KEY')}\n       {DIM}Free daily tier via Google AI Studio{RESET}"
-        })
-        items.append({
-            "type": "or_free",
-            "render": f"🌐  {'OpenRouter Free':<{col_w}} {fmt_or_free}\n       {DIM}Top rotating community models (100% free){RESET}"
-        })
-        items.append({
-            "type": "or_paid",
-            "render": f"🌐  {'OpenRouter Paid':<{col_w}} {fmt_or_paid}\n       {DIM}High-end paid catalog (Claude, GPT, DeepSeek, Llama){RESET}"
-        })
+        items.append(
+            {
+                "type": "gemini",
+                "render": f"✨  {'Google Gemini':<{col_w}} {fmt(env.get('GEMINI_MODEL', 'gemini-2.5-flash'), 'GEMINI_API_KEY')}\n       {DIM}Free daily tier via Google AI Studio{RESET}",
+            }
+        )
+        items.append(
+            {
+                "type": "or_free",
+                "render": f"🌐  {'OpenRouter Free':<{col_w}} {fmt_or_free}\n       {DIM}Top rotating community models (100% free){RESET}",
+            }
+        )
+        items.append(
+            {
+                "type": "or_paid",
+                "render": f"🌐  {'OpenRouter Paid':<{col_w}} {fmt_or_paid}\n       {DIM}High-end paid catalog (Claude, GPT, DeepSeek, Llama){RESET}",
+            }
+        )
 
         # Auxiliary Services (Compact)
-        items.append({"type": "aux", "key": "GND_KEY", "mod": "GND_MODEL", "curr": gnd_curr, "title": "Search Grounding (/gnd)", "render": f"🔍  {'Search Grounding (/gnd)':<{col_w}} {fmt(gnd_curr, 'GND_KEY')}"})
-        items.append({"type": "aux", "key": "GEM_VOICE", "mod": "GEM_MODEL", "curr": voice_curr, "title": "Voice Transcription", "render": f"🎙️  {'Voice Transcription':<{col_w}} {fmt(voice_curr, 'GEM_VOICE')}"})
-        items.append({"type": "aux", "key": "IMG_VOICE", "mod": "IMG_MODEL", "curr": img_curr, "title": "Vision OCR Multimodal", "render": f"👁️  {'Vision OCR Multimodal':<{col_w}} {fmt(img_curr, 'IMG_VOICE')}"})
+        items.append(
+            {
+                "type": "aux",
+                "key": "GND_KEY",
+                "mod": "GND_MODEL",
+                "curr": gnd_curr,
+                "title": "Search Grounding (/gnd)",
+                "render": f"🔍  {'Search Grounding (/gnd)':<{col_w}} {fmt(gnd_curr, 'GND_KEY')}",
+            }
+        )
+        items.append(
+            {
+                "type": "aux",
+                "key": "GEM_VOICE",
+                "mod": "GEM_MODEL",
+                "curr": voice_curr,
+                "title": "Voice Transcription",
+                "render": f"🎙️  {'Voice Transcription':<{col_w}} {fmt(voice_curr, 'GEM_VOICE')}",
+            }
+        )
+        items.append(
+            {
+                "type": "aux",
+                "key": "IMG_VOICE",
+                "mod": "IMG_MODEL",
+                "curr": img_curr,
+                "title": "Vision OCR Multimodal",
+                "render": f"👁️  {'Vision OCR Multimodal':<{col_w}} {fmt(img_curr, 'IMG_VOICE')}",
+            }
+        )
 
         # Tokens, Rounds, Refresh & Exit (Compact)
         items.append({"type": "tokens", "render": f"🧠  {'Context Budget':<{col_w}} {GREEN}{ctx_curr} tokens{RESET}"})
-        items.append({"type": "rounds", "render": f"🔄  {'Max Agent Rounds':<{col_w}} {GREEN}{rounds_curr} rounds{RESET}"})
-        items.append({"type": "refresh", "render": f"↺  Refresh API Lists        {DIM}Sync live endpoints (Gemini, OpenRouter){RESET}"})
+        items.append(
+            {"type": "rounds", "render": f"🔄  {'Max Agent Rounds':<{col_w}} {GREEN}{rounds_curr} rounds{RESET}"}
+        )
+        items.append(
+            {
+                "type": "refresh",
+                "render": f"↺  Refresh API Lists        {DIM}Sync live endpoints (Gemini, OpenRouter){RESET}",
+            }
+        )
         items.append({"type": "exit", "render": "✕  Save & Close"})
 
         # ── Render Terminal UI ──
-        sys.stdout.write(f"\x1b[H\x1b[2J\n   {BOLD}  LOCAL-AI CONFIGURATION{RESET}\n   {DIM}{'─'*60}{RESET}\n\n")
+        sys.stdout.write(f"\x1b[H\x1b[2J\n   {BOLD}  LOCAL-AI CONFIGURATION{RESET}\n   {DIM}{'─' * 60}{RESET}\n\n")
 
         for i, itm in enumerate(items):
-            if itm["type"] == "aux" and (i == 0 or items[i-1]["type"] != "aux"):
-                sys.stdout.write(f"   {DIM}{'─'*19}  Auxiliary Services  {'─'*19}{RESET}\n\n")
+            if itm["type"] == "aux" and (i == 0 or items[i - 1]["type"] != "aux"):
+                sys.stdout.write(f"   {DIM}{'─' * 19}  Auxiliary Services  {'─' * 19}{RESET}\n\n")
             elif itm["type"] == "tokens":
-                sys.stdout.write(f"\n   {DIM}{'─'*18}  Context & Loop Budget  {'─'*17}{RESET}\n\n")
+                sys.stdout.write(f"\n   {DIM}{'─' * 18}  Context & Loop Budget  {'─' * 17}{RESET}\n\n")
             elif itm["type"] == "refresh":
-                sys.stdout.write(f"\n   {DIM}{'─'*60}{RESET}\n")
+                sys.stdout.write(f"\n   {DIM}{'─' * 60}{RESET}\n")
 
             cursor = f"   {AMBER}❯{RESET}  {BOLD}" if i == menu_idx else "      "
             extra_nl = "\n" if itm["type"] in ("custom1", "custom_generic", "gemini", "or_free", "or_paid") else ""
             sys.stdout.write(f"{cursor}{itm['render']}{RESET}\n{extra_nl}")
 
-        sys.stdout.write(f"\n   {DIM}{'─'*60}{RESET}\n   {message or f'{DIM}▲/▼: Navigate | Space: Toggle | Enter: Select | Q: Quit{RESET}'}\n")
+        sys.stdout.write(
+            f"\n   {DIM}{'─' * 60}{RESET}\n   {message or f'{DIM}▲/▼: Navigate | Space: Toggle | Enter: Select | Q: Quit{RESET}'}\n"
+        )
         sys.stdout.flush()
         message = ""
 
@@ -697,26 +803,40 @@ async def async_main():
 
             if ttype == "custom1":
                 now_on = toggle_single_provider("CUSTOM_API_KEY", "CUSTOM_MODEL", LOCAL_DEFAULT_MODEL)
-                message = f"✓ Custom 1 (Local / Spaces): {GREEN+'ENABLED'+RESET if now_on else RED+'DISABLED'+RESET}"
+                message = (
+                    f"✓ Custom 1 (Local / Spaces): {GREEN + 'ENABLED' + RESET if now_on else RED + 'DISABLED' + RESET}"
+                )
             elif ttype == "custom_generic":
                 n = target["n"]
                 d_mod = target["model"] or "default"
                 now_on = toggle_single_provider(f"CUSTOM{n}_API_KEY", f"CUSTOM{n}_MODEL", d_mod)
-                message = f"✓ Custom {n} ({target['name']}): {GREEN+'ENABLED'+RESET if now_on else RED+'DISABLED'+RESET}"
+                message = f"✓ Custom {n} ({target['name']}): {GREEN + 'ENABLED' + RESET if now_on else RED + 'DISABLED' + RESET}"
             elif ttype == "gemini":
                 now_on = toggle_single_provider("GEMINI_API_KEY", "GEMINI_MODEL", "gemini-2.5-flash")
-                message = f"✓ Gemini: {GREEN+'ENABLED'+RESET if now_on else RED+'DISABLED'+RESET}"
+                message = f"✓ Gemini: {GREEN + 'ENABLED' + RESET if now_on else RED + 'DISABLED' + RESET}"
             elif ttype in ("or_free", "or_paid"):
                 cur_or_model = env.get("OPENROUTER_MODEL") or "openrouter/free"
-                target_m = cur_or_model if (ttype == "or_free" and "free" in cur_or_model.lower()) else "openrouter/free" if ttype == "or_free" else cur_or_model if "free" not in cur_or_model.lower() else "anthropic/claude-3.7-sonnet"
+                target_m = (
+                    cur_or_model
+                    if (ttype == "or_free" and "free" in cur_or_model.lower())
+                    else "openrouter/free"
+                    if ttype == "or_free"
+                    else cur_or_model
+                    if "free" not in cur_or_model.lower()
+                    else "anthropic/claude-3.7-sonnet"
+                )
                 now_on = toggle_single_provider("OPENROUTER_API_KEY", "OPENROUTER_MODEL", target_m)
-                message = f"✓ OpenRouter: {GREEN+'ENABLED'+RESET if now_on else RED+'DISABLED'+RESET}"
+                message = f"✓ OpenRouter: {GREEN + 'ENABLED' + RESET if now_on else RED + 'DISABLED' + RESET}"
             elif ttype == "aux":
                 now_on = toggle_independent_key(target["key"])
-                message = f"✓ {target['title']}: {GREEN+'ENABLED'+RESET if now_on else RED+'DISABLED'+RESET}"
+                message = f"✓ {target['title']}: {GREEN + 'ENABLED' + RESET if now_on else RED + 'DISABLED' + RESET}"
             elif ttype == "rounds":
                 cycle_rounds = ["5", "10", "15", "20", "25", "30", "50"]
-                next_rounds = cycle_rounds[(cycle_rounds.index(rounds_curr) + 1) % len(cycle_rounds)] if rounds_curr in cycle_rounds else "10"
+                next_rounds = (
+                    cycle_rounds[(cycle_rounds.index(rounds_curr) + 1) % len(cycle_rounds)]
+                    if rounds_curr in cycle_rounds
+                    else "10"
+                )
                 update_env_multiple({"AI_MAX_AGENT_ROUNDS": next_rounds})
                 message = f"✓ Max Agent Rounds: {next_rounds}"
 
@@ -726,7 +846,7 @@ async def async_main():
 
             if ttype == "cloud":
                 is_on = toggle_env_api_keys()
-                message = f"✓ Switched Connection: {GREEN+'ENABLED'+RESET if is_on else RED+'DISABLED'+RESET}"
+                message = f"✓ Switched Connection: {GREEN + 'ENABLED' + RESET if is_on else RED + 'DISABLED' + RESET}"
 
             elif ttype == "custom_generic":
                 n = target["n"]
@@ -746,7 +866,7 @@ async def async_main():
                     c_menu_items,
                     c_curr_m,
                     c_key_name in active_keys,
-                    [f"🚫 Turn Off Custom {n}", "✏️  [Edit Model Name]", "🔗 [Edit Endpoint URL]", "🔑 [Edit API Key]"]
+                    [f"🚫 Turn Off Custom {n}", "✏️  [Edit Model Name]", "🔗 [Edit Endpoint URL]", "🔑 [Edit API Key]"],
                 )
 
                 if not res:
@@ -760,7 +880,9 @@ async def async_main():
                         isolate_active_key(c_key_name)
                         message = f"✓ Custom {n} Model set to: {m_in}"
                 elif res == "🔗 [Edit Endpoint URL]":
-                    if u_in := prompt_user_input("Enter completions URL (e.g. https://ai-gateway.vercel.sh/v1/chat/completions)"):
+                    if u_in := prompt_user_input(
+                        "Enter completions URL (e.g. https://ai-gateway.vercel.sh/v1/chat/completions)"
+                    ):
                         update_env_multiple({c_url_name: u_in})
                         message = f"✓ Custom {n} URL updated to: {u_in}"
                 elif res == "🔑 [Edit API Key]":
@@ -775,13 +897,37 @@ async def async_main():
 
             elif ttype in ("custom1", "gemini", "or_free", "or_paid"):
                 if ttype == "custom1":
-                    title, model_items, cur_val, key_name, extra_opts = ("Custom 1 (Local / Spaces)", custom_list, custom_curr, "CUSTOM_API_KEY", ["🚫 Turn Off Custom 1", "➕ [Add Space / Endpoint URL]", "🗑  [Delete Custom Space]"])
+                    title, model_items, cur_val, key_name, extra_opts = (
+                        "Custom 1 (Local / Spaces)",
+                        custom_list,
+                        custom_curr,
+                        "CUSTOM_API_KEY",
+                        ["🚫 Turn Off Custom 1", "➕ [Add Space / Endpoint URL]", "🗑  [Delete Custom Space]"],
+                    )
                 elif ttype == "gemini":
-                    title, model_items, cur_val, key_name, extra_opts = ("Gemini", cache.get("gemini", DEFAULTS["gemini"]), env.get("GEMINI_MODEL", ""), "GEMINI_API_KEY", ["🚫 Turn Off Gemini"])
+                    title, model_items, cur_val, key_name, extra_opts = (
+                        "Gemini",
+                        cache.get("gemini", DEFAULTS["gemini"]),
+                        env.get("GEMINI_MODEL", ""),
+                        "GEMINI_API_KEY",
+                        ["🚫 Turn Off Gemini"],
+                    )
                 elif ttype == "or_free":
-                    title, model_items, cur_val, key_name, extra_opts = ("OpenRouter Free", cache.get("free", DEFAULTS["free"]), env.get("OPENROUTER_MODEL", ""), "OPENROUTER_API_KEY", ["🚫 Turn Off OpenRouter"])
+                    title, model_items, cur_val, key_name, extra_opts = (
+                        "OpenRouter Free",
+                        cache.get("free", DEFAULTS["free"]),
+                        env.get("OPENROUTER_MODEL", ""),
+                        "OPENROUTER_API_KEY",
+                        ["🚫 Turn Off OpenRouter"],
+                    )
                 else:
-                    title, model_items, cur_val, key_name, extra_opts = ("OpenRouter Paid", cache.get("paid", DEFAULTS["paid"]), env.get("OPENROUTER_MODEL", ""), "OPENROUTER_API_KEY", ["🚫 Turn Off OpenRouter"])
+                    title, model_items, cur_val, key_name, extra_opts = (
+                        "OpenRouter Paid",
+                        cache.get("paid", DEFAULTS["paid"]),
+                        env.get("OPENROUTER_MODEL", ""),
+                        "OPENROUTER_API_KEY",
+                        ["🚫 Turn Off OpenRouter"],
+                    )
 
                 res = await run_interactive_menu(title, model_items, cur_val, key_name in active_keys, extra_opts)
                 if not res:
@@ -797,10 +943,14 @@ async def async_main():
                         if disp_name not in custom_list:
                             custom_list.insert(0, disp_name)
                         isolate_active_key("CUSTOM_API_KEY")
-                        update_env_multiple({"CUSTOM_URL": target_url, "CUSTOM_MODEL": model_name, "CUSTOM_API_KEY": "not-needed"})
+                        update_env_multiple(
+                            {"CUSTOM_URL": target_url, "CUSTOM_MODEL": model_name, "CUSTOM_API_KEY": "not-needed"}
+                        )
                         message = f"✓ Activated Space: {disp_name}"
                 elif res == "🗑  [Delete Custom Space]":
-                    del_res = await run_interactive_menu("Space to Delete", list(spaces.keys()), "", True, ["🚫 Cancel"])
+                    del_res = await run_interactive_menu(
+                        "Space to Delete", list(spaces.keys()), "", True, ["🚫 Cancel"]
+                    )
                     if del_res and del_res != "🚫 Cancel" and del_res in spaces:
                         del spaces[del_res]
                         save_json(CUSTOM_SPACES_FILE, spaces)
@@ -824,7 +974,7 @@ async def async_main():
                     a_presets,
                     target["curr"],
                     target["key"] in active_keys,
-                    [f"🚫 Turn Off {target['title']}", "🔑 [Edit API Key]", "✏️  [Custom Model Name]"]
+                    [f"🚫 Turn Off {target['title']}", "🔑 [Edit API Key]", "✏️  [Custom Model Name]"],
                 )
                 if not res:
                     continue
@@ -855,7 +1005,9 @@ async def async_main():
                     "131072 (128k - Maximum Cloud)",
                 ]
                 cur_preset = next((p for p in ctx_presets if p.startswith(ctx_curr)), ctx_curr)
-                res = await run_interactive_menu("Context Window Budget", ctx_presets, cur_preset, True, ["✏️  [Custom Token Limit]"])
+                res = await run_interactive_menu(
+                    "Context Window Budget", ctx_presets, cur_preset, True, ["✏️  [Custom Token Limit]"]
+                )
                 if not res:
                     continue
                 if res == "✏️  [Custom Token Limit]":
@@ -880,7 +1032,9 @@ async def async_main():
                     "50 (50 rounds - Autonomous Loop)",
                 ]
                 cur_preset = next((p for p in round_presets if p.startswith(f"{rounds_curr} ")), rounds_curr)
-                res = await run_interactive_menu("Max Agent Rounds", round_presets, cur_preset, True, ["✏️  [Custom Rounds Limit]"])
+                res = await run_interactive_menu(
+                    "Max Agent Rounds", round_presets, cur_preset, True, ["✏️  [Custom Rounds Limit]"]
+                )
                 if not res:
                     continue
                 if res == "✏️  [Custom Rounds Limit]":

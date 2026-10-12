@@ -22,7 +22,9 @@ BASE_PROMPT_AGENT: str = "Active local workspace developer agent."
 
 # Precompiled hot-path regular expressions
 RE_THINK_TAGS: re.Pattern = re.compile(r"<think>[\s\S]*?(?:</think>|$)", re.DOTALL)
-RE_AUTO_RUN: re.Pattern = re.compile(r"Run:\s*((?:trace symbol|blast radius|read function|find symbol)\s+\S+|architecture overview)")
+RE_AUTO_RUN: re.Pattern = re.compile(
+    r"Run:\s*((?:trace symbol|blast radius|read function|find symbol)\s+\S+|architecture overview)"
+)
 RE_THINK_BIN: re.Pattern = re.compile(r"^/?(tk|[fba])(?:\s+(\d+))?$", re.IGNORECASE)
 RE_SHELL_META: re.Pattern = re.compile(r"[\[\]{}()='\",;|#<>]")
 
@@ -55,6 +57,7 @@ if (mod_dir := os.path.join(CFG_DIR, "modules")) not in sys.path:
 
 try:
     import readline
+
     readline.parse_and_bind(r'"\e[A": previous-history')
     readline.parse_and_bind(r'"\e[B": next-history')
 except ImportError:
@@ -138,7 +141,7 @@ def ensure_clean_agent_dir(workspace_path: str) -> None:
         f"index-map-memory-{ws_name}.db",
         f"index-map-memory-{ws_name}.db-wal",
         f"index-map-memory-{ws_name}.db-shm",
-        "history.md"
+        "history.md",
     ]
     for fname in targets:
         src = os.path.join(workspace_path, fname)
@@ -189,7 +192,9 @@ def clean_exit(safe_name: str | None = None, workspace_path: str | None = None, 
     sys.exit(0)
 
 
-def _launch_surface(script_path: str, is_agent: bool, ws_path: str, skill: str, history: list, args: list[str] | None = None) -> None:
+def _launch_surface(
+    script_path: str, is_agent: bool, ws_path: str, skill: str, history: list, args: list[str] | None = None
+) -> None:
     """Launches secondary surfaces (TUI, PyCode, WebUI) with state continuity and E2BIG protection."""
     if not os.path.exists(script_path):
         ui._console.print(f"[red][sys] Launcher script not found: {script_path}[/red]\n")
@@ -199,7 +204,9 @@ def _launch_surface(script_path: str, is_agent: bool, ws_path: str, skill: str, 
     try:
         hist_data = json.dumps(history)
         if len(hist_data) > 65536:
-            with tempfile.NamedTemporaryFile("w", delete=False, prefix="ai_hist_", suffix=".json", encoding="utf-8") as tf:
+            with tempfile.NamedTemporaryFile(
+                "w", delete=False, prefix="ai_hist_", suffix=".json", encoding="utf-8"
+            ) as tf:
                 tf.write(hist_data)
                 hist_file = tf.name
     except Exception:
@@ -236,7 +243,7 @@ def _launch_surface(script_path: str, is_agent: bool, ws_path: str, skill: str, 
 
 def run_interactive_chat(args: list[str]) -> None:
     """Primary interactive agent and chat engine."""
-    is_agent = (args[0] == "--talk-chat")
+    is_agent = args[0] == "--talk-chat"
     original_workspace_path = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
     workspace_path = original_workspace_path
     home_dir = os.path.expanduser("~")
@@ -249,19 +256,25 @@ def run_interactive_chat(args: list[str]) -> None:
 
     if is_agent:
         if not os.path.exists(cfg_file):
-            selected_profile, is_yolo, use_map, is_py, memory_active, adapters_active = ui.select_workspace_profile(os.path.basename(workspace_path))
+            selected_profile, is_yolo, use_map, is_py, memory_active, adapters_active = ui.select_workspace_profile(
+                os.path.basename(workspace_path)
+            )
             try:
                 os.makedirs(os.path.dirname(cfg_file), exist_ok=True)
                 with open(cfg_file, "w", encoding="utf-8") as cf:
-                    json.dump({
-                        "profile": selected_profile,
-                        "yolo": is_yolo,
-                        "map": use_map,
-                        "py": is_py,
-                        "memory": memory_active,
-                        "adapters": adapters_active,
-                        "created_at": time.strftime("%Y-%m-%d %H:%M")
-                    }, cf, indent=2)
+                    json.dump(
+                        {
+                            "profile": selected_profile,
+                            "yolo": is_yolo,
+                            "map": use_map,
+                            "py": is_py,
+                            "memory": memory_active,
+                            "adapters": adapters_active,
+                            "created_at": time.strftime("%Y-%m-%d %H:%M"),
+                        },
+                        cf,
+                        indent=2,
+                    )
             except OSError:
                 pass
         else:
@@ -289,7 +302,9 @@ def run_interactive_chat(args: list[str]) -> None:
         clean_name = selected_profile if selected_profile != "init" else "pi/pro"
         profile_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
         if not profile_content and clean_name != "init":
-            ui._console.print(f"[dim yellow][sys] Skill '{clean_name}' not found. Using minimal agent prompt.[/dim yellow]")
+            ui._console.print(
+                f"[dim yellow][sys] Skill '{clean_name}' not found. Using minimal agent prompt.[/dim yellow]"
+            )
         active_system_prompt = profile_content or BASE_PROMPT_AGENT
         os.environ["AI_ACTIVE_SKILL"] = clean_name
 
@@ -310,7 +325,7 @@ def run_interactive_chat(args: list[str]) -> None:
             except Exception:
                 pass
 
-        is_purebash = (clean_name in ("purebash", "swe", "bash") or "purebash" in clean_name)
+        is_purebash = clean_name in ("purebash", "swe", "bash") or "purebash" in clean_name
         core.save_state("use_map", use_map)
         core.save_state("yolo_mode", is_yolo)
         core.save_state("ipython_mode", is_py)
@@ -333,13 +348,20 @@ def run_interactive_chat(args: list[str]) -> None:
             imap_bin = os.path.join(CFG_DIR, "tools", "index-map", "index-map")
             if not os.path.isfile(txt_p) or not os.path.isfile(db_p):
                 if os.path.isfile(imap_bin):
-                    res_map = subprocess.run([sys.executable, imap_bin, "--agent", workspace_path], capture_output=True, text=True)
+                    res_map = subprocess.run(
+                        [sys.executable, imap_bin, "--agent", workspace_path], capture_output=True, text=True
+                    )
                     if res_map.returncode == 0:
                         ui._console.print("[dim][sys] Map enabled: compiled index-map.[/dim]")
                     else:
-                        ui._console.print(f"[dim yellow][sys] Map compilation failed (rc={res_map.returncode}): {res_map.stderr.strip()[:100]}[/dim yellow]")
+                        ui._console.print(
+                            f"[dim yellow][sys] Map compilation failed (rc={res_map.returncode}): {res_map.stderr.strip()[:100]}[/dim yellow]"
+                        )
 
-            map_path = next((p for p in (txt_p, os.path.join(workspace_path, f"index-map-{ws_name}.txt")) if os.path.exists(p)), None)
+            map_path = next(
+                (p for p in (txt_p, os.path.join(workspace_path, f"index-map-{ws_name}.txt")) if os.path.exists(p)),
+                None,
+            )
             if map_path:
                 try:
                     with open(map_path, "r", encoding="utf-8") as mf:
@@ -352,7 +374,9 @@ def run_interactive_chat(args: list[str]) -> None:
         clean_name = selected_profile if (selected_profile and selected_profile != "pi/pro") else "chat"
         skill_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
         if not skill_content and clean_name != "chat":
-            ui._console.print(f"[dim yellow][sys] Skill '{clean_name}' not found. Using minimal chat prompt.[/dim yellow]")
+            ui._console.print(
+                f"[dim yellow][sys] Skill '{clean_name}' not found. Using minimal chat prompt.[/dim yellow]"
+            )
         active_system_prompt = skill_content or BASE_PROMPT_CHAT
         os.environ["AI_ACTIVE_SKILL"] = clean_name
 
@@ -401,7 +425,18 @@ def run_interactive_chat(args: list[str]) -> None:
             pass
 
     # Default fallback set cleanly to 1
-    ui.draw_session_box(workspace_path, home_dir, is_agent, db_turns, mem_count, memory_active, active_system_prompt, clean_name, sub_id=sub_id, box_style=st.get("box_style", 1))
+    ui.draw_session_box(
+        workspace_path,
+        home_dir,
+        is_agent,
+        db_turns,
+        mem_count,
+        memory_active,
+        active_system_prompt,
+        clean_name,
+        sub_id=sub_id,
+        box_style=st.get("box_style", 1),
+    )
 
     try:
         while True:
@@ -464,7 +499,10 @@ def run_interactive_chat(args: list[str]) -> None:
             memory_ctx = memories.get_memory_context(workspace_path) if (is_agent and memory_active) else ""
 
             if RE_THINK_BIN.match(query):
-                think_bin = next((p for p in (f"{CFG_DIR}/modules/agent_chat.py", f"{CFG_DIR}/modules/chat") if os.path.isfile(p)), None)
+                think_bin = next(
+                    (p for p in (f"{CFG_DIR}/modules/agent_chat.py", f"{CFG_DIR}/modules/chat") if os.path.isfile(p)),
+                    None,
+                )
                 if think_bin:
                     try:
                         subprocess.run([sys.executable, think_bin, query], input=json.dumps(chat_history), text=True)
@@ -473,7 +511,11 @@ def run_interactive_chat(args: list[str]) -> None:
                         sys.stderr.write(f"\033[1;31m[Warning] chat failed: {e}\033[0m\n")
                 continue
 
-            sys_ctx = "" if query.startswith("init") and "--init" in query else skills.get_system_context(query, CONTEXT_FILE, STOP_WORDS, SKILLS_DIR, CFG_DIR)
+            sys_ctx = (
+                ""
+                if query.startswith("init") and "--init" in query
+                else skills.get_system_context(query, CONTEXT_FILE, STOP_WORDS, SKILLS_DIR, CFG_DIR)
+            )
             if sys_ctx == "__ABORT_TURN__":
                 ui._console.print("[yellow][sys] Action cancelled.[/yellow]\n")
                 continue
@@ -490,7 +532,13 @@ def run_interactive_chat(args: list[str]) -> None:
             sys.stdout.write("\n")
             sys.stdout.flush()
 
-            if ans := core.stream_response(chat_history, prefix="", show_stats=show_stats, thinking_budget=reasoning_budget if reasoning_active else 0, is_agent=is_agent):
+            if ans := core.stream_response(
+                chat_history,
+                prefix="",
+                show_stats=show_stats,
+                thinking_budget=reasoning_budget if reasoning_active else 0,
+                is_agent=is_agent,
+            ):
                 clean_ans = RE_THINK_TAGS.sub("", ans).strip()
                 chat_history.append({"role": "assistant", "content": clean_ans or ans})
 
@@ -524,7 +572,9 @@ def run_interactive_chat(args: list[str]) -> None:
                         with open(hist_file, mode, encoding="utf-8") as hf:
                             if mode == "w":
                                 hf.write(f"# Workspace History: {os.path.basename(workspace_path)}\n\n")
-                            hf.write(f"## [{time.strftime('%Y-%m-%d %H:%M')}] User:\n{query}\n\n### Agent:\n{ans}\n\n---\n\n")
+                            hf.write(
+                                f"## [{time.strftime('%Y-%m-%d %H:%M')}] User:\n{query}\n\n### Agent:\n{ans}\n\n---\n\n"
+                            )
                     except OSError as e:
                         if os.environ.get("AI_DEBUG") == "1":
                             sys.stderr.write(f"\r\n[debug] Failed to write history.md: {e}\r\n")
@@ -591,7 +641,10 @@ def run_direct_query(args: list[str]) -> None:
         except OSError:
             pass
 
-    messages = [{"role": "system", "content": active_p}, {"role": "user", "content": f"<context>\n{sys_ctx}\n</context>\n\n{query}" if sys_ctx else query}]
+    messages = [
+        {"role": "system", "content": active_p},
+        {"role": "user", "content": f"<context>\n{sys_ctx}\n</context>\n\n{query}" if sys_ctx else query},
+    ]
     core.stream_response(messages, prefix="", show_stats=False, thinking_budget=thinking_budget)
     sys.exit(0)
 
@@ -612,7 +665,12 @@ def run_matching_search(args: list[str]) -> None:
         sys.exit(127)
 
     if matched := context.jaccard_search(user_input, CONTEXT_FILE, STOP_WORDS):
-        print("\n".join(f"{l.split('|||', 1)[0]}|||{context.clean_tool_prefix(l.split('|||', 1)[1])}" for l in matched.split("\n")))
+        print(
+            "\n".join(
+                f"{l.split('|||', 1)[0]}|||{context.clean_tool_prefix(l.split('|||', 1)[1])}"
+                for l in matched.split("\n")
+            )
+        )
         sys.exit(0)
     sys.stderr.write(err_msg)
     sys.exit(127)
@@ -629,7 +687,9 @@ def main() -> None:
                 " ".join(args[1:]),
                 lambda q: context.jaccard_search(q, CONTEXT_FILE, STOP_WORDS),
                 context.clean_tool_prefix,
-                lambda n: sys.stderr.write(f"zsh: command not found: {n}\n" if "zsh" in shell_name else f"bash: {n}: command not found\n"),
+                lambda n: sys.stderr.write(
+                    f"zsh: command not found: {n}\n" if "zsh" in shell_name else f"bash: {n}: command not found\n"
+                ),
                 lambda: skills.ensure_mysys_exists(SKILLS_DIR, CFG_DIR),
             )
             sys.exit(0)

@@ -39,48 +39,53 @@ from agent_stream import (
 )
 import agent_tools as tools
 
-ALLOWED_MODULES: frozenset[str] = frozenset({
-    "agent_chat.py",
-    "agent_cloud.py",
-    "agent_context.py",
-    "agent_core.py",
-    "agent_ipython.py",
-    "agent_memories.py",
-    "agent_security.py",
-    "agent_sessions.py",
-    "agent_skills.py",
-    "agent_state.py",
-    "agent_stream.py",
-    "agent_tools.py",
-    "agent_tts.py",
-    "agent_tui.py",
-    "agent_tui_async.py",
-    "agent_ui.py",
-    "agent_vision.py",
-    "agent_voice.py",
-    "model-select.py",
-    "chat",
-    "cheatsheet",
-    "new-project",
-    "omarchy",
-    "system-stack",
-    "test-agent",
-    "eval-stack",
-})
+ALLOWED_MODULES: frozenset[str] = frozenset(
+    {
+        "agent_chat.py",
+        "agent_cloud.py",
+        "agent_context.py",
+        "agent_core.py",
+        "agent_ipython.py",
+        "agent_memories.py",
+        "agent_security.py",
+        "agent_sessions.py",
+        "agent_skills.py",
+        "agent_state.py",
+        "agent_stream.py",
+        "agent_tools.py",
+        "agent_tts.py",
+        "agent_tui.py",
+        "agent_tui_async.py",
+        "agent_ui.py",
+        "agent_vision.py",
+        "agent_voice.py",
+        "model-select.py",
+        "chat",
+        "cheatsheet",
+        "new-project",
+        "omarchy",
+        "system-stack",
+        "test-agent",
+        "eval-stack",
+    }
+)
 
 
 def preprocess_multimodal_messages(*args: Any, **kwargs: Any) -> Any:
     import agent_vision
+
     return agent_vision.preprocess_multimodal_messages(*args, **kwargs)
 
 
 def describe_image_gemini(*args: Any, **kwargs: Any) -> Any:
     import agent_vision
+
     return agent_vision.describe_image_gemini(*args, **kwargs)
 
 
 def _get_img_config(*args: Any, **kwargs: Any) -> Any:
     import agent_vision
+
     return agent_vision._get_img_config(*args, **kwargs)
 
 
@@ -98,6 +103,7 @@ def _get_session() -> Any:
     if not hasattr(_local_session, "session"):
         import requests
         import requests.adapters
+
         s = requests.Session()
         adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=1)
         s.mount("http://", adapter)
@@ -149,7 +155,13 @@ def _heal_tool_args(raw: Any) -> dict[str, Any]:
         if isinstance(parsed, dict):
             if len(parsed) == 1:
                 sole_key, sole_val = next(iter(parsed.items()))
-                if isinstance(sole_val, dict) and sole_key.lower() in ("arguments", "args", "input", "params", "parameters"):
+                if isinstance(sole_val, dict) and sole_key.lower() in (
+                    "arguments",
+                    "args",
+                    "input",
+                    "params",
+                    "parameters",
+                ):
                     return sole_val
             return parsed
 
@@ -161,7 +173,10 @@ def _heal_tool_args(raw: Any) -> dict[str, Any]:
             except Exception:
                 pass
 
-        return {"_parse_error": f"Expected mapping for tool arguments, got {type(parsed).__name__}", "_raw_args": str(raw)}
+        return {
+            "_parse_error": f"Expected mapping for tool arguments, got {type(parsed).__name__}",
+            "_raw_args": str(raw),
+        }
     except Exception as e:
         if os.environ.get("AI_DEBUG") == "1":
             sys.stderr.write(f"[debug] Failed to parse tool arguments: {e} (raw={raw!r})\n")
@@ -220,10 +235,14 @@ def _log_turn_usage(
 
         ctx_used = in_tok + out_tok
         ctx_pct = (ctx_used / max(1, ctx_max)) * 100
-        max_k = "8.2k" if ctx_max == 8192 else (f"{ctx_max / 1000:.1f}k" if ctx_max % 1000 != 0 else f"{ctx_max // 1000}k")
+        max_k = (
+            "8.2k" if ctx_max == 8192 else (f"{ctx_max / 1000:.1f}k" if ctx_max % 1000 != 0 else f"{ctx_max // 1000}k")
+        )
         parts.append(f"{ctx_pct:.1f}%/{max_k}")
 
-        speed = server_tps if (server_tps and server_tps > 0) else (out_tok / max(0.001, elapsed) if elapsed > 0 else 0.0)
+        speed = (
+            server_tps if (server_tps and server_tps > 0) else (out_tok / max(0.001, elapsed) if elapsed > 0 else 0.0)
+        )
         if speed > 0:
             parts.append(f"{elapsed:.1f}s @ {speed:.1f} t/s")
 
@@ -233,14 +252,15 @@ def _log_turn_usage(
         # Uses the terminal's native ANSI color matching the box border (soft, dimmed, never clashes)
         try:
             import agent_ui as ui
+
             box_idx = get_state("box_style", 1)
             b_col = "green" if box_idx == 6 else ui.STYLES.get(box_idx, ui.STYLES[1])[2]
             col_map = {
-                "bright_cyan": "\033[2;36m",    # Dim ANSI 6 (matches teal/cyan border, but softer)
+                "bright_cyan": "\033[2;36m",  # Dim ANSI 6 (matches teal/cyan border, but softer)
                 "cyan": "\033[2;36m",
-                "bright_green": "\033[2;32m",   # Dim ANSI 2 (matches green box)
+                "bright_green": "\033[2;32m",  # Dim ANSI 2 (matches green box)
                 "green": "\033[2;32m",
-                "bright_blue": "\033[2;34m",    # Dim ANSI 4 (matches blue box)
+                "bright_blue": "\033[2;34m",  # Dim ANSI 4 (matches blue box)
                 "blue": "\033[2;34m",
                 "bright_magenta": "\033[2;35m",
                 "magenta": "\033[2;35m",
@@ -257,11 +277,15 @@ def _log_turn_usage(
         pass
 
 
-def _calc_turn_tokens(ans_text: str, messages: list[dict[str, Any]], captured_usage: dict[str, Any] | None, is_local: bool) -> tuple[int, int]:
+def _calc_turn_tokens(
+    ans_text: str, messages: list[dict[str, Any]], captured_usage: dict[str, Any] | None, is_local: bool
+) -> tuple[int, int]:
     if captured_usage and "completion_tokens" in captured_usage:
         return captured_usage.get("prompt_tokens", 0), captured_usage.get("completion_tokens", 0)
     if is_local:
-        return sum(get_accurate_token_count(m.get("content") or "") for m in messages), get_accurate_token_count(ans_text)
+        return sum(get_accurate_token_count(m.get("content") or "") for m in messages), get_accurate_token_count(
+            ans_text
+        )
     return sum(len(str(m.get("content") or "")) for m in messages) // 4, len(ans_text) // 4
 
 
@@ -290,10 +314,20 @@ def _print_tool_output(spinner: Any, text: str) -> None:
 
 
 def _run_edit_tool(name: str, args: dict[str, Any], workspace: str, spinner: Any = None) -> str:
-    return tools.run_tool(name, args, workspace, confirm_gate_fn=lambda r: _confirm_gate(r, spinner), print_output_fn=lambda t: _print_tool_output(spinner, t))
+    return tools.run_tool(
+        name,
+        args,
+        workspace,
+        confirm_gate_fn=lambda r: _confirm_gate(r, spinner),
+        print_output_fn=lambda t: _print_tool_output(spinner, t),
+    )
 
 
-def _backfill_missing_tool_results(msg_list: list[dict[str, Any]], expected_calls: list[dict[str, Any]], fallback_content: str = "[tool error] Execution halted.") -> None:
+def _backfill_missing_tool_results(
+    msg_list: list[dict[str, Any]],
+    expected_calls: list[dict[str, Any]],
+    fallback_content: str = "[tool error] Execution halted.",
+) -> None:
     has_assistant_call = any(m.get("role") == "assistant" and m.get("tool_calls") for m in msg_list)
     if not has_assistant_call or not expected_calls:
         return
@@ -307,6 +341,7 @@ def _backfill_missing_tool_results(msg_list: list[dict[str, Any]], expected_call
 
 
 # ── Autonomous Agentic Turn Engine ───────────────────────────────────────────
+
 
 def agentic_turn(
     messages: list[dict[str, Any]],
@@ -380,7 +415,9 @@ def agentic_turn(
         body_messages = list(messages) + ephemeral_directives
         body_tools = {**body, "messages": body_messages, "stream": True, "stream_options": {"include_usage": True}}
         st = get_state()
-        use_gnd = st.get("grounding_active", False) and bool(os.environ.get("GND_KEY") or os.environ.get("GEMINI_API_KEY"))
+        use_gnd = st.get("grounding_active", False) and bool(
+            os.environ.get("GND_KEY") or os.environ.get("GEMINI_API_KEY")
+        )
 
         if is_agent and not tools_disabled:
             is_purebash = st.get("purebash_mode", False) or os.environ.get("AI_PUREBASH_MODE", "0") == "1"
@@ -394,6 +431,7 @@ def agentic_turn(
             elif is_py_mode:
                 try:
                     import agent_ipython as ipython
+
                     active_tools = list(ipython.IPYTHON_TOOL) + [
                         t for t in tools.SMOL_TOOLS if t["function"]["name"] != "exec_python"
                     ]
@@ -408,8 +446,7 @@ def agentic_turn(
 
             if is_sub:
                 active_tools = [
-                    t for t in active_tools
-                    if t.get("function", {}).get("name") not in ("delegate_task", "exec_python")
+                    t for t in active_tools if t.get("function", {}).get("name") not in ("delegate_task", "exec_python")
                 ]
 
             if use_gnd and hasattr(tools, "WEB_TOOL"):
@@ -436,7 +473,6 @@ def agentic_turn(
         gen_start_time = None
         max_turn_wall_clock = float(timeout * 2 if timeout > 0 else 600.0)
         timeout_tuple = (15, max(timeout, 120))
-        saw_done = False
 
         try:
             res = session.post(
@@ -450,7 +486,11 @@ def agentic_turn(
                 if res.status_code != 200:
                     try:
                         err_raw = res.raw.read(2048) if hasattr(res, "raw") else b""
-                        err_text = err_raw.decode("utf-8", errors="replace")[:200] if isinstance(err_raw, bytes) else str(err_raw)[:200]
+                        err_text = (
+                            err_raw.decode("utf-8", errors="replace")[:200]
+                            if isinstance(err_raw, bytes)
+                            else str(err_raw)[:200]
+                        )
                     except Exception:
                         err_text = res.text[:200] if hasattr(res, "text") else ""
                     err_text = err_text.replace("\n", " ").strip()
@@ -460,12 +500,16 @@ def agentic_turn(
                         if consecutive_context_overflows >= 2:
                             if spinner:
                                 spinner.stop(leave_on_screen=False)
-                            sys.stderr.write("\r\033[1;31m[error] Context window overflow: message payload cannot be pruned further.\033[0m\r\n")
+                            sys.stderr.write(
+                                "\r\033[1;31m[error] Context window overflow: message payload cannot be pruned further.\033[0m\r\n"
+                            )
                             return "[error] Context window exceeded."
 
                         if spinner:
                             spinner.stop(leave_on_screen=False)
-                        sys.stderr.write("\r\033[1;33m[sys] Context window full. Auto-compacting conversation history...\033[0m\r\n")
+                        sys.stderr.write(
+                            "\r\033[1;33m[sys] Context window full. Auto-compacting conversation history...\033[0m\r\n"
+                        )
                         messages[:] = prune_history(messages, max_tokens=int(max_ctx * 0.5))
                         last_prompt_tokens = 0
                         continue
@@ -505,7 +549,6 @@ def agentic_turn(
                         continue
 
                     if data_str == "[DONE]":
-                        saw_done = True
                         break
 
                     try:
@@ -515,10 +558,19 @@ def agentic_turn(
 
                     try:
                         captured_usage = data.get("usage") or captured_usage
-                        captured_timings = data.get("timings") or (data.get("usage") or {}).get("timings") or captured_timings
+                        captured_timings = (
+                            data.get("timings") or (data.get("usage") or {}).get("timings") or captured_timings
+                        )
 
-                        if m_candidate := (data.get("model") or (data.get("choices", [{}])[0].get("model") if data.get("choices") else None)):
-                            if not resolved_model or resolved_model == "openrouter/free" or m_candidate != "openrouter/free":
+                        if m_candidate := (
+                            data.get("model")
+                            or (data.get("choices", [{}])[0].get("model") if data.get("choices") else None)
+                        ):
+                            if (
+                                not resolved_model
+                                or resolved_model == "openrouter/free"
+                                or m_candidate != "openrouter/free"
+                            ):
                                 resolved_model = m_candidate
 
                         choices = data.get("choices", [{}])
@@ -527,7 +579,12 @@ def agentic_turn(
 
                         delta = choices[0].get("delta", {})
                         content = delta.get("content", "") or ""
-                        reasoning = delta.get("reasoning_content", "") or delta.get("thinking", "") or delta.get("reasoning", "") or ""
+                        reasoning = (
+                            delta.get("reasoning_content", "")
+                            or delta.get("thinking", "")
+                            or delta.get("reasoning", "")
+                            or ""
+                        )
 
                         has_tool_deltas = bool(delta.get("tool_calls"))
                         has_xml_tool_tag = False
@@ -547,7 +604,9 @@ def agentic_turn(
                             if spinner and not spinner.active:
                                 spinner.start("Drafting tool action...")
 
-                        chunk_to_stream, is_thinking, in_think_block = _process_stream_chunk(content, reasoning, in_think_block)
+                        chunk_to_stream, is_thinking, in_think_block = _process_stream_chunk(
+                            content, reasoning, in_think_block
+                        )
 
                         if chunk_to_stream:
                             acc_content.append(chunk_to_stream)
@@ -577,13 +636,22 @@ def agentic_turn(
                                 idx = 0
                             tc_entry = tool_calls_map.setdefault(
                                 idx,
-                                {"id": tc.get("id", ""), "type": "function", "function": {"name": tc.get("function", {}).get("name", ""), "arguments": ""}}
+                                {
+                                    "id": tc.get("id", ""),
+                                    "type": "function",
+                                    "function": {"name": tc.get("function", {}).get("name", ""), "arguments": ""},
+                                },
                             )
                             if tc.get("id"):
                                 tc_entry["id"] = tc["id"]
                             if tc.get("function", {}).get("name"):
                                 tc_entry["function"]["name"] = tc["function"]["name"]
-                            for k in ("thought_signature", "thoughtSignature", "extra_content", "provider_specific_fields"):
+                            for k in (
+                                "thought_signature",
+                                "thoughtSignature",
+                                "extra_content",
+                                "provider_specific_fields",
+                            ):
                                 if k in tc:
                                     tc_entry[k] = tc[k]
                             arg_chunk = tc.get("function", {}).get("arguments", "")
@@ -594,9 +662,7 @@ def agentic_turn(
                             _console_err.print(f"[dim][debug] Stream chunk error: {e}[/dim]")
 
                 if remaining := _flush_sse_event():
-                    if remaining == "[DONE]":
-                        saw_done = True
-                    else:
+                    if remaining != "[DONE]":
                         try:
                             rem_data = json.loads(remaining)
                             captured_usage = rem_data.get("usage") or captured_usage
@@ -630,7 +696,6 @@ def agentic_turn(
         if captured_usage and "prompt_tokens" in captured_usage:
             last_prompt_tokens = captured_usage["prompt_tokens"]
         last_msg_count = len(messages)
-        final_model = resolved_model or body.get("model") or "local-model"
 
         calls = [val for _, val in sorted(tool_calls_map.items())] if tool_calls_map else None
         adapters_on = get_state("adapters_active", False)
@@ -740,8 +805,22 @@ def agentic_turn(
             if captured_timings and isinstance(captured_timings, dict):
                 server_tps = captured_timings.get("predicted_per_second")
 
-            model_tag = resolved_model if (body.get("model") == "openrouter/free" and resolved_model and resolved_model != "openrouter/free") else None
-            _log_turn_usage(in_tok, final_out, show_stats, max_ctx, cached_tok=cached_tok, r_tok=r_tok, elapsed=elapsed_gen, server_tps=server_tps, model_tag=model_tag)
+            model_tag = (
+                resolved_model
+                if (body.get("model") == "openrouter/free" and resolved_model and resolved_model != "openrouter/free")
+                else None
+            )
+            _log_turn_usage(
+                in_tok,
+                final_out,
+                show_stats,
+                max_ctx,
+                cached_tok=cached_tok,
+                r_tok=r_tok,
+                elapsed=elapsed_gen,
+                server_tps=server_tps,
+                model_tag=model_tag,
+            )
             return ans_text if ans_text else "(No response generated)"
 
         # ── Tool Execution Phase ─────────────────────────────────────────────
@@ -760,7 +839,11 @@ def agentic_turn(
             sig = (
                 tc.get("thought_signature")
                 or tc.get("thoughtSignature")
-                or (tc.get("extra_content", {}).get("google", {}).get("thought_signature") if isinstance(tc.get("extra_content"), dict) else None)
+                or (
+                    tc.get("extra_content", {}).get("google", {}).get("thought_signature")
+                    if isinstance(tc.get("extra_content"), dict)
+                    else None
+                )
                 or "skip_thought_signature_validator"
             )
 
@@ -770,16 +853,15 @@ def agentic_turn(
                 cid = f"{base_cid}_{call_idx}_{uuid.uuid4().hex[:4]}"
             seen_cids.add(cid)
 
-            healed_calls.append({
-                "id": cid,
-                "type": "function",
-                "function": {
-                    "name": fname,
-                    "arguments": json.dumps(healed_dict)
-                },
-                "thought_signature": sig,
-                "extra_content": {"google": {"thought_signature": sig}}
-            })
+            healed_calls.append(
+                {
+                    "id": cid,
+                    "type": "function",
+                    "function": {"name": fname, "arguments": json.dumps(healed_dict)},
+                    "thought_signature": sig,
+                    "extra_content": {"google": {"thought_signature": sig}},
+                }
+            )
 
         clean_ans_text = re.sub(r"<think>[\s\S]*?(?:</think>|$)", "", ans_text).strip()
         messages.append({"role": "assistant", "content": clean_ans_text or "", "tool_calls": healed_calls})
@@ -789,7 +871,15 @@ def agentic_turn(
             for call_idx, tc in enumerate(healed_calls):
                 fname = tc.get("function", {}).get("name", "")
                 args = json.loads(tc.get("function", {}).get("arguments", "{}"))
-                brief = str(args.get("code") or args.get("symbol") or args.get("path") or args.get("command") or args.get("pattern") or args.get("goal") or "")[:100].replace("\n", " ")
+                brief = str(
+                    args.get("code")
+                    or args.get("symbol")
+                    or args.get("path")
+                    or args.get("command")
+                    or args.get("pattern")
+                    or args.get("goal")
+                    or ""
+                )[:100].replace("\n", " ")
                 verb = TOOL_VERBS.get(fname, "working")
 
                 if isinstance(args, dict) and "_parse_error" in args:
@@ -802,7 +892,9 @@ def agentic_turn(
                         spinner.stop()
 
                     if not is_calm:
-                        _console_err.print(f"  [dim]∗ {verb} •[/dim] [cyan]{_escape_markup(fname)}[/cyan] [dim italic]{_escape_markup(brief)}[/dim italic]")
+                        _console_err.print(
+                            f"  [dim]∗ {verb} •[/dim] [cyan]{_escape_markup(fname)}[/cyan] [dim italic]{_escape_markup(brief)}[/dim italic]"
+                        )
                     if spinner and fname != "delegate_task" and not getattr(spinner, "active", False):
                         spinner.start(f"{verb.capitalize()}...")
 
@@ -838,7 +930,9 @@ def agentic_turn(
                     try:
                         os.makedirs(scratch_dir, exist_ok=True)
                         try:
-                            existing_files = [os.path.join(scratch_dir, f) for f in os.listdir(scratch_dir) if f.endswith(".txt")]
+                            existing_files = [
+                                os.path.join(scratch_dir, f) for f in os.listdir(scratch_dir) if f.endswith(".txt")
+                            ]
                             if len(existing_files) > 30:
                                 existing_files.sort(key=lambda p: os.path.getmtime(p))
                                 for old_file in existing_files[:-25]:
@@ -867,7 +961,9 @@ def agentic_turn(
                 else:
                     pruned_result = res_str
 
-                messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "name": fname, "content": pruned_result})
+                messages.append(
+                    {"role": "tool", "tool_call_id": tc.get("id", ""), "name": fname, "content": pruned_result}
+                )
 
                 if is_denied:
                     messages.extend(
@@ -877,19 +973,23 @@ def agentic_turn(
                             "name": rem_tc.get("function", {}).get("name", ""),
                             "content": "[cancelled: prior action declined by user]",
                         }
-                        for rem_tc in healed_calls[call_idx + 1:]
+                        for rem_tc in healed_calls[call_idx + 1 :]
                     )
-                    ephemeral_directives = [{
-                        "role": "user",
-                        "content": "[System Directive]: Action was explicitly declined by the user. Do not retry or attempt alternative workarounds for this resource.",
-                    }]
+                    ephemeral_directives = [
+                        {
+                            "role": "user",
+                            "content": "[System Directive]: Action was explicitly declined by the user. Do not retry or attempt alternative workarounds for this resource.",
+                        }
+                    ]
                     return "[denied] Action cancelled by user."
 
                 if fname == "exec_python" and RE_FINAL_ANSWER_SENTINEL.search(res_str):
-                    ephemeral_directives = [{
-                        "role": "user",
-                        "content": "[System Directive]: final_answer() was received. Output your concise summary to the user now. Do not call any further tools.",
-                    }]
+                    ephemeral_directives = [
+                        {
+                            "role": "user",
+                            "content": "[System Directive]: final_answer() was received. Output your concise summary to the user now. Do not call any further tools.",
+                        }
+                    ]
                     tools_disabled = True
 
                 if res_str.startswith("[error") or res_str.startswith("[tool error"):
@@ -900,7 +1000,12 @@ def agentic_turn(
                 if fname == "read_file" and len(messages) >= 4:
                     prev_tools = [m for m in messages[-4:] if m.get("role") == "tool" and m.get("name") == "read_file"]
                     if len(prev_tools) >= 2:
-                        ephemeral_directives = [{"role": "user", "content": "[System Directive]: File already inspected. Do not read again. Proceed immediately to edit, test, or final answer."}]
+                        ephemeral_directives = [
+                            {
+                                "role": "user",
+                                "content": "[System Directive]: File already inspected. Do not read again. Proceed immediately to edit, test, or final answer.",
+                            }
+                        ]
 
         except KeyboardInterrupt:
             _backfill_missing_tool_results(messages, healed_calls, "[cancelled: interrupted by user]")
@@ -922,11 +1027,14 @@ def agentic_turn(
 
     if spinner:
         spinner.stop(leave_on_screen=False)
-    sys.stderr.write(f"\r\033[1;33m[sys] Agent loop limit reached ({max_rounds} rounds exhausted without final answer).\033[0m\r\n")
+    sys.stderr.write(
+        f"\r\033[1;33m[sys] Agent loop limit reached ({max_rounds} rounds exhausted without final answer).\033[0m\r\n"
+    )
     return f"[notice: agent loop limit reached after {max_rounds} rounds.]"
 
 
 # ── High-Level Stream Entrypoint ─────────────────────────────────────────────
+
 
 def stream_response(
     messages: list[dict[str, Any]],
@@ -944,7 +1052,12 @@ def stream_response(
     initial_toks = sum(get_accurate_token_count(m.get("content") or "") for m in messages)
 
     import agent_ui as ui
-    spinner = None if is_sub else (ui.CalmBoatSpinner(tokens_used=initial_toks, max_tokens=max_ctx) if is_calm else ui.InlineSpinner())
+
+    spinner = (
+        None
+        if is_sub
+        else (ui.CalmBoatSpinner(tokens_used=initial_toks, max_tokens=max_ctx) if is_calm else ui.InlineSpinner())
+    )
 
     try:
         configs = agent_cloud.get_active_configs(messages)
@@ -964,7 +1077,14 @@ def stream_response(
         )
 
         if not configs:
-            configs = [("http://localhost:8080/v1/chat/completions", {}, {"messages": messages, "stream": True, **think_kwargs}, 180)]
+            configs = [
+                (
+                    "http://localhost:8080/v1/chat/completions",
+                    {},
+                    {"messages": messages, "stream": True, **think_kwargs},
+                    180,
+                )
+            ]
 
         url, headers, body, timeout = configs[0]
         if "localhost" in url or "127.0.0.1" in url or body.get("model") == "local-model":

@@ -16,6 +16,7 @@ try:
     import select
     import termios
     import tty
+
     _HAS_TERMIOS = True
 except ImportError:
     _HAS_TERMIOS = False
@@ -29,13 +30,38 @@ try:
     from agent_context import STOP_WORDS, tokenize
 except ImportError:
     TOKEN_RE: re.Pattern = re.compile(r"[^\w\s]")
-    STOP_WORDS = frozenset({
-        "is", "what", "it", "do", "any", "i", "have", "the", "a", "an", "on", "to", "for",
-        "me", "you", "my", "your", "we", "us", "are", "about", "in", "how"
-    })
+    STOP_WORDS = frozenset(
+        {
+            "is",
+            "what",
+            "it",
+            "do",
+            "any",
+            "i",
+            "have",
+            "the",
+            "a",
+            "an",
+            "on",
+            "to",
+            "for",
+            "me",
+            "you",
+            "my",
+            "your",
+            "we",
+            "us",
+            "are",
+            "about",
+            "in",
+            "how",
+        }
+    )
 
     def tokenize(text: str) -> list[str]:
-        return [w for w in TOKEN_RE.sub(" ", text.lower()).split() if len(w) > 1 and w not in STOP_WORDS] if text else []
+        return (
+            [w for w in TOKEN_RE.sub(" ", text.lower()).split() if len(w) > 1 and w not in STOP_WORDS] if text else []
+        )
 
 
 def _sanitize_workspace(ws: str) -> str:
@@ -112,15 +138,9 @@ def connect_db(db_path: str) -> sqlite3.Connection:
             "timestamp INTEGER NOT NULL"
             ");"
         )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_turns_workspace ON turns (workspace);"
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_checkpoints_workspace ON checkpoints (workspace);"
-        )
-        cur.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_checkpoints_ws_tag ON checkpoints (workspace, tag);"
-        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_turns_workspace ON turns (workspace);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_checkpoints_workspace ON checkpoints (workspace);")
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_checkpoints_ws_tag ON checkpoints (workspace, tag);")
         conn.commit()
     except sqlite3.Error as exc:
         conn.close()
@@ -283,7 +303,9 @@ def create_subagent_worktree(workspace: str, agent_id: int) -> str:
 
     os.makedirs(os.path.dirname(wt_dir), exist_ok=True)
     if not os.path.exists(wt_dir):
-        subprocess.run(["git", "worktree", "add", "-b", branch_name, wt_dir, "HEAD"], cwd=workspace, capture_output=True)
+        subprocess.run(
+            ["git", "worktree", "add", "-b", branch_name, wt_dir, "HEAD"], cwd=workspace, capture_output=True
+        )
 
     return wt_dir if os.path.exists(wt_dir) else workspace
 
@@ -349,7 +371,10 @@ def rollback_checkpoint(workspace: str) -> list[dict[str, Any]] | None:
         with closing(connect_db(db_path)) as conn:
             rows = (
                 conn.cursor()
-                .execute("SELECT tag, history, timestamp FROM checkpoints WHERE workspace = ? ORDER BY timestamp DESC LIMIT 50", (ws_clean,))
+                .execute(
+                    "SELECT tag, history, timestamp FROM checkpoints WHERE workspace = ? ORDER BY timestamp DESC LIMIT 50",
+                    (ws_clean,),
+                )
                 .fetchall()
             )
 
@@ -381,7 +406,9 @@ def rollback_checkpoint(workspace: str) -> list[dict[str, Any]] | None:
 
     try:
         while True:
-            sys.stderr.write(f"\r\x1b[J\n\033[1;36m--- {'Global Checkpoints (Clonable)' if is_global else 'Active Checkpoints (SQLite)'} ---\033[0m\n")
+            sys.stderr.write(
+                f"\r\x1b[J\n\033[1;36m--- {'Global Checkpoints (Clonable)' if is_global else 'Active Checkpoints (SQLite)'} ---\033[0m\n"
+            )
             for idx, item in enumerate(display_rows):
                 tag, history, ts = item[0], item[1], item[2]
                 src_info = f" \033[1;30m(from '{item[3]}')\033[0m" if is_global else ""
@@ -392,11 +419,17 @@ def rollback_checkpoint(workspace: str) -> list[dict[str, Any]] | None:
 
                 ts_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
                 if idx == selected_idx:
-                    sys.stderr.write(f"\033[1;32m  ❯ [{idx:02d}] {tag:<22}\033[0m \033[1;36m({turns_len} turns)\033[0m{src_info} \033[2m- {ts_str}\033[0m\n")
+                    sys.stderr.write(
+                        f"\033[1;32m  ❯ [{idx:02d}] {tag:<22}\033[0m \033[1;36m({turns_len} turns)\033[0m{src_info} \033[2m- {ts_str}\033[0m\n"
+                    )
                 else:
-                    sys.stderr.write(f"\033[37m    [{idx:02d}] {tag:<22}\033[0m \033[2m({turns_len} turns){src_info} - {ts_str}\033[0m\n")
+                    sys.stderr.write(
+                        f"\033[37m    [{idx:02d}] {tag:<22}\033[0m \033[2m({turns_len} turns){src_info} - {ts_str}\033[0m\n"
+                    )
 
-            sys.stderr.write(f"\n\033[2mSelect index [↑/↓ arrows, 0-{min(9, num_opts - 1)}, ↵ load, Esc cancel]: \033[0m")
+            sys.stderr.write(
+                f"\n\033[2mSelect index [↑/↓ arrows, 0-{min(9, num_opts - 1)}, ↵ load, Esc cancel]: \033[0m"
+            )
             sys.stderr.flush()
 
             key = get_key()
@@ -457,7 +490,9 @@ def get_turns_count(workspace: str) -> int:
     if os.path.exists(db_path):
         try:
             with closing(connect_db(db_path)) as conn:
-                return conn.cursor().execute("SELECT COUNT(*) FROM turns WHERE workspace = ?", (ws_clean,)).fetchone()[0]
+                return (
+                    conn.cursor().execute("SELECT COUNT(*) FROM turns WHERE workspace = ?", (ws_clean,)).fetchone()[0]
+                )
         except (sqlite3.Error, TypeError):
             pass
     return 0

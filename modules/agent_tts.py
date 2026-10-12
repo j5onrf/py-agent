@@ -14,12 +14,14 @@ SPEED_FILE = os.path.join(CFG_DIR, "koko_speed")
 DEFAULT_SPEED = 1.15
 
 # Matches closed AND unclosed/truncated thinking blocks (<think>... to EOF)
-RE_THINK_BLOCK = re.compile(r'<think(?:ing)?>[\s\S]*?(?:</think(?:ing)?>|$)|<thought>[\s\S]*?(?:</thought>|$)', re.DOTALL | re.IGNORECASE)
-RE_CODE_BLOCK = re.compile(r'```[\s\S]*?(?:```|$)', re.DOTALL)
-RE_INLINE_CODE = re.compile(r'`[^`\n]+`')
-RE_URL = re.compile(r'https?://\S+')
-RE_MARKDOWN_CHARS = re.compile(r'[*_#~>\[\]()|]')
-RE_TIME_COLON = re.compile(r'(\b\d{1,2}):(\d{2}\b)')
+RE_THINK_BLOCK = re.compile(
+    r"<think(?:ing)?>[\s\S]*?(?:</think(?:ing)?>|$)|<thought>[\s\S]*?(?:</thought>|$)", re.DOTALL | re.IGNORECASE
+)
+RE_CODE_BLOCK = re.compile(r"```[\s\S]*?(?:```|$)", re.DOTALL)
+RE_INLINE_CODE = re.compile(r"`[^`\n]+`")
+RE_URL = re.compile(r"https?://\S+")
+RE_MARKDOWN_CHARS = re.compile(r"[*_#~>\[\]()|]")
+RE_TIME_COLON = re.compile(r"(\b\d{1,2}):(\d{2}\b)")
 
 _proc_lock = threading.Lock()
 _active_proc: subprocess.Popen | None = None
@@ -107,13 +109,13 @@ def clean_text_for_speech(text: str) -> str:
     if "[denied]" in text or "Operation halted:" in text or "Action cancelled" in text:
         return "Action cancelled."
 
-    clean = RE_THINK_BLOCK.sub('', text)
-    clean = RE_CODE_BLOCK.sub('', clean)
-    clean = RE_INLINE_CODE.sub('', clean)
-    clean = RE_URL.sub(' link ', clean)
-    clean = RE_TIME_COLON.sub(r'\1 \2', clean)
-    clean = clean.replace(':', ', ')
-    clean = RE_MARKDOWN_CHARS.sub('', clean).strip()
+    clean = RE_THINK_BLOCK.sub("", text)
+    clean = RE_CODE_BLOCK.sub("", clean)
+    clean = RE_INLINE_CODE.sub("", clean)
+    clean = RE_URL.sub(" link ", clean)
+    clean = RE_TIME_COLON.sub(r"\1 \2", clean)
+    clean = clean.replace(":", ", ")
+    clean = RE_MARKDOWN_CHARS.sub("", clean).strip()
     return " ".join(clean.split())
 
 
@@ -166,10 +168,7 @@ def speak_text(text: str) -> None:
         koko_env["OMP_NUM_THREADS"] = "6"
         koko_env["OMP_WAIT_POLICY"] = "PASSIVE"
 
-        base_koko_cmd = [
-            "koko", "--style", voice, "--speed", str(speed),
-            "text", clean, "-o", wav_path
-        ]
+        base_koko_cmd = ["koko", "--style", voice, "--speed", str(speed), "text", clean, "-o", wav_path]
 
         try:
             # Try elevated priority first, falling back to standard priority on PermissionError (EPERM)
@@ -195,6 +194,7 @@ def speak_response(response_text: str) -> None:
 
 if __name__ == "__main__":
     import sys
+
     if len(sys.argv) > 1:
         speak_text(" ".join(sys.argv[1:]))
     else:

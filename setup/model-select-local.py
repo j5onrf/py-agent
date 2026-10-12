@@ -250,13 +250,15 @@ def get_running_instances() -> list[dict]:
                     if model_file and model_file not in all_ggufs:
                         all_ggufs.append(model_file)
 
-                    instances.append({
-                        "pid": pid,
-                        "model_file": model_file,
-                        "alias": alias,
-                        "all_ggufs": all_ggufs,
-                        "args": args,
-                    })
+                    instances.append(
+                        {
+                            "pid": pid,
+                            "model_file": model_file,
+                            "alias": alias,
+                            "all_ggufs": all_ggufs,
+                            "args": args,
+                        }
+                    )
                 except (FileNotFoundError, PermissionError, ProcessLookupError):
                     continue
             if instances:
@@ -277,17 +279,18 @@ def get_running_instances() -> list[dict]:
             alias_m = re.search(r"--alias[=\s]+([^\s]+)", line)
             model_m = re.search(r"(?:-m|--model)[=\s]+([^\s]+)", line)
             ggufs = [
-                os.path.basename(m.group(0).strip("\"'"))
-                for m in re.finditer(r"[^\s]+\.gguf", line, re.IGNORECASE)
+                os.path.basename(m.group(0).strip("\"'")) for m in re.finditer(r"[^\s]+\.gguf", line, re.IGNORECASE)
             ]
 
-            instances.append({
-                "pid": int(parts[0]) if parts[0].isdigit() else 0,
-                "model_file": os.path.basename(model_m.group(1).strip("\"'")) if model_m else None,
-                "alias": alias_m.group(1).strip("\"'") if alias_m else None,
-                "all_ggufs": ggufs,
-                "args": parts,
-            })
+            instances.append(
+                {
+                    "pid": int(parts[0]) if parts[0].isdigit() else 0,
+                    "model_file": os.path.basename(model_m.group(1).strip("\"'")) if model_m else None,
+                    "alias": alias_m.group(1).strip("\"'") if alias_m else None,
+                    "all_ggufs": ggufs,
+                    "args": parts,
+                }
+            )
     except Exception:
         pass
 
@@ -317,16 +320,31 @@ def is_model_active(model_def: dict, instances: list[dict]) -> bool:
 async def async_set_cpu_mode(governor: str, max_freq: str, mode_name: str, notify_title: str) -> bool:
     try:
         proc = await asyncio.create_subprocess_exec(
-            "sudo", "-n", "cpupower", "frequency-set", "-g", governor, "--max", max_freq,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            "sudo",
+            "-n",
+            "cpupower",
+            "frequency-set",
+            "-g",
+            governor,
+            "--max",
+            max_freq,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         rc = await proc.wait()
         if rc == 0:
             write_cpu_state(mode_name)
             if shutil.which("notify-send"):
                 proc_n = await asyncio.create_subprocess_exec(
-                    "notify-send", "CPU Mode", notify_title,
-                    "-u", "low", "-t", "1500", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    "notify-send",
+                    "CPU Mode",
+                    notify_title,
+                    "-u",
+                    "low",
+                    "-t",
+                    "1500",
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                 )
                 await proc_n.wait()
             return True
@@ -389,8 +407,15 @@ async def async_stop_all_engines():
     if shutil.which("notify-send"):
         try:
             proc_n = await asyncio.create_subprocess_exec(
-                "notify-send", "AI Engine", "All Engines Stopped & Memory Flushed",
-                "-i", "system-shutdown", "-t", "1500", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                "notify-send",
+                "AI Engine",
+                "All Engines Stopped & Memory Flushed",
+                "-i",
+                "system-shutdown",
+                "-t",
+                "1500",
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
             await proc_n.wait()
         except Exception:
@@ -515,10 +540,8 @@ def draw_menu(
 
     selected_file = LOCAL_MODELS[selected]["file"] if selected < len(LOCAL_MODELS) else "System memory control"
     sys.stdout.write(f"\r\x1b[K   {dim}{'─' * box_width}{reset}\n")
-    sys.stdout.write(f"\r\x1b[K   {dim}Target:{reset} {selected_file[:box_width-12]}\n")
-    sys.stdout.write(
-        f"\r\x1b[K   {message or f'{dim}▲/▼: Navigate | Enter: Start Server | Esc/q: Exit{reset}'}\n"
-    )
+    sys.stdout.write(f"\r\x1b[K   {dim}Target:{reset} {selected_file[: box_width - 12]}\n")
+    sys.stdout.write(f"\r\x1b[K   {message or f'{dim}▲/▼: Navigate | Enter: Start Server | Esc/q: Exit{reset}'}\n")
     sys.stdout.write("\x1b[J")
     sys.stdout.flush()
 
@@ -603,7 +626,9 @@ async def async_main():
 
                         throttle_note = "" if chill_ok else " (CPU throttle skipped: sudo required)"
                         if verified:
-                            message = f"\033[1;32m✓ Initialized {target_model['name']} on Port 8080.{throttle_note}\033[0m"
+                            message = (
+                                f"\033[1;32m✓ Initialized {target_model['name']} on Port 8080.{throttle_note}\033[0m"
+                            )
                         else:
                             message = f"\033[1;33m⚠ Script executed, verifying backend startup in background...{throttle_note}\033[0m"
                     else:

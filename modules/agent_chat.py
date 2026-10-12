@@ -23,7 +23,9 @@ except ImportError:
     ui = None
 
 RE_QUESTION_SPLIT = re.compile(r"(?<=\?)\s+")
-RE_THINK_BLOCK = re.compile(r"<think(?:ing)?>[\s\S]*?(?:</think(?:ing)?>|$)|<thought>[\s\S]*?(?:</thought>|$)", re.DOTALL | re.IGNORECASE)
+RE_THINK_BLOCK = re.compile(
+    r"<think(?:ing)?>[\s\S]*?(?:</think(?:ing)?>|$)|<thought>[\s\S]*?(?:</thought>|$)", re.DOTALL | re.IGNORECASE
+)
 RE_CLEAN_BULLETS = re.compile(r"^(?:\d+[\.\)]|\*|-|\+|\[\d+\])\s*")
 RE_CONTROL_CHARS = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)|[\x00-\x08\x0b-\x1f\x7f]")
 
@@ -107,10 +109,12 @@ else:
     prompt = re.sub(r"\[Option 1\][\s\S]*?\[Option 3\]", opts, template_raw)
     prompt = prompt.replace("exactly 3", f"exactly {count}")
 
-history.append({
-    "role": "user",
-    "content": f"[COMMAND: Do not continue the conversation. Do not reply to the last message. Execute this analytical directive immediately without preambles.]\n\n{prompt}",
-})
+history.append(
+    {
+        "role": "user",
+        "content": f"[COMMAND: Do not continue the conversation. Do not reply to the last message. Execute this analytical directive immediately without preambles.]\n\n{prompt}",
+    }
+)
 
 # 4. Resolve Active Cloud Configurations from .env
 configs = []
@@ -121,12 +125,20 @@ if agent_cloud:
 
 # Local server fallback if no cloud providers are active
 if not configs:
-    configs.append((
-        "http://localhost:8080/v1/chat/completions",
-        {},
-        {"model": "local-model", "messages": history, "max_tokens": 500, "stream": True, "chat_template_kwargs": {"enable_thinking": False}},
-        180,
-    ))
+    configs.append(
+        (
+            "http://localhost:8080/v1/chat/completions",
+            {},
+            {
+                "model": "local-model",
+                "messages": history,
+                "max_tokens": 500,
+                "stream": True,
+                "chat_template_kwargs": {"enable_thinking": False},
+            },
+            180,
+        )
+    )
 
 # 5. Query Active Engine with Streaming & Structural Output Validation
 for url, headers, body, timeout in configs:
@@ -152,7 +164,10 @@ for url, headers, body, timeout in configs:
                         content = (
                             data.get("choices", [{}])[0].get("delta", {}).get("content", "")
                             if "choices" in data
-                            else data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                            else data.get("candidates", [{}])[0]
+                            .get("content", {})
+                            .get("parts", [{}])[0]
+                            .get("text", "")
                         )
                         if content:
                             if first:
@@ -191,7 +206,9 @@ for url, headers, body, timeout in configs:
                 first_clean = lines[0].strip("*#: \t").lower().rstrip("s:")
                 start_idx = 0
                 if first_clean not in hdr_map:
-                    start_idx = next((i for i, l in enumerate(lines) if l.strip("*#: \t").lower().rstrip("s:") in hdr_map), 0)
+                    start_idx = next(
+                        (i for i, l in enumerate(lines) if l.strip("*#: \t").lower().rstrip("s:") in hdr_map), 0
+                    )
                     if start_idx == 0 and first_clean not in hdr_map:
                         formatted_output.append(f"\033[1;32mAI:\033[0m {output_hdr}")
 

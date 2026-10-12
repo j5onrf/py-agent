@@ -51,11 +51,25 @@ SESSION_CANCEL_EVENTS: dict[str, threading.Event] = {}
 ACTIVE_RESPONSES: dict[str, requests.Response] = {}
 
 FORBIDDEN_ROOTS = {
-    "/", "/root", "/bin", "/sbin", "/usr", "/usr/bin", "/usr/sbin",
-    "/etc", "/dev", "/proc", "/sys", "/var",
+    "/",
+    "/root",
+    "/bin",
+    "/sbin",
+    "/usr",
+    "/usr/bin",
+    "/usr/sbin",
+    "/etc",
+    "/dev",
+    "/proc",
+    "/sys",
+    "/var",
 }
 FORBIDDEN_USER_SUBDIRS = {
-    ".ssh", ".gnupg", ".aws", ".config/py-agent", ".local/share",
+    ".ssh",
+    ".gnupg",
+    ".aws",
+    ".config/py-agent",
+    ".local/share",
 }
 
 
@@ -142,6 +156,7 @@ def detect_workspace_mode(workspace: str) -> tuple[bool, str, bool]:
 
 def make_confirm_gate(workspace: str, is_yolo: bool):
     """Scoped confirmation gate for non-interactive ACP bridge requests."""
+
     def confirm_gate(prompt_or_reason: str) -> bool:
         if not is_yolo:
             sys.stderr.write(f"[pycode security] Action rejected (supervised/plan mode): {prompt_or_reason}\n")
@@ -229,7 +244,7 @@ def _prune_history(messages: list[dict[str, Any]], max_messages: int = MAX_HISTO
 
     system_msg = messages[0] if (messages and messages[0].get("role") == "system") else None
     start_idx = 1 if system_msg else 0
-    tail = messages[-(max_messages - 1 if system_msg else max_messages):]
+    tail = messages[-(max_messages - 1 if system_msg else max_messages) :]
 
     # Don't orphan a tool response without its matching assistant tool_calls message
     while tail and tail[0].get("role") == "tool":
@@ -349,12 +364,14 @@ def handle_acp_prompt(
 
     configs = agent_cloud.get_active_configs(messages) if hasattr(agent_cloud, "get_active_configs") else []
     if not configs:
-        configs = [(
-            "http://localhost:8080/v1/chat/completions",
-            {},
-            {"messages": messages, "stream": True, "model": "local-model", **think_kwargs},
-            180,
-        )]
+        configs = [
+            (
+                "http://localhost:8080/v1/chat/completions",
+                {},
+                {"messages": messages, "stream": True, "model": "local-model", **think_kwargs},
+                180,
+            )
+        ]
 
     accumulated_ans = ""
     in_think_block = False
@@ -378,11 +395,7 @@ def handle_acp_prompt(
 
             active_tools = []
             if is_agent:
-                is_py = (
-                    "-py" in profile_name.lower()
-                    or "py-" in profile_name.lower()
-                    or st.get("ipython_mode", False)
-                )
+                is_py = "-py" in profile_name.lower() or "py-" in profile_name.lower() or st.get("ipython_mode", False)
                 active_tools = list(ipython.IPYTHON_TOOL) if is_py else list(tools.EDIT_TOOLS)
             if use_gnd and hasattr(tools, "WEB_TOOL"):
                 active_tools.append(tools.WEB_TOOL)
@@ -429,10 +442,7 @@ def handle_acp_prompt(
 
                         text_chunk = delta.get("content") or ""
                         thinking_chunk = (
-                            delta.get("reasoning_content")
-                            or delta.get("thinking")
-                            or delta.get("reasoning")
-                            or ""
+                            delta.get("reasoning_content") or delta.get("thinking") or delta.get("reasoning") or ""
                         )
 
                         if thinking_chunk:
@@ -491,9 +501,7 @@ def handle_acp_prompt(
                                     tc_entry["id"] = tc["id"]
                                 if tc.get("function", {}).get("name"):
                                     tc_entry["function"]["name"] = tc["function"]["name"]
-                                tc_entry["function"]["arguments"] += (
-                                    tc.get("function", {}).get("arguments") or ""
-                                )
+                                tc_entry["function"]["arguments"] += tc.get("function", {}).get("arguments") or ""
 
                     except (json.JSONDecodeError, KeyError, IndexError) as err:
                         sys.stderr.write(f"[pycode bridge] warning: SSE parse error on chunk: {err}\n")
@@ -529,9 +537,7 @@ def handle_acp_prompt(
                 except Exception as e:
                     sys.stderr.write(f"[pycode bridge] warning: fallback adapter error: {e}\n")
 
-            has_web_call = use_gnd and any(
-                c.get("function", {}).get("name") == "web_search" for c in (calls or [])
-            )
+            has_web_call = use_gnd and any(c.get("function", {}).get("name") == "web_search" for c in (calls or []))
 
             if not calls or (not is_agent and not has_web_call):
                 with STATE_LOCK:
@@ -589,12 +595,14 @@ def handle_acp_prompt(
                     else result_str[:1500] + f"\n... [Snipped {len(result_str) - 1500} chars]"
                 )
                 with STATE_LOCK:
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": cid,
-                        "name": fname,
-                        "content": pruned_result,
-                    })
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": cid,
+                            "name": fname,
+                            "content": pruned_result,
+                        }
+                    )
 
         if is_agent and user_text and accumulated_ans and not cancel_evt.is_set():
             try:
@@ -639,18 +647,21 @@ def main():
             params = {}
 
         if method == "initialize":
-            send_rpc_response(req_id, result={
-                "protocolVersion": 1,
-                "agentCapabilities": {
-                    "sessionCapabilities": {
-                        "list": {},
+            send_rpc_response(
+                req_id,
+                result={
+                    "protocolVersion": 1,
+                    "agentCapabilities": {
+                        "sessionCapabilities": {
+                            "list": {},
+                        },
+                    },
+                    "agentInfo": {
+                        "name": "py-agent",
+                        "version": "1.0.0",
                     },
                 },
-                "agentInfo": {
-                    "name": "py-agent",
-                    "version": "1.0.0",
-                },
-            })
+            )
         elif method == "authenticate":
             send_rpc_response(req_id, result={})
         elif method in ("session/new", "createSession", "session/create"):

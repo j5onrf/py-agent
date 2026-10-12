@@ -13,8 +13,8 @@ from typing import Any
 import agent_context as context
 import agent_ui as ui
 
-PAGER_STRIP_RE: re.Pattern = re.compile(r'\|\s*(leaf|mdcat|cat|glow|view)\b.*$', re.IGNORECASE)
-RE_METADATA_LINE: re.Pattern = re.compile(r'^\w+:\s')
+PAGER_STRIP_RE: re.Pattern = re.compile(r"\|\s*(leaf|mdcat|cat|glow|view)\b.*$", re.IGNORECASE)
+RE_METADATA_LINE: re.Pattern = re.compile(r"^\w+:\s")
 RE_SKILL_SPLIT: re.Pattern = re.compile(r"[-_/]")
 RE_SKILL_BLOCK: re.Pattern = re.compile(
     r"### Loaded On-Demand Skill(?: \[(\w+)\])?:\s*([^\n]+)\n([\s\S]*?)(?=\n\n### Loaded On-Demand Skill|\Z)"
@@ -122,7 +122,7 @@ def find_skill_file(base_dir: str, skill_name: str) -> str | None:
     target_fnames = {f"{clean_target}.md", "skill.md"}
 
     for root, dirs, files in os.walk(base_real):
-        rel_depth = root[len(base_real):].count(os.sep)
+        rel_depth = root[len(base_real) :].count(os.sep)
         if rel_depth > 4:
             dirs[:] = []
             continue
@@ -165,6 +165,7 @@ def load_skill_content(skills_str: str, skills_dir: str, cfg_dir: str) -> str:
                 if meta:
                     try:
                         import agent_core
+
                         for k, v in meta.items():
                             k_l = str(k).lower().strip()
                             if k_l == "yolo":
@@ -187,7 +188,7 @@ def load_skill_content(skills_str: str, skills_dir: str, cfg_dir: str) -> str:
                         adp_val = meta.get("adapters") or meta.get("adp") or meta.get("adapter")
                         agent_core.save_state(
                             "adapters_active",
-                            str(adp_val).lower() in ("true", "1", "yes", "on") if adp_val is not None else False
+                            str(adp_val).lower() in ("true", "1", "yes", "on") if adp_val is not None else False,
                         )
                     except (ImportError, AttributeError) as e:
                         if os.environ.get("AI_DEBUG") == "1":
@@ -201,7 +202,7 @@ def load_skill_content(skills_str: str, skills_dir: str, cfg_dir: str) -> str:
 
 def _exec_tool_cmd(cmd: str, interactive: bool = False) -> str:
     try:
-        sanitized = PAGER_STRIP_RE.sub('', cmd.strip()).strip()
+        sanitized = PAGER_STRIP_RE.sub("", cmd.strip()).strip()
         if not sanitized:
             return "__ABORT_TURN__"
         workspace = os.environ.get("AI_WORKSPACE_PATH") or os.getcwd()
@@ -209,6 +210,7 @@ def _exec_tool_cmd(cmd: str, interactive: bool = False) -> str:
         # Security check: validate command against zero-trust boundary
         try:
             import agent_security as security
+
             if sec_err := security.check_command(workspace, sanitized):
                 sys.stderr.write(f"\033[1;31m[security] Context command blocked: {sec_err}\033[0m\n")
                 return "__ABORT_TURN__"
@@ -216,16 +218,15 @@ def _exec_tool_cmd(cmd: str, interactive: bool = False) -> str:
             pass
 
         # Scrub sensitive credentials from child process environment
-        safe_env = {
-            k: v for k, v in os.environ.items()
-            if not any(d in k.upper() for d in DANGEROUS_ENV_SUBSTRINGS)
-        }
+        safe_env = {k: v for k, v in os.environ.items() if not any(d in k.upper() for d in DANGEROUS_ENV_SUBSTRINGS)}
         safe_env["AI_CONTEXT_RUN"] = "1"
 
         if interactive:
             subprocess.run(sanitized, shell=True, cwd=workspace, env=safe_env)
             return "__ABORT_TURN__"
-        res = subprocess.run(sanitized, shell=True, capture_output=True, text=True, timeout=180, cwd=workspace, env=safe_env)
+        res = subprocess.run(
+            sanitized, shell=True, capture_output=True, text=True, timeout=180, cwd=workspace, env=safe_env
+        )
         out = ((res.stdout or "") + (("\n" + res.stderr) if res.stderr else "")).strip()
         return f"{out}\n" if out else "Action executed successfully.\n"
     except subprocess.TimeoutExpired:
@@ -273,7 +274,7 @@ def get_system_context(
         return ""
     for entry in context.load_context_entries(context_file, stop_words):
         ent_tokens = entry.get("tokens", [])
-        if any(q_tokens[i:i + len(ent_tokens)] == ent_tokens for i in range(len(q_tokens) - len(ent_tokens) + 1)):
+        if any(q_tokens[i : i + len(ent_tokens)] == ent_tokens for i in range(len(q_tokens) - len(ent_tokens) + 1)):
             tool = entry.get("cmd", "").replace("[TOOL]", "").strip()
             if tool.startswith("ai ") or "ai init" in tool or any(ex in tool for ex in EXCLUDED_CONTEXT_TOOLS):
                 continue
@@ -306,8 +307,10 @@ def get_system_context(
             intent_tokens = set(context.tokenize(entry.get("intent", ""), stop_words))
 
             raw_args = [
-                w for w in query.split()
-                if any(c in w for c in ("/", "~", ".")) or (context.tokenize(w, stop_words) and context.tokenize(w, stop_words)[0] not in intent_tokens)
+                w
+                for w in query.split()
+                if any(c in w for c in ("/", "~", "."))
+                or (context.tokenize(w, stop_words) and context.tokenize(w, stop_words)[0] not in intent_tokens)
             ]
             quoted_args = " ".join(shlex.quote(a) for a in raw_args)
 
@@ -327,7 +330,7 @@ def load_skill_blueprints(base_skills_dir: str, stop_words: set[str] | frozenset
 
     if os.path.exists(base_skills_dir):
         for root, dirs, files in os.walk(base_skills_dir):
-            rel_depth = root[len(base_skills_dir):].count(os.sep)
+            rel_depth = root[len(base_skills_dir) :].count(os.sep)
             if rel_depth > 5:
                 dirs[:] = []
                 continue
@@ -346,25 +349,50 @@ def load_skill_blueprints(base_skills_dir: str, stop_words: set[str] | frozenset
                         folder_name = os.path.basename(root)
 
                         if meta and ("name" in meta or "description" in meta):
-                            raw_name = meta.get("name") or (folder_name if f.lower() == "skill.md" else os.path.splitext(f)[0])
+                            raw_name = meta.get("name") or (
+                                folder_name if f.lower() == "skill.md" else os.path.splitext(f)[0]
+                            )
                             skill_name = str(raw_name)
                             desc = str(meta.get("description", ""))
-                            intents = list(set(
-                                RE_SKILL_SPLIT.split(skill_name.lower()) +
-                                RE_SKILL_SPLIT.split(folder_name.lower()) +
-                                context.tokenize(desc, stop_words) +
-                                context.tokenize(skill_name, stop_words)
-                            ))
+                            intents = list(
+                                set(
+                                    RE_SKILL_SPLIT.split(skill_name.lower())
+                                    + RE_SKILL_SPLIT.split(folder_name.lower())
+                                    + context.tokenize(desc, stop_words)
+                                    + context.tokenize(skill_name, stop_words)
+                                )
+                            )
                         elif lines and lines[0].startswith("# [SKILL]") and "--->" in lines[0]:
                             header, intents_raw = lines[0].split("--->", 1)
                             skill_name = header.replace("# [SKILL]", "").replace("#", "").strip()
                             intents = [i.strip().lower() for i in intents_raw.split(",") if i.strip()]
-                            desc = next((l for l in lines[1:] if not l.startswith(("#", "---", ">", "*", "-", "import ")) and not RE_METADATA_LINE.match(l)), "")
+                            desc = next(
+                                (
+                                    l
+                                    for l in lines[1:]
+                                    if not l.startswith(("#", "---", ">", "*", "-", "import "))
+                                    and not RE_METADATA_LINE.match(l)
+                                ),
+                                "",
+                            )
                         else:
                             base_name = folder_name if f.lower() == "skill.md" else os.path.splitext(f)[0]
-                            skill_name = next((l.replace("#", "").strip() for l in lines if l.startswith("#")), base_name.replace("-", " ").replace("_", " ").title())
-                            intents = list(set(RE_SKILL_SPLIT.split(base_name.lower()) + context.tokenize(skill_name, stop_words)))
-                            desc = next((l for l in lines if not l.startswith(("#", "---", ">", "*", "-", "import ")) and not RE_METADATA_LINE.match(l)), "")
+                            skill_name = next(
+                                (l.replace("#", "").strip() for l in lines if l.startswith("#")),
+                                base_name.replace("-", " ").replace("_", " ").title(),
+                            )
+                            intents = list(
+                                set(RE_SKILL_SPLIT.split(base_name.lower()) + context.tokenize(skill_name, stop_words))
+                            )
+                            desc = next(
+                                (
+                                    l
+                                    for l in lines
+                                    if not l.startswith(("#", "---", ">", "*", "-", "import "))
+                                    and not RE_METADATA_LINE.match(l)
+                                ),
+                                "",
+                            )
 
                         clean_name = skill_name.lower().strip()
                         if clean_name in seen_names:
@@ -372,17 +400,23 @@ def load_skill_blueprints(base_skills_dir: str, stop_words: set[str] | frozenset
                         seen_names.add(clean_name)
 
                         clean_desc = desc.replace("\n", " ").strip() if desc else "No description provided."
-                        cat = "personality" if "personality" in path.lower() else ("code" if "code" in path.lower() else "system")
+                        cat = (
+                            "personality"
+                            if "personality" in path.lower()
+                            else ("code" if "code" in path.lower() else "system")
+                        )
 
-                        blueprints.append({
-                            "name": clean_name,
-                            "path": path,
-                            "rel_path": os.path.relpath(path, base_skills_dir),
-                            "desc": clean_desc,
-                            "intents": intents,
-                            "tokens": context.tokenize(" ".join(intents), stop_words),
-                            "cat": cat,
-                        })
+                        blueprints.append(
+                            {
+                                "name": clean_name,
+                                "path": path,
+                                "rel_path": os.path.relpath(path, base_skills_dir),
+                                "desc": clean_desc,
+                                "intents": intents,
+                                "tokens": context.tokenize(" ".join(intents), stop_words),
+                                "cat": cat,
+                            }
+                        )
                     except (OSError, UnicodeDecodeError, ValueError, AttributeError) as e:
                         if os.environ.get("AI_DEBUG") == "1":
                             sys.stderr.write(f"\033[2m[sys] Skipping skill '{path}': {e}\033[0m\n")
@@ -437,7 +471,11 @@ def run_skill_selector(
                 else:
                     s_tokens = set(s["tokens"])
                     score = len(q_tokens & s_tokens) / len(q_tokens | s_tokens) if (q_tokens & s_tokens) else 0.0
-                    if sq_lower in s["name"] or sq_lower in os.path.basename(s["path"]).lower() or any(sq_lower in i for i in s["intents"]):
+                    if (
+                        sq_lower in s["name"]
+                        or sq_lower in os.path.basename(s["path"]).lower()
+                        or any(sq_lower in i for i in s["intents"])
+                    ):
                         score = max(score, 0.8)
                     if score > 0.0:
                         candidates.append((score, s))
@@ -451,21 +489,25 @@ def run_skill_selector(
             max_desc_len = max(10, cols - 42)
 
             if num_opts == 0:
-                sys.stderr.write(f"\r\x1b[2K\033[1;30m[00/00]\033[0m ❯ \x1b[1;31m[No matches]\x1b[0m for: \033[1;33m{search_query}\033[0m\n\r\x1b[2K\033[3m   \"Backspace to delete\"\033[0m [Esc to exit]: ")
+                sys.stderr.write(
+                    f'\r\x1b[2K\033[1;30m[00/00]\033[0m ❯ \x1b[1;31m[No matches]\x1b[0m for: \033[1;33m{search_query}\033[0m\n\r\x1b[2K\033[3m   "Backspace to delete"\033[0m [Esc to exit]: '
+                )
             else:
                 _, sel = candidates[current_idx]
-                clean_desc = sel['desc'].replace('\n', ' ').strip()
-                desc = clean_desc if len(clean_desc) <= max_desc_len else clean_desc[:max_desc_len - 3] + "..."
+                clean_desc = sel["desc"].replace("\n", " ").strip()
+                desc = clean_desc if len(clean_desc) <= max_desc_len else clean_desc[: max_desc_len - 3] + "..."
                 filter_ind = f" \033[90m| Filter: \033[1;33m{search_query}\033[0m" if search_query else ""
-                sys.stderr.write(f"\r\x1b[2K\033[1;30m[\033[1;32m{current_idx + 1:02d}/{num_opts:02d}\033[1;30m]\033[0m ❯ \x1b[1;36m[skill]\x1b[0m \033[1;32m{sel['name']}\033[0m \033[90m({sel['rel_path']}){filter_ind}\033[0m\n\r\x1b[2K\033[3m   \"{desc}\"\033[0m [↵ load  Type to filter  Esc]: ")
+                sys.stderr.write(
+                    f'\r\x1b[2K\033[1;30m[\033[1;32m{current_idx + 1:02d}/{num_opts:02d}\033[1;30m]\033[0m ❯ \x1b[1;36m[skill]\x1b[0m \033[1;32m{sel["name"]}\033[0m \033[90m({sel["rel_path"]}){filter_ind}\033[0m\n\r\x1b[2K\033[3m   "{desc}"\033[0m [↵ load  Type to filter  Esc]: '
+                )
             sys.stderr.flush()
 
             key = ui.get_key()
             clear_2_lines = "\r\x1b[2K\x1b[1A\r\x1b[2K"
-            if not key or key in ('\x03', '\x1b'):
+            if not key or key in ("\x03", "\x1b"):
                 sys.stderr.write(f"{clear_2_lines}Cancelled.\n")
                 return hist, None
-            elif key in ('\r', '\n'):
+            elif key in ("\r", "\n"):
                 if num_opts > 0:
                     _, sel = candidates[current_idx]
                     try:
@@ -476,11 +518,21 @@ def run_skill_selector(
 
                         sys_c = hist[0]["content"] if hist else ""
                         raw_blocks = RE_SKILL_BLOCK.findall(sys_c)
-                        cat = sel.get("cat") or ("personality" if "personality" in sel["path"] else ("code" if "code" in sel["path"] else "system"))
+                        cat = sel.get("cat") or (
+                            "personality"
+                            if "personality" in sel["path"]
+                            else ("code" if "code" in sel["path"] else "system")
+                        )
 
                         active_skills = []
                         for s_cat, s_n, s_b in raw_blocks:
-                            parsed_s_cat = s_cat.lower() if s_cat else ("personality" if any(p in s_n.lower() for p in ("caveman", "pirate")) else "system")
+                            parsed_s_cat = (
+                                s_cat.lower()
+                                if s_cat
+                                else (
+                                    "personality" if any(p in s_n.lower() for p in ("caveman", "pirate")) else "system"
+                                )
+                            )
                             if parsed_s_cat != cat and s_n != sel["name"]:
                                 active_skills.append((parsed_s_cat, s_n, s_b))
 
@@ -489,26 +541,30 @@ def run_skill_selector(
                             active_skills = active_skills[-3:]
 
                         base_p = sys_c.split("### Loaded On-Demand Skill")[0].strip()
-                        new_blocks = "\n\n".join(f"### Loaded On-Demand Skill [{c}]: {n}\n{b}" for c, n, b in active_skills)
+                        new_blocks = "\n\n".join(
+                            f"### Loaded On-Demand Skill [{c}]: {n}\n{b}" for c, n, b in active_skills
+                        )
                         hist[0]["content"] = f"{base_p}\n\n{new_blocks}\n" if base_p else f"{new_blocks}\n"
 
                         s_name = sel["name"].replace(" ", "-")
-                        sys.stderr.write(f"{clear_2_lines}\033[1;32m✓ Skill '{sel['name']}' successfully loaded.\033[0m\n\n")
+                        sys.stderr.write(
+                            f"{clear_2_lines}\033[1;32m✓ Skill '{sel['name']}' successfully loaded.\033[0m\n\n"
+                        )
                         return hist, s_name
                     except Exception as e:
                         sys.stderr.write(f"{clear_2_lines}\033[1;31m[sys] Failed to load skill: {e}\033[0m\n")
                 else:
                     sys.stderr.write(f"{clear_2_lines}No skill selected.\n")
                 return hist, None
-            elif key == '\x1b[A':
+            elif key == "\x1b[A":
                 if num_opts > 0:
                     current_idx = max(0, current_idx - 1)
                 sys.stderr.write(clear_2_lines)
-            elif key == '\x1b[B':
+            elif key == "\x1b[B":
                 if num_opts > 0:
                     current_idx = min(num_opts - 1, current_idx + 1)
                 sys.stderr.write(clear_2_lines)
-            elif key in ('\x7f', '\x08'):
+            elif key in ("\x7f", "\x08"):
                 if search_query:
                     search_query, current_idx = search_query[:-1], 0
                 sys.stderr.write(clear_2_lines)
@@ -524,7 +580,35 @@ def run_skill_selector(
 
 if __name__ == "__main__":
     CFG_DIR = os.path.expanduser("~/.config/py-agent")
-    stop_words = getattr(context, "STOP_WORDS", {"is", "what", "it", "do", "any", "i", "have", "the", "a", "an", "on", "to", "for", "me", "you", "my", "your", "we", "us", "are", "about", "in", "how"})
+    stop_words = getattr(
+        context,
+        "STOP_WORDS",
+        {
+            "is",
+            "what",
+            "it",
+            "do",
+            "any",
+            "i",
+            "have",
+            "the",
+            "a",
+            "an",
+            "on",
+            "to",
+            "for",
+            "me",
+            "you",
+            "my",
+            "your",
+            "we",
+            "us",
+            "are",
+            "about",
+            "in",
+            "how",
+        },
+    )
 
     if len(sys.argv) == 2:
         ws = os.environ.get("AI_WORKSPACE_PATH") or os.getcwd()

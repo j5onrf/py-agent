@@ -91,11 +91,7 @@ def get_active_configs(
                 or os.environ.get(f"{prefix}_URL")
                 or "https://router.huggingface.co/v1/chat/completions"
             )
-            model = (
-                env_vars.get(f"{prefix}_MODEL")
-                or os.environ.get(f"{prefix}_MODEL")
-                or FALLBACK_MODELS["custom"]
-            )
+            model = env_vars.get(f"{prefix}_MODEL") or os.environ.get(f"{prefix}_MODEL") or FALLBACK_MODELS["custom"]
             headers = {"Content-Type": "application/json"}
             if val_clean.lower() != "not-needed":
                 headers["Authorization"] = f"Bearer {val_clean}"
@@ -104,11 +100,7 @@ def get_active_configs(
 
         # Google Gemini
         elif key_name in ("GEMINI_API_KEY", "GEMINI_KEY"):
-            model = (
-                env_vars.get("GEMINI_MODEL")
-                or os.environ.get("GEMINI_MODEL")
-                or FALLBACK_MODELS["gemini"]
-            )
+            model = env_vars.get("GEMINI_MODEL") or os.environ.get("GEMINI_MODEL") or FALLBACK_MODELS["gemini"]
             url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
             headers = {
                 "Authorization": f"Bearer {val_clean}",
@@ -121,9 +113,7 @@ def get_active_configs(
         # OpenRouter
         elif key_name in ("OPENROUTER_API_KEY", "OPENROUTER_KEY"):
             model = (
-                env_vars.get("OPENROUTER_MODEL")
-                or os.environ.get("OPENROUTER_MODEL")
-                or FALLBACK_MODELS["openrouter"]
+                env_vars.get("OPENROUTER_MODEL") or os.environ.get("OPENROUTER_MODEL") or FALLBACK_MODELS["openrouter"]
             )
             url = "https://openrouter.ai/api/v1/chat/completions"
             headers = {
@@ -141,11 +131,7 @@ def get_active_configs(
 
         # DeepSeek Direct
         elif key_name in ("DEEPSEEK_API_KEY", "DEEPSEEK_KEY"):
-            model = (
-                env_vars.get("DEEPSEEK_MODEL")
-                or os.environ.get("DEEPSEEK_MODEL")
-                or FALLBACK_MODELS["deepseek"]
-            )
+            model = env_vars.get("DEEPSEEK_MODEL") or os.environ.get("DEEPSEEK_MODEL") or FALLBACK_MODELS["deepseek"]
             url = "https://api.deepseek.com/chat/completions"
             headers = {
                 "Authorization": f"Bearer {val_clean}",
@@ -156,11 +142,7 @@ def get_active_configs(
 
         # OpenAI Direct
         elif key_name in ("OPENAI_API_KEY", "OPENAI_KEY"):
-            model = (
-                env_vars.get("OPENAI_MODEL")
-                or os.environ.get("OPENAI_MODEL")
-                or FALLBACK_MODELS["openai"]
-            )
+            model = env_vars.get("OPENAI_MODEL") or os.environ.get("OPENAI_MODEL") or FALLBACK_MODELS["openai"]
             url = "https://api.openai.com/v1/chat/completions"
             headers = {
                 "Authorization": f"Bearer {val_clean}",

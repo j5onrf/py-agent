@@ -73,18 +73,15 @@ def detect_workspace_mode(workspace: str) -> tuple[bool, str, bool]:
 
 def make_confirm_gate(workspace: str, is_yolo: bool):
     """Scoped confirmation gate for non-interactive WebUI requests."""
+
     def confirm_gate(prompt_or_reason: str) -> bool:
         if not is_yolo:
-            sys.stderr.write(
-                f"[webui security] Blocked tool execution (workspace yolo=False): {prompt_or_reason}\n"
-            )
+            sys.stderr.write(f"[webui security] Blocked tool execution (workspace yolo=False): {prompt_or_reason}\n")
             return False
 
         # In YOLO mode, standard edits within workspace boundaries are auto-approved by agent_tools.
         # If this gate is triggered, it is an out-of-bounds path or destructive command (sudo, pacman, etc.).
-        sys.stderr.write(
-            f"[webui security] Blocked zero-trust security boundary violation: {prompt_or_reason}\n"
-        )
+        sys.stderr.write(f"[webui security] Blocked zero-trust security boundary violation: {prompt_or_reason}\n")
         return False
 
     return confirm_gate
@@ -397,9 +394,7 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                 active_tools = []
                 if is_agent:
                     is_py = (
-                        "-py" in profile_name.lower()
-                        or "py-" in profile_name.lower()
-                        or st.get("ipython_mode", False)
+                        "-py" in profile_name.lower() or "py-" in profile_name.lower() or st.get("ipython_mode", False)
                     )
                     active_tools = list(ipython.IPYTHON_TOOL) if (is_py and ipython) else list(tools.EDIT_TOOLS)
                 if use_gnd and hasattr(tools, "WEB_TOOL"):
@@ -503,9 +498,7 @@ class OfficialWebUIProxyHandler(http.server.BaseHTTPRequestHandler):
                     except Exception as e:
                         sys.stderr.write(f"[webui] warning: fallback adapter extraction error: {e}\n")
 
-                has_web_call = use_gnd and any(
-                    c.get("function", {}).get("name") == "web_search" for c in (calls or [])
-                )
+                has_web_call = use_gnd and any(c.get("function", {}).get("name") == "web_search" for c in (calls or []))
 
                 if not calls or (not is_agent and not has_web_call):
                     break

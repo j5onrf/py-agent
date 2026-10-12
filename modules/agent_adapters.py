@@ -5,7 +5,6 @@ import ast
 import json
 import os
 import re
-import sys
 import time
 from typing import Any
 
@@ -59,9 +58,7 @@ RE_CONVERSATIONAL_PREFIX = re.compile(
     r"^(?:here\s+is|i\s+will|i\s+have|let's|now\s+we|note:|explanation:|this\s+will|this\s+replaces)\b",
     re.IGNORECASE,
 )
-RE_PATH_EXTRACT = re.compile(
-    r"([a-zA-Z0-9_\-\./]+\.(?:py|json|md|txt|sh|html|css|js|ts|cpp|c|h|rs|go))"
-)
+RE_PATH_EXTRACT = re.compile(r"([a-zA-Z0-9_\-\./]+\.(?:py|json|md|txt|sh|html|css|js|ts|cpp|c|h|rs|go))")
 RE_ROOT_SANDBOX = re.compile(
     r"^[\"']?(?:/home/(?:user|developer|runner|admin)|/workspace|/app)(?:/(.*))?$",
     re.IGNORECASE,
@@ -125,10 +122,7 @@ def _strip_line_number_gutters(text: str) -> str:
     if len(non_empty) < 2:
         return text
 
-    gutter_nums = []
-    for l in non_empty:
-        if m := re.match(r"^\s*(\d+)[:|│\t ]", l):
-            gutter_nums.append(int(m.group(1)))
+    gutter_nums = [int(m.group(1)) for l in non_empty if (m := re.match(r"^\s*(\d+)[:|│\t ]", l))]
 
     if len(gutter_nums) >= 2 and len(gutter_nums) / len(non_empty) >= 0.6:
         is_monotonic = all(b - a in (1, 2) for a, b in zip(gutter_nums, gutter_nums[1:]))
@@ -212,6 +206,7 @@ def deduplicate_tool_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 # ── 2. Parameter Aliases & String Normalization ───────────────────────────────
 
+
 def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
     """Auto-heals parameter alias discrepancies, wrapped quotes, and escaped command syntax."""
     if not isinstance(args, dict):
@@ -226,7 +221,9 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
             if k not in ("old_str", "new_str", "content", "code"):
                 stripped = clean_v.strip()
                 if len(stripped) >= 2 and stripped.count(stripped[0]) == 2:
-                    if (stripped.startswith('"') and stripped.endswith('"')) or (stripped.startswith("'") and stripped.endswith("'")):
+                    if (stripped.startswith('"') and stripped.endswith('"')) or (
+                        stripped.startswith("'") and stripped.endswith("'")
+                    ):
                         inner = stripped[1:-1]
                         if inner[:1] not in ("'", '"') and inner[-1:] not in ("'", '"'):
                             clean_v = inner
@@ -266,11 +263,11 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
             if m := RE_PATH_EXTRACT.search(raw_p):
                 cleaned["path"] = m.group(1)
         else:
-            cleaned["path"] = raw_p.strip('\'"`\\\n\r\t ')
+            cleaned["path"] = raw_p.strip("'\"`\\\n\r\t ")
 
         if m := RE_ROOT_SANDBOX.match(cleaned["path"]):
             rem = m.group(1)
-            cleaned["path"] = rem.strip('\'"`\\\n\r\t ') if rem else "."
+            cleaned["path"] = rem.strip("'\"`\\\n\r\t ") if rem else "."
 
         # Strip accidental leading slashes on workspace relative files
         if cleaned["path"].startswith("/") and not cleaned["path"].startswith(("/home", "/workspace")):
@@ -318,14 +315,40 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
 
     # 6. Surgical Edit String Aliases & Unified Diff Parameter Recovery
     if "old_str" not in cleaned:
-        for alt in ("old", "old_string", "old_text", "search", "search_str", "target_str", "find", "before", "original"):
+        for alt in (
+            "old",
+            "old_string",
+            "old_text",
+            "search",
+            "search_str",
+            "target_str",
+            "find",
+            "before",
+            "original",
+        ):
             if alt in cleaned and not isinstance(cleaned[alt], bool):
                 cleaned["old_str"] = _strip_line_number_gutters(str(cleaned.pop(alt)))
                 break
 
     if "new_str" not in cleaned:
-        for alt in ("new", "new_string", "new_text", "replace_str", "replacement", "after", "update", "patch", "diff", "unified_diff", "hunk"):
-            if alt in cleaned and not isinstance(cleaned[alt], bool) and str(cleaned[alt]).lower() not in ("true", "1", "yes", "on"):
+        for alt in (
+            "new",
+            "new_string",
+            "new_text",
+            "replace_str",
+            "replacement",
+            "after",
+            "update",
+            "patch",
+            "diff",
+            "unified_diff",
+            "hunk",
+        ):
+            if (
+                alt in cleaned
+                and not isinstance(cleaned[alt], bool)
+                and str(cleaned[alt]).lower() not in ("true", "1", "yes", "on")
+            ):
                 cleaned["new_str"] = _strip_line_number_gutters(str(cleaned.pop(alt)))
                 break
 
@@ -367,14 +390,22 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
         for alt in ("force", "overwrite_file", "clobber"):
             if alt in cleaned:
                 val = cleaned.pop(alt)
-                cleaned["overwrite"] = str(val).lower() in ("true", "1", "yes", "on") if not isinstance(val, bool) else val
+                cleaned["overwrite"] = (
+                    str(val).lower() in ("true", "1", "yes", "on") if not isinstance(val, bool) else val
+                )
                 break
 
     if "replace" in cleaned:
         rep_val = cleaned["replace"]
-        if isinstance(rep_val, bool) or (isinstance(rep_val, str) and len(rep_val) <= 5 and rep_val.lower() in ("true", "false", "1", "0", "yes", "no", "on", "off")):
+        if isinstance(rep_val, bool) or (
+            isinstance(rep_val, str)
+            and len(rep_val) <= 5
+            and rep_val.lower() in ("true", "false", "1", "0", "yes", "no", "on", "off")
+        ):
             if "overwrite" not in cleaned:
-                cleaned["overwrite"] = rep_val if isinstance(rep_val, bool) else rep_val.lower() in ("true", "1", "yes", "on")
+                cleaned["overwrite"] = (
+                    rep_val if isinstance(rep_val, bool) else rep_val.lower() in ("true", "1", "yes", "on")
+                )
             cleaned.pop("replace")
         elif "new_str" not in cleaned:
             cleaned["new_str"] = str(cleaned.pop("replace"))
@@ -383,6 +414,7 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
 
 
 # ── 3. Balanced JSON Object Extractor ─────────────────────────────────────────
+
 
 def _extract_balanced_json(text: str) -> list[dict[str, Any]]:
     """Extracts top-level JSON objects safely by balancing braces with linear bail-out."""
@@ -418,7 +450,9 @@ def _extract_balanced_json(text: str) -> list[dict[str, Any]]:
                             raw_chunk = text[start : j + 1]
                             try:
                                 parsed = json.loads(raw_chunk, strict=False)
-                                if isinstance(parsed, dict) and ("name" in parsed or "commands" in parsed or "function" in parsed):
+                                if isinstance(parsed, dict) and (
+                                    "name" in parsed or "commands" in parsed or "function" in parsed
+                                ):
                                     results.append(parsed)
                                     valid = True
                             except Exception:
@@ -472,6 +506,7 @@ def _extract_balanced_json(text: str) -> list[dict[str, Any]]:
 
 
 # ── 4. Self-Healing Tool Call Transformer ─────────────────────────────────────
+
 
 def _parse_heredoc(cmd: str) -> tuple[str, str, bool] | None:
     """Parses shell heredoc syntax without regex backtracking, tracking delimiter quoting."""
@@ -572,6 +607,7 @@ def heal_tool_call(fname: str, raw_args: str | dict[str, Any]) -> tuple[str, dic
         cmd_raw = re.sub(r"^\s*touch\s+\S+\s*(&&|;)\s*", "", cmd_full).strip() if has_touch else cmd_full
 
         from agent_state import get_state
+
         if (
             get_state("purebash_mode", False)
             or get_state("miniswe_mode", False)
@@ -603,7 +639,7 @@ def heal_tool_call(fname: str, raw_args: str | dict[str, Any]) -> tuple[str, dic
                         closing_idx = idx
                         break
                 if closing_idx != -1:
-                    after_quote = rest_clean[closing_idx + 1:].strip()
+                    after_quote = rest_clean[closing_idx + 1 :].strip()
                     if any(c in after_quote for c in (">", "|", ";", "&")):
                         has_trailing_shell = True
                     py_code = rest_clean[1:closing_idx]
@@ -618,7 +654,7 @@ def heal_tool_call(fname: str, raw_args: str | dict[str, Any]) -> tuple[str, dic
                 if quote_char == "'":
                     py_code = py_code.replace(r"'\''", "'").strip()
                 elif quote_char == '"':
-                    py_code = py_code.replace(r'\"', '"').replace(r"\\", "\\").strip()
+                    py_code = py_code.replace(r"\"", '"').replace(r"\\", "\\").strip()
                 else:
                     py_code = py_code.strip()
 
@@ -626,7 +662,9 @@ def heal_tool_call(fname: str, raw_args: str | dict[str, Any]) -> tuple[str, dic
                 if py_code:
                     return "exec_python", {"code": py_code}
 
-        def _safe_shell_write(cmd_type: str, raw_content: str, path: str, is_single_quote: bool, is_echo_e: bool, append_nl: bool = False) -> tuple[str, dict[str, Any]] | None:
+        def _safe_shell_write(
+            cmd_type: str, raw_content: str, path: str, is_single_quote: bool, is_echo_e: bool, append_nl: bool = False
+        ) -> tuple[str, dict[str, Any]] | None:
             if any(exp in raw_content for exp in ("$(", "${", "`")):
                 return None
             if cmd_type == "printf" and re.search(r"%[a-zA-Z]", raw_content):
@@ -635,9 +673,15 @@ def heal_tool_call(fname: str, raw_args: str | dict[str, Any]) -> tuple[str, dic
             if is_single_quote:
                 unescaped = raw_content.replace(r"'\''", "'")
             elif is_echo_e or cmd_type == "printf":
-                unescaped = raw_content.replace("\\\\", "\x00").replace(r'\"', '"').replace(r"\n", "\n").replace(r"\t", "\t").replace("\x00", "\\")
+                unescaped = (
+                    raw_content.replace("\\\\", "\x00")
+                    .replace(r"\"", '"')
+                    .replace(r"\n", "\n")
+                    .replace(r"\t", "\t")
+                    .replace("\x00", "\\")
+                )
             else:
-                unescaped = raw_content.replace("\\\\", "\x00").replace(r'\"', '"').replace("\x00", "\\")
+                unescaped = raw_content.replace("\\\\", "\x00").replace(r"\"", '"').replace("\x00", "\\")
 
             norm = normalize_params({"path": path.strip(), "content": unescaped})
             if append_nl and isinstance(norm.get("content"), str) and not norm["content"].endswith("\n"):
@@ -655,14 +699,28 @@ def heal_tool_call(fname: str, raw_args: str | dict[str, Any]) -> tuple[str, dic
                 cmd_type = echo_m.group("cmd")
                 is_single = echo_m.group("quote") == "'"
                 is_echo_e = bool(echo_m.group("flags") and "-e" in echo_m.group("flags"))
-                if res := _safe_shell_write(cmd_type, echo_m.group("content"), echo_m.group("target"), is_single_quote=(is_single and not is_echo_e), is_echo_e=is_echo_e, append_nl=(cmd_type == "echo")):
+                if res := _safe_shell_write(
+                    cmd_type,
+                    echo_m.group("content"),
+                    echo_m.group("target"),
+                    is_single_quote=(is_single and not is_echo_e),
+                    is_echo_e=is_echo_e,
+                    append_nl=(cmd_type == "echo"),
+                ):
                     return res
 
             if tee_echo_m := RE_ECHO_TEE.match(cmd_raw):
                 cmd_type = tee_echo_m.group("cmd")
                 is_single = tee_echo_m.group("quote") == "'"
                 is_echo_e = bool(tee_echo_m.group("flags") and "-e" in tee_echo_m.group("flags"))
-                if res := _safe_shell_write(cmd_type, tee_echo_m.group("content"), tee_echo_m.group("target"), is_single_quote=(is_single and not is_echo_e), is_echo_e=is_echo_e, append_nl=(cmd_type == "echo")):
+                if res := _safe_shell_write(
+                    cmd_type,
+                    tee_echo_m.group("content"),
+                    tee_echo_m.group("target"),
+                    is_single_quote=(is_single and not is_echo_e),
+                    is_echo_e=is_echo_e,
+                    append_nl=(cmd_type == "echo"),
+                ):
                     return res
 
     return fname, healed_dict
@@ -749,9 +807,12 @@ def heal_json_args(raw: str | dict[str, Any]) -> dict[str, Any]:
     # Pass 4: Fallback cleanup only when direct structured parses failed
     fallback_cleaned = RE_XML_TOOL_TAGS.sub("", cleaned).strip()
     extracted: dict[str, Any] = {}
-    for match in re.finditer(r'"(?P<key>[a-zA-Z_][a-zA-Z0-9_]*)"\s*:\s*"(?P<val>[\s\S]*?)(?="\s*,\s*"[a-zA-Z_]|\s*"$|\s*\}\s*$)', fallback_cleaned):
+    for match in re.finditer(
+        r'"(?P<key>[a-zA-Z_][a-zA-Z0-9_]*)"\s*:\s*"(?P<val>[\s\S]*?)(?="\s*,\s*"[a-zA-Z_]|\s*"$|\s*\}\s*$)',
+        fallback_cleaned,
+    ):
         val = match.group("val")
-        if val.count('"') % 2 == 0 and val.count('{') == val.count('}'):
+        if val.count('"') % 2 == 0 and val.count("{") == val.count("}"):
             extracted[match.group("key")] = val
 
     if not extracted:
@@ -764,8 +825,10 @@ def heal_json_args(raw: str | dict[str, Any]) -> dict[str, Any]:
 
 # ── 5. AST-Based Python Function Call Parser ──────────────────────────────────
 
+
 def _extract_ast_python_calls(text: str) -> list[dict[str, Any]]:
     from agent_state import get_state
+
     if (
         get_state("purebash_mode", False)
         or get_state("miniswe_mode", False)
@@ -873,15 +936,21 @@ def _extract_ast_python_calls(text: str) -> list[dict[str, Any]]:
                             args_dict[kw.arg] = kw.value.value
 
                     if fn == "final_answer":
-                        raw_call = ast.unparse(node) if hasattr(ast, "unparse") else f"final_answer({ast.dump(node.args[0]) if node.args else ''})"
-                        calls.append({
-                            "id": f"call_ast_{len(calls)}_{int(time.time())}",
-                            "type": "function",
-                            "function": {
-                                "name": "exec_python",
-                                "arguments": json.dumps({"code": raw_call}, default=str),
-                            },
-                        })
+                        raw_call = (
+                            ast.unparse(node)
+                            if hasattr(ast, "unparse")
+                            else f"final_answer({ast.dump(node.args[0]) if node.args else ''})"
+                        )
+                        calls.append(
+                            {
+                                "id": f"call_ast_{len(calls)}_{int(time.time())}",
+                                "type": "function",
+                                "function": {
+                                    "name": "exec_python",
+                                    "arguments": json.dumps({"code": raw_call}, default=str),
+                                },
+                            }
+                        )
                         continue
 
                     if args_dict or fn in ("list_dir", "architecture_overview"):
@@ -903,6 +972,7 @@ def _extract_ast_python_calls(text: str) -> list[dict[str, Any]]:
 
 # ── 6. Universal Fallback Tool Extraction Suite ───────────────────────────────
 
+
 def extract_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
     """Extracts, heals, and deduplicates tool calls across non-standard model formats."""
     if not text or not text.strip():
@@ -914,10 +984,7 @@ def extract_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
     for i, m in enumerate(RE_HERMES_XML.finditer(text)):
         fname = m.group("name").strip()
         raw_params = m.group("params")
-        params = {
-            pm.group("key").strip(): pm.group("val").strip()
-            for pm in RE_HERMES_PARAM.finditer(raw_params)
-        }
+        params = {pm.group("key").strip(): pm.group("val").strip() for pm in RE_HERMES_PARAM.finditer(raw_params)}
         if fname:
             calls.append(
                 {
@@ -959,9 +1026,7 @@ def extract_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
                             "type": "function",
                             "function": {
                                 "name": fname.strip(),
-                                "arguments": json.dumps(
-                                    heal_json_args(c.get("arguments", {})), default=str
-                                ),
+                                "arguments": json.dumps(heal_json_args(c.get("arguments", {})), default=str),
                             },
                         }
                     )
@@ -972,10 +1037,7 @@ def extract_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
     for i, m in enumerate(RE_LING_XML.finditer(text)):
         fname = m.group("name").strip()
         raw_params = m.group("params")
-        params = {
-            pm.group("key").strip(): pm.group("val").strip()
-            for pm in RE_LING_PARAM.finditer(raw_params)
-        }
+        params = {pm.group("key").strip(): pm.group("val").strip() for pm in RE_LING_PARAM.finditer(raw_params)}
         if fname and params:
             calls.append(
                 {
@@ -996,11 +1058,16 @@ def extract_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
                 fname = obj.get("name")
                 if isinstance(fname, str) and fname.strip():
                     raw_args = obj.get("arguments") or obj.get("parameters") or {}
-                    calls.append({
-                        "id": f"call_xml_{i}_{int(time.time())}",
-                        "type": "function",
-                        "function": {"name": fname.strip(), "arguments": json.dumps(heal_json_args(raw_args), default=str)},
-                    })
+                    calls.append(
+                        {
+                            "id": f"call_xml_{i}_{int(time.time())}",
+                            "type": "function",
+                            "function": {
+                                "name": fname.strip(),
+                                "arguments": json.dumps(heal_json_args(raw_args), default=str),
+                            },
+                        }
+                    )
 
     # Format 5: Balanced Naked JSON Objects ({"name": ..., "arguments": ...})
     balanced_objs = _extract_balanced_json(text)
@@ -1019,16 +1086,13 @@ def extract_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
                     "function": {"name": fname.strip(), "arguments": json.dumps(healed, default=str)},
                 }
             )
-        elif any(k in obj for k in ("commands", "executed")) and isinstance(obj.get("commands", obj.get("executed")), list):
+        elif any(k in obj for k in ("commands", "executed")) and isinstance(
+            obj.get("commands", obj.get("executed")), list
+        ):
             cmd_list = obj.get("commands") or obj.get("executed") or []
             for cmd_item in cmd_list:
                 if isinstance(cmd_item, dict):
-                    raw_cmd = (
-                        cmd_item.get("command")
-                        or cmd_item.get("keystrokes")
-                        or cmd_item.get("cmd")
-                        or ""
-                    )
+                    raw_cmd = cmd_item.get("command") or cmd_item.get("keystrokes") or cmd_item.get("cmd") or ""
                 else:
                     raw_cmd = str(cmd_item)
                 if isinstance(raw_cmd, (list, tuple)):
@@ -1051,24 +1115,33 @@ def extract_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
 
     # Format 7: Standalone Python Markdown Code Block Auto-Execution
     from agent_state import get_state
+
     is_py_active = get_state("ipython_mode", False) or os.environ.get("AI_IPYTHON_MODE") == "1"
-    if (is_py_active or "final_answer(" in text) and not calls and re.search(r"```(?:py|python)\b", text, re.IGNORECASE):
-        py_blocks = re.findall(
-            r"```(?:py|python)[a-zA-Z0-9_+-]*[ \t]*\n([\s\S]+?)(?:\n```|\Z)", text, re.IGNORECASE
-        )
+    if (
+        (is_py_active or "final_answer(" in text)
+        and not calls
+        and re.search(r"```(?:py|python)\b", text, re.IGNORECASE)
+    ):
+        py_blocks = re.findall(r"```(?:py|python)[a-zA-Z0-9_+-]*[ \t]*\n([\s\S]+?)(?:\n```|\Z)", text, re.IGNORECASE)
         for i, code_block in enumerate(py_blocks):
             clean_block = code_block.strip()
-            triggers = ("final_answer(", "open(", "read_file(", "os.listdir(", "glob.", "edit_file(", "write_file(") if is_py_active else ("final_answer(",)
+            triggers = (
+                ("final_answer(", "open(", "read_file(", "os.listdir(", "glob.", "edit_file(", "write_file(")
+                if is_py_active
+                else ("final_answer(",)
+            )
             if any(k in clean_block for k in triggers):
                 clean_block = RE_BOGUS_IMPORTS.sub("", clean_block).strip()
-                calls.append({
-                    "id": f"call_py_block_{i}_{int(time.time())}",
-                    "type": "function",
-                    "function": {
-                        "name": "exec_python",
-                        "arguments": json.dumps({"code": clean_block}, default=str),
-                    },
-                })
+                calls.append(
+                    {
+                        "id": f"call_py_block_{i}_{int(time.time())}",
+                        "type": "function",
+                        "function": {
+                            "name": "exec_python",
+                            "arguments": json.dumps({"code": clean_block}, default=str),
+                        },
+                    }
+                )
                 break
 
     # Format 8: Standalone Bash/Shell Markdown Code Block Auto-Execution
@@ -1124,14 +1197,16 @@ def extract_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
             if clean_lines:
                 full_cmd = _close_unterminated_quote("\n".join(clean_lines).strip())
                 if full_cmd:
-                    calls.append({
-                        "id": f"call_bash_block_{i}_{int(time.time())}",
-                        "type": "function",
-                        "function": {
-                            "name": "run_command",
-                            "arguments": json.dumps({"command": full_cmd}, default=str),
-                        },
-                    })
+                    calls.append(
+                        {
+                            "id": f"call_bash_block_{i}_{int(time.time())}",
+                            "type": "function",
+                            "function": {
+                                "name": "run_command",
+                                "arguments": json.dumps({"command": full_cmd}, default=str),
+                            },
+                        }
+                    )
 
     # Format 9: PureBash Raw Command Line Auto-Capture
     is_purebash_active = (
@@ -1154,21 +1229,36 @@ def extract_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
                 l_clean = l_clean[1:-1].strip()
             if RE_TASK_COMPLETE_LINE.match(l_clean) or RE_CONVERSATIONAL_PREFIX.match(l_clean):
                 continue
-            if l_clean.startswith((
-                "echo ", "cat ", "sed ", "grep ", "find ", "python ",
-                "python3 ", "pytest ", "touch ", "mkdir ", "cp ", "mv ", "rm "
-            )):
+            if l_clean.startswith(
+                (
+                    "echo ",
+                    "cat ",
+                    "sed ",
+                    "grep ",
+                    "find ",
+                    "python ",
+                    "python3 ",
+                    "pytest ",
+                    "touch ",
+                    "mkdir ",
+                    "cp ",
+                    "mv ",
+                    "rm ",
+                )
+            ):
                 raw_cmd_lines.append(l_clean)
 
         if raw_cmd_lines:
             full_raw_cmd = _close_unterminated_quote("\n".join(raw_cmd_lines).strip())
-            calls.append({
-                "id": f"call_raw_sh_{int(time.time())}",
-                "type": "function",
-                "function": {
-                    "name": "run_command",
-                    "arguments": json.dumps({"command": full_raw_cmd}, default=str),
-                },
-            })
+            calls.append(
+                {
+                    "id": f"call_raw_sh_{int(time.time())}",
+                    "type": "function",
+                    "function": {
+                        "name": "run_command",
+                        "arguments": json.dumps({"command": full_raw_cmd}, default=str),
+                    },
+                }
+            )
 
     return deduplicate_tool_calls(calls)

@@ -12,7 +12,7 @@ import urllib.request as urlreq
 from collections.abc import Callable
 from typing import Any
 
-from rich.box import DOUBLE, HEAVY, HORIZONTALS, ROUNDED, SQUARE
+from rich.box import DOUBLE, HEAVY, ROUNDED, SQUARE
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
@@ -21,6 +21,7 @@ from rich.text import Text
 try:
     import termios
     import tty
+
     _HAS_TERMIOS = True
 except ImportError:
     _HAS_TERMIOS = False
@@ -30,15 +31,15 @@ _console = Console()
 RE_UNSAFE_SHELL_CHARS: re.Pattern = re.compile(r'[\[\]{}()=\'"",;|<>#`$&*!\\\r\n]')
 
 STYLES = {
-    1: ("∿", ROUNDED, "bright_cyan", "bold"),         # #1 Minimal (No Icons, Rounded) - Compact Default
-    2: ("∿", SQUARE, "bright_cyan", "bold"),          # #2 Minimal (No Icons, Square) - Compact
-    3: ("∿", ROUNDED, "bright_cyan", "bold"),         # #3 Minimal (With Icons, Rounded) - Compact
-    4: ("∿", SQUARE, "bright_cyan", "bold"),          # #4 Minimal (With Icons, Square) - Compact
+    1: ("∿", ROUNDED, "bright_cyan", "bold"),  # #1 Minimal (No Icons, Rounded) - Compact Default
+    2: ("∿", SQUARE, "bright_cyan", "bold"),  # #2 Minimal (No Icons, Square) - Compact
+    3: ("∿", ROUNDED, "bright_cyan", "bold"),  # #3 Minimal (With Icons, Rounded) - Compact
+    4: ("∿", SQUARE, "bright_cyan", "bold"),  # #4 Minimal (With Icons, Square) - Compact
     5: ("∿ Py Agent", DOUBLE, "bright_blue", "bold bright_blue"),
     6: ("∿ Py Agent", HEAVY, "bright_cyan", "bold bright_white"),
     7: ("∿ Py Agent", ROUNDED, "green", "bold bright_green"),
     8: ("∿", ROUNDED, "green", "bold bright_green"),
-    9: ("∿", ROUNDED, "bright_cyan", "bold"),         # #9 Full-Width Screen (No Icons, Rounded)
+    9: ("∿", ROUNDED, "bright_cyan", "bold"),  # #9 Full-Width Screen (No Icons, Rounded)
 }
 
 RICH_TO_ANSI = {
@@ -60,7 +61,9 @@ _core_module = None
 
 
 class InlineSpinner:
-    def __init__(self, chars: tuple[str, ...] | list[str] | str = ("✦ [∿ · ·]", "✦ [· ∿ ·]", "✦ [· · ∿]", "✦ [· ∿ ·]")) -> None:
+    def __init__(
+        self, chars: tuple[str, ...] | list[str] | str = ("✦ [∿ · ·]", "✦ [· ∿ ·]", "✦ [· · ∿]", "✦ [· ∿ ·]")
+    ) -> None:
         self.chars = chars
         self.active = False
         self.thread = None
@@ -73,6 +76,7 @@ class InlineSpinner:
         try:
             if _core_module is None:
                 import agent_core
+
                 _core_module = agent_core
             box = _core_module.get_state("box_style", 1)
             border_col = "green" if box == 6 else STYLES.get(box, STYLES[1])[2]
@@ -146,7 +150,9 @@ class InlineSpinner:
 
         try:
             if done_msg:
-                sys.stderr.write(f"\r\x1b[2K\033[1;32mOK\033[0m \033[1;36m{done_msg}\033[0m \033[2m({elapsed:.1f}s)\033[0m\n")
+                sys.stderr.write(
+                    f"\r\x1b[2K\033[1;32mOK\033[0m \033[1;36m{done_msg}\033[0m \033[2m({elapsed:.1f}s)\033[0m\n"
+                )
             else:
                 sys.stderr.write("\r\x1b[2K\r")
             sys.stderr.write("\033[?25h")
@@ -230,11 +236,7 @@ class CalmBoatSpinner:
 
             w_col = "\033[34m" if pct < 70 else ("\033[33m" if pct < 88 else "\033[31m")
 
-            water_line = (
-                f"{w_col}{left_water}\033[0m"
-                f"\033[1;33m{hull}\033[0m"
-                f"{w_col}{right_water}\033[0m"
-            )
+            water_line = f"{w_col}{left_water}\033[0m\033[1;33m{hull}\033[0m{w_col}{right_water}\033[0m"
 
             try:
                 sys.stderr.write(f"\r\x1b[2K{sail_line}\n\r\x1b[2K{water_line}\033[1A")
@@ -285,11 +287,7 @@ class CalmBoatSpinner:
 
             w_col = "\033[34m" if pct < 70 else ("\033[33m" if pct < 88 else "\033[31m")
 
-            docked_line = (
-                f"{w_col}{left_water}\033[0m"
-                f"\033[1;33m{hull}\033[0m"
-                f"{w_col}{right_water}\033[0m"
-            )
+            docked_line = f"{w_col}{left_water}\033[0m\033[1;33m{hull}\033[0m{w_col}{right_water}\033[0m"
 
             try:
                 sys.stderr.write(f"\r\x1b[2K{sail_line}\n\r\x1b[2K{docked_line}\n\n")
@@ -369,14 +367,11 @@ def draw_session_box(
     sub_id: int | None = None,
     box_style: int = 1,
 ) -> None:
-    display_dir = (
-        workspace_path.replace(home_dir, "~", 1)
-        if workspace_path.startswith(home_dir)
-        else workspace_path
-    )
+    display_dir = workspace_path.replace(home_dir, "~", 1) if workspace_path.startswith(home_dir) else workspace_path
 
     try:
         import agent_cloud
+
         configs = agent_cloud.get_active_configs([])
         model_name = configs[0][2].get("model", "local-model") if configs else get_local_model_name()
     except Exception:
@@ -387,6 +382,7 @@ def draw_session_box(
     if is_agent:
         try:
             import agent_core as core
+
             use_map = bool(core.get_state("use_map", False)) or os.environ.get("AI_USE_MAP") == "1"
         except Exception:
             use_map = os.environ.get("AI_USE_MAP") == "1"
@@ -406,7 +402,7 @@ def draw_session_box(
     if box_style in (1, 2, 3, 4, 9):
         base_title, box_type, border_col, title_style = STYLES.get(box_style, STYLES[1])
         show_icons = box_style in (3, 4)
-        is_full = (box_style == 9)
+        is_full = box_style == 9
 
         icon_table = Table(show_header=False, box=None, padding=(0, 1 if show_icons else 0, 0, 1))
         if show_icons:
@@ -680,10 +676,20 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                     tok_count = max(1, (len(body or raw_content) * 10) // 36)
                     tok_lbl = f"~{tok_count / 1000:.1f}kt" if tok_count >= 1000 else f"~{tok_count}t"
                     defaults["yolo"] = str(meta.get("yolo", "")).lower() in ("true", "1", "yes", "on")
-                    defaults["map"] = str(meta.get("map", meta.get("use_map", ""))).lower() in ("true", "1", "yes", "on")
+                    defaults["map"] = str(meta.get("map", meta.get("use_map", ""))).lower() in (
+                        "true",
+                        "1",
+                        "yes",
+                        "on",
+                    )
                     defaults["py"] = str(meta.get("ipython", meta.get("py", ""))).lower() in ("true", "1", "yes", "on")
                     defaults["mem"] = str(meta.get("memory", meta.get("mem", ""))).lower() in ("true", "1", "yes", "on")
-                    defaults["adp"] = str(meta.get("adapters", meta.get("adp", meta.get("adapter", "")))).lower() in ("true", "1", "yes", "on")
+                    defaults["adp"] = str(meta.get("adapters", meta.get("adp", meta.get("adapter", "")))).lower() in (
+                        "true",
+                        "1",
+                        "yes",
+                        "on",
+                    )
                     cat = meta.get("category")
                 except Exception as e:
                     sys.stderr.write(f"\033[1;33m[ai init]\033[0m Failed to parse {sf}: {e}\n")
@@ -716,7 +722,9 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
         sys.stderr.write(f"\033[1;33m[ai init]\033[0m No agent profiles found in {profiles_dir}. Using defaults.\n")
         return "chat", False, False, False, False, False
 
-    sys.stderr.write(f"\n\033[1;36m[ai init]\033[0m Select default Agent Profile for workspace \033[1;33m{workspace_name}\033[0m:\n\n\033[?25l")
+    sys.stderr.write(
+        f"\n\033[1;36m[ai init]\033[0m Select default Agent Profile for workspace \033[1;33m{workspace_name}\033[0m:\n\n\033[?25l"
+    )
     sys.stderr.flush()
 
     current_idx, num_opts = 0, len(options)
@@ -743,9 +751,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
     if os.path.isdir(mem_dir):
         try:
             mem_toks = sum(
-                (os.path.getsize(os.path.join(mem_dir, f)) * 10) // 36
-                for f in os.listdir(mem_dir)
-                if f.endswith(".md")
+                (os.path.getsize(os.path.join(mem_dir, f)) * 10) // 36 for f in os.listdir(mem_dir) if f.endswith(".md")
             )
         except OSError:
             pass
@@ -799,10 +805,10 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
             b_on = "\033[1;36m[ON]\033[0m"
             b_off = "\033[37m[OFF]\033[0m"
             yolo_badge = b_on if is_yolo else b_off
-            map_badge  = b_on if use_map  else b_off
-            mem_badge  = b_on if is_mem   else b_off
-            py_badge   = b_on if is_py    else b_off
-            adp_badge  = b_on if is_adp else b_off
+            map_badge = b_on if use_map else b_off
+            mem_badge = b_on if is_mem else b_off
+            py_badge = b_on if is_py else b_off
+            adp_badge = b_on if is_adp else b_off
 
             if is_py:
                 tool_label = "python + native (7 tools, ~760t)"
@@ -813,10 +819,10 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
 
             addons = []
             if use_map:
-                m_str = f"~{map_toks}t" if map_toks < 1000 else f"~{map_toks/1000:.1f}kt"
+                m_str = f"~{map_toks}t" if map_toks < 1000 else f"~{map_toks / 1000:.1f}kt"
                 addons.append(f"+Map: {m_str}")
             if is_mem:
-                mem_str = f"~{mem_toks}t" if mem_toks < 1000 else f"~{mem_toks/1000:.1f}kt"
+                mem_str = f"~{mem_toks}t" if mem_toks < 1000 else f"~{mem_toks / 1000:.1f}kt"
                 addons.append(f"+Mem: {mem_str}")
 
             addon_info = f"  \033[90m[{' | '.join(addons)}]\033[0m" if addons else ""
@@ -861,18 +867,22 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                 key, label = options[0][0], options[0][1]
                 badge_col = "\033[1;36m"
                 b_yolo = f" {badge_col}[Yolo: ON]\033[0m" if is_yolo else ""
-                b_map  = f" {badge_col}[Map: ON]\033[0m" if use_map else ""
-                b_mem  = f" {badge_col}[Mem: ON]\033[0m" if is_mem else ""
-                b_py   = f" {badge_col}[Py: ON]\033[0m" if is_py else ""
-                b_adp  = f" {badge_col}[Adp: ON]\033[0m" if is_adp else ""
-                sys.stderr.write(f"\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}{b_adp}\n\n")
+                b_map = f" {badge_col}[Map: ON]\033[0m" if use_map else ""
+                b_mem = f" {badge_col}[Mem: ON]\033[0m" if is_mem else ""
+                b_py = f" {badge_col}[Py: ON]\033[0m" if is_py else ""
+                b_adp = f" {badge_col}[Adp: ON]\033[0m" if is_adp else ""
+                sys.stderr.write(
+                    f"\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}{b_adp}\n\n"
+                )
                 sys.stderr.flush()
                 return key, is_yolo, use_map, is_py, is_mem, is_adp
             elif char in ("\r", "\n"):
                 key, label = options[current_idx][0], options[current_idx][1]
                 sys.stderr.write(f"\x1b[{last_rendered_lines + 3}A\r\x1b[J")
                 if not is_yolo:
-                    sys.stderr.write(f"\033[1;36mEnable Autonomous YOLO mode for {label}? [y/N] \033[2m(Esc/Left: back)\033[0m: \033[0m")
+                    sys.stderr.write(
+                        f"\033[1;36mEnable Autonomous YOLO mode for {label}? [y/N] \033[2m(Esc/Left: back)\033[0m: \033[0m"
+                    )
                     sys.stderr.flush()
                     raw_c = get_key()
                     c = raw_c.lower()
@@ -893,11 +903,13 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                     sys.stderr.write("\x1b[1A\r\x1b[2K")
                 badge_col = "\033[1;36m"
                 b_yolo = f" {badge_col}[Yolo: ON]\033[0m" if is_yolo else ""
-                b_map  = f" {badge_col}[Map: ON]\033[0m" if use_map else ""
-                b_mem  = f" {badge_col}[Mem: ON]\033[0m" if is_mem else ""
-                b_py   = f" {badge_col}[Py: ON]\033[0m" if is_py else ""
-                b_adp  = f" {badge_col}[Adp: ON]\033[0m" if is_adp else ""
-                sys.stderr.write(f"\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}{b_adp}\n\n")
+                b_map = f" {badge_col}[Map: ON]\033[0m" if use_map else ""
+                b_mem = f" {badge_col}[Mem: ON]\033[0m" if is_mem else ""
+                b_py = f" {badge_col}[Py: ON]\033[0m" if is_py else ""
+                b_adp = f" {badge_col}[Adp: ON]\033[0m" if is_adp else ""
+                sys.stderr.write(
+                    f"\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{b_yolo}{b_map}{b_mem}{b_py}{b_adp}\n\n"
+                )
                 sys.stderr.flush()
                 return key, is_yolo, use_map, is_py, is_mem, is_adp
             elif char in ("\x1b[A", "\x1b[B"):

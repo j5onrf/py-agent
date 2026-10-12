@@ -10,13 +10,15 @@ import urllib.parse
 from typing import Any
 
 # System-level device nodes permitted during cell execution
-SYSTEM_DEVICES: frozenset[str] = frozenset({
-    "/dev/tty",
-    "/dev/null",
-    "/dev/urandom",
-    "/dev/zero",
-    "/dev/random",
-})
+SYSTEM_DEVICES: frozenset[str] = frozenset(
+    {
+        "/dev/tty",
+        "/dev/null",
+        "/dev/urandom",
+        "/dev/zero",
+        "/dev/random",
+    }
+)
 
 # Protected host system trees
 FORBIDDEN_SYS_DIRS: tuple[str, ...] = (
@@ -38,125 +40,188 @@ FORBIDDEN_SYS_DIRS: tuple[str, ...] = (
 )
 
 # Mutating, destructive, or privileged binaries
-FORBIDDEN_GLOBAL_COMMANDS: frozenset[str] = frozenset({
-    "sudo",
-    "doas",
-    "su",
-    "pkexec",
-    "pip",
-    "pip3",
-    "pipx",
-    "yay",
-    "paru",
-    "apt",
-    "apt-get",
-    "dnf",
-    "yum",
-    "brew",
-    "npm",
-    "pnpm",
-    "yarn",
-    "gem",
-    "cargo",
-    "rustup",
-    "go",
-    "reboot",
-    "shutdown",
-    "poweroff",
-    "useradd",
-    "usermod",
-    "userdel",
-    "groupadd",
-    "groupmod",
-    "groupdel",
-    "passwd",
-    "chroot",
-    "dd",
-    "mkfs",
-    "fdisk",
-    "parted",
-    "wipefs",
-})
+FORBIDDEN_GLOBAL_COMMANDS: frozenset[str] = frozenset(
+    {
+        "sudo",
+        "doas",
+        "su",
+        "pkexec",
+        "pip",
+        "pip3",
+        "pipx",
+        "yay",
+        "paru",
+        "apt",
+        "apt-get",
+        "dnf",
+        "yum",
+        "brew",
+        "npm",
+        "pnpm",
+        "yarn",
+        "gem",
+        "cargo",
+        "rustup",
+        "go",
+        "reboot",
+        "shutdown",
+        "poweroff",
+        "useradd",
+        "usermod",
+        "userdel",
+        "groupadd",
+        "groupmod",
+        "groupdel",
+        "passwd",
+        "chroot",
+        "dd",
+        "mkfs",
+        "fdisk",
+        "parted",
+        "wipefs",
+    }
+)
 
 # Known binary wrappers that prefix commands
-EXEC_WRAPPERS: frozenset[str] = frozenset({
-    "env",
-    "nohup",
-    "timeout",
-    "nice",
-    "ionice",
-    "setsid",
-    "stdbuf",
-    "xargs",
-})
+EXEC_WRAPPERS: frozenset[str] = frozenset(
+    {
+        "env",
+        "nohup",
+        "timeout",
+        "nice",
+        "ionice",
+        "setsid",
+        "stdbuf",
+        "xargs",
+    }
+)
 
 # Secondary shell interpreters that accept inline -c script arguments
-INTERPRETER_BINARIES: frozenset[str] = frozenset({
-    "sh",
-    "bash",
-    "dash",
-    "zsh",
-    "ksh",
-})
+INTERPRETER_BINARIES: frozenset[str] = frozenset(
+    {
+        "sh",
+        "bash",
+        "dash",
+        "zsh",
+        "ksh",
+    }
+)
 
 # Read-only inspection subcommands allowed without elevation
 READONLY_INSPECTION_SUBCOMMANDS: dict[str, frozenset[str]] = {
-    "systemctl": frozenset({
-        "status",
-        "is-active",
-        "is-enabled",
-        "is-failed",
-        "list-units",
-        "list-unit-files",
-        "list-timers",
-        "list-sockets",
-        "show",
-        "cat",
-    }),
-    "pacman": frozenset({
-        "-q",
-        "-qi",
-        "-ql",
-        "-qs",
-        "-qk",
-        "-qo",
-        "-qm",
-        "-qu",
-        "--query",
-    }),
+    "systemctl": frozenset(
+        {
+            "status",
+            "is-active",
+            "is-enabled",
+            "is-failed",
+            "list-units",
+            "list-unit-files",
+            "list-timers",
+            "list-sockets",
+            "show",
+            "cat",
+        }
+    ),
+    "pacman": frozenset(
+        {
+            "-q",
+            "-qi",
+            "-ql",
+            "-qs",
+            "-qk",
+            "-qo",
+            "-qm",
+            "-qu",
+            "--query",
+        }
+    ),
 }
 
 # Dangerous AST operations across modules and instances
-DANGEROUS_OS_OPS: frozenset[str] = frozenset({
-    "system", "popen", "remove", "unlink", "rmdir", "chmod", "fchmod", "lchmod",
-    "chown", "fchown", "lchown", "rename", "replace", "truncate", "ftruncate",
-    "kill", "execv", "execve", "execvp", "execl", "execlp", "execvpe",
-    "spawnl", "spawnv", "spawnlp", "spawnvp", "posix_spawn", "posix_spawnp",
-    "chdir", "fchdir", "open", "fdopen", "write",
-})
-DANGEROUS_SHUTIL_OPS: frozenset[str] = frozenset({
-    "rmtree", "rmdir", "move", "chown", "copytree"
-})
-DANGEROUS_SUBPROCESS_OPS: frozenset[str] = frozenset({
-    "run", "Popen", "call", "check_output", "check_call", "getoutput", "getstatusoutput"
-})
-DANGEROUS_PATHLIB_OPS: frozenset[str] = frozenset({
-    "unlink", "rmdir", "chmod", "lchmod", "rename", "replace", "write_bytes", "write_text", "open"
-})
-DANGEROUS_IO_OPS: frozenset[str] = frozenset({
-    "open", "FileIO"
-})
-DANGEROUS_BUILTINS: frozenset[str] = frozenset({
-    "exec", "eval", "compile", "__import__", "getattr", "setattr", "delattr", "__getattribute__"
-})
+DANGEROUS_OS_OPS: frozenset[str] = frozenset(
+    {
+        "system",
+        "popen",
+        "remove",
+        "unlink",
+        "rmdir",
+        "chmod",
+        "fchmod",
+        "lchmod",
+        "chown",
+        "fchown",
+        "lchown",
+        "rename",
+        "replace",
+        "truncate",
+        "ftruncate",
+        "kill",
+        "execv",
+        "execve",
+        "execvp",
+        "execl",
+        "execlp",
+        "execvpe",
+        "spawnl",
+        "spawnv",
+        "spawnlp",
+        "spawnvp",
+        "posix_spawn",
+        "posix_spawnp",
+        "chdir",
+        "fchdir",
+        "open",
+        "fdopen",
+        "write",
+    }
+)
+DANGEROUS_SHUTIL_OPS: frozenset[str] = frozenset({"rmtree", "rmdir", "move", "chown", "copytree"})
+DANGEROUS_SUBPROCESS_OPS: frozenset[str] = frozenset(
+    {"run", "Popen", "call", "check_output", "check_call", "getoutput", "getstatusoutput"}
+)
+DANGEROUS_PATHLIB_OPS: frozenset[str] = frozenset(
+    {"unlink", "rmdir", "chmod", "lchmod", "rename", "replace", "write_bytes", "write_text", "open"}
+)
+DANGEROUS_IO_OPS: frozenset[str] = frozenset({"open", "FileIO"})
+DANGEROUS_BUILTINS: frozenset[str] = frozenset(
+    {"exec", "eval", "compile", "__import__", "getattr", "setattr", "delattr", "__getattribute__"}
+)
 
 # Destructive methods forbidden on any object or receiver
-DANGEROUS_METHOD_CALLS: frozenset[str] = frozenset({
-    "unlink", "rmdir", "rmtree", "chmod", "fchmod", "lchmod", "chown", "fchown", "lchown",
-    "write_text", "write_bytes", "rename", "replace", "truncate", "ftruncate",
-    "system", "popen", "execv", "execve", "execvp", "execl", "execlp", "execvpe",
-    "spawnl", "spawnv", "spawnlp", "spawnvp", "posix_spawn", "posix_spawnp",
-})
+DANGEROUS_METHOD_CALLS: frozenset[str] = frozenset(
+    {
+        "unlink",
+        "rmdir",
+        "rmtree",
+        "chmod",
+        "fchmod",
+        "lchmod",
+        "chown",
+        "fchown",
+        "lchown",
+        "write_text",
+        "write_bytes",
+        "rename",
+        "replace",
+        "truncate",
+        "ftruncate",
+        "system",
+        "popen",
+        "execv",
+        "execve",
+        "execvp",
+        "execl",
+        "execlp",
+        "execvpe",
+        "spawnl",
+        "spawnv",
+        "spawnlp",
+        "spawnvp",
+        "posix_spawn",
+        "posix_spawnp",
+    }
+)
 
 RE_ROOT_SANDBOX: re.Pattern = re.compile(
     r"^/(?:workspace|app|home/(?:user|developer|runner|admin))(?:/(.*))?$",
@@ -175,6 +240,7 @@ def _get_ui() -> Any:
         _ui_checked = True
         try:
             import agent_ui
+
             _ui_instance = agent_ui
         except Exception:
             _ui_instance = None
@@ -262,7 +328,7 @@ def resolve_path(workspace: str, target: str) -> str:
     if not target or not str(target).strip():
         return os.path.realpath(workspace)
 
-    clean = os.path.expanduser(urllib.parse.unquote(str(target).strip().strip('\'"`\\\n\r\t ')))
+    clean = os.path.expanduser(urllib.parse.unquote(str(target).strip().strip("'\"`\\\n\r\t ")))
     ws_real = os.path.realpath(workspace)
 
     if clean.startswith("/") and is_outside(ws_real, clean):
@@ -572,7 +638,11 @@ def check_ast(code: str) -> str | None:
                     mod_name = aliases.get(val_node.id, val_node.id)
                 elif isinstance(val_node, ast.Call):
                     if isinstance(val_node.func, ast.Name) and val_node.func.id == "__import__":
-                        if val_node.args and isinstance(val_node.args[0], ast.Constant) and isinstance(val_node.args[0].value, str):
+                        if (
+                            val_node.args
+                            and isinstance(val_node.args[0], ast.Constant)
+                            and isinstance(val_node.args[0].value, str)
+                        ):
                             mod_name = val_node.args[0].value
                         else:
                             return "PYTHON DANGEROUS OP: dynamic __import__() execution"
@@ -581,14 +651,16 @@ def check_ast(code: str) -> str | None:
                     return f"OUT-OF-BOUNDS KERNEL EXECUTION: .{attr_name}() dangerous call or mutation"
                 if attr_name in DANGEROUS_BUILTINS:
                     return f"PYTHON DANGEROUS OP: .{attr_name}() reflection"
-                if (mod_name == "os" and attr_name in DANGEROUS_OS_OPS) or \
-                   (mod_name == "shutil" and attr_name in DANGEROUS_SHUTIL_OPS) or \
-                   (mod_name == "subprocess" and attr_name in DANGEROUS_SUBPROCESS_OPS) or \
-                   (mod_name == "pathlib" and attr_name in DANGEROUS_PATHLIB_OPS) or \
-                   (mod_name in ("io", "_io") and attr_name in DANGEROUS_IO_OPS):
+                if (
+                    (mod_name == "os" and attr_name in DANGEROUS_OS_OPS)
+                    or (mod_name == "shutil" and attr_name in DANGEROUS_SHUTIL_OPS)
+                    or (mod_name == "subprocess" and attr_name in DANGEROUS_SUBPROCESS_OPS)
+                    or (mod_name == "pathlib" and attr_name in DANGEROUS_PATHLIB_OPS)
+                    or (mod_name in ("io", "_io") and attr_name in DANGEROUS_IO_OPS)
+                ):
                     return f"OUT-OF-BOUNDS KERNEL EXECUTION: {mod_name}.{attr_name}()"
                 if mod_name in ("importlib", "importlib.machinery") or attr_name == "import_module":
-                    return f"PYTHON DANGEROUS OP: dynamic module import"
+                    return "PYTHON DANGEROUS OP: dynamic module import"
                 if mod_name == "ctypes" or attr_name in ("cdll", "windll"):
                     return "PYTHON DANGEROUS OP: ctypes interface execution"
 
@@ -607,9 +679,7 @@ def authorize(action_desc: str, is_security_event: bool = False, spinner: Any = 
             pass
 
     if not _is_interactive():
-        sys.stderr.write(
-            f"\r\033[1;33m[security-gate] Blocked non-interactive execution: {action_desc}\033[0m\r\n"
-        )
+        sys.stderr.write(f"\r\033[1;33m[security-gate] Blocked non-interactive execution: {action_desc}\033[0m\r\n")
         sys.stderr.flush()
         return False
 
@@ -630,8 +700,6 @@ def authorize(action_desc: str, is_security_event: bool = False, spinner: Any = 
             approved = False
 
     if not approved:
-        sys.stderr.write(
-            f"\r\033[1;33m[security-gate] Action declined: {action_desc}\033[0m\r\n"
-        )
+        sys.stderr.write(f"\r\033[1;33m[security-gate] Action declined: {action_desc}\033[0m\r\n")
         sys.stderr.flush()
     return approved

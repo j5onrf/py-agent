@@ -23,6 +23,7 @@ class _LazyDiffConsole:
     def print(self, *args: Any, **kwargs: Any) -> None:
         try:
             from rich.console import Console
+
             Console(stderr=True).print(*args, **kwargs)
         except Exception:
             pass
@@ -33,30 +34,65 @@ _console_err = _LazyDiffConsole()
 
 def Syntax(*args: Any, **kwargs: Any) -> Any:
     from rich.syntax import Syntax as _RichSyntax
+
     return _RichSyntax(*args, **kwargs)
 
 
-BINARY_EXTENSIONS = frozenset({
-    ".db", ".sqlite", ".sqlite3", ".bin", ".pyc", ".so", ".dll", ".exe",
-    ".png", ".jpg", ".jpeg", ".gif", ".zip", ".tar", ".gz", ".7z",
-    ".pdf", ".docx", ".xlsx", ".db-wal", ".db-shm", ".pyo", ".pyd"
-})
+BINARY_EXTENSIONS = frozenset(
+    {
+        ".db",
+        ".sqlite",
+        ".sqlite3",
+        ".bin",
+        ".pyc",
+        ".so",
+        ".dll",
+        ".exe",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".zip",
+        ".tar",
+        ".gz",
+        ".7z",
+        ".pdf",
+        ".docx",
+        ".xlsx",
+        ".db-wal",
+        ".db-shm",
+        ".pyo",
+        ".pyd",
+    }
+)
 
 import agent_security as security
 
-EXCLUDED_SEARCH_DIRS = frozenset({
-    ".git", ".agent", "__pycache__", ".pytest_cache", "node_modules",
-    ".venv", "venv", "env", "dist", "build", ".mypy_cache", ".ruff_cache"
-})
+EXCLUDED_SEARCH_DIRS = frozenset(
+    {
+        ".git",
+        ".agent",
+        "__pycache__",
+        ".pytest_cache",
+        "node_modules",
+        ".venv",
+        "venv",
+        "env",
+        "dist",
+        "build",
+        ".mypy_cache",
+        ".ruff_cache",
+    }
+)
 
 FORBIDDEN_GLOBAL_COMMANDS = security.FORBIDDEN_GLOBAL_COMMANDS
 READONLY_INSPECTION_SUBCOMMANDS = security.READONLY_INSPECTION_SUBCOMMANDS
 FORBIDDEN_SYS_DIRS = security.FORBIDDEN_SYS_DIRS
 RE_ROOT_SANDBOX = security.RE_ROOT_SANDBOX
 
-SHELL_METACHARS: frozenset[str] = frozenset({
-    "|", "&", ";", ">", "<", "$", "`", "\n", "*", "?", "~", "(", ")", "{", "}", "#", "!", "=", "\\"
-})
+SHELL_METACHARS: frozenset[str] = frozenset(
+    {"|", "&", ";", ">", "<", "$", "`", "\n", "*", "?", "~", "(", ")", "{", "}", "#", "!", "=", "\\"}
+)
 
 # In-Memory Session State (Strictly workspace-relative paths)
 _SESSION_READ_FILES: set[str] = set()
@@ -168,7 +204,10 @@ EDIT_TOOLS: list[dict[str, Any]] = [
             "Search for text or regex pattern across workspace files. Returns matching files, line numbers, and previews without shell execution.",
             {
                 "pattern": {"type": "string", "description": "Text string or regular expression to search for."},
-                "path": {"type": "string", "description": "Relative directory or file path to search within. Defaults to '.' (workspace root)."},
+                "path": {
+                    "type": "string",
+                    "description": "Relative directory or file path to search within. Defaults to '.' (workspace root).",
+                },
             },
             ["pattern"],
         ),
@@ -219,13 +258,13 @@ EDIT_TOOLS: list[dict[str, Any]] = [
 
 # Smol 6-Tool Set for Compact Models (2B, 7B, 8B, 14B)
 SMOL_TOOLS: list[dict[str, Any]] = [
-    t for t in EDIT_TOOLS if t["function"]["name"] in ("read_file", "search_code", "edit_file", "write_file", "list_dir", "run_command")
+    t
+    for t in EDIT_TOOLS
+    if t["function"]["name"] in ("read_file", "search_code", "edit_file", "write_file", "list_dir", "run_command")
 ]
 
 # Minimalist Single-Tool Set for Pure Bash SLMs (~110 tokens)
-PUREBASH_TOOLS: list[dict[str, Any]] = [
-    t for t in EDIT_TOOLS if t["function"]["name"] == "run_command"
-]
+PUREBASH_TOOLS: list[dict[str, Any]] = [t for t in EDIT_TOOLS if t["function"]["name"] == "run_command"]
 MINISWE_TOOLS = PUREBASH_TOOLS
 
 TOOL_VERBS = {
@@ -251,9 +290,7 @@ WEB_TOOL: dict[str, Any] = {
         "description": "Search live Google Search via Gemini Grounding for current facts, latest documentation, releases, or solutions.",
         "parameters": {
             "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "Dense keyword search query."}
-            },
+            "properties": {"query": {"type": "string", "description": "Dense keyword search query."}},
             "required": ["query"],
         },
     },
@@ -264,7 +301,12 @@ def _is_calm() -> bool:
     """Checks if Calm Mode is active in the CLI."""
     try:
         import agent_core
-        return agent_core.is_calm_cli() if hasattr(agent_core, "is_calm_cli") else bool(agent_core.get_state("calm_mode", False))
+
+        return (
+            agent_core.is_calm_cli()
+            if hasattr(agent_core, "is_calm_cli")
+            else bool(agent_core.get_state("calm_mode", False))
+        )
     except Exception:
         return False
 
@@ -351,9 +393,14 @@ def _search_codebase(pattern: str, search_root: str, workspace: str, max_results
         return f"[search_code] No matches found for pattern '{pattern}' across {files_searched} files."
 
     matched_files_count = len({m.split(":", 1)[0] for m in matches})
-    res = f"### Code Search: '{pattern}' ({len(matches)} matches in {matched_files_count} files, {files_searched} scanned):\n" + "\n".join(matches)
+    res = (
+        f"### Code Search: '{pattern}' ({len(matches)} matches in {matched_files_count} files, {files_searched} scanned):\n"
+        + "\n".join(matches)
+    )
     if len(matches) >= max_results:
-        res += f"\n\n... [Showing first {max_results} matches. Narrow pattern or search specific subdirectories for more]"
+        res += (
+            f"\n\n... [Showing first {max_results} matches. Narrow pattern or search specific subdirectories for more]"
+        )
     return res
 
 
@@ -391,7 +438,9 @@ def _generate_ast_skeleton(code: str, file_path: str) -> str:
                     doc_preview = f"  # {doc.splitlines()[0][:60]}" if doc else ""
                     skeleton.append(f"{prefix} {node.name}(...):  # Lines {node.lineno}-{node.end_lineno}{doc_preview}")
                 elif isinstance(node, ast.ClassDef):
-                    bases = ", ".join(ast.unparse(b) for b in node.bases) if hasattr(ast, "unparse") and node.bases else ""
+                    bases = (
+                        ", ".join(ast.unparse(b) for b in node.bases) if hasattr(ast, "unparse") and node.bases else ""
+                    )
                     base_str = f"({bases})" if bases else ""
                     skeleton.append(f"class {node.name}{base_str}:  # Lines {node.lineno}-{node.end_lineno}")
                     for sub in node.body:
@@ -399,7 +448,9 @@ def _generate_ast_skeleton(code: str, file_path: str) -> str:
                             sub_prefix = "async def" if isinstance(sub, ast.AsyncFunctionDef) else "def"
                             sub_doc = ast.get_docstring(sub)
                             sub_doc_preview = f"  # {sub_doc.splitlines()[0][:50]}" if sub_doc else ""
-                            skeleton.append(f"    {sub_prefix} {sub.name}(...):  # Lines {sub.lineno}-{sub.end_lineno}{sub_doc_preview}")
+                            skeleton.append(
+                                f"    {sub_prefix} {sub.name}(...):  # Lines {sub.lineno}-{sub.end_lineno}{sub_doc_preview}"
+                            )
 
             body = "\n".join(skeleton)
             return (
@@ -422,7 +473,10 @@ def _resilient_replace(original: str, old_str: str, new_str: str) -> tuple[str |
     """3-Stage resilient file replacement: Exact match -> Whitespace normalized -> SequenceMatcher fuzzy fallback."""
     if old_str in original:
         if original.count(old_str) > 1:
-            return None, "Target old_str matched multiple times in file. Include more surrounding context lines to make it unique."
+            return (
+                None,
+                "Target old_str matched multiple times in file. Include more surrounding context lines to make it unique.",
+            )
         return original.replace(old_str, new_str, 1), None
 
     orig_text = original.replace("\r\n", "\n")
@@ -472,14 +526,17 @@ def _resilient_replace(original: str, old_str: str, new_str: str) -> tuple[str |
             elif indent_delta > 0:
                 adjusted_new_lines.append(" " * indent_delta + nl + "\n")
             elif indent_delta < 0 and nl.startswith(" " * abs(indent_delta)):
-                adjusted_new_lines.append(nl[abs(indent_delta):] + "\n")
+                adjusted_new_lines.append(nl[abs(indent_delta) :] + "\n")
             else:
                 adjusted_new_lines.append(nl + "\n")
 
         reconstructed = "".join(orig_lines[:start_idx]) + "".join(adjusted_new_lines) + "".join(orig_lines[end_idx:])
         return reconstructed, None
     elif len(matches) > 1:
-        return None, f"Whitespace-normalized old_str matched {len(matches)} locations. Include more surrounding lines to make it unique."
+        return (
+            None,
+            f"Whitespace-normalized old_str matched {len(matches)} locations. Include more surrounding lines to make it unique.",
+        )
 
     # Stage 3: Fast SequenceMatcher fuzzy matching with indent alignment
     best_ratio = 0.0
@@ -511,14 +568,17 @@ def _resilient_replace(original: str, old_str: str, new_str: str) -> tuple[str |
             elif indent_delta > 0:
                 adjusted_new_lines.append(" " * indent_delta + nl + "\n")
             elif indent_delta < 0 and nl.startswith(" " * abs(indent_delta)):
-                adjusted_new_lines.append(nl[abs(indent_delta):] + "\n")
+                adjusted_new_lines.append(nl[abs(indent_delta) :] + "\n")
             else:
                 adjusted_new_lines.append(nl + "\n")
 
         reconstructed = "".join(orig_lines[:start_idx]) + "".join(adjusted_new_lines) + "".join(orig_lines[end_idx:])
         return reconstructed, None
 
-    return None, "Target old_str not found in file (even with whitespace tolerance and fuzzy matching). Use read_file to inspect exact lines."
+    return (
+        None,
+        "Target old_str not found in file (even with whitespace tolerance and fuzzy matching). Use read_file to inspect exact lines.",
+    )
 
 
 def run_graph_cmd(cmd: str, arg: str, workspace: str) -> str:
@@ -580,7 +640,7 @@ def run_tool(
 
     for k in ("path", "symbol", "goal"):
         if k in args:
-            args[k] = args[k].strip().strip('\'"`\\\n\r\t ')
+            args[k] = args[k].strip().strip("'\"`\\\n\r\t ")
     if "pattern" in args:
         args["pattern"] = args["pattern"].strip("\r\n")
     if "command" in args:
@@ -616,6 +676,7 @@ def run_tool(
         token = _SUBAGENT_DEPTH.set(current_depth + 1)
         try:
             import agent_core as core
+
             sub_history = [
                 {
                     "role": "system",
@@ -628,7 +689,9 @@ def run_tool(
                 },
                 {"role": "user", "content": f"Execute sub-task: {goal}"},
             ]
-            ans = core.stream_response(sub_history, prefix="SubAgent:", show_stats=False, thinking_budget=0, is_agent=True)
+            ans = core.stream_response(
+                sub_history, prefix="SubAgent:", show_stats=False, thinking_budget=0, is_agent=True
+            )
             return (ans or "Sub-agent completed task with no output.").strip()
         except KeyboardInterrupt:
             raise
@@ -641,6 +704,7 @@ def run_tool(
     if name == "exec_python":
         try:
             import agent_ipython as ipython
+
             code_str = args.get("code") or args.get("content") or args.get("cell") or args.get("script") or ""
             if not isinstance(code_str, str):
                 code_str = str(code_str)
@@ -733,10 +797,10 @@ def run_tool(
         max_read_bytes = 8 * 1024 * 1024
         l_start = args.get("line_start")
         l_end = args.get("line_end")
-        has_range = (l_start is not None or l_end is not None)
+        has_range = l_start is not None or l_end is not None
 
         if file_size > max_read_bytes and not has_range:
-            return f"[error] '{raw_path}' is too large to read entirely ({file_size / (1024*1024):.1f} MB > 8 MB). Specify 'line_start' and 'line_end', or use 'search_code'."
+            return f"[error] '{raw_path}' is too large to read entirely ({file_size / (1024 * 1024):.1f} MB > 8 MB). Specify 'line_start' and 'line_end', or use 'search_code'."
 
         if not _is_outside_workspace(workspace, full):
             rel_f = os.path.relpath(full, workspace)
@@ -771,7 +835,11 @@ def run_tool(
                     lines = f.readlines()
                     total_lines = len(lines)
                     max_ctx = _get_int_env("AI_MAX_TOKENS", 8192)
-                    skel_limit = 250 if max_ctx <= 16384 else (1000 if max_ctx <= 32768 else (2000 if max_ctx <= 65536 else 4000))
+                    skel_limit = (
+                        250
+                        if max_ctx <= 16384
+                        else (1000 if max_ctx <= 32768 else (2000 if max_ctx <= 65536 else 4000))
+                    )
 
                     if total_lines > skel_limit:
                         res_out = _generate_ast_skeleton("".join(lines), raw_path)
@@ -822,7 +890,9 @@ def run_tool(
                 with open(full, "r", encoding="utf-8", errors="strict") as f:
                     original = f.read()
             except UnicodeDecodeError:
-                return f"[error] Cannot edit '{raw_path}': File is not valid UTF-8. Only UTF-8 text files can be edited."
+                return (
+                    f"[error] Cannot edit '{raw_path}': File is not valid UTF-8. Only UTF-8 text files can be edited."
+                )
 
             new_content, err_msg = _resilient_replace(original, old_str, new_str)
             if err_msg or new_content is None:
@@ -832,7 +902,9 @@ def run_tool(
                 try:
                     ast.parse(new_content)
                 except SyntaxError as e:
-                    return f"[error] Edit blocked. Resulting Python syntax error: {e} on line {getattr(e, 'lineno', '?')}."
+                    return (
+                        f"[error] Edit blocked. Resulting Python syntax error: {e} on line {getattr(e, 'lineno', '?')}."
+                    )
             elif full.endswith(".json"):
                 try:
                     json.loads(new_content)
@@ -978,7 +1050,9 @@ def run_tool(
 
         try:
             entries = sorted(os.listdir(target_dir))
-            res_str = "\n".join((e + "/" if os.path.isdir(os.path.join(target_dir, e)) else e) for e in entries) or "(empty)"
+            res_str = (
+                "\n".join((e + "/" if os.path.isdir(os.path.join(target_dir, e)) else e) for e in entries) or "(empty)"
+            )
             if print_output_fn:
                 print_output_fn(res_str)
             return res_str
@@ -993,6 +1067,7 @@ def run_tool(
             return "[denied] User declined web search."
         try:
             import agent_core
+
             configs = agent_core.agent_cloud.get_active_configs([])
             gem_key = next((c[1].get("x-goog-api-key") or "" for c in configs if "generativelanguage" in c[0]), "")
             if not gem_key:
@@ -1003,9 +1078,17 @@ def run_tool(
             import urllib.request
 
             gnd_model = os.environ.get("GND_MODEL", "gemini-2.5-flash")
-            payload = {"contents": [{"parts": [{"text": f"Search the web and provide concise facts for: {q}"}]}], "tools": [{"googleSearch": {}}]}
+            payload = {
+                "contents": [{"parts": [{"text": f"Search the web and provide concise facts for: {q}"}]}],
+                "tools": [{"googleSearch": {}}],
+            }
             headers = {"Content-Type": "application/json", "x-goog-api-key": gem_key}
-            req = urllib.request.Request(f"https://generativelanguage.googleapis.com/v1beta/models/{gnd_model}:generateContent", data=json.dumps(payload).encode(), headers=headers, method="POST")
+            req = urllib.request.Request(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{gnd_model}:generateContent",
+                data=json.dumps(payload).encode(),
+                headers=headers,
+                method="POST",
+            )
             with urllib.request.urlopen(req, timeout=15) as resp:
                 data = json.loads(resp.read().decode())
 
@@ -1019,9 +1102,7 @@ def run_tool(
                 return "[error] Web search returned empty content parts."
 
             res = "".join(
-                p.get("text", "")
-                for p in parts
-                if isinstance(p, dict) and p.get("text") and not p.get("thought")
+                p.get("text", "") for p in parts if isinstance(p, dict) and p.get("text") and not p.get("thought")
             )
             out = res.strip() or "(No search results found)"
             if print_output_fn:

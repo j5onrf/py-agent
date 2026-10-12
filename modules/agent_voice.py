@@ -236,11 +236,7 @@ def transcribe_gemini(audio_data: bytes, mime_type: str = "audio/webm") -> str:
             raw = res_data["candidates"][0]["content"]["parts"][0]["text"].strip()
             clean = RE_CONTROL_CHARS.sub("", raw).strip()
             cl_lower = clean.lower()
-            if (
-                not clean
-                or len(clean) < 2
-                or cl_lower in ("silence", "uh", "um", "mm", "thank you", "thank you.")
-            ):
+            if not clean or len(clean) < 2 or cl_lower in ("silence", "uh", "um", "mm", "thank you", "thank you."):
                 return ""
             if RE_NUMERIC_DIGITS.match(clean) and len(set(clean)) == 1:
                 return ""
@@ -296,7 +292,9 @@ class VoiceHandler(http.server.SimpleHTTPRequestHandler):
                 try:
                     res = subprocess.run(["wtype", "--", query], capture_output=True, text=True, timeout=5)
                     if res.returncode != 0:
-                        sys.stderr.write(f"[warn] wtype keystroke injection failed (exit {res.returncode}): {res.stderr.strip()}\n")
+                        sys.stderr.write(
+                            f"[warn] wtype keystroke injection failed (exit {res.returncode}): {res.stderr.strip()}\n"
+                        )
                         sys.stderr.flush()
                     elif auto_submit:
                         time.sleep(0.05)

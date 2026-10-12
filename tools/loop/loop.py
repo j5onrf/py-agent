@@ -140,7 +140,9 @@ def run_task_loop(
             "4. When 100% of the goal is complete and all tests pass, output 'TASK COMPLETE' with a summary."
         )
 
-        initial_user_prompt = f"### Target Goal:\n{effective_goal}\n\nExecute all necessary steps to complete this goal."
+        initial_user_prompt = (
+            f"### Target Goal:\n{effective_goal}\n\nExecute all necessary steps to complete this goal."
+        )
         history: list[dict[str, Any]] = [
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": initial_user_prompt},
@@ -227,7 +229,9 @@ def run_task_loop(
                     _log_task_turn(workspace, turn, "Final Verification", ans, status="COMPLETED")
                 return True
 
-            next_step_prompt = "Continue with the next step. If completely finished and verified, output 'TASK COMPLETE'."
+            next_step_prompt = (
+                "Continue with the next step. If completely finished and verified, output 'TASK COMPLETE'."
+            )
             history.append({"role": "user", "content": next_step_prompt})
             last_user_prompt = next_step_prompt
 

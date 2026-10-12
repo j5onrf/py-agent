@@ -32,7 +32,7 @@ def parse_memory_file(filepath: str) -> dict[str, Any]:
         body = raw
         if match := RE_FRONTMATTER.match(raw):
             fm_text = match.group(1)
-            body = raw[match.end():].strip()
+            body = raw[match.end() :].strip()
             for line in fm_text.splitlines():
                 line_str = line.strip()
                 if line_str and not line_str.startswith("#") and ":" in line_str:
@@ -159,13 +159,7 @@ def save_memory_file(
         date_str = time.strftime("%Y-%m-%d")
 
         raw_text = (
-            f"---\n"
-            f"title: {clean_title}\n"
-            f"type: {clean_type}\n"
-            f"date: {date_str}\n"
-            f"{tags_line}"
-            f"---\n\n"
-            f"{content.strip()}\n"
+            f"---\ntitle: {clean_title}\ntype: {clean_type}\ndate: {date_str}\n{tags_line}---\n\n{content.strip()}\n"
         )
 
         # Unique staging file in the same directory guarantees atomic os.replace without thread collisions
