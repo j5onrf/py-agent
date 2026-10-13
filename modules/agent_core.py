@@ -139,7 +139,14 @@ def _clean_sigint_handler(exctype, value, tb):
     if isinstance(exctype, type) and issubclass(exctype, KeyboardInterrupt):
         raw_err = getattr(sys, "__stderr__", sys.stderr)
         try:
-            raw_err.write("\r\033[0m\033[?25h\x1b[2K\033[90m[sys] Interrupted.\033[0m\r\n")
+            raw_err.write("\r\033[0m\033[?25h\x1b[2K\033[1;33m[sys] Interrupted.\033[0m\n\n")
+            raw_err.flush()
+        except Exception:
+            pass
+        return
+        raw_err = getattr(sys, "__stderr__", sys.stderr)
+        try:
+            raw_err.write("\r\033[0m\033[?25h\x1b[2K\n\033[1;33m[sys] Interrupted.\033[0m\n\n")
             raw_err.flush()
         except Exception:
             pass
@@ -1145,7 +1152,7 @@ def stream_response(
         )
         return ans
     except KeyboardInterrupt:
-        sys.stderr.write("\r\x1b[2K\033[90m[sys] Interrupted.\033[0m\r\n")
+        sys.stderr.write("\r\x1b[2K\033[1;33m[sys] Interrupted.\033[0m\n\n")
         return None
     finally:
         if spinner:

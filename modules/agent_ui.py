@@ -13,7 +13,7 @@ import urllib.request as urlreq
 from collections.abc import Callable
 from typing import Any
 
-from rich.box import DOUBLE, HEAVY, HORIZONTALS, ROUNDED, SQUARE
+from rich.box import DOUBLE, ROUNDED, SQUARE
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
@@ -30,17 +30,14 @@ CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
 _console = Console()
 RE_UNSAFE_SHELL_CHARS: re.Pattern = re.compile(r'[\[\]{}()=\'"",;|<>#`$&*!\\\r\n]')
 
-# (title, box_type, border_col, title_style, show_icons, is_full)
+# (title, box_type, border_col, title_style, is_full)
 STYLES = {
-    1: ("∿", ROUNDED, "bright_cyan", "bold", False, False),         # Minimal Rounded
-    2: ("∿", SQUARE, "bright_cyan", "bold", False, False),          # Minimal Square
-    3: ("∿", ROUNDED, "bright_cyan", "bold", True, False),          # Glyphs Rounded
-    4: ("∿", SQUARE, "bright_cyan", "bold", True, False),          # Glyphs Square
-    5: ("∿ Py Agent", DOUBLE, "bright_blue", "bold bright_blue", False, False),
-    6: ("∿ Py Agent", HEAVY, "bright_cyan", "bold bright_white", False, False),
-    7: ("∿ Py Agent", ROUNDED, "green", "bold bright_green", False, False),
-    8: ("∿", ROUNDED, "green", "bold bright_green", False, False),
-    9: ("∿", ROUNDED, "bright_cyan", "bold", False, True),          # Full-Width Responsive
+    1: ("∿", ROUNDED, "bright_cyan", "bold", False),                      # Minimal Rounded
+    2: ("∿", SQUARE, "bright_cyan", "bold", False),                       # Minimal Square
+    3: ("∿ Py Agent", DOUBLE, "bright_blue", "bold bright_blue", False), # Double Border
+    4: ("∿ Py Agent", ROUNDED, "green", "bold bright_green", False),      # Classic Rounded
+    5: ("∿", ROUNDED, "green", "bold bright_green", False),               # Classic Minimal
+    6: ("∿", ROUNDED, "bright_cyan", "bold", True),                       # Full-Width Responsive
 }
 
 RICH_TO_ANSI = {
@@ -79,7 +76,7 @@ class InlineSpinner:
                 import agent_core
                 _core_module = agent_core
             box = _core_module.get_state("box_style", 1)
-            border_col = "green" if box == 6 else STYLES.get(box, STYLES[1])[2]
+            border_col = STYLES.get(box, STYLES[1])[2]
             return RICH_TO_ANSI.get(border_col, "\033[1;32m")
         except Exception:
             return "\033[1;32m"
@@ -336,7 +333,6 @@ def _read_fd(fd: int) -> str:
                 char_bytes += os.read(fd, 1)
         return char_bytes.decode("utf-8", errors="ignore")
     finally:
-        # TCSADRAIN preserves buffered type-ahead keystrokes without dropping them
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
         try:
             sys.stderr.write("\033[0m")
@@ -394,10 +390,11 @@ def draw_session_box(
     sub_id: int | None = None,
     box_style: int = 1,
 ) -> None:
+    raw_path = str(workspace_path).strip().splitlines()[0].strip() if workspace_path else ""
     display_dir = (
-        workspace_path.replace(home_dir, "~", 1)
-        if (home_dir and workspace_path.startswith(home_dir))
-        else workspace_path
+        raw_path.replace(home_dir, "~", 1)
+        if (home_dir and raw_path.startswith(home_dir))
+        else raw_path
     )
 
     try:
@@ -427,26 +424,18 @@ def draw_session_box(
     else:
         db_status = "session"
 
-    # Style #1-4 (Compact) & #9 (Full-Width): Minimal Wave Boxes
-    if box_style in (1, 2, 3, 4, 9):
-        base_title, box_type, border_col, title_style, show_icons, is_full = STYLES.get(box_style, STYLES[1])
+    # Style #1, #2 (Compact) & #6 (Full-Width): Minimal Wave Boxes
+    if box_style in (1, 2, 6):
+        base_title, box_type, border_col, title_style, is_full = STYLES.get(box_style, STYLES[1])
 
-        icon_table = Table(show_header=False, box=None, padding=(0, 1 if show_icons else 0, 0, 1))
-        if show_icons:
-            icon_table.add_column("Icon", style=border_col, justify="left")
+        icon_table = Table(show_header=False, box=None, padding=(0, 0, 0, 1))
         icon_table.add_column("Value", justify="left")
 
         m_style = "bold red" if ("not loaded" in model_name or "offline" in model_name) else "bold"
-        if show_icons:
-            icon_table.add_row("✦", Text(model_name, style=m_style))
-            icon_table.add_row("⌖", display_dir)
-            icon_table.add_row("⌥", display_profile)
-            icon_table.add_row("≡", db_status)
-        else:
-            icon_table.add_row(Text(model_name, style=m_style))
-            icon_table.add_row(display_dir)
-            icon_table.add_row(display_profile)
-            icon_table.add_row(db_status)
+        icon_table.add_row(Text(model_name, style=m_style))
+        icon_table.add_row(display_dir)
+        icon_table.add_row(display_profile)
+        icon_table.add_row(db_status)
 
         logo_text = Text.from_markup(
             "[bold bright_cyan]  ╭───╮ \n[/]"
@@ -487,26 +476,15 @@ def draw_session_box(
         table.add_row("profile:", display_profile)
         table.add_row("database:", db_status)
 
-        if box_style == 6:
-            title_str = f"  ∿ Py Agent [sub-agent #{sub_id}]" if sub_id else "  ∿ Py Agent"
-            max_val_len = max(len(model_name), len(display_dir), len(display_profile), len(db_status), 16)
-            sep_str = " " + "─" * (10 + 2 + max_val_len)
-            panel = Panel(
-                Group(Text(title_str, style="bold bright_green"), Text(sep_str, style="dim green"), table),
-                border_style="green",
-                box=ROUNDED,
-                expand=False,
-            )
-        else:
-            title_text = f"{base_title} [sub-agent #{sub_id}]" if sub_id else base_title
-            panel = Panel(
-                table,
-                title=Text(title_text, style=title_style),
-                title_align="left",
-                border_style=border_col,
-                box=box_type,
-                expand=False,
-            )
+        title_text = f"{base_title} [sub-agent #{sub_id}]" if sub_id else base_title
+        panel = Panel(
+            table,
+            title=Text(title_text, style=title_style),
+            title_align="left",
+            border_style=border_col,
+            box=box_type,
+            expand=False,
+        )
 
     _console.print(panel)
     _console.print()
@@ -639,7 +617,7 @@ def show_help() -> None:
         ("/m, /map", "Toggle Codebase index-map"),
         ("/mem \\[save|list]", "Toggle & manage OKF memory files"),
         ("/hs, /hindsight", "Retrospective session memory audit"),
-        ("/box \\[1-9]", "Box style preset (1-4: Compact, 9: Full-width)"),
+        ("/box \\[1-6]", "Box style preset (1-5: Compact, 6: Full-width)"),
         ("/task \\[goal]", "Autonomous task loop"),
         ("/t \\[N|show|hide]", "Reasoning budget & display"),
         ("/g, /yolo", "Toggle confirmation gates (YOLO)"),
@@ -794,7 +772,6 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
             if "adp" not in user_overrides:
                 is_adp = cur_meta.get("adp", False)
 
-            # Build whole frame atomically into single buffer to eliminate redraw screen flicker
             frame_lines = []
             sub_idx = 1
             for idx, (k, lbl, d, cat) in enumerate(options):
@@ -864,13 +841,11 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
 
             char = get_key()
             if not char:
-                # Terminal closed or piped EOF: abort cleanly without spinning CPU
                 sys.stderr.write("\r\x1b[2K\n\033[1;33m[ai init] Input closed. Aborting.\033[0m\n")
                 sys.stderr.flush()
                 sys.exit(0)
 
             if char == "\x03":
-                # Ctrl+C aborts explicitly; does not accept default
                 sys.stderr.write("\r\x1b[2K\n\033[1;33mCancelled.\033[0m\n")
                 sys.stderr.flush()
                 raise KeyboardInterrupt
@@ -893,7 +868,6 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                 is_enter = char in ("\r", "\n")
                 key, label = options[current_idx if is_enter else 0][:2]
 
-                # Erase the full menu and [ai init] header so the selector never stays on screen
                 sys.stderr.write(f"\x1b[{last_rendered_lines + 3}A\r\x1b[J")
 
                 if is_enter and not is_yolo:

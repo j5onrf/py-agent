@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Streaming SSE, ANSI Geometry & Terminal Rendering Engine [Open-CO-CR Optimized .01]"""
+"""Streaming SSE, ANSI Geometry & Terminal Rendering Engine [OCR .01]"""
 
 import os
 import re
@@ -190,14 +190,14 @@ class RichStreamer:
 
     def _get_think_borders(self) -> tuple[str, str]:
         term_width = shutil.get_terminal_size((80, 24)).columns
-        if self.box_style == 9:
+        if self.box_style == 6:
             top_dashes = max(10, term_width - 6)
             bot_dashes = max(10, term_width - 2)
             return f"╭─ ∿ {'─' * top_dashes}╮", f"╰{'─' * bot_dashes}╯"
 
         top_len = min(52, max(10, term_width - 6))
         bot_len = min(56, max(10, term_width - 2))
-        if self.box_style in (2, 4):
+        if self.box_style == 2:
             return f"┌─ ∿ {'─' * top_len}", f"└{'─' * bot_len}"
         return f"╭─ ∿ {'─' * top_len}", f"╰{'─' * bot_len}"
 
@@ -341,7 +341,7 @@ class RichStreamer:
                 _console_err.print(f"{sep}[dim]{bot_border}[/dim]\n")
                 self.phase = "ANSWER"
             try:
-                sys.stdout.write("\033[?25h\r\n")
+                sys.stdout.write("\033[?25h")
                 sys.stdout.flush()
             except OSError:
                 pass
