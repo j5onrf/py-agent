@@ -893,8 +893,10 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                 is_enter = char in ("\r", "\n")
                 key, label = options[current_idx if is_enter else 0][:2]
 
+                # Erase the full menu and [ai init] header so the selector never stays on screen
+                sys.stderr.write(f"\x1b[{last_rendered_lines + 3}A\r\x1b[J")
+
                 if is_enter and not is_yolo:
-                    sys.stderr.write(f"\x1b[{last_rendered_lines}A\r\x1b[J")
                     sys.stderr.write(f"\033[1;36mEnable Autonomous YOLO mode for {label}? [y/N] \033[2m(Esc/Left: back)\033[0m: \033[0m")
                     sys.stderr.flush()
                     raw_c = get_key()
@@ -909,11 +911,9 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                         last_rendered_lines = 0
                         continue
 
-                    sys.stderr.write("y\n" if c == "y" else "n\n")
-                    sys.stderr.flush()
                     if c == "y":
                         is_yolo = True
-                    sys.stderr.write("\x1b[1A\r\x1b[2K")
+                    sys.stderr.write("\r\x1b[2K")
 
                 active_badges = "".join(
                     f" \033[1;36m[{tag}: ON]\033[0m"
