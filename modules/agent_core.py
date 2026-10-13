@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [Hardened Production Ready]"""
+"""Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [OCR 0.01]"""
 
 import json
 import os

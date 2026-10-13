@@ -7,12 +7,12 @@ Local workspace developer agent with Open Knowledge Format (OKF) memory, an IPyt
 [01/01] > [ling-tiny] ai init ~/ling-tiny
 ✓ Profile set to: Lingtiny [Yolo: ON] [Adp: ON]
 
-╭─ ∿ ───────────────────────────────────────────────╮
-│  Ling-3.0-tiny                             ╭───╮  │
-│  ~/.config/py-agent/projects/ling-tiny   ╭─╯ ╭─╯  │
-│  lingtiny                                ╰─╮ ╰─╮  │
-│  session                                   ╰───●  │
-╰───────────────────────────────────────────────────╯
+╭─ ∿ ────────────────────────────────────────────────╮
+│  Ling-3.0-tiny                              ╭───╮  │
+│  󱞩 /.config/py-agent/projects/ling-tiny   ╭─╯ ╭─╯  │
+│  lingtiny                                 ╰─╮ ╰─╮  │
+│  session                                    ╰───●  │
+╰────────────────────────────────────────────────────╯
 
 ❯ write a python binary search tree with insert and search methods
 
@@ -39,19 +39,16 @@ Let me verify the file was created correctly and then provide a summary.
 
 ## UI Box Themes
 
-Switch CLI box styles using `/box [1-9]` (or `/box` to cycle). Persists in `~/.config/py-agent/.state.json`.
+Switch CLI box styles using `/box [1-6]` (or `/box` to cycle). Persists in `~/.config/py-agent/.state.json`.
 
 | Box Style | Preset Name | Thinking Box Geometry |
 | :---: | :--- | :---: |
 | **#1** | **Minimal Wave** *(Default)* | **Rounded** (`╭` and `╰`) |
 | **#2** | **Minimal Wave** | **Square** (`┌` and `└`) |
-| **#3** | **Glyph Wave** | **Rounded** (`╭` and `╰`) |
-| **#4** | **Glyph Wave** | **Square** (`┌` and `└`) |
-| **#5** | **Double Border** | **Square** (`┌` and `└`) |
-| **#6** | **Dual-Chamber Inset** | **Rounded** (`╭` and `╰`) |
-| **#7** | **Classic Rounded** | **Rounded** (`╭` and `╰`) |
-| **#8** | **Classic Minimal** | **Rounded** (`╭` and `╰`) |
-| **#9** | **Full-Width Wave** | **Rounded** (`╭ ... ╮` and `╰ ... ╯`) |
+| **#3** | **Double Border** | **Square** (`┌` and `└`) |
+| **#4** | **Classic Rounded** | **Rounded** (`╭` and `╰`) |
+| **#5** | **Classic Minimal** | **Rounded** (`╭` and `╰`) |
+| **#6** | **Full-Width Wave** | **Rounded** (`╭ ... ╮` and `╰ ... ╯`) |
 
 ---
 

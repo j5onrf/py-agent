@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""UI Module - Spinners, session boxes, and interactive menus [Open-CO-CR Optimized .01]"""
+"""UI Module - Spinners, session boxes, and interactive menus [OCR .01]"""
 
 import json
 import os
