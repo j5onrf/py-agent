@@ -220,9 +220,6 @@ DANGEROUS_PATHLIB_OPS: frozenset[str] = frozenset(
 DANGEROUS_IO_OPS: frozenset[str] = frozenset({"open", "FileIO", "open_code"})
 DANGEROUS_BUILTINS: frozenset[str] = frozenset(
     {
-        "open",
-        "file",
-        "FileIO",
         "exec",
         "eval",
         "compile",
@@ -293,24 +290,18 @@ def _get_ui() -> Any:
 
 
 def _is_interactive() -> bool:
-    """Verifies that both stdin and stdout are attached to an interactive terminal."""
-    stdin_tty = False
-    stdout_tty = False
+    """Verifies that both stdin and active stdout are genuinely attached to an interactive terminal."""
     try:
-        if sys.stdin and hasattr(sys.stdin, "isatty") and sys.stdin.isatty():
-            stdin_tty = True
+        return bool(
+            sys.stdin
+            and hasattr(sys.stdin, "isatty")
+            and sys.stdin.isatty()
+            and sys.stdout
+            and hasattr(sys.stdout, "isatty")
+            and sys.stdout.isatty()
+        )
     except Exception:
-        stdin_tty = False
-
-    try:
-        for stream in (getattr(sys, "__stdout__", None), sys.stdout):
-            if stream is not None and hasattr(stream, "isatty") and stream.isatty():
-                stdout_tty = True
-                break
-    except Exception:
-        stdout_tty = False
-
-    return stdin_tty and stdout_tty
+        return False
 
 
 def is_in_system_dir(path: str) -> bool:
@@ -354,7 +345,9 @@ def is_outside(workspace: str, full_path: str) -> bool:
         return True
 
     root = os.path.realpath(workspace)
-    norm_path = os.path.realpath(os.path.expanduser(os.path.expandvars(str(full_path))))
+    clean_p = os.path.expanduser(os.path.expandvars(str(full_path).strip()))
+    # Anchor relative paths explicitly to workspace root, never to ambient process CWD
+    norm_path = os.path.realpath(clean_p if os.path.isabs(clean_p) else os.path.join(root, clean_p))
 
     if norm_path in SYSTEM_DEVICES:
         return False
@@ -366,10 +359,7 @@ def is_outside(workspace: str, full_path: str) -> bool:
 
 
 def resolve_path(workspace: str, target: str) -> str:
-    """Normalizes paths, expanding user directories and healing container sandbox prefixes.
-
-    Protected system directories (/etc, /var, etc.) are never remapped to workspace relative paths.
-    """
+    """Normalizes paths, expanding user directories and healing container sandbox prefixes."""
     if not target or not str(target).strip():
         return os.path.realpath(workspace)
 
@@ -452,7 +442,7 @@ def _extract_balanced_substitutions(text: str) -> tuple[str, list[str]]:
 
 
 def _extract_commands(cmd_str: str) -> tuple[list[list[str]], str | None]:
-    """Recursively parses pipelines, lists, and balanced substitutions into token arrays. Fails closed."""
+    """Recursively parses pipelines, lists, and balanced substitutions into token arrays."""
     parent_clean, subs = _extract_balanced_substitutions(cmd_str)
     all_exprs = [parent_clean] + subs
     parsed_cmds: list[list[str]] = []
@@ -501,7 +491,6 @@ def check_command(workspace: str, cmd: str, current_depth: int = 0) -> str | Non
         if not tokens:
             continue
 
-        # Iteratively peel environment variables, execution wrappers, and shell reserved words
         unwrapping = True
         while tokens and unwrapping:
             unwrapping = False
@@ -518,7 +507,11 @@ def check_command(workspace: str, cmd: str, current_depth: int = 0) -> str | Non
                     clean_val = val.strip("'\"`")
                     local_vars[k] = clean_val
                     if clean_val and (clean_val.startswith(("/", "~")) or ".." in clean_val):
-                        norm_val = os.path.realpath(os.path.expanduser(clean_val))
+                        norm_val = os.path.realpath(
+                            os.path.expanduser(clean_val)
+                            if os.path.isabs(os.path.expanduser(clean_val))
+                            else os.path.join(root_ws, clean_val)
+                        )
                         if is_in_system_dir(norm_val):
                             return f"System directory reference in environment variable: '{var_token}'"
                         if is_outside(root_ws, norm_val):
@@ -591,7 +584,6 @@ def check_command(workspace: str, cmd: str, current_depth: int = 0) -> str | Non
         elif binary in FORBIDDEN_GLOBAL_COMMANDS:
             return f"Global system/package binary: '{binary}'"
 
-        # Intercept shell interpreters with inline script clusters (-c, -lc, -ec, -xc)
         if binary in INTERPRETER_BINARIES:
             for idx, tok in enumerate(tokens[1:], start=1):
                 shell_code = None
@@ -607,7 +599,6 @@ def check_command(workspace: str, cmd: str, current_depth: int = 0) -> str | Non
                     if err := check_command(workspace, shell_code, current_depth + 1):
                         return f"Nested shell -c execution blocked: {err}"
 
-        # Intercept Python module and code invocations
         if binary in ("python", "python3") or binary.startswith("python3."):
             for idx, tok in enumerate(tokens[1:], start=1):
                 mod = None
@@ -636,11 +627,16 @@ def check_command(workspace: str, cmd: str, current_depth: int = 0) -> str | Non
             if pos_args:
                 script_token = pos_args[0]
                 if script_token != "-" and (script_token.startswith(("/", "~")) or ".." in script_token):
-                    norm_script = os.path.realpath(os.path.expanduser(script_token))
+                    norm_script = os.path.realpath(
+                        os.path.expanduser(script_token)
+                        if os.path.isabs(os.path.expanduser(script_token))
+                        else os.path.join(root_ws, script_token)
+                    )
                     if not is_harness_tool(norm_script) and is_outside(root_ws, norm_script):
                         return f"Python script path outside workspace: '{script_token}'"
 
-        for raw_t in tokens:
+        # Check path arguments for system directory access and traversal escapes
+        for raw_t in tokens[1:]:
             targets_to_check: list[str] = []
             if raw_t.startswith("--") and "=" in raw_t:
                 _, val = raw_t.split("=", 1)
@@ -657,7 +653,6 @@ def check_command(workspace: str, cmd: str, current_depth: int = 0) -> str | Non
             for part in split_targets:
                 clean_t = re.sub(r"/+", "/", part.strip("'\"`"))
 
-                # Resolve variables defined in the same command before path inspection
                 if re.search(r"\$[A-Za-z_]|\$\{[A-Za-z_]", clean_t):
                     def _sub_var(m):
                         vname = m.group(1) or m.group(2)
@@ -668,7 +663,13 @@ def check_command(workspace: str, cmd: str, current_depth: int = 0) -> str | Non
                         return f"Unresolved shell variable in command path: '{raw_t}'"
 
                 expanded_t = os.path.expandvars(clean_t)
-                norm_path = os.path.realpath(os.path.expanduser(expanded_t))
+                target_resolved = (
+                    os.path.expanduser(expanded_t)
+                    if os.path.isabs(os.path.expanduser(expanded_t))
+                    else os.path.join(root_ws, expanded_t)
+                )
+                norm_path = os.path.realpath(target_resolved)
+
                 if norm_path in SYSTEM_DEVICES:
                     continue
 
@@ -679,7 +680,6 @@ def check_command(workspace: str, cmd: str, current_depth: int = 0) -> str | Non
                 if is_in_system_dir(norm_path):
                     return f"System directory reference: '{raw_t}'"
 
-                # Check all non-flag path references against workspace boundaries
                 if (
                     ".." in clean_t
                     or clean_t.startswith("~")
@@ -693,8 +693,9 @@ def check_command(workspace: str, cmd: str, current_depth: int = 0) -> str | Non
     return None
 
 
-def check_ast(code: str) -> str | None:
+def check_ast(code: str, workspace: str | None = None) -> str | None:
     """Validates in-kernel Python code against shell escapes, alias bypasses, and dangerous syscalls."""
+    ws = os.path.realpath(workspace or os.environ.get("AI_WORKSPACE_PATH", os.getcwd()))
     clean = code.strip()
     if clean.startswith("!"):
         return f"PYTHON SHELL ESCAPE: {clean[:40]}"
@@ -770,7 +771,12 @@ def check_ast(code: str) -> str | None:
                     "io.FileIO",
                     "_io.FileIO",
                 ):
-                    return f"PYTHON DANGEROUS OP: {resolved}() file access"
+                    if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+                        target_p = node.args[0].value
+                        if is_in_system_dir(target_p) or is_outside(ws, target_p):
+                            return f"OUT-OF-BOUNDS FILE ACCESS: open('{target_p}')"
+                    elif not node.args:
+                        return f"PYTHON DANGEROUS OP: {resolved}() missing target argument"
                 if resolved.startswith("os.") and resolved.split(".", 1)[1] in DANGEROUS_OS_OPS:
                     return f"OUT-OF-BOUNDS KERNEL EXECUTION: {resolved}()"
                 if resolved.startswith("shutil.") and resolved.split(".", 1)[1] in DANGEROUS_SHUTIL_OPS:
@@ -828,9 +834,21 @@ def authorize(action_desc: str, is_security_event: bool = False, spinner: Any = 
     if not is_security_event and os.environ.get("AI_CONFIRM_GATES") == "0":
         return True
 
+    # Safely stop spinner across both InlineSpinner and CalmBoatSpinner implementations
     if spinner:
         try:
-            spinner.stop(leave_on_screen=False)
+            spinner.stop()
+        except TypeError:
+            try:
+                spinner.stop(leave_on_screen=False)
+            except Exception:
+                pass
+        except Exception:
+            pass
+        try:
+            # Wipe spinner residue and reveal the hardware cursor
+            sys.stderr.write("\r\x1b[2K\r\033[?25h")
+            sys.stderr.flush()
         except Exception:
             pass
 

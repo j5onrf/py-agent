@@ -941,7 +941,6 @@ def run_tool(
                     _console_err.print(
                         "\n",
                         Syntax(diff, "diff", theme="ansi_dark", background_color="default"),
-                        "\n",
                     )
 
             tmp_target = f"{full}.tmp.{os.getpid()}"
@@ -1035,7 +1034,6 @@ def run_tool(
                     _console_err.print(
                         "\n",
                         Syntax(diff, "diff", theme="ansi_dark", background_color="default"),
-                        "\n",
                     )
             except (OSError, UnicodeDecodeError):
                 pass
@@ -1191,6 +1189,7 @@ def run_tool(
             if proc.stdout:
                 poller.register(proc.stdout.fileno(), select.POLLIN | select.POLLHUP | select.POLLERR)
 
+            eof = False
             while True:
                 remaining_time = deadline - time.monotonic()
                 if remaining_time <= 0:
@@ -1211,12 +1210,13 @@ def run_tool(
                     continue
 
                 for fd, event in events:
-                    if event & (select.POLLIN | select.POLLHUP | select.POLLERR):
+                    if event & select.POLLIN:
                         try:
                             raw_chunk = os.read(fd, 8192)
                         except OSError:
                             raw_chunk = b""
                         if not raw_chunk:
+                            eof = True
                             break
 
                         text_chunk = decoder.decode(raw_chunk)
@@ -1234,8 +1234,11 @@ def run_tool(
                                 except (ProcessLookupError, PermissionError, OSError):
                                     pass
                                 break
+                    elif event & (select.POLLHUP | select.POLLERR):
+                        eof = True
+                        break
 
-                if truncated:
+                if truncated or eof or (proc.poll() is not None and not line_buffer):
                     break
         finally:
             # Drain decoder and leftover line buffer

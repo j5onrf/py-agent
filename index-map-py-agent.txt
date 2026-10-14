@@ -1,4 +1,4 @@
-# CODEBASE INDEX MAP | Generated: 2026-10-12 12:16 | Workspace: py-agent | Path: ~/.config/py-agent
+# CODEBASE INDEX MAP | Generated: 2026-10-14 13:40 | Workspace: py-agent | Path: ~/.config/py-agent
 # Active symbols and structural connections mapped in the local index.
 # -----------------------------------------------------------------------------------------
 # Codebase Modules & Active Architecture:
@@ -7,7 +7,7 @@
 #   ├── LICENSE                  - MODIFIED MIT LICENSE (NON-COMMERCIAL / NO BUSINESS USE)
 #   ├── README.md                - <br>
 #   ├── SECURITY.md              - Security Policy
-#   ├── ai-agent.py              - Py Agent [j5onrf] [v0.9.9.55] - Main CLI Runtime, Workspace Agent & Command Dispatcher [Open-OC Opti
+#   ├── ai-agent.py              - Py Agent [j5onrf] [v0.9.9.55] - Main CLI Runtime, Workspace Agent & Command Dispatcher [OCR 0.01]
 #   ├── ai-context.md            - Py-Agent Config
 #   ├── ai-hook.sh               - Production Py-Agent Shell Hook (Sub-Millisecond Startup)(OCR 0.01)
 #   ├── logo.svg                 - <svg xmlns="http://www.w3.org/2000/svg" viewBox="121 101 270 310">
@@ -17,19 +17,19 @@
 #   ├── modules/agent_cloud.py   - Dynamic Cloud Cascade Engine - Top-down .env & os.environ provider API priority with infinite CUSTOM
 #   ├── modules/agent_commands.py - Modular Command Dispatcher & Slash Action Registry for Py-Agent [OCR 0.01]
 #   ├── modules/agent_context.py - Context Search, Indexing & Compaction Engine [OC 0.01]
-#   ├── modules/agent_core.py    - Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [Hardened Production Ready]
+#   ├── modules/agent_core.py    - Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [OCR 0.01]
 #   ├── modules/agent_ipython.py - Local-AI Standalone IPython Kernel & RLM Harness Module [OCR 0.01]
 #   ├── modules/agent_memories.py - Open Knowledge Format (OKF) Project Memory Manager [Production Ready]
 #   ├── modules/agent_security.py - Zero-Trust Security & Boundary Enforcement Kernel [OCR 0.01]
 #   ├── modules/agent_sessions.py - SQLite-backed session, checkpoint, and turn logger with sub-agent registry [OCR 0.01]
 #   ├── modules/agent_skills.py  - Unified library & executable for static, dynamic, universal YAML, and on-demand skills [OCR 0.01]
 #   ├── modules/agent_state.py   - State Persistence & Boundary Locking Engine [Hardened Production Ready]
-#   ├── modules/agent_stream.py  - Streaming SSE, ANSI Geometry & Terminal Rendering Engine [Open-CO-CR Optimized .01]
+#   ├── modules/agent_stream.py  - Streaming SSE, ANSI Geometry & Terminal Rendering Engine [OCR .01]
 #   ├── modules/agent_tools.py   - Native Tool Engine - Handles file editing, search, commands, & graph intelligence [OCR 0.01]
 #   ├── modules/agent_tts.py     - Local-AI Kokoro Text-to-Speech Module [Production Ready]
 #   ├── modules/agent_tui.py     - Production Minimal Textual TUI for Py Agent Engine [Production Ready]
 #   ├── modules/agent_tui_async.py - Asynchronous uvloop background services for Local-AI Agent TUI [Production Ready]
-#   ├── modules/agent_ui.py      - UI Module - Spinners, session boxes, and interactive menus [Open-CO-CR Optimized .01]
+#   ├── modules/agent_ui.py      - UI Module - Spinners, session boxes, and interactive menus [OCR .01]
 #   ├── modules/agent_vision.py  - Vision Module - Multimodal Pre-processing, OCR & Vision Bridge [Production Ready]
 #   ├── modules/agent_voice.py   - Local-AI Standalone Voice to Text Module [Production Ready]
 #   └── modules/model-select.py  - Streamlined TUI Model Selector with Dynamic CUSTOM<N> Discovery [OCR 0.01]
@@ -133,6 +133,7 @@
 [markdown:skills/profiles/deepseek.md] title:deepseek
 [markdown:skills/profiles/katcoder.md] title:katcoder
 [markdown:skills/profiles/lfm2.md] title:lfm2
+[markdown:skills/profiles/lfm2_24b.md] title:lfm2_24b
 [markdown:skills/profiles/lingtiny.md] title:lingtiny
 [markdown:skills/profiles/minicpm.md] title:minicpm
 [markdown:skills/profiles/nexn25.md] title:nexn25

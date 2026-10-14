@@ -39,6 +39,7 @@
 
 ```properties
 # --- Workspaces ---
+ai init ~/.config/py-agent/projects/lfm2_24b ---> lfm2-24b, lfm
 ai init ~/.config/py-agent/projects/photocraft ---> photocraft
 ai init ~/.config/py-agent/projects/tielcoder ---> tielcoder
 ai init ~/.config/py-agent/projects/qwen38d ---> qwen38d
