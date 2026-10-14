@@ -30,7 +30,7 @@
         <p><sub>Tool calling, shell triage, and single-turn code edits</sub></p>
         <code>Ling-3.0-tiny*</code> &nbsp;•&nbsp; <code>LFM2.5-8B</code><br>
         <code>MiniCPM5-2B</code> &nbsp;•&nbsp; <code>Qwen3.5-2B+</code><br>
-        <code>MiniCPM-V-4.7-1B</code>
+        <code>MiniCPM-V-4.7-1B</code>&nbsp;•&nbsp; <code>LFM2.5-24B-A2B</code>
       </td>
       <td align="center" width="50%" valign="top">
         <h3>27B+ (LLM)</h3>
