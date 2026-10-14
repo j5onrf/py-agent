@@ -29,7 +29,8 @@
         <h3>Sub-27B (SLM)</h3>
         <p><sub>Tool calling, shell triage, and single-turn code edits</sub></p>
         <code>Ling-3.0-tiny*</code> &nbsp;•&nbsp; <code>LFM2.5-8B</code><br>
-        <code>MiniCPM5-2B</code> &nbsp;•&nbsp; <code>Qwen3.5-2B+</code>
+        <code>MiniCPM5-2B</code> &nbsp;•&nbsp; <code>Qwen3.5-2B+</code><br>
+        <code>MiniCPM-V-4.7-1B</code>
       </td>
       <td align="center" width="50%" valign="top">
         <h3>27B+ (LLM)</h3>
@@ -71,7 +72,7 @@
 ```
 
 <div align="center">
-  <p><sub>Select box themes with <code>/box [1-9]</code>. Workspace details in the <a href="projects/Readme.md"><b>Workspace Manual</b></a>.</sub></p>
+  <p><sub>Select box themes with <code>/box [1-6]</code>. Workspace details in the <a href="projects/Readme.md"><b>Workspace Manual</b></a>.</sub></p>
 </div>
 
 <br>
