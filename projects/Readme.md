@@ -6,7 +6,6 @@ Local workspace developer agent with Open Knowledge Format (OKF) memory, an IPyt
 ~ ❯ ling
 [01/01] > [ling-tiny] ai init ~/ling-tiny
 ✓ Profile set to: Lingtiny [Yolo: ON] [Adp: ON]
-
 ╭─ ∿ ────────────────────────────────────────────────╮
 │  Ling-3.0-tiny                              ╭───╮  │
 │  󱞩 /.config/py-agent/projects/ling-tiny   ╭─╯ ╭─╯  │

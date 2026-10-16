@@ -239,8 +239,12 @@ def _init_kernel_sdk(workspace: str, confirm_gate_fn: Callable[[str], bool] | No
     global _shell_globals, _shell_instance
     ws_real = os.path.realpath(workspace)
 
-    if ws_real not in sys.path:
-        sys.path.append(ws_real)
+    # Ensure workspace root is always searched first and newly written .py files are discovered
+    if ws_real in sys.path:
+        sys.path.remove(ws_real)
+    sys.path.insert(0, ws_real)
+    import importlib
+    importlib.invalidate_caches()
 
     if _has_ipython and _shell_instance is None:
         _shell_instance = InteractiveShell.instance()

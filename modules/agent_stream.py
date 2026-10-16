@@ -177,6 +177,7 @@ class RichStreamer:
         self.think_hdr_printed = False
         self.ans_started = False
         self.in_post_think = False
+        self.in_tool_payload = False  # Suppresses raw XML tool tokens from the screen
         self.box_style = get_state("box_style", 1)
         self.show_thinking = os.environ.get("AI_SHOW_THINKING", "1") == "1"
 
@@ -274,6 +275,30 @@ class RichStreamer:
             self._stop_spinner()
             if len(parts) > 1 and parts[1]:
                 self.update(parts[1])
+            return
+
+        # Intercept inline tool calls: close thinking box cleanly and hide raw XML tags
+        if self.in_tool_payload or any(m in token for m in TOOL_MARKERS):
+            if not self.in_tool_payload:
+                self.in_tool_payload = True
+                # Print any legitimate text arriving right before the first tool marker
+                for m in TOOL_MARKERS:
+                    if m in token:
+                        pre = token.split(m, 1)[0]
+                        if pre:
+                            try:
+                                sys.stderr.write(pre.replace("\r\n", "\n").replace("\n", "\r\n"))
+                                sys.stderr.flush()
+                            except OSError:
+                                pass
+                        break
+                # Close thinking box so tool spinner can run cleanly
+                if self.show_thinking and self.think_hdr_printed and not self.ans_started:
+                    sep = "" if (self.acc_think.endswith("\n")) else "\r\n"
+                    _, bot_border = self._get_think_borders()
+                    _console_err.print(f"{sep}[dim]{bot_border}[/dim]\n")
+                    sys.stderr.flush()
+                    self.ans_started = True
             return
 
         if self.in_post_think:

@@ -391,10 +391,11 @@ def draw_session_box(
     box_style: int = 1,
 ) -> None:
     raw_path = str(workspace_path).strip().splitlines()[0].strip() if workspace_path else ""
+    clean_path = re.sub(r"^[󱞩\s]+", "", raw_path)
     display_dir = (
-        raw_path.replace(home_dir, "~", 1)
-        if (home_dir and raw_path.startswith(home_dir))
-        else raw_path
+        clean_path.replace(home_dir, "~", 1)
+        if (home_dir and clean_path.startswith(home_dir))
+        else clean_path
     )
 
     try:
@@ -433,7 +434,7 @@ def draw_session_box(
 
         m_style = "bold red" if ("not loaded" in model_name or "offline" in model_name) else "bold"
         icon_table.add_row(Text(model_name, style=m_style))
-        icon_table.add_row(display_dir)
+        icon_table.add_row(f"󱞩 {display_dir}")
         icon_table.add_row(display_profile)
         icon_table.add_row(db_status)
 
@@ -894,7 +895,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
                     for tag, active in [("Yolo", is_yolo), ("Map", use_map), ("Mem", is_mem), ("Py", is_py), ("Adp", is_adp)]
                     if active
                 )
-                sys.stderr.write(f"\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{active_badges}\n\n")
+                sys.stderr.write(f"\033[1;32m✓ Profile set to:\033[0m \033[1m{label}\033[0m{active_badges}\n")
                 sys.stderr.flush()
                 return key, is_yolo, use_map, is_py, is_mem, is_adp
             elif char in ("\x1b[A", "\x1b[B"):

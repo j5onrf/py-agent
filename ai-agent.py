@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [j5onrf] [v0.9.9.55] - Main CLI Runtime, Workspace Agent & Command Dispatcher [OCR 0.01]"""
+"""Py Agent [v0.9.9.57] - Main CLI Runtime, Workspace Agent & Command Dispatcher [OCR 0.01]"""
 
 import json
 import os
@@ -303,18 +303,52 @@ def _launch_surface(
                 pass
 
 
+def resolve_default_profile(is_agent: bool = True) -> str:
+    """Dynamically resolves default profile from environment, active model, or available profiles."""
+    if not is_agent:
+        return "chat"
+    if env_skill := os.environ.get("AI_ACTIVE_SKILL", "").strip():
+        primary = env_skill.split()[0].lstrip("-").lower()
+        if primary and primary != "init":
+            return primary
+    try:
+        m_name = ""
+        if ui and hasattr(ui, "get_local_model_name"):
+            m_name = ui.get_local_model_name(max_age=5.0).lower()
+        if m_name and "not loaded" not in m_name and "offline" not in m_name:
+            prof_dir = os.path.join(SKILLS_DIR, "profiles")
+            if os.path.isdir(prof_dir):
+                available = [os.path.splitext(f)[0] for f in os.listdir(prof_dir) if f.endswith(".md")]
+                clean_m = re.sub(r"[^a-z0-9]", "", m_name)
+                for p in available:
+                    clean_p = re.sub(r"[^a-z0-9]", "", p)
+                    if clean_p in clean_m or clean_m in clean_p:
+                        return p
+    except Exception:
+        pass
+    return "agent"
+
+
 def run_interactive_chat(args: list[str]) -> None:
     """Primary interactive agent and chat engine."""
     _load_agent_modules()
     is_agent = args[0] == "--talk-chat"
-    original_workspace_path = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
+    raw_ws = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
+    clean_ws = re.sub(r"^[󱞩\s]+", "", str(raw_ws)).strip().splitlines()[0].strip() if raw_ws else os.getcwd()
+    original_workspace_path = os.path.realpath(os.path.expanduser(clean_ws))
     workspace_path = original_workspace_path
+    os.environ["AI_WORKSPACE_PATH"] = workspace_path
     home_dir = os.path.expanduser("~")
     safe_name = core.workspace_safe_name(workspace_path, home_dir)
 
+    try:
+        os.chdir(workspace_path)
+    except OSError:
+        pass
+
     ensure_clean_agent_dir(workspace_path)
     cfg_file = os.path.join(workspace_path, ".agent", "config.json")
-    selected_profile = "pi/pro" if is_agent else "chat"
+    selected_profile = resolve_default_profile(is_agent)
     is_yolo, use_map, is_py, memory_active, adapters_active = False, False, False, False, False
 
     if is_agent:
@@ -344,7 +378,7 @@ def run_interactive_chat(args: list[str]) -> None:
             try:
                 with open(cfg_file, "r", encoding="utf-8") as cf:
                     d = json.load(cf)
-                    selected_profile = d.get("profile", "pi/pro")
+                    selected_profile = d.get("profile", resolve_default_profile(is_agent))
                     is_yolo = bool(d.get("yolo", False))
                     use_map = bool(d.get("map", False))
                     is_py = bool(d.get("py", False))
@@ -362,9 +396,9 @@ def run_interactive_chat(args: list[str]) -> None:
             profile_args.add(arg)
 
     if is_agent:
-        clean_name = selected_profile if selected_profile != "init" else "pi/pro"
+        clean_name = resolve_default_profile(True) if selected_profile in ("init", "pi/pro") else selected_profile
         profile_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
-        if not profile_content and selected_profile != "init":
+        if not profile_content and clean_name not in ("agent", "init"):
             ui._console.print(
                 f"[dim yellow][sys] Skill '{clean_name}' not found. Using minimal agent prompt.[/dim yellow]"
             )

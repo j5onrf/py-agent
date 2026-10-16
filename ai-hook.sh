@@ -163,7 +163,6 @@ ai() {
 
     if [[ "${1:-}" == "init" ]]; then
         shift
-        # Use ws_path to prevent clobbering Zsh special $path ($PATH) variable
         local ws_path skills=() name map db
         ws_path=$(pwd)
 
@@ -172,6 +171,12 @@ ai() {
             shift
         fi
         skills=("$@")
+
+        if [[ "$ws_path" == "~" ]]; then
+            ws_path="$HOME"
+        elif [[ "$ws_path" == "~/"* ]]; then
+            ws_path="${HOME}/${ws_path#\~/}"
+        fi
 
         if [[ ! -d "$ws_path" ]]; then
             if ! mkdir -p "$ws_path" 2>/dev/null; then

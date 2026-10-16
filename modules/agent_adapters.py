@@ -65,7 +65,7 @@ RE_ROOT_SANDBOX = re.compile(
 )
 # Safely only strip cd when target is verifiably the current working directory or sandbox root
 RE_SAFE_CD_COMMAND = re.compile(
-    r"^\s*cd\s+[\"']?(?:\.|\~|/workspace|/app|/home/(?:user|developer|runner|admin))[\"']?\s*(?:&&|;)\s*",
+    r"^\s*cd\s+[\"']?(?:\./|\.|\~|/workspace|/app|/home/(?:user|developer|runner|admin)|/(?![\w]))[\"']?\s*(?:&&|;)\s*",
     re.IGNORECASE,
 )
 
