@@ -334,11 +334,22 @@ def _print_tool_output(spinner: Any, text: str) -> None:
         except OSError:
             pass
         clean_lines = text.strip().splitlines()
-        preview = clean_lines[:15]
+
+        # Collapse consecutive blank lines to keep terminal output compact
+        collapsed = []
+        prev_blank = False
+        for line in clean_lines:
+            is_blank = not line.strip()
+            if is_blank and prev_blank:
+                continue
+            collapsed.append(line)
+            prev_blank = is_blank
+
+        preview = collapsed[:15]
         for line in preview:
             _console_err.print(f"    {line}", markup=False, highlight=False)
-        if len(clean_lines) > 15:
-            _console_err.print(f"    ... ({len(clean_lines) - 15} more lines)", style="dim")
+        if len(collapsed) > 15:
+            _console_err.print(f"    ... ({len(collapsed) - 15} more lines)", style="dim")
 
 
 def _run_edit_tool(name: str, args: dict[str, Any], workspace: str, spinner: Any = None) -> str:

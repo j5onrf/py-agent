@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tool Format Adapters & Self-Healing Parser [Open-CO Optimized 0.01]"""
+"""Tool Format Adapters & Self-Healing Parser [OCR 0.01]"""
 
 import ast
 import json
