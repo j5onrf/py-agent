@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""Cheatsheet - High-Speed Markdown-Native Plugin & Shortcut Map Generator [Production Ready]"""
+"""Cheatsheet - High-Speed Markdown-Native Plugin & Shortcut Map Generator [Markdown]"""
 
 import os
 import re
 import sys
+
+from rich.console import Console
+from rich.markdown import Markdown
+
+console = Console(force_terminal=True)
 
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
 CONTEXT_FILE = os.path.join(CFG_DIR, "ai-context.md")
@@ -52,7 +57,7 @@ for line in lines:
         continue
 
     cmd_raw, intents = clean_line.split("--->", 1)
-    cmd = cmd_raw.replace("[TOOL]", "").strip()
+    cmd = cmd_raw.replace("[TOOL]", "").replace("--cat", "").strip()
 
     c_parts = cmd.split()
     if not c_parts:
@@ -88,10 +93,14 @@ for line in lines:
 
     rows.append(f"| **{safe_section}** | {safe_shortcuts} | `{safe_target}` |")
 
-# Output complete, atomic Markdown table
-print("# ∿ Py-Agent Cheatsheet\n")
-print("| Category | Shortcuts / Triggers | Target Command |")
-print("| :--- | :--- | :--- |")
-for r in rows:
-    print(r)
-print()
+# Render complete Markdown table with Rich
+md_payload = [
+    "# ∿ Py-Agent Cheatsheet\n",
+    "| Category | Shortcuts / Triggers | Target Command |",
+    "| :--- | :--- | :--- |",
+]
+md_payload.extend(rows)
+
+console.print()
+console.print(Markdown("\n".join(md_payload)))
+console.print()
