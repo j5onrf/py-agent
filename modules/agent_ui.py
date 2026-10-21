@@ -59,11 +59,19 @@ ANSI_SHADES = [
 ]
 ANSI_RESET = "\033[0m"
 
-WAVE_RAMP = ["·", "~", "≈", "∿", "≋"]
+DOT_GLYPHS = ["·", "•", "•", "○", "●"]
 
 
 class InlineSpinner:
-    def __init__(self, chars: tuple[str, ...] | list[str] | str = ("✦ [∿ · ·]", "✦ [· ∿ ·]", "✦ [· · ∿]", "✦ [· ∿ ·]")) -> None:
+    def __init__(
+        self,
+        chars: tuple[str, ...] | list[str] | str = (
+            "● ○ • ·",
+            "○ ● ○ •",
+            "• ○ ● ○",
+            "· • ○ ●",
+        ),
+    ) -> None:
         self.chars = chars
         self.active = False
         self.thread = None
@@ -372,24 +380,24 @@ def get_local_model_name(max_age: float = 30.0) -> str:
         return fallback
 
 
-def _build_resonant_ribbon(row_idx: int, t: float, is_resting: bool = False, total_rows: int = 2) -> str:
+def _build_dots(row_idx: int, t: float, is_resting: bool = False, total_rows: int = 2) -> str:
     if is_resting:
         if total_rows == 3:
             patterns = [
-                [0, 1, 2, 3, 2, 1, 0],
-                [1, 2, 3, 4, 3, 2, 1],
-                [0, 1, 2, 3, 2, 1, 0],
+                [4, 3, 1, 0, 1, 3, 4],  # Row 0: ● ○ • · • ○ ●
+                [3, 1, 0, 0, 0, 1, 3],  # Row 1: ○ • · · · • ○
+                [4, 3, 1, 0, 1, 3, 4],  # Row 2: ● ○ • · • ○ ●
             ]
         else:
             patterns = [
-                [0, 1, 2, 3, 2, 1, 0],
-                [0, 1, 2, 3, 2, 1, 0],
+                [4, 3, 1, 0, 1, 3, 4],  # Row 0: ● ○ • · • ○ ●
+                [3, 1, 0, 0, 0, 1, 3],  # Row 1: ○ • · · · • ○
             ]
         row_pat = patterns[row_idx % len(patterns)]
         cells = []
         for idx in row_pat:
             lvl = min(4, max(0, idx))
-            glyph = WAVE_RAMP[lvl]
+            glyph = DOT_GLYPHS[lvl]
             cells.append(f"{ANSI_SHADES[lvl]}{glyph}{ANSI_RESET}")
         return " ".join(cells)
 
@@ -397,7 +405,7 @@ def _build_resonant_ribbon(row_idx: int, t: float, is_resting: bool = False, tot
     for c in range(7):
         val = math.sin((c * 0.75) - (row_idx * 0.70) - (t * 5.0))
         idx = min(4, max(0, int(((val + 1.0) / 2.0) * 4.99)))
-        glyph = WAVE_RAMP[idx]
+        glyph = DOT_GLYPHS[idx]
         cells.append(f"{ANSI_SHADES[idx]}{glyph}{ANSI_RESET}")
     return " ".join(cells)
 
@@ -410,17 +418,17 @@ def _render_theme_shader(
     sub_tag: str = "",
 ) -> str:
     inner_w = box_w - 2
-    ribbon_w = 13  # 7 glyphs with 6 spaces
-    header = "╭─ ∿ " + sub_tag
+    dots_w = 13  # 7 glyphs with 6 spaces
+    header = "╭─ ○ " + sub_tag
     dashes_top = max(0, inner_w - len(header) + 1)
 
     if is_resting:
         lines = [f"\033[1;36m{header}{'─' * dashes_top}╮{ANSI_RESET}"]
         for r_idx, (colored_text, _, text_len) in enumerate(rows):
-            gap_len = max(2, inner_w - 4 - text_len - ribbon_w)
-            ribbon_field = _build_resonant_ribbon(r_idx, 0.0, is_resting=True, total_rows=len(rows))
+            gap_len = max(2, inner_w - 4 - text_len - dots_w)
+            dots_field = _build_dots(r_idx, 0.0, is_resting=True, total_rows=len(rows))
             lines.append(
-                f"\033[1;36m│{ANSI_RESET}  {colored_text}{' ' * gap_len}{ribbon_field}  \033[1;36m│{ANSI_RESET}"
+                f"\033[1;36m│{ANSI_RESET}  {colored_text}{' ' * gap_len}{dots_field}  \033[1;36m│{ANSI_RESET}"
             )
         lines.append(f"\033[1;36m╰{'─' * inner_w}╯{ANSI_RESET}")
         return "\n".join(lines)
@@ -446,14 +454,14 @@ def _render_theme_shader(
             lvl = min(4, max(0, int(((wave + 0.85) / 1.85) * 4.99)))
             text_chars.append(f"{ANSI_SHADES[lvl]}{ch}{ANSI_RESET}")
 
-        gap_len = max(2, inner_w - 4 - text_len - ribbon_w)
-        ribbon_field = _build_resonant_ribbon(r_idx, t, is_resting=False, total_rows=len(rows))
+        gap_len = max(2, inner_w - 4 - text_len - dots_w)
+        dots_field = _build_dots(r_idx, t, is_resting=False, total_rows=len(rows))
 
         wave_r = math.sin((inner_w * 0.14) - (y * 0.45) - (t * 4.2))
         lvl_r = min(4, max(0, int(((wave_r + 0.85) / 1.85) * 4.99)))
         right_border = f"{ANSI_SHADES[lvl_r]}│{ANSI_RESET}"
 
-        lines.append(f"{left_border}  {''.join(text_chars)}{' ' * gap_len}{ribbon_field}  {right_border}")
+        lines.append(f"{left_border}  {''.join(text_chars)}{' ' * gap_len}{dots_field}  {right_border}")
 
     bot_chars = []
     bot_plain = f"╰{'─' * inner_w}╯"
@@ -526,14 +534,14 @@ def draw_session_box(
         (f"\033[90m{display_profile}{ANSI_RESET}", display_profile, cell_len(display_profile)),
     ]
 
-    # Show 3rd line only when project memory is active
-    if memory_active:
+    # 3rd line only in workspace agent mode when memory is active
+    if is_agent and memory_active:
         rows.append((f"\033[32m{db_status}{ANSI_RESET}", db_status, cell_len(db_status)))
 
     num_lines = len(rows) + 2
     max_text_w = max(r[2] for r in rows)
-    ribbon_w = 13
-    inner_w = max(44, min(term_cols - 4, max_text_w + ribbon_w + 6))
+    dots_w = 13
+    inner_w = max(44, min(term_cols - 4, max_text_w + dots_w + 6))
     box_w = inner_w + 2
 
     is_tty = sys.stdout.isatty() and sys.stdin.isatty() and os.environ.get("AI_ANIM", "1") != "0"

@@ -194,13 +194,13 @@ class RichStreamer:
         if self.box_style == 6:
             top_dashes = max(10, term_width - 6)
             bot_dashes = max(10, term_width - 2)
-            return f"╭─ ∿ {'─' * top_dashes}╮", f"╰{'─' * bot_dashes}╯"
+            return f"╭─ ○ {'─' * top_dashes}╮", f"╰{'─' * bot_dashes}╯"
 
         top_len = min(52, max(10, term_width - 6))
         bot_len = min(56, max(10, term_width - 2))
         if self.box_style == 2:
-            return f"┌─ ∿ {'─' * top_len}", f"└{'─' * bot_len}"
-        return f"╭─ ∿ {'─' * top_len}", f"╰{'─' * bot_len}"
+            return f"┌─ ○ {'─' * top_len}", f"└{'─' * bot_len}"
+        return f"╭─ ○ {'─' * top_len}", f"╰{'─' * bot_len}"
 
     def _stop_spinner(self, done_msg: str | None = None) -> None:
         if self.spinner:
