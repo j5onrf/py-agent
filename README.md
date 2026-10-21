@@ -5,7 +5,7 @@
   <h1>Py Agent</h1>
 
   <p>
-    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.57.svg?variant=secondary" alt="Version"></a>
+    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.58.svg?variant=secondary" alt="Version"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/Python.svg?variant=branded&brand=python" alt="Language"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/C%2B%2B.svg?variant=branded&brand=cplusplus" alt="C++"></a>
     <a href="https://github.com/j5onrf/py-agent/blob/main/LICENSE"><img src="https://shieldcn.dev/badge/license-MIT-green.svg" alt="License"></a>
@@ -61,12 +61,10 @@
 
 ```console
 ~ ❯ ai
-╭─ ∿ ─────────────────────────────╮
-│  Qwen3.8-35B-Distill     ╭───╮  │
-│  󱞩 ~                   ╭─╯ ╭─╯  │
-│  chat                  ╰─╮ ╰─╮  │
-│  session                 ╰───●  │
-╰─────────────────────────────────╯
+╭─ ∿ ────────────────────────────────────────╮
+│  Qwen3.8-35B-Distill        · ~ ≈ ∿ ≈ ~ ·  │
+│  chat                       · ~ ≈ ∿ ≈ ~ ·  │
+╰────────────────────────────────────────────╯
 
 ❯ █
 ```

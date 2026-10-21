@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [v0.9.9.57] - Main CLI Runtime, Workspace Agent & Command Dispatcher [OCR 0.01]"""
+"""Py Agent [v0.9.9.58] - Main CLI Runtime, Workspace Agent & Command Dispatcher [OCR 0.01]"""
 
 import json
 import os
@@ -523,8 +523,8 @@ def run_interactive_chat(args: list[str]) -> None:
             ui._console.print(f"[red][sys] Sub-agent worktree setup failed: {e}[/red]")
             clean_exit(safe_name, sub_id=sub_id)
 
-    # Default fallback set cleanly to 1
-    ui.draw_session_box(
+    # Wake-on-Key Resonant Ribbon Box
+    wake_key = ui.draw_session_box(
         workspace_path,
         home_dir,
         is_agent,
@@ -535,7 +535,13 @@ def run_interactive_chat(args: list[str]) -> None:
         clean_name,
         sub_id=sub_id,
         box_style=st.get("box_style", 1),
+        wake_on_key=not bool(pending_query),
     )
+    if wake_key:
+        try:
+            readline.set_startup_hook(lambda: readline.insert_text(wake_key))
+        except Exception:
+            pass
 
     try:
         while True:

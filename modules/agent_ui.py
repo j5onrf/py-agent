@@ -2,6 +2,7 @@
 """UI Module - Spinners, session boxes, and interactive menus [OCR .01]"""
 
 import json
+import math
 import os
 import re
 import select
@@ -14,6 +15,7 @@ from collections.abc import Callable
 from typing import Any
 
 from rich.box import DOUBLE, ROUNDED, SQUARE
+from rich.cells import cell_len
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
@@ -29,16 +31,6 @@ except ImportError:
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
 _console = Console()
 RE_UNSAFE_SHELL_CHARS: re.Pattern = re.compile(r'[\[\]{}()=\'"",;|<>#`$&*!\\\r\n]')
-
-# (title, box_type, border_col, title_style, is_full)
-STYLES = {
-    1: ("∿", ROUNDED, "bright_cyan", "bold", False),                      # Minimal Rounded
-    2: ("∿", SQUARE, "bright_cyan", "bold", False),                       # Minimal Square
-    3: ("∿ Py Agent", DOUBLE, "bright_blue", "bold bright_blue", False), # Double Border
-    4: ("∿ Py Agent", ROUNDED, "green", "bold bright_green", False),      # Classic Rounded
-    5: ("∿", ROUNDED, "green", "bold bright_green", False),               # Classic Minimal
-    6: ("∿", ROUNDED, "bright_cyan", "bold", True),                       # Full-Width Responsive
-}
 
 RICH_TO_ANSI = {
     "green": "\033[1;32m",
@@ -58,6 +50,17 @@ RICH_TO_ANSI = {
 _core_module = None
 _cached_local_model: tuple[str, float] = ("", 0.0)
 
+ANSI_SHADES = [
+    "\033[2m",          # Level 0: Dim (theme background/unlit)
+    "\033[90m",         # Level 1: Muted / Gray (theme comment tone)
+    "\033[36m",         # Level 2: Cyan (theme primary accent)
+    "\033[1;36m",       # Level 3: Bold Bright Cyan (theme vivid accent)
+    "\033[1;37m",       # Level 4: Bold White (theme foreground highlight)
+]
+ANSI_RESET = "\033[0m"
+
+WAVE_RAMP = ["·", "~", "≈", "∿", "≋"]
+
 
 class InlineSpinner:
     def __init__(self, chars: tuple[str, ...] | list[str] | str = ("✦ [∿ · ·]", "✦ [· ∿ ·]", "✦ [· · ∿]", "✦ [· ∿ ·]")) -> None:
@@ -70,16 +73,7 @@ class InlineSpinner:
         self._stop_event = threading.Event()
 
     def _get_theme_color(self) -> str:
-        global _core_module
-        try:
-            if _core_module is None:
-                import agent_core
-                _core_module = agent_core
-            box = _core_module.get_state("box_style", 1)
-            border_col = STYLES.get(box, STYLES[1])[2]
-            return RICH_TO_ANSI.get(border_col, "\033[1;32m")
-        except Exception:
-            return "\033[1;32m"
+        return "\033[1;36m"
 
     def _glimmer(self, text: str, t: float, color: str) -> str:
         pos = (t * 2.2) % (len(text) + 8) - 4
@@ -378,6 +372,101 @@ def get_local_model_name(max_age: float = 30.0) -> str:
         return fallback
 
 
+def _build_resonant_ribbon(row_idx: int, t: float, is_resting: bool = False, total_rows: int = 2) -> str:
+    if is_resting:
+        if total_rows == 3:
+            patterns = [
+                [0, 1, 2, 3, 2, 1, 0],
+                [1, 2, 3, 4, 3, 2, 1],
+                [0, 1, 2, 3, 2, 1, 0],
+            ]
+        else:
+            patterns = [
+                [0, 1, 2, 3, 2, 1, 0],
+                [0, 1, 2, 3, 2, 1, 0],
+            ]
+        row_pat = patterns[row_idx % len(patterns)]
+        cells = []
+        for idx in row_pat:
+            lvl = min(4, max(0, idx))
+            glyph = WAVE_RAMP[lvl]
+            cells.append(f"{ANSI_SHADES[lvl]}{glyph}{ANSI_RESET}")
+        return " ".join(cells)
+
+    cells = []
+    for c in range(7):
+        val = math.sin((c * 0.75) - (row_idx * 0.70) - (t * 5.0))
+        idx = min(4, max(0, int(((val + 1.0) / 2.0) * 4.99)))
+        glyph = WAVE_RAMP[idx]
+        cells.append(f"{ANSI_SHADES[idx]}{glyph}{ANSI_RESET}")
+    return " ".join(cells)
+
+
+def _render_theme_shader(
+    rows: list[tuple[str, str, int]],
+    box_w: int,
+    t: float,
+    is_resting: bool = False,
+    sub_tag: str = "",
+) -> str:
+    inner_w = box_w - 2
+    ribbon_w = 13  # 7 glyphs with 6 spaces
+    header = "╭─ ∿ " + sub_tag
+    dashes_top = max(0, inner_w - len(header) + 1)
+
+    if is_resting:
+        lines = [f"\033[1;36m{header}{'─' * dashes_top}╮{ANSI_RESET}"]
+        for r_idx, (colored_text, _, text_len) in enumerate(rows):
+            gap_len = max(2, inner_w - 4 - text_len - ribbon_w)
+            ribbon_field = _build_resonant_ribbon(r_idx, 0.0, is_resting=True, total_rows=len(rows))
+            lines.append(
+                f"\033[1;36m│{ANSI_RESET}  {colored_text}{' ' * gap_len}{ribbon_field}  \033[1;36m│{ANSI_RESET}"
+            )
+        lines.append(f"\033[1;36m╰{'─' * inner_w}╯{ANSI_RESET}")
+        return "\n".join(lines)
+
+    top_chars = []
+    top_plain = f"{header}{'─' * dashes_top}╮"
+    for x, ch in enumerate(top_plain):
+        wave = math.sin((x * 0.14) - (t * 4.2))
+        lvl = min(4, max(0, int(((wave + 0.85) / 1.85) * 4.99)))
+        top_chars.append(f"{ANSI_SHADES[lvl]}{ch}{ANSI_RESET}")
+    lines = ["".join(top_chars)]
+
+    for r_idx, (_, plain_text, text_len) in enumerate(rows):
+        y = r_idx + 1
+        wave_l = math.sin(- (y * 0.45) - (t * 4.2))
+        lvl_l = min(4, max(0, int(((wave_l + 0.85) / 1.85) * 4.99)))
+        left_border = f"{ANSI_SHADES[lvl_l]}│{ANSI_RESET}"
+
+        text_chars = []
+        for i, ch in enumerate(plain_text):
+            x = 3 + i
+            wave = math.sin((x * 0.14) - (y * 0.45) - (t * 4.2))
+            lvl = min(4, max(0, int(((wave + 0.85) / 1.85) * 4.99)))
+            text_chars.append(f"{ANSI_SHADES[lvl]}{ch}{ANSI_RESET}")
+
+        gap_len = max(2, inner_w - 4 - text_len - ribbon_w)
+        ribbon_field = _build_resonant_ribbon(r_idx, t, is_resting=False, total_rows=len(rows))
+
+        wave_r = math.sin((inner_w * 0.14) - (y * 0.45) - (t * 4.2))
+        lvl_r = min(4, max(0, int(((wave_r + 0.85) / 1.85) * 4.99)))
+        right_border = f"{ANSI_SHADES[lvl_r]}│{ANSI_RESET}"
+
+        lines.append(f"{left_border}  {''.join(text_chars)}{' ' * gap_len}{ribbon_field}  {right_border}")
+
+    bot_chars = []
+    bot_plain = f"╰{'─' * inner_w}╯"
+    y_bot = len(rows) + 1
+    for x, ch in enumerate(bot_plain):
+        wave = math.sin((x * 0.14) - (y_bot * 0.45) - (t * 4.2))
+        lvl = min(4, max(0, int(((wave + 0.85) / 1.85) * 4.99)))
+        bot_chars.append(f"{ANSI_SHADES[lvl]}{ch}{ANSI_RESET}")
+    lines.append("".join(bot_chars))
+
+    return "\n".join(lines)
+
+
 def draw_session_box(
     workspace_path: str,
     home_dir: str,
@@ -389,7 +478,8 @@ def draw_session_box(
     clean_name: str,
     sub_id: int | None = None,
     box_style: int = 1,
-) -> None:
+    wake_on_key: bool = True,
+) -> str:
     raw_path = str(workspace_path).strip().splitlines()[0].strip() if workspace_path else ""
     clean_path = re.sub(r"^[󱞩\s]+", "", raw_path)
     display_dir = (
@@ -416,84 +506,89 @@ def draw_session_box(
 
         if memory_active and use_map:
             db_status = f"active (map + mem: {mem_count}m/{db_turns}t)"
-        elif use_map:
-            db_status = "active (codebase map)"
         elif memory_active:
             db_status = f"active ({mem_count} memories, {db_turns} turns)"
+        elif use_map:
+            db_status = "active (codebase map)"
+        elif db_turns > 0:
+            db_status = f"active ({db_turns} turns)"
         else:
             db_status = "session"
     else:
         db_status = "session"
 
-    # Style #1, #2 (Compact) & #6 (Full-Width): Minimal Wave Boxes
-    if box_style in (1, 2, 6):
-        base_title, box_type, border_col, title_style, is_full = STYLES.get(box_style, STYLES[1])
+    term_cols = shutil.get_terminal_size((80, 24)).columns
+    sub_tag = f"[sub-agent #{sub_id}] " if sub_id else ""
 
-        icon_table = Table(show_header=False, box=None, padding=(0, 0, 0, 1))
-        icon_table.add_column("Value", justify="left")
+    m_style = "\033[1;31m" if ("not loaded" in model_name or "offline" in model_name) else "\033[1;37m"
+    rows = [
+        (f"{m_style}{model_name}{ANSI_RESET}", model_name, cell_len(model_name)),
+        (f"\033[90m{display_profile}{ANSI_RESET}", display_profile, cell_len(display_profile)),
+    ]
 
-        m_style = "bold red" if ("not loaded" in model_name or "offline" in model_name) else "bold"
-        icon_table.add_row(Text(model_name, style=m_style))
-        icon_table.add_row(f"󱞩 {display_dir}")
-        icon_table.add_row(display_profile)
-        icon_table.add_row(db_status)
+    # Show 3rd line only when project memory is active
+    if memory_active:
+        rows.append((f"\033[32m{db_status}{ANSI_RESET}", db_status, cell_len(db_status)))
 
-        logo_text = Text.from_markup(
-            "[bold bright_cyan]  ╭───╮ \n[/]"
-            "[bright_cyan]╭─╯ [/][cyan]╭─╯ \n[/]"
-            "[cyan]╰─╮ [/][blue]╰─╮ \n[/]"
-            "[bold blue]  ╰───● [/]"
-        )
+    num_lines = len(rows) + 2
+    max_text_w = max(r[2] for r in rows)
+    ribbon_w = 13
+    inner_w = max(44, min(term_cols - 4, max_text_w + ribbon_w + 6))
+    box_w = inner_w + 2
 
-        if is_full:
-            grid = Table.grid(expand=True, padding=(0, 1, 0, 0), pad_edge=True)
-            grid.add_column(ratio=1, vertical="middle", no_wrap=True)
-            grid.add_column(justify="right", vertical="middle", no_wrap=True)
-        else:
-            grid = Table.grid(padding=(0, 2))
-            grid.add_column(vertical="middle")
-            grid.add_column(justify="center", vertical="middle")
+    is_tty = sys.stdout.isatty() and sys.stdin.isatty() and os.environ.get("AI_ANIM", "1") != "0"
+    captured_char = ""
 
-        grid.add_row(icon_table, logo_text)
-        title_text = f"{base_title} [sub-agent #{sub_id}]" if sub_id else base_title
+    if is_tty and wake_on_key and _HAS_TERMIOS:
+        old_term = termios.tcgetattr(sys.stdin)
+        tty.setcbreak(sys.stdin.fileno())
+        sys.stdout.write("\033[?25l")
+        sys.stdout.flush()
 
-        panel = Panel(
-            grid,
-            title=Text(title_text, style=title_style),
-            title_align="left",
-            border_style=border_col,
-            box=box_type,
-            expand=is_full,
-        )
-    else:
-        base_title, box_type, border_col, title_style = STYLES.get(box_style, STYLES[1])[:4]
-        table = Table(show_header=False, box=None, padding=(0, 2, 0, 0))
-        table.add_column("Key", style="dim cyan", justify="right")
-        table.add_column("Value", style="green")
+        try:
+            start_time = time.time()
+            first_frame = True
 
-        m_style = "bold red" if ("not loaded" in model_name or "offline" in model_name) else "green"
-        table.add_row("model:", Text(model_name, style=m_style))
-        table.add_row("directory:", display_dir)
-        table.add_row("profile:", display_profile)
-        table.add_row("database:", db_status)
+            while True:
+                r, _, _ = select.select([sys.stdin], [], [], 0.0)
+                if r:
+                    char_bytes = os.read(sys.stdin.fileno(), 1)
+                    if char_bytes == b"\x1b" and select.select([sys.stdin], [], [], 0.05)[0]:
+                        os.read(sys.stdin.fileno(), 4)
+                        captured_char = ""
+                    elif char_bytes:
+                        try:
+                            decoded = char_bytes.decode("utf-8", errors="ignore")
+                            if decoded not in ("\r", "\n", "\x1b", "\x03"):
+                                captured_char = decoded
+                        except Exception:
+                            captured_char = ""
+                    break
 
-        title_text = f"{base_title} [sub-agent #{sub_id}]" if sub_id else base_title
-        panel = Panel(
-            table,
-            title=Text(title_text, style=title_style),
-            title_align="left",
-            border_style=border_col,
-            box=box_type,
-            expand=False,
-        )
+                t = time.time() - start_time
+                frame_str = _render_theme_shader(rows, box_w, t, is_resting=False, sub_tag=sub_tag)
+                if first_frame:
+                    sys.stdout.write(frame_str + "\n")
+                    first_frame = False
+                else:
+                    sys.stdout.write(f"\033[{num_lines}A\r{frame_str}\n")
+                sys.stdout.flush()
+                time.sleep(0.033)
 
-    _console.print(panel)
-    _console.print()
-    try:
-        sys.stderr.write("\033[?25h")
-        sys.stderr.flush()
-    except OSError:
-        pass
+            resting_str = _render_theme_shader(rows, box_w, 0.0, is_resting=True, sub_tag=sub_tag)
+            sys.stdout.write(f"\033[{num_lines}A\r{resting_str}\n\n")
+            sys.stdout.flush()
+        finally:
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_term)
+            sys.stdout.write("\033[?25h")
+            sys.stdout.flush()
+
+        return captured_char
+
+    # Non-interactive fallback or direct resting render
+    resting_str = _render_theme_shader(rows, box_w, 0.0, is_resting=True, sub_tag=sub_tag)
+    print(resting_str + "\n")
+    return ""
 
 
 def confirm_tool(tool: str) -> bool:
@@ -618,7 +713,7 @@ def show_help() -> None:
         ("/m, /map", "Toggle Codebase index-map"),
         ("/mem \\[save|list]", "Toggle & manage OKF memory files"),
         ("/hs, /hindsight", "Retrospective session memory audit"),
-        ("/box \\[1-6]", "Box style preset (1-5: Compact, 6: Full-width)"),
+        ("/box", "Replay dynamic theme skeleton wave"),
         ("/task \\[goal]", "Autonomous task loop"),
         ("/t \\[N|show|hide]", "Reasoning budget & display"),
         ("/g, /yolo", "Toggle confirmation gates (YOLO)"),

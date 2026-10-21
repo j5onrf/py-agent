@@ -516,14 +516,36 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
         return True, None
 
     if cmd in ("/box", "/boxes"):
-        max_boxes = len(ui.STYLES)
-        cur_box = core.get_state("box_style", 1)
-        if len(parts) > 1 and parts[1].isdigit() and int(parts[1]) in ui.STYLES:
-            val = int(parts[1])
-        else:
-            val = (cur_box % max_boxes) + 1
-        core.save_state("box_style", val)
-        ctx.flash_status(f"box: #{val}")
+        d_turns = 0
+        m_cnt = 0
+        if ctx.is_agent:
+            try:
+                d_turns = sessions.get_turns_count(ctx.safe_name) if hasattr(sessions, "get_turns_count") else 0
+            except Exception:
+                d_turns = 0
+            try:
+                m_cnt = memories.get_memory_count(ctx.workspace_path)
+            except Exception:
+                m_cnt = 0
+
+        wake_key = ui.draw_session_box(
+            ctx.workspace_path,
+            ctx.home_dir,
+            ctx.is_agent,
+            d_turns,
+            m_cnt,
+            ctx.memory_active,
+            ctx.active_system_prompt,
+            ctx.clean_name,
+            wake_on_key=True,
+        )
+        if wake_key:
+            try:
+                import readline
+                readline.set_startup_hook(lambda: readline.insert_text(wake_key))
+            except Exception:
+                pass
+        ctx.flash_status("box: wave")
         return True, None
 
     if cmd in ("/calm", "/zen"):
