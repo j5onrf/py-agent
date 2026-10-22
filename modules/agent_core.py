@@ -277,29 +277,8 @@ def _log_turn_usage(
         if model_tag:
             parts.append(model_tag)
 
-        # Uses the terminal's native ANSI color matching the box border (soft, dimmed, never clashes)
-        try:
-            import agent_ui as ui
-
-            box_idx = get_state("box_style", 1)
-            b_col = "green" if box_idx == 6 else ui.STYLES.get(box_idx, ui.STYLES[1])[2]
-            col_map = {
-                "bright_cyan": "\033[2;36m",  # Dim ANSI 6 (matches teal/cyan border, but softer)
-                "cyan": "\033[2;36m",
-                "bright_green": "\033[2;32m",  # Dim ANSI 2 (matches green box)
-                "green": "\033[2;32m",
-                "bright_blue": "\033[2;34m",  # Dim ANSI 4 (matches blue box)
-                "blue": "\033[2;34m",
-                "bright_magenta": "\033[2;35m",
-                "magenta": "\033[2;35m",
-                "bright_yellow": "\033[2;33m",
-                "yellow": "\033[2;33m",
-            }
-            stats_color = col_map.get(b_col, "\033[2;36m")
-        except Exception:
-            stats_color = "\033[2;36m"
-
-        sys.stdout.write(f"{stats_color} [ {' · '.join(parts)} ]\033[0m\n\n")
+        stat_line = " · ".join(parts)
+        sys.stdout.write(f"\033[2m  {stat_line}\033[0m\n\n")
         sys.stdout.flush()
     except Exception:
         pass
