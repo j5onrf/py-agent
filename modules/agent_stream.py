@@ -175,9 +175,12 @@ class RichStreamer:
         self._acc_ans_parts: list[str] = []
         self.phase = "INIT"
         self.think_hdr_printed = False
+        self.think_at_line_start = True
+        self.think_col = 0
+        self.think_word_buf = ""
         self.ans_started = False
         self.in_post_think = False
-        self.in_tool_payload = False  # Suppresses raw XML tool tokens from the screen
+        self.in_tool_payload = False
         self.box_style = get_state("box_style", 1)
         self.show_thinking = os.environ.get("AI_SHOW_THINKING", "1") == "1"
 
@@ -190,17 +193,7 @@ class RichStreamer:
         return "".join(self._acc_ans_parts)
 
     def _get_think_borders(self) -> tuple[str, str]:
-        term_width = shutil.get_terminal_size((80, 24)).columns
-        if self.box_style == 6:
-            top_dashes = max(10, term_width - 6)
-            bot_dashes = max(10, term_width - 2)
-            return f"╭─ ○ {'─' * top_dashes}╮", f"╰{'─' * bot_dashes}╯"
-
-        top_len = min(52, max(10, term_width - 6))
-        bot_len = min(56, max(10, term_width - 2))
-        if self.box_style == 2:
-            return f"┌─ ○ {'─' * top_len}", f"└{'─' * bot_len}"
-        return f"╭─ ○ {'─' * top_len}", f"╰{'─' * bot_len}"
+        return "", ""
 
     def _stop_spinner(self, done_msg: str | None = None) -> None:
         if self.spinner:
@@ -208,6 +201,79 @@ class RichStreamer:
                 self.spinner.stop(done_msg=done_msg)
             except (AttributeError, OSError, RuntimeError):
                 pass
+
+    def _stream_think_token(self, token: str) -> None:
+        term_width = shutil.get_terminal_size((80, 24)).columns
+        avail_width = max(20, term_width - 4)
+        output_chars = []
+
+        def flush_word(word: str) -> None:
+            nonlocal output_chars
+            if not word:
+                return
+            w_len = cell_len(word)
+            if self.think_at_line_start:
+                clean_w = word.lstrip(" ")
+                output_chars.append(f"\033[2m│ \033[0m{clean_w}")
+                self.think_col = cell_len(clean_w)
+                self.think_at_line_start = False
+            elif self.think_col + w_len > avail_width:
+                clean_w = word.lstrip(" ")
+                output_chars.append(f"\r\n\033[2m│ \033[0m{clean_w}")
+                self.think_col = cell_len(clean_w)
+            else:
+                output_chars.append(word)
+                self.think_col += w_len
+
+        for ch in token:
+            if ch == "\r":
+                continue
+            if ch == "\n":
+                if self.think_word_buf:
+                    flush_word(self.think_word_buf)
+                    self.think_word_buf = ""
+                if self.think_at_line_start:
+                    output_chars.append("\033[2m│\033[0m\r\n")
+                else:
+                    output_chars.append("\r\n")
+                self.think_at_line_start = True
+                self.think_col = 0
+            elif ch in (" ", "\t"):
+                self.think_word_buf += ch
+                flush_word(self.think_word_buf)
+                self.think_word_buf = ""
+            else:
+                self.think_word_buf += ch
+                if cell_len(self.think_word_buf) >= avail_width:
+                    flush_word(self.think_word_buf)
+                    self.think_word_buf = ""
+
+        if output_chars:
+            try:
+                sys.stderr.write("".join(output_chars))
+                sys.stderr.flush()
+            except OSError:
+                pass
+
+    def _close_think_block(self) -> None:
+        if self.show_thinking and self.think_hdr_printed and not self.ans_started:
+            if self.think_word_buf:
+                clean_w = self.think_word_buf.lstrip(" ") if self.think_at_line_start else self.think_word_buf
+                rail = "\033[2m│ \033[0m" if self.think_at_line_start else ""
+                try:
+                    sys.stderr.write(f"{rail}{clean_w}")
+                except OSError:
+                    pass
+                self.think_word_buf = ""
+                self.think_at_line_start = False
+
+            try:
+                if not self.think_at_line_start:
+                    sys.stderr.write("\r\n")
+                sys.stderr.flush()
+            except OSError:
+                pass
+            self.phase = "ANSWER"
 
     def start(self) -> None:
         if self.active:
@@ -266,39 +332,25 @@ class RichStreamer:
                 return
             if parts[0]:
                 self.update(parts[0])
-            if self.show_thinking and self.think_hdr_printed and not self.ans_started:
-                sep = "" if (self.acc_think.endswith("\n")) else "\r\n"
-                _, bot_border = self._get_think_borders()
-                _console_err.print(f"{sep}[dim]{bot_border}[/dim]\n")
-                sys.stderr.flush()
-            self.phase = "ANSWER"
+            self._close_think_block()
             self._stop_spinner()
             if len(parts) > 1 and parts[1]:
                 self.update(parts[1])
             return
 
-        # Intercept inline tool calls: close thinking box cleanly and hide raw XML tags
+        # Intercept inline tool calls: close thinking rail cleanly and hide raw XML tags
         if self.in_tool_payload or any(m in token for m in TOOL_MARKERS):
             if not self.in_tool_payload:
                 self.in_tool_payload = True
-                # Print any legitimate text arriving right before the first tool marker
                 for m in TOOL_MARKERS:
                     if m in token:
                         pre = token.split(m, 1)[0]
                         if pre:
-                            try:
-                                sys.stderr.write(pre.replace("\r\n", "\n").replace("\n", "\r\n"))
-                                sys.stderr.flush()
-                            except OSError:
-                                pass
+                            self._stream_think_token(pre)
                         break
-                # Close thinking box so tool spinner can run cleanly
-                if self.show_thinking and self.think_hdr_printed and not self.ans_started:
-                    sep = "" if (self.acc_think.endswith("\n")) else "\r\n"
-                    _, bot_border = self._get_think_borders()
-                    _console_err.print(f"{sep}[dim]{bot_border}[/dim]\n")
-                    sys.stderr.flush()
-                    self.ans_started = True
+                self._close_think_block()
+                self._stop_spinner()
+                self.ans_started = True
             return
 
         if self.in_post_think:
@@ -316,16 +368,18 @@ class RichStreamer:
             if self.show_thinking and tok:
                 if not self.think_hdr_printed and tok.strip():
                     self.think_hdr_printed = True
+                    self.think_at_line_start = True
+                    self.think_col = 0
+                    self.think_word_buf = ""
                     self._stop_spinner()
-                    top_border, _ = self._get_think_borders()
-                    _console_err.print(f"[dim]{top_border}[/dim]")
-                    tok = tok.lstrip("\r\n")
-                if tok:
                     try:
-                        sys.stderr.write(tok.replace("\r\n", "\n").replace("\n", "\r\n"))
+                        sys.stderr.write("\r\n")
                         sys.stderr.flush()
                     except OSError:
                         pass
+                    tok = tok.lstrip("\r\n")
+                if tok:
+                    self._stream_think_token(tok)
         else:
             tok = RE_FINAL_ANSWER.sub("", token)
             if not self.ans_started:
@@ -340,6 +394,8 @@ class RichStreamer:
                     if (p_clean and tok.startswith(("```", "#", "---")))
                     else (f"{p_clean} " if p_clean else "")
                 )
+                if self.think_hdr_printed:
+                    p_str = "\r\n" + p_str
                 p_style = "\033[1;32m" if "Agent" in p_clean else "\033[1;36m"
                 if p_str:
                     try:
@@ -359,12 +415,9 @@ class RichStreamer:
 
     def stop(self, interrupted: bool = False) -> None:
         self._stop_spinner()
+        if self.phase == "THINKING":
+            self._close_think_block()
         if interrupted:
-            if self.phase == "THINKING" and self.show_thinking and self.think_hdr_printed and not self.ans_started:
-                sep = "" if (self.acc_think.endswith("\n")) else "\r\n"
-                _, bot_border = self._get_think_borders()
-                _console_err.print(f"{sep}[dim]{bot_border}[/dim]\n")
-                self.phase = "ANSWER"
             try:
                 sys.stdout.write("\033[?25h")
                 sys.stdout.flush()
@@ -372,14 +425,6 @@ class RichStreamer:
                 pass
             return
 
-        if self.phase == "THINKING" and self.show_thinking and self.think_hdr_printed and not self.ans_started:
-            sep = "" if (self.acc_think.endswith("\n")) else "\r\n"
-            _, bot_border = self._get_think_borders()
-            _console_err.print(f"{sep}[dim]{bot_border}[/dim]\n")
-            self.phase = "ANSWER"
-
-        # Note: When render_markdown is active, agent_core performs a cursor rewind
-        # and re-prints Markdown cleanly; trailing newline is omitted here to prevent blank gaps.
         render_md = bool(get_state("render_markdown", False))
         if self.ans_started and not render_md:
             try:
@@ -400,20 +445,14 @@ def _process_stream_chunk(content: str, reasoning: str, in_think_block: Any = Fa
             if "<|tool_call_end|>" in content:
                 content = content.replace("<|tool_call_end|>", "")
 
-    # Normalize incoming think state:
-    # "reasoning" -> started by server reasoning delta
-    # "content"   -> started by literal <think> tag in content stream
-    # "" / False  -> not currently in a think block
     think_mode = in_think_block if isinstance(in_think_block, str) else ("reasoning" if in_think_block else "")
 
-    # 1. Server emits explicit reasoning delta
     if reasoning:
         prefix = "<think>" if not think_mode else ""
         if content:
             return f"{prefix}{reasoning}</think>{content}", False, ""
         return f"{prefix}{reasoning}", True, "reasoning"
 
-    # 2. Server emits content delta
     if content:
         if think_mode == "reasoning":
             if "</think>" in content:

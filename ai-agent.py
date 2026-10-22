@@ -501,7 +501,8 @@ def run_interactive_chat(args: list[str]) -> None:
     show_stats = st.get("show_stats", True)
     if not is_agent:
         memory_active = st.get("memory_active", False)
-    reasoning_active, reasoning_budget = st.get("reasoning_active", False), st.get("reasoning_budget", 500)
+    reasoning_budget = st.get("reasoning_budget", 500)
+    reasoning_active = st.get("reasoning_active", reasoning_budget > 0)
 
     os.environ["AI_RENDER_MARKDOWN"] = "1" if st.get("render_markdown", False) else "0"
     os.environ["AI_REASONIX_ACTIVE"] = "1" if st.get("reasonix_active", True) else "0"
@@ -635,9 +636,6 @@ def run_interactive_chat(args: list[str]) -> None:
                 readline.add_history(query)
             except Exception:
                 pass
-
-            sys.stdout.write("\n")
-            sys.stdout.flush()
 
             ans = core.stream_response(
                 chat_history,

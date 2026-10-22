@@ -534,7 +534,7 @@ def draw_session_box(
         (f"\033[90m{display_profile}{ANSI_RESET}", display_profile, cell_len(display_profile)),
     ]
 
-    # 3rd line only in workspace agent mode when memory is active
+    # Show 3rd line only when project memory is active
     if is_agent and memory_active:
         rows.append((f"\033[32m{db_status}{ANSI_RESET}", db_status, cell_len(db_status)))
 
@@ -546,6 +546,7 @@ def draw_session_box(
 
     is_tty = sys.stdout.isatty() and sys.stdin.isatty() and os.environ.get("AI_ANIM", "1") != "0"
     captured_char = ""
+    animation_duration = 0.5  # Set your preferred duration in seconds here
 
     if is_tty and wake_on_key and _HAS_TERMIOS:
         old_term = termios.tcgetattr(sys.stdin)
@@ -574,6 +575,9 @@ def draw_session_box(
                     break
 
                 t = time.time() - start_time
+                if t >= animation_duration:
+                    break
+
                 frame_str = _render_theme_shader(rows, box_w, t, is_resting=False, sub_tag=sub_tag)
                 if first_frame:
                     sys.stdout.write(frame_str + "\n")

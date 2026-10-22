@@ -21,7 +21,7 @@ class BinarySearchTree:
                 node.left = Node(key)
             else:
                 self._insert(node.left, key)
-        elif key > node.key:
+        else:
             if node.right is None:
                 node.right = Node(key)
             else:
@@ -40,16 +40,13 @@ class BinarySearchTree:
         else:
             return self._search(node.right, key)
 
-    def __repr__(self):
-        return f"BinarySearchTree({self.root})"
+    def inorder_traversal(self):
+        result = []
+        self._inorder(self.root, result)
+        return result
 
-
-if __name__ == "__main__":
-    bst = BinarySearchTree()
-    for key in [50, 30, 70, 20, 40, 60, 80]:
-        bst.insert(key)
-
-    print("Search 40:", bst.search(40))   # True
-    print("Search 25:", bst.search(25))   # False
-    print("Search 80:", bst.search(80))   # True
-    print("Search 10:", bst.search(10))   # False
+    def _inorder(self, node, result):
+        if node is not None:
+            self._inorder(node.left, result)
+            result.append(node.key)
+            self._inorder(node.right, result)
