@@ -394,8 +394,7 @@ class RichStreamer:
                     if (p_clean and tok.startswith(("```", "#", "---")))
                     else (f"{p_clean} " if p_clean else "")
                 )
-                if self.think_hdr_printed:
-                    p_str = "\r\n" + p_str
+                p_str = "\r\n" + p_str
                 p_style = "\033[1;32m" if "Agent" in p_clean else "\033[1;36m"
                 if p_str:
                     try:
