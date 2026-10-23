@@ -381,20 +381,30 @@ def build_dynamic_box(spec: dict, rows_data: list[tuple[str, str]], box_w: int, 
 
     grid: list[list[tuple[str, str]]] = []
     sub_str = f" [#{sub_id}]" if sub_id else ""
-    header = f"○{sub_str} "
 
     top: list[tuple[str, str]] = []
-    for x in range(box_w):
-        if 4 <= x < 4 + len(header):
-            top.append((header[x - 4], ANSI_BRIGHT))
-        elif x == 0:
-            top.append(spec.get("tl", (" ", "")))
-        elif x == box_w - 1:
-            top.append(spec.get("tr", (" ", "")))
-        elif x % spec.get("h_step", 1) == 0:
-            top.append(get_fill("h", x))
-        else:
-            top.append((" ", ""))
+    if spec.get("h_step", 1) == 1:
+        header = f" ○{sub_str} "
+        top.append(spec.get("tl", ("╭", ANSI_BRIGHT)))
+        top.append(spec.get("h", ("─", ANSI_BRIGHT)))
+        for ch in header:
+            top.append((ch, ANSI_BRIGHT))
+        while len(top) < box_w - 1:
+            top.append(spec.get("h", ("─", ANSI_BRIGHT)))
+        top.append(spec.get("tr", ("╮", ANSI_BRIGHT)))
+    else:
+        header = f"○{sub_str} "
+        for x in range(box_w):
+            if 4 <= x < 4 + len(header):
+                top.append((header[x - 4], ANSI_BRIGHT))
+            elif x == 0:
+                top.append(spec.get("tl", (" ", "")))
+            elif x == box_w - 1:
+                top.append(spec.get("tr", (" ", "")))
+            elif x % spec.get("h_step", 1) == 0:
+                top.append(get_fill("h", x))
+            else:
+                top.append((" ", ""))
     grid.append(top)
 
     for text, col in rows_data:

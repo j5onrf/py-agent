@@ -7,9 +7,9 @@ Local workspace developer agent with Open Knowledge Format (OKF) memory, an IPyt
 [01/01] > [ling-tiny] ai init ~/ling-tiny
 ✓ Profile set to: Lingtiny [Yolo: ON] [Mem: ON] [Adp: ON]
 ╭─ ○ ───────────────────────────────────────────╮
-│  Ling-3.0-tiny                 • ● ● ● • • ·  │
-│  lingtiny                      · • ● ● ● • ·  │
-│  active (0 memories, 0 turns)  · · • ● ● ● •  │
+│  Ling-3.0-tiny                                │
+│  lingtiny                                     │
+│  active (0 memories, 0 turns)                 │
 ╰───────────────────────────────────────────────╯
 
 ❯ write a python binary search tree with insert and search methods
@@ -37,16 +37,13 @@ Let me verify the file was created correctly and then provide a summary.
 
 ## UI Box Themes
 
-Switch CLI box styles using `/box [1-6]` (or `/box` to cycle). Persists in `~/.config/py-agent/.state.json`.
+Switch CLI box styles using `/box [1-3]` (or `/box` to cycle). Persists in `~/.config/py-agent/.state.json`.
 
-| Box Style | Preset Name | Thinking Box Geometry |
-| :---: | :--- | :---: |
-| **#1** | **Minimal Wave** *(Default)* | **Rounded** (`╭` and `╰`) |
-| **#2** | **Minimal Wave** | **Square** (`┌` and `└`) |
-| **#3** | **Double Border** | **Square** (`┌` and `└`) |
-| **#4** | **Classic Rounded** | **Rounded** (`╭` and `╰`) |
-| **#5** | **Classic Minimal** | **Rounded** (`╭` and `╰`) |
-| **#6** | **Full-Width Wave** | **Rounded** (`╭ ... ╮` and `╰ ... ╯`) |
+| Box Style | Preset Name | Frame Style & Visual Geometry |
+| :---: | :--- | :--- |
+| **#1** | **Clean Rounded** *(Default)* | Symmetrical rounded frame with header node (`╭─ ○ ───╮` and `╰───╯`) |
+| **#2** | **Spaced Dots** | Minimalist airy spaced-dot perimeter (`· · ○ · ·`) |
+| **#3** | **Dot Slab** | Nothing-OS style 2D dot-matrix grid with text cutout and L→R density gradient |
 
 ---
 

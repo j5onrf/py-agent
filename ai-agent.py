@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [v0.9.9.58] - Main CLI Runtime, Workspace Agent & Command Dispatcher [OCR 0.01]"""
+"""Py Agent [v0.9.9.59] - Main CLI Runtime, Workspace Agent & Command Dispatcher [OCR 0.01]"""
 
 import json
 import os
