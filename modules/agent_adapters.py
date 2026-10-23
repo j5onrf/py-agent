@@ -31,7 +31,7 @@ RE_MD_CODE_BLOCK = re.compile(r"^\s*```[a-zA-Z0-9_+-]*\s*\n([\s\S]*?)\n```\s*$",
 RE_MD_PY_WRAPPER = re.compile(r"```(?:python|py)\s*\n([\s\S]*?)\s*```", re.DOTALL)
 
 RE_LING_XML = re.compile(
-    r"<tool_call>\s*(?P<name>[a-zA-Z_]\w*)\s*(?P<params><arg_key>[\s\S]*?)\s*</tool_call>",
+    r"<tool_call>\s*(?P<name>[a-zA-Z_]\w*)\s*(?P<params>(?:<arg_key>[\s\S]*?)?)\s*</tool_call>",
     re.DOTALL,
 )
 RE_LING_PARAM = re.compile(
@@ -1025,12 +1025,12 @@ def extract_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
         except Exception:
             pass
 
-    # Format 3.5: Ling 3.0 / Bailing V3 Tagged Format
+    # Format 3.5: Ling 3.0 / Flint Tagged XML Format
     for i, m in enumerate(RE_LING_XML.finditer(text)):
         fname = m.group("name").strip()
-        raw_params = m.group("params")
-        params = {pm.group("key").strip(): pm.group("val").strip() for pm in RE_LING_PARAM.finditer(raw_params)}
-        if fname and params:
+        raw_params = m.group("params") or ""
+        params = {pm.group("key").strip(): pm.group("val").strip() for pm in RE_LING_PARAM.finditer(raw_params)} if raw_params else {}
+        if fname:
             calls.append(
                 {
                     "id": f"call_ling_{i}_{int(time.time())}",

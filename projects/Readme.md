@@ -6,11 +6,11 @@ Local workspace developer agent with Open Knowledge Format (OKF) memory, an IPyt
 ~ ❯ ling
 [01/01] > [ling-tiny] ai init ~/ling-tiny
 ✓ Profile set to: Lingtiny [Yolo: ON] [Mem: ON] [Adp: ON]
-╭─ ○ ───────────────────────────────────────────╮
-│  Ling-3.0-tiny                                │
-│  lingtiny                                     │
-│  active (0 memories, 0 turns)                 │
-╰───────────────────────────────────────────────╯
+╭─ ○ ────────────────────────────────────────╮
+│  Ling-3.0-tiny                             │
+│  lingtiny                                  │
+│  active (0 memories, 0 turns)              │
+╰────────────────────────────────────────────╯
 
 ❯ write a python binary search tree with insert and search methods
 
