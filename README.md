@@ -35,6 +35,7 @@
       <td align="center" width="50%" valign="top">
         <h3>27B+ (LLM)</h3>
         <p><sub>Reasoning, multi-file refactoring, and sub-agents</sub></p>
+        <code>Sage-A1.5-35B</code> &nbsp;•&nbsp; <code>Flint-40B-A2.5B</code><br>
         <code>Qwen3.8-35B-D*</code> &nbsp;•&nbsp; <code>Ornith-1.5</code><br>
         <code>KAT-Coder-V2.5</code> &nbsp;•&nbsp; <code>Tiel-Coder-35B</code><br>
         <code>Occamy-1.0</code> &nbsp;•&nbsp; <code>Nex-N2.5-mini</code><br>
