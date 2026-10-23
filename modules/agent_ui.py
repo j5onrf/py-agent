@@ -46,10 +46,9 @@ class InlineSpinner:
     def __init__(
         self,
         chars: tuple[str, ...] | list[str] | str = (
-            "● ○ • ·",
-            "○ ● ○ •",
-            "• ○ ● ○",
-            "· • ○ ●",
+            "● ○ ○",
+            "○ ● ○",
+            "○ ○ ●",
         ),
     ) -> None:
         self.chars = chars
@@ -360,83 +359,25 @@ def get_local_model_name(max_age: float = 30.0) -> str:
         return fallback
 
 
-# ── Curated Box Layout Builders (Styles 1–5) ───────────────────────────────────
+# ── Curated Box Layout Builders (Styles 1-3) ───────────────────────────────────
 
-def build_style_1_clean_rounded(rows_data: list[tuple[str, str]], box_w: int, sub_id: int | None = None) -> list[list[tuple[str, str]]]:
-    """Style 1: Clean Minimal Rounded Box (Default) with generous interior breathing room."""
-    grid: list[list[tuple[str, str]]] = []
-    sub_str = f" [#{sub_id}]" if sub_id else ""
-    header = f"○{sub_str} "
-
-    top: list[tuple[str, str]] = [("╭", ANSI_BRIGHT), ("─", ANSI_BRIGHT), (" ", "")]
-    for ch in header:
-        top.append((ch, ANSI_BRIGHT))
-    while len(top) < box_w - 1:
-        top.append(("─", ANSI_BRIGHT))
-    top.append(("╮", ANSI_BRIGHT))
-    grid.append(top)
-
-    for text, col in rows_data:
-        row: list[tuple[str, str]] = [("│", ANSI_BRIGHT), (" ", ""), (" ", "")]
-        for ch in text:
-            row.append((ch, col))
-        while len(row) < box_w - 1:
-            row.append((" ", ""))
-        row.append(("│", ANSI_BRIGHT))
-        grid.append(row)
-
-    bot = [("╰", ANSI_BRIGHT)] + [("─", ANSI_BRIGHT)] * (box_w - 2) + [("╯", ANSI_BRIGHT)]
-    grid.append(bot)
-    return grid
-
-
-def build_style_2_spaced_dots(rows_data: list[tuple[str, str]], box_w: int, sub_id: int | None = None) -> list[list[tuple[str, str]]]:
-    """Style 2: Clean airy spaced-dot perimeter (· · ○ · ·) with clean interior."""
-    if box_w % 2 == 0:
+def build_dynamic_box(spec: dict, rows_data: list[tuple[str, str]], box_w: int, sub_id: int | None = None) -> list[list[tuple[str, str]]]:
+    """Builds a box from a declarative spec, handling slab, perimeter, and solid styles."""
+    is_slab = spec.get("is_slab", False)
+    if is_slab and box_w % 2 == 0:
         box_w += 1
-
-    grid: list[list[tuple[str, str]]] = []
-    sub_str = f" [#{sub_id}]" if sub_id else ""
-    header = f"○{sub_str} "
-
-    top: list[tuple[str, str]] = []
-    for x in range(box_w):
-        if 4 <= x < 4 + len(header):
-            top.append((header[x - 4], ANSI_BRIGHT))
-        elif x % 2 == 0:
-            top.append(("·", ANSI_ACCENT))
-        else:
-            top.append((" ", ""))
-    grid.append(top)
-
-    for text, col in rows_data:
-        row: list[tuple[str, str]] = [("·", ANSI_ACCENT), (" ", ""), (" ", "")]
-        for ch in text:
-            row.append((ch, col))
-        while len(row) < box_w - 1:
-            row.append((" ", ""))
-        row.append(("·", ANSI_ACCENT))
-        grid.append(row)
-
-    bot: list[tuple[str, str]] = [("·", ANSI_ACCENT) if x % 2 == 0 else (" ", "") for x in range(box_w)]
-    grid.append(bot)
-    return grid
-
-
-def build_style_3_dot_slab(rows_data: list[tuple[str, str]], box_w: int, sub_id: int | None = None) -> list[list[tuple[str, str]]]:
-    """Style 3: Nothing-OS style 2D dot-matrix slab with text cutout and L->R dot gradient."""
-    if box_w % 2 == 0:
-        box_w += 1
-
-    max_txt = max(len(t) for t, _ in rows_data)
+    max_txt = max(len(t) for t, _ in rows_data) if is_slab else 0
     cutout_end = 3 + max_txt + 2
 
-    def dot_shade(x: int) -> str:
-        ratio = x / max(1, box_w - 1)
-        if ratio < 0.35: return ANSI_DIM
-        if ratio < 0.70: return ANSI_MUTED
-        if ratio < 0.90: return ANSI_ACCENT
-        return ANSI_BRIGHT
+    v_cell = spec.get("v", (" ", ""))
+    if not isinstance(v_cell, tuple):
+        v_cell = (str(v_cell), ANSI_ACCENT)
+
+    def get_fill(key: str, x: int) -> tuple[str, str]:
+        val = spec.get(key, (" ", ""))
+        if callable(val):
+            return "·", val(x)
+        return val if isinstance(val, tuple) else (str(val), spec.get("c_h", ANSI_ACCENT))
 
     grid: list[list[tuple[str, str]]] = []
     sub_str = f" [#{sub_id}]" if sub_id else ""
@@ -446,32 +387,94 @@ def build_style_3_dot_slab(rows_data: list[tuple[str, str]], box_w: int, sub_id:
     for x in range(box_w):
         if 4 <= x < 4 + len(header):
             top.append((header[x - 4], ANSI_BRIGHT))
-        elif x % 2 == 0:
-            top.append(("·", dot_shade(x)))
+        elif x == 0:
+            top.append(spec.get("tl", (" ", "")))
+        elif x == box_w - 1:
+            top.append(spec.get("tr", (" ", "")))
+        elif x % spec.get("h_step", 1) == 0:
+            top.append(get_fill("h", x))
         else:
             top.append((" ", ""))
     grid.append(top)
 
     for text, col in rows_data:
-        row: list[tuple[str, str]] = [("·", dot_shade(0)), (" ", ""), (" ", "")]
+        row: list[tuple[str, str]] = [v_cell, (" ", ""), (" ", "")]
         for ch in text:
             row.append((ch, col))
-        while len(row) < cutout_end:
-            row.append((" ", ""))
-        while len(row) < box_w:
-            x = len(row)
-            row.append(("·", dot_shade(x)) if x % 2 == 0 else (" ", ""))
+        if is_slab:
+            while len(row) < cutout_end:
+                row.append((" ", ""))
+        while len(row) < box_w - 1:
+            if is_slab and len(row) % 2 == 0:
+                row.append(get_fill("h", len(row)))
+            else:
+                row.append((" ", ""))
+        row.append(v_cell)
         grid.append(row)
 
-    bot: list[tuple[str, str]] = [("·", dot_shade(x)) if x % 2 == 0 else (" ", "") for x in range(box_w)]
+    bot: list[tuple[str, str]] = []
+    for x in range(box_w):
+        if x == 0:
+            bot.append(spec.get("bl", (" ", "")))
+        elif x == box_w - 1:
+            bot.append(spec.get("br", (" ", "")))
+        elif x % spec.get("h_step", 1) == 0:
+            bot.append(get_fill("h", x))
+        else:
+            bot.append((" ", ""))
     grid.append(bot)
     return grid
 
 
+def _slab_shader(x: int) -> str:
+    """Calculates dot color for the Nothing-OS style dot slab gradient."""
+    ratio = x / 46.0
+    if ratio < 0.35:
+        return ANSI_DIM
+    if ratio < 0.70:
+        return ANSI_MUTED
+    if ratio < 0.90:
+        return ANSI_ACCENT
+    return ANSI_BRIGHT
+
+
+BOX_SPECS = {
+    1: {
+        "name": "Clean Rounded",
+        "tl": ("╭", ANSI_BRIGHT),
+        "tr": ("╮", ANSI_BRIGHT),
+        "bl": ("╰", ANSI_BRIGHT),
+        "br": ("╯", ANSI_BRIGHT),
+        "h": ("─", ANSI_BRIGHT),
+        "v": ("│", ANSI_BRIGHT),
+        "h_step": 1,
+    },
+    2: {
+        "name": "Spaced Dots",
+        "tl": ("·", ANSI_ACCENT),
+        "tr": ("·", ANSI_ACCENT),
+        "bl": ("·", ANSI_ACCENT),
+        "br": ("·", ANSI_ACCENT),
+        "h": ("·", ANSI_ACCENT),
+        "v": ("·", ANSI_ACCENT),
+        "h_step": 2,
+    },
+    3: {
+        "name": "Dot Slab",
+        "is_slab": True,
+        "tl": ("·", _slab_shader(0)),
+        "tr": ("·", _slab_shader(46)),
+        "bl": ("·", _slab_shader(0)),
+        "br": ("·", _slab_shader(46)),
+        "h": _slab_shader,
+        "v": ("·", _slab_shader(0)),
+        "h_step": 2,
+    },
+}
+
 BOX_STYLES = {
-    1: ("Clean Rounded", build_style_1_clean_rounded),
-    2: ("Spaced Dots", build_style_2_spaced_dots),
-    3: ("Dot Slab", build_style_3_dot_slab),
+    i: (spec["name"], lambda *a, s=spec, **kw: build_dynamic_box(s, *a, **kw))
+    for i, spec in BOX_SPECS.items()
 }
 
 
