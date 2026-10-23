@@ -9,6 +9,8 @@ skills/system/mysys.md
 # Ephemeral State, Caches & Logs
 .state.json
 .openrouter_cache_v2.json
+.pyrouter.log
+.pyrouter.pid
 .request_log
 .voice_pending.txt
 .active_cd*
