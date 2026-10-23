@@ -14,17 +14,13 @@ Local workspace developer agent with Open Knowledge Format (OKF) memory, an IPyt
 
 ❯ write a python binary search tree with insert and search methods
 
-╭─ ∿ ────────────────────────────────────────────────────
-The user wants a Python binary search tree with insert and search methods. I need to create a Python
-script that implements a BST with these methods.
-╰────────────────────────────────────────────────────────
+│ The user wants a Python binary search tree with insert and search methods. I need to create a Python
+│ script that implements a BST with these methods.
 
   ∗ updating • write_file binary_search_tree.py
   ✓ Done (0.1s)
 
-╭─ ∿ ────────────────────────────────────────────────────
-Let me verify the file was created correctly and then provide a summary.
-╰────────────────────────────────────────────────────────
+│ Let me verify the file was created correctly and then provide a summary.
 
 ✓ Task complete: Created a Python BST with insert and search methods.
 
