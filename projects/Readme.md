@@ -28,7 +28,7 @@ Let me verify the file was created correctly and then provide a summary.
 
 ✓ Task complete: Created a Python BST with insert and search methods.
 
-  [ ↑767 ↓14 R22 · CH97% · 9.8%/8.2k · 0.44s @ 121.31 t/s ]
+  ↑767 ↓14 R22 · CH97% · 9.8%/8.2k · 0.44s @ 121.31 t/s
 
 ❯ █
 ```

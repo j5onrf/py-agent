@@ -516,6 +516,13 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
         return True, None
 
     if cmd in ("/box", "/boxes"):
+        cur_box = core.get_state("box_style", 1)
+        if len(parts) > 1 and parts[1].isdigit() and 1 <= int(parts[1]) <= 3:
+            val = int(parts[1])
+        else:
+            val = (cur_box % 3) + 1
+
+        core.save_state("box_style", val)
         d_turns = 0
         m_cnt = 0
         if ctx.is_agent:
@@ -537,15 +544,16 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
             ctx.memory_active,
             ctx.active_system_prompt,
             ctx.clean_name,
+            box_style=val,
             wake_on_key=True,
         )
         if wake_key:
             try:
                 import readline
+
                 readline.set_startup_hook(lambda: readline.insert_text(wake_key))
             except Exception:
                 pass
-        ctx.flash_status("box: wave")
         return True, None
 
     if cmd in ("/calm", "/zen"):

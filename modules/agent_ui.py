@@ -2,7 +2,6 @@
 """UI Module - Spinners, session boxes, and interactive menus [OCR .01]"""
 
 import json
-import math
 import os
 import re
 import select
@@ -14,7 +13,7 @@ import urllib.request as urlreq
 from collections.abc import Callable
 from typing import Any
 
-from rich.box import DOUBLE, ROUNDED, SQUARE
+from rich.box import ROUNDED
 from rich.cells import cell_len
 from rich.console import Console, Group
 from rich.panel import Panel
@@ -32,34 +31,15 @@ CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
 _console = Console()
 RE_UNSAFE_SHELL_CHARS: re.Pattern = re.compile(r'[\[\]{}()=\'"",;|<>#`$&*!\\\r\n]')
 
-RICH_TO_ANSI = {
-    "green": "\033[1;32m",
-    "bright_green": "\033[1;92m",
-    "blue": "\033[1;34m",
-    "bright_blue": "\033[1;94m",
-    "yellow": "\033[1;33m",
-    "bright_yellow": "\033[1;93m",
-    "cyan": "\033[1;36m",
-    "bright_cyan": "\033[1;96m",
-    "magenta": "\033[1;35m",
-    "bright_magenta": "\033[1;95m",
-    "dim white": "\033[37m",
-    "white": "\033[1;37m",
-}
-
-_core_module = None
 _cached_local_model: tuple[str, float] = ("", 0.0)
 
-ANSI_SHADES = [
-    "\033[2m",          # Level 0: Dim (theme background/unlit)
-    "\033[90m",         # Level 1: Muted / Gray (theme comment tone)
-    "\033[36m",         # Level 2: Cyan (theme primary accent)
-    "\033[1;36m",       # Level 3: Bold Bright Cyan (theme vivid accent)
-    "\033[1;37m",       # Level 4: Bold White (theme foreground highlight)
-]
 ANSI_RESET = "\033[0m"
-
-DOT_GLYPHS = ["·", "•", "•", "○", "●"]
+ANSI_DIM = "\033[2m"
+ANSI_MUTED = "\033[90m"
+ANSI_ACCENT = "\033[36m"
+ANSI_BRIGHT = "\033[1;36m"
+ANSI_WHITE = "\033[1;37m"
+ANSI_GREEN = "\033[32m"
 
 
 class InlineSpinner:
@@ -380,99 +360,152 @@ def get_local_model_name(max_age: float = 30.0) -> str:
         return fallback
 
 
-def _build_dots(row_idx: int, t: float, is_resting: bool = False, total_rows: int = 2) -> str:
-    if is_resting:
-        if total_rows == 3:
-            patterns = [
-                [4, 3, 1, 0, 1, 3, 4],  # Row 0: ● ○ • · • ○ ●
-                [3, 1, 0, 0, 0, 1, 3],  # Row 1: ○ • · · · • ○
-                [4, 3, 1, 0, 1, 3, 4],  # Row 2: ● ○ • · • ○ ●
-            ]
+# ── Curated Box Layout Builders (Styles 1–5) ───────────────────────────────────
+
+def build_style_1_clean_rounded(rows_data: list[tuple[str, str]], box_w: int, sub_id: int | None = None) -> list[list[tuple[str, str]]]:
+    """Style 1: Clean Minimal Rounded Box (Default) with generous interior breathing room."""
+    grid: list[list[tuple[str, str]]] = []
+    sub_str = f" [#{sub_id}]" if sub_id else ""
+    header = f"○{sub_str} "
+
+    top: list[tuple[str, str]] = [("╭", ANSI_BRIGHT), ("─", ANSI_BRIGHT), (" ", "")]
+    for ch in header:
+        top.append((ch, ANSI_BRIGHT))
+    while len(top) < box_w - 1:
+        top.append(("─", ANSI_BRIGHT))
+    top.append(("╮", ANSI_BRIGHT))
+    grid.append(top)
+
+    for text, col in rows_data:
+        row: list[tuple[str, str]] = [("│", ANSI_BRIGHT), (" ", ""), (" ", "")]
+        for ch in text:
+            row.append((ch, col))
+        while len(row) < box_w - 1:
+            row.append((" ", ""))
+        row.append(("│", ANSI_BRIGHT))
+        grid.append(row)
+
+    bot = [("╰", ANSI_BRIGHT)] + [("─", ANSI_BRIGHT)] * (box_w - 2) + [("╯", ANSI_BRIGHT)]
+    grid.append(bot)
+    return grid
+
+
+def build_style_2_spaced_dots(rows_data: list[tuple[str, str]], box_w: int, sub_id: int | None = None) -> list[list[tuple[str, str]]]:
+    """Style 2: Clean airy spaced-dot perimeter (· · ○ · ·) with clean interior."""
+    if box_w % 2 == 0:
+        box_w += 1
+
+    grid: list[list[tuple[str, str]]] = []
+    sub_str = f" [#{sub_id}]" if sub_id else ""
+    header = f"○{sub_str} "
+
+    top: list[tuple[str, str]] = []
+    for x in range(box_w):
+        if 4 <= x < 4 + len(header):
+            top.append((header[x - 4], ANSI_BRIGHT))
+        elif x % 2 == 0:
+            top.append(("·", ANSI_ACCENT))
         else:
-            patterns = [
-                [4, 3, 1, 0, 1, 3, 4],  # Row 0: ● ○ • · • ○ ●
-                [3, 1, 0, 0, 0, 1, 3],  # Row 1: ○ • · · · • ○
-            ]
-        row_pat = patterns[row_idx % len(patterns)]
-        cells = []
-        for idx in row_pat:
-            lvl = min(4, max(0, idx))
-            glyph = DOT_GLYPHS[lvl]
-            cells.append(f"{ANSI_SHADES[lvl]}{glyph}{ANSI_RESET}")
-        return " ".join(cells)
+            top.append((" ", ""))
+    grid.append(top)
 
-    cells = []
-    for c in range(7):
-        val = math.sin((c * 0.75) - (row_idx * 0.70) - (t * 5.0))
-        idx = min(4, max(0, int(((val + 1.0) / 2.0) * 4.99)))
-        glyph = DOT_GLYPHS[idx]
-        cells.append(f"{ANSI_SHADES[idx]}{glyph}{ANSI_RESET}")
-    return " ".join(cells)
+    for text, col in rows_data:
+        row: list[tuple[str, str]] = [("·", ANSI_ACCENT), (" ", ""), (" ", "")]
+        for ch in text:
+            row.append((ch, col))
+        while len(row) < box_w - 1:
+            row.append((" ", ""))
+        row.append(("·", ANSI_ACCENT))
+        grid.append(row)
+
+    bot: list[tuple[str, str]] = [("·", ANSI_ACCENT) if x % 2 == 0 else (" ", "") for x in range(box_w)]
+    grid.append(bot)
+    return grid
 
 
-def _render_theme_shader(
-    rows: list[tuple[str, str, int]],
-    box_w: int,
-    t: float,
-    is_resting: bool = False,
-    sub_tag: str = "",
-) -> str:
-    inner_w = box_w - 2
-    dots_w = 13  # 7 glyphs with 6 spaces
-    header = "╭─ ○ " + sub_tag
-    dashes_top = max(0, inner_w - len(header) + 1)
+def build_style_3_dot_slab(rows_data: list[tuple[str, str]], box_w: int, sub_id: int | None = None) -> list[list[tuple[str, str]]]:
+    """Style 3: Nothing-OS style 2D dot-matrix slab with text cutout and L->R dot gradient."""
+    if box_w % 2 == 0:
+        box_w += 1
 
-    if is_resting:
-        lines = [f"\033[1;36m{header}{'─' * dashes_top}╮{ANSI_RESET}"]
-        for r_idx, (colored_text, _, text_len) in enumerate(rows):
-            gap_len = max(2, inner_w - 4 - text_len - dots_w)
-            dots_field = _build_dots(r_idx, 0.0, is_resting=True, total_rows=len(rows))
-            lines.append(
-                f"\033[1;36m│{ANSI_RESET}  {colored_text}{' ' * gap_len}{dots_field}  \033[1;36m│{ANSI_RESET}"
-            )
-        lines.append(f"\033[1;36m╰{'─' * inner_w}╯{ANSI_RESET}")
-        return "\n".join(lines)
+    max_txt = max(len(t) for t, _ in rows_data)
+    cutout_end = 3 + max_txt + 2
 
-    top_chars = []
-    top_plain = f"{header}{'─' * dashes_top}╮"
-    for x, ch in enumerate(top_plain):
-        wave = math.sin((x * 0.14) - (t * 4.2))
-        lvl = min(4, max(0, int(((wave + 0.85) / 1.85) * 4.99)))
-        top_chars.append(f"{ANSI_SHADES[lvl]}{ch}{ANSI_RESET}")
-    lines = ["".join(top_chars)]
+    def dot_shade(x: int) -> str:
+        ratio = x / max(1, box_w - 1)
+        if ratio < 0.35: return ANSI_DIM
+        if ratio < 0.70: return ANSI_MUTED
+        if ratio < 0.90: return ANSI_ACCENT
+        return ANSI_BRIGHT
 
-    for r_idx, (_, plain_text, text_len) in enumerate(rows):
-        y = r_idx + 1
-        wave_l = math.sin(- (y * 0.45) - (t * 4.2))
-        lvl_l = min(4, max(0, int(((wave_l + 0.85) / 1.85) * 4.99)))
-        left_border = f"{ANSI_SHADES[lvl_l]}│{ANSI_RESET}"
+    grid: list[list[tuple[str, str]]] = []
+    sub_str = f" [#{sub_id}]" if sub_id else ""
+    header = f"○{sub_str} "
 
-        text_chars = []
-        for i, ch in enumerate(plain_text):
-            x = 3 + i
-            wave = math.sin((x * 0.14) - (y * 0.45) - (t * 4.2))
-            lvl = min(4, max(0, int(((wave + 0.85) / 1.85) * 4.99)))
-            text_chars.append(f"{ANSI_SHADES[lvl]}{ch}{ANSI_RESET}")
+    top: list[tuple[str, str]] = []
+    for x in range(box_w):
+        if 4 <= x < 4 + len(header):
+            top.append((header[x - 4], ANSI_BRIGHT))
+        elif x % 2 == 0:
+            top.append(("·", dot_shade(x)))
+        else:
+            top.append((" ", ""))
+    grid.append(top)
 
-        gap_len = max(2, inner_w - 4 - text_len - dots_w)
-        dots_field = _build_dots(r_idx, t, is_resting=False, total_rows=len(rows))
+    for text, col in rows_data:
+        row: list[tuple[str, str]] = [("·", dot_shade(0)), (" ", ""), (" ", "")]
+        for ch in text:
+            row.append((ch, col))
+        while len(row) < cutout_end:
+            row.append((" ", ""))
+        while len(row) < box_w:
+            x = len(row)
+            row.append(("·", dot_shade(x)) if x % 2 == 0 else (" ", ""))
+        grid.append(row)
 
-        wave_r = math.sin((inner_w * 0.14) - (y * 0.45) - (t * 4.2))
-        lvl_r = min(4, max(0, int(((wave_r + 0.85) / 1.85) * 4.99)))
-        right_border = f"{ANSI_SHADES[lvl_r]}│{ANSI_RESET}"
+    bot: list[tuple[str, str]] = [("·", dot_shade(x)) if x % 2 == 0 else (" ", "") for x in range(box_w)]
+    grid.append(bot)
+    return grid
 
-        lines.append(f"{left_border}  {''.join(text_chars)}{' ' * gap_len}{dots_field}  {right_border}")
 
-    bot_chars = []
-    bot_plain = f"╰{'─' * inner_w}╯"
-    y_bot = len(rows) + 1
-    for x, ch in enumerate(bot_plain):
-        wave = math.sin((x * 0.14) - (y_bot * 0.45) - (t * 4.2))
-        lvl = min(4, max(0, int(((wave + 0.85) / 1.85) * 4.99)))
-        bot_chars.append(f"{ANSI_SHADES[lvl]}{ch}{ANSI_RESET}")
-    lines.append("".join(bot_chars))
+BOX_STYLES = {
+    1: ("Clean Rounded", build_style_1_clean_rounded),
+    2: ("Spaced Dots", build_style_2_spaced_dots),
+    3: ("Dot Slab", build_style_3_dot_slab),
+}
 
-    return "\n".join(lines)
+
+def render_fade_frame(grid: list[list[tuple[str, str]]], progress: float, is_resting: bool) -> str:
+    """Renders stationary left-to-right opacity fade-in across the 2D grid."""
+    if not grid:
+        return ""
+    width = len(grid[0])
+    front_x = (width + 12.0) * progress
+
+    out_lines: list[str] = []
+    for y, row in enumerate(grid):
+        parts: list[str] = []
+        for x, (ch, rest_col) in enumerate(row):
+            if ch == " ":
+                parts.append(" ")
+                continue
+            if is_resting:
+                parts.append(f"{rest_col}{ch}{ANSI_RESET}")
+                continue
+
+            delta = front_x - (x + y * 1.2)
+            if delta <= 0.0:
+                parts.append(" ")
+            elif delta < 3.5:
+                parts.append(f"{ANSI_DIM}{ch}{ANSI_RESET}")
+            elif delta < 7.5:
+                mid_col = ANSI_DIM if rest_col == ANSI_DIM else ANSI_MUTED
+                parts.append(f"{mid_col}{ch}{ANSI_RESET}")
+            else:
+                parts.append(f"{rest_col}{ch}{ANSI_RESET}")
+        out_lines.append("\r\033[K" + "".join(parts))
+
+    return "\n".join(out_lines)
 
 
 def draw_session_box(
@@ -526,27 +559,30 @@ def draw_session_box(
         db_status = "session"
 
     term_cols = shutil.get_terminal_size((80, 24)).columns
-    sub_tag = f"[sub-agent #{sub_id}] " if sub_id else ""
+    m_style = "\033[1;31m" if ("not loaded" in model_name or "offline" in model_name) else ANSI_WHITE
 
-    m_style = "\033[1;31m" if ("not loaded" in model_name or "offline" in model_name) else "\033[1;37m"
-    rows = [
-        (f"{m_style}{model_name}{ANSI_RESET}", model_name, cell_len(model_name)),
-        (f"\033[90m{display_profile}{ANSI_RESET}", display_profile, cell_len(display_profile)),
+    rows_data = [
+        (model_name, m_style),
+        (display_profile, ANSI_MUTED),
     ]
-
-    # Show 3rd line only when project memory is active
     if is_agent and memory_active:
-        rows.append((f"\033[32m{db_status}{ANSI_RESET}", db_status, cell_len(db_status)))
+        rows_data.append((db_status, ANSI_GREEN))
 
-    num_lines = len(rows) + 2
-    max_text_w = max(r[2] for r in rows)
-    dots_w = 13
-    inner_w = max(44, min(term_cols - 4, max_text_w + dots_w + 6))
-    box_w = inner_w + 2
+    style_idx = box_style if box_style in BOX_STYLES else 1
+    _, builder_fn = BOX_STYLES[style_idx]
+
+    max_txt = max(cell_len(t) for t, _ in rows_data)
+    if style_idx == 3:
+        box_w = max(47, min(term_cols - 4, max_txt + 16))
+    else:
+        box_w = max(46, min(term_cols - 4, max_txt + 6))
+
+    grid = builder_fn(rows_data, box_w, sub_id=sub_id)
+    num_lines = len(grid)
 
     is_tty = sys.stdout.isatty() and sys.stdin.isatty() and os.environ.get("AI_ANIM", "1") != "0"
     captured_char = ""
-    animation_duration = 0.5  # Set your preferred duration in seconds here
+    animation_duration = 0.55
 
     if is_tty and wake_on_key and _HAS_TERMIOS:
         old_term = termios.tcgetattr(sys.stdin)
@@ -555,7 +591,7 @@ def draw_session_box(
         sys.stdout.flush()
 
         try:
-            start_time = time.time()
+            start_time = time.monotonic()
             first_frame = True
 
             while True:
@@ -574,20 +610,21 @@ def draw_session_box(
                             captured_char = ""
                     break
 
-                t = time.time() - start_time
-                if t >= animation_duration:
+                elapsed = time.monotonic() - start_time
+                if elapsed >= animation_duration:
                     break
 
-                frame_str = _render_theme_shader(rows, box_w, t, is_resting=False, sub_tag=sub_tag)
+                progress = min(1.0, elapsed / animation_duration)
+                frame_str = render_fade_frame(grid, progress, is_resting=False)
                 if first_frame:
                     sys.stdout.write(frame_str + "\n")
                     first_frame = False
                 else:
                     sys.stdout.write(f"\033[{num_lines}A\r{frame_str}\n")
                 sys.stdout.flush()
-                time.sleep(0.033)
+                time.sleep(0.016)
 
-            resting_str = _render_theme_shader(rows, box_w, 0.0, is_resting=True, sub_tag=sub_tag)
+            resting_str = render_fade_frame(grid, 1.0, is_resting=True)
             sys.stdout.write(f"\033[{num_lines}A\r{resting_str}\n\n")
             sys.stdout.flush()
         finally:
@@ -597,8 +634,7 @@ def draw_session_box(
 
         return captured_char
 
-    # Non-interactive fallback or direct resting render
-    resting_str = _render_theme_shader(rows, box_w, 0.0, is_resting=True, sub_tag=sub_tag)
+    resting_str = render_fade_frame(grid, 1.0, is_resting=True)
     print(resting_str + "\n")
     return ""
 
@@ -725,7 +761,7 @@ def show_help() -> None:
         ("/m, /map", "Toggle Codebase index-map"),
         ("/mem \\[save|list]", "Toggle & manage OKF memory files"),
         ("/hs, /hindsight", "Retrospective session memory audit"),
-        ("/box", "Replay dynamic theme skeleton wave"),
+        ("/box \\[1-3]", "Switch box style (1: Rounded [Default], 2: Spaced Dots, 3: Dot Slab)"),
         ("/task \\[goal]", "Autonomous task loop"),
         ("/t \\[N|show|hide]", "Reasoning budget & display"),
         ("/g, /yolo", "Toggle confirmation gates (YOLO)"),
