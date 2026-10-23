@@ -478,6 +478,9 @@ def agentic_turn(
             body_tools.pop("tools", None)
 
         if spinner and not getattr(spinner, "active", False):
+            if _round == 0 and sys.stderr.isatty():
+                sys.stderr.write("\n")
+                sys.stderr.flush()
             user_msg_count = len([m for m in messages if m.get("role") == "user"])
             spinner.start("Preloading..." if (_round == 0 and user_msg_count <= 1) else "Working...")
 

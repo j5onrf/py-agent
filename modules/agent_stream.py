@@ -372,11 +372,6 @@ class RichStreamer:
                     self.think_col = 0
                     self.think_word_buf = ""
                     self._stop_spinner()
-                    try:
-                        sys.stderr.write("\r\n")
-                        sys.stderr.flush()
-                    except OSError:
-                        pass
                     tok = tok.lstrip("\r\n")
                 if tok:
                     self._stream_think_token(tok)
@@ -394,7 +389,8 @@ class RichStreamer:
                     if (p_clean and tok.startswith(("```", "#", "---")))
                     else (f"{p_clean} " if p_clean else "")
                 )
-                p_str = "\r\n" + p_str
+                if self.think_hdr_printed or self.round_idx > 0 or p_clean:
+                    p_str = "\r\n" + p_str
                 p_style = "\033[1;32m" if "Agent" in p_clean else "\033[1;36m"
                 if p_str:
                     try:
