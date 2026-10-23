@@ -9,8 +9,11 @@ import os
 import re
 import select
 import shutil
+import socket
+import subprocess
 import sys
 import termios
+import time
 import tty
 import urllib.error as urlerr
 import urllib.request as urlreq
@@ -22,6 +25,7 @@ CUSTOM_SPACES_FILE = os.path.expanduser("~/.config/py-agent/custom_spaces.json")
 LAST_KEY_FILE = os.path.expanduser("~/.config/py-agent/.last_cloud_key.txt")
 LOCAL_DEFAULT_URL = "http://127.0.0.1:8080/v1/chat/completions"
 LOCAL_DEFAULT_MODEL = "local-model"
+PYROUTER_PATH = os.path.expanduser("~/.config/py-agent/plugins/pyrouter/pyrouter.py")
 
 MAX_FILE_BYTES = 5 * 1024 * 1024  # 5 MB ceiling for local JSON & remote API bodies
 
@@ -88,6 +92,44 @@ DEFAULTS = {
         "mistral": ["codestral-latest", "mistral-large-latest"],
     },
 }
+
+
+def is_pyrouter_running() -> bool:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.15)
+            return s.connect_ex(("127.0.0.1", 20128)) == 0
+    except Exception:
+        return False
+
+
+def start_pyrouter() -> bool:
+    if not os.path.isfile(PYROUTER_PATH):
+        return False
+    try:
+        subprocess.Popen(
+            [sys.executable, PYROUTER_PATH],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        for _ in range(25):
+            if is_pyrouter_running():
+                return True
+            time.sleep(0.1)
+    except Exception:
+        pass
+    return False
+
+
+def stop_pyrouter() -> bool:
+    try:
+        subprocess.run(["pkill", "-f", "pyrouter.py"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+    time.sleep(0.2)
+    return not is_pyrouter_running()
 
 
 def load_json(path: str, default: Any) -> Any:
@@ -362,6 +404,8 @@ def toggle_env_api_keys():
 
 def detect_provider(url: str, model: str) -> tuple[str, str]:
     u, m = url.lower(), model.lower()
+    if "20128" in u or "pyrouter" in u:
+        return "PyRouter", "🔀"
     if "vercel" in u or "pixel-canary" in m:
         return "Vercel Gateway", "▲"
     if "tokenharbor" in u:
@@ -449,10 +493,10 @@ async def async_fetch_remote(env_vars: dict, spaces: dict) -> tuple[dict, bool]:
                 pass
 
         try:
-            req = urlreq.Request(
-                "https://openrouter.ai/api/v1/models",
-                headers={"Authorization": f"Bearer {api_key_or}"} if api_key_or else {},
-            )
+            h_or = {"User-Agent": "py-agent/1.0"}
+            if api_key_or and api_key_or != "not-needed":
+                h_or["Authorization"] = f"Bearer {api_key_or}"
+            req = urlreq.Request("https://openrouter.ai/api/v1/models", headers=h_or)
             with urlreq.urlopen(req, timeout=10) as res:
                 if res.status == 200:
                     raw_data = res.read(MAX_FILE_BYTES)
@@ -761,6 +805,13 @@ async def async_main():
             )
 
             # Auxiliary Services (Compact)
+            py_status = f"{GREEN}RUNNING{RESET}" if is_pyrouter_running() else f"{RED}STOPPED{RESET}"
+            items.append(
+                {
+                    "type": "pyrouter_srv",
+                    "render": f"🔀  {'PyRouter (:20128)':<{col_w}} {py_status}",
+                }
+            )
             items.append(
                 {
                     "type": "aux",
@@ -800,7 +851,7 @@ async def async_main():
             items.append(
                 {
                     "type": "refresh",
-                    "render": f"↺  Refresh API Lists        {DIM}Sync live endpoints (Gemini, OpenRouter){RESET}",
+                    "render": f"↺  Refresh API Lists        {DIM}Sync live endpoints (OpenCode, OpenRouter, Gemini){RESET}",
                 }
             )
             items.append({"type": "exit", "render": "✕  Save & Close"})
@@ -809,7 +860,7 @@ async def async_main():
             sys.stdout.write(f"\x1b[H\x1b[2J\n   {BOLD}  LOCAL-AI CONFIGURATION{RESET}\n   {DIM}{'─' * 60}{RESET}\n\n")
 
             for i, itm in enumerate(items):
-                if itm["type"] == "aux" and (i == 0 or items[i - 1]["type"] != "aux"):
+                if itm["type"] == "pyrouter_srv" or (itm["type"] == "aux" and (i == 0 or items[i - 1]["type"] not in ("aux", "pyrouter_srv"))):
                     sys.stdout.write(f"   {DIM}{'─' * 19}  Auxiliary Services  {'─' * 19}{RESET}\n\n")
                 elif itm["type"] == "tokens":
                     sys.stdout.write(f"\n   {DIM}{'─' * 18}  Context & Loop Budget  {'─' * 17}{RESET}\n\n")
@@ -837,7 +888,14 @@ async def async_main():
                 target = items[menu_idx]
                 ttype = target["type"]
 
-                if ttype == "custom1":
+                if ttype == "pyrouter_srv":
+                    if is_pyrouter_running():
+                        stop_pyrouter()
+                        message = f"✓ PyRouter Gateway: {RED}STOPPED{RESET}"
+                    else:
+                        ok = start_pyrouter()
+                        message = f"✓ PyRouter Gateway: {GREEN}RUNNING{RESET}" if ok else f"{RED}Failed to start{RESET}"
+                elif ttype == "custom1":
                     now_on = toggle_single_provider("CUSTOM_API_KEY", "CUSTOM_MODEL", LOCAL_DEFAULT_MODEL)
                     message = (
                         f"✓ Custom 1 (Local / Spaces): {GREEN + 'ENABLED' + RESET if now_on else RED + 'DISABLED' + RESET}"
@@ -880,7 +938,15 @@ async def async_main():
                 target = items[menu_idx]
                 ttype = target["type"]
 
-                if ttype == "cloud":
+                if ttype == "pyrouter_srv":
+                    if is_pyrouter_running():
+                        stop_pyrouter()
+                        message = f"✓ PyRouter Gateway: {RED}STOPPED{RESET}"
+                    else:
+                        ok = start_pyrouter()
+                        message = f"✓ PyRouter Gateway: {GREEN}RUNNING{RESET}" if ok else f"{RED}Failed to start{RESET}"
+
+                elif ttype == "cloud":
                     is_on = toggle_env_api_keys()
                     message = f"✓ Switched Connection: {GREEN + 'ENABLED' + RESET if is_on else RED + 'DISABLED' + RESET}"
 
@@ -893,16 +959,45 @@ async def async_main():
                     c_name_val = target["name"]
                     c_url_val = target["url"]
 
-                    provider_key = next((k for k in DEFAULTS["custom_presets"] if k in c_url_val.lower()), None)
-                    preset_models = DEFAULTS["custom_presets"].get(provider_key, [c_curr_m]) if provider_key else [c_curr_m]
-                    c_menu_items = list(dict.fromkeys(preset_models + ["stealth/pixel-canary", "deepseek-chat", "gpt-4o"]))
+                    is_pyrouter = "20128" in c_url_val or "pyrouter" in c_url_val
+                    c_menu_items = [c_curr_m] if c_curr_m else []
+
+                    # Only query models if server is actually running to avoid connection hangs
+                    if not is_pyrouter or is_pyrouter_running():
+                        models_url = re.sub(r"/chat/completions/?$", "/models", c_url_val)
+                        if not models_url.endswith("/models"):
+                            models_url = f"{c_url_val.rstrip('/')}/models"
+                        try:
+                            k_val = env.get(c_key_name, "")
+                            req_h = {"User-Agent": "py-agent/1.0"}
+                            if k_val and k_val != "not-needed":
+                                req_h["Authorization"] = f"Bearer {k_val}"
+                            req = urlreq.Request(models_url, headers=req_h)
+                            with urlreq.urlopen(req, timeout=3.0) as r:
+                                if r.status == 200:
+                                    m_data = json.loads(r.read(MAX_FILE_BYTES).decode("utf-8"))
+                                    fetched = [m["id"] for m in m_data.get("data", []) if isinstance(m, dict) and "id" in m]
+                                    if fetched:
+                                        c_menu_items = fetched
+                        except Exception:
+                            pass
+
+                    if c_curr_m and c_curr_m not in c_menu_items:
+                        c_menu_items.insert(0, c_curr_m)
+                    c_menu_items = list(dict.fromkeys(c_menu_items))
+
+                    extra_opts = [f"🚫 Turn Off Custom {n}"]
+                    if is_pyrouter:
+                        srv_btn = "🛑 [Stop PyRouter Server]" if is_pyrouter_running() else "⚡ [Start PyRouter Server]"
+                        extra_opts.append(srv_btn)
+                    extra_opts.extend(["✏️  [Edit Model Name]", "🔗 [Edit Endpoint URL]", "🔑 [Edit API Key]"])
 
                     res = await run_interactive_menu(
                         f"Custom {n} ({c_name_val})",
                         c_menu_items,
                         c_curr_m,
                         c_key_name in active_keys,
-                        [f"🚫 Turn Off Custom {n}", "✏️  [Edit Model Name]", "🔗 [Edit Endpoint URL]", "🔑 [Edit API Key]"],
+                        extra_opts,
                     )
 
                     if not res:
@@ -910,6 +1005,12 @@ async def async_main():
                     if res.startswith("🚫 Turn Off"):
                         deactivate_key(c_key_name)
                         message = f"✓ Custom {n} disabled."
+                    elif res == "🛑 [Stop PyRouter Server]":
+                        stop_pyrouter()
+                        message = f"✓ PyRouter Server: {RED}STOPPED{RESET}"
+                    elif res == "⚡ [Start PyRouter Server]":
+                        ok = start_pyrouter()
+                        message = f"✓ PyRouter Server: {GREEN}RUNNING{RESET}" if ok else f"{RED}Failed to start{RESET}"
                     elif res == "✏️  [Edit Model Name]":
                         if m_in := prompt_user_input(f"Enter model name for Custom {n} (current: {c_curr_m})"):
                             update_env_multiple({c_mod_name: m_in})
