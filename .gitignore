@@ -6,8 +6,8 @@ tools/email/.email
 skills/system/mysys.md
 
 # Runtime Variables, State, Logs & Certs
-var/
-etc/
+var/*
+!var/.gitkeep
 .active_cd*
 .auto-f
 .cache/

@@ -1,0 +1,59 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+# Exclude runtime state, test caches, session databases, and media tools
+exclude = [
+    ".git",
+    ".agent",
+    "projects",
+    ".active_sessions",
+    "__pycache__",
+    ".pytest_cache",
+    ".venv",
+    "venv",
+    "tools/subsec/apps",
+]
+
+[tool.ruff.lint]
+# Select core correctness and speed rules:
+# E/W  = pycodestyle (syntax & critical style)
+# F    = Pyflakes (undefined names, broken imports, syntax regressions)
+# B    = flake8-bugbear (genuine logic bugs and performance pitfalls)
+# UP   = pyupgrade (modern Python syntax)
+# PERF = perflint (performance anti-patterns, slow loops, unnecessary copies)
+# C4   = flake8-comprehensions (optimized comprehension bytecode)
+select = [
+    "E",
+    "F",
+    "W",
+    "B",
+    "UP",
+    "PERF",
+    "C4",
+]
+
+# Suppress rules that conflict with local CLI / agent orchestration patterns
+ignore = [
+    "E402",     # Module level import not at top of file (required for sys.path & load_env_file)
+    "E501",     # Line too long (terminal boxes, prompt templates, and regexes exceed 88 chars)
+    "E722",     # Do not use bare except (used in fallback adapters)
+    "E741",     # Ambiguous variable name 'l' (standard in line iteration loops)
+    "UP015",    # Unnecessary mode argument (explicit "r" mode is preferred for clarity)
+    "BLE001",   # Do not catch blind exception (intentional in fallback/cleanup blocks)
+    "S110",     # try-except-pass (intentional in silent file/socket cleanup)
+    "S108",     # Insecure usage of /tmp (required for local IPC socket communication)
+    "ASYNC221", # Blocking subprocess in async function (fine for local TUI menus)
+    "ASYNC230", # Blocking open() in async function (fine for local TUI state files)
+    "PLW1510",  # subprocess.run without check=True (manual returncode handling is preferred)
+    "RUF012",   # Mutable class attributes
+    "W293",     # Blank line contains whitespace
+    "B007",     # Loop control variable not used
+    "B905",     # zip() without strict= parameter
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Allow tests, evals, and plugins to have unused imports or closure bindings
+"tools/test-agent" = ["F401", "F841"]
+"tools/evals/*" = ["F401", "F841"]
+"plugins/*" = ["F401", "F841", "B023"]

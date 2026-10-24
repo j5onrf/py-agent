@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [v0.9.9.59] - Main CLI Runtime, Workspace Agent & Command Dispatcher [OCR 0.01]"""
+"""Py Agent [v0.9.9.62] - Main CLI Runtime, Workspace Agent & Command Dispatcher [OCR 0.01]"""
 
 import json
 import os
@@ -13,6 +13,8 @@ import time
 from contextlib import closing
 
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
+VAR_DIR: str = os.path.join(CFG_DIR, "var")
+os.makedirs(VAR_DIR, exist_ok=True)
 CONTEXT_FILE: str = os.path.join(CFG_DIR, "ai-context.md")
 SKILLS_DIR: str = os.path.join(CFG_DIR, "skills")
 SESSIONS_DIR: str = os.path.join(CFG_DIR, "projects", ".database")

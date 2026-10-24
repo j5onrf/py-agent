@@ -1,0 +1,25 @@
+{
+  "include": ["."],
+  "exclude": [
+    ".git",
+    ".agent",
+    "projects",
+    ".active_sessions",
+    "__pycache__",
+    ".pytest_cache",
+    ".venv",
+    "venv",
+    "tools/subsec/apps",
+    "plugins",
+    "setup"
+  ],
+  "extraPaths": [
+    "modules"
+  ],
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "none",
+  "reportMissingTypeStubs": false,
+  "reportOptionalMemberAccess": "none",
+  "reportGeneralTypeIssues": "none"
+}
