@@ -246,7 +246,7 @@ cat /proc/$(pgrep -x llama-server)/maps | grep -E "mimalloc|jemalloc"
 free -h
 
 # Stream server activity
-tail -f /home/j5/models/serv/server.log
+tail -f ~/models/serv/server.log
 ```
 
 ---

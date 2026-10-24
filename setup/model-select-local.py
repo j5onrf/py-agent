@@ -12,8 +12,8 @@ import sys
 import termios
 import tty
 
-MODELS_DIR = "/home/j5/models"
-SERV_DIR = "/home/j5/models/serv"
+MODELS_DIR = os.path.expanduser("~/models")
+SERV_DIR = os.path.expanduser("~/models/serv")
 
 STATE_DIR = os.path.join(
     os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state")),
