@@ -19,9 +19,8 @@ from typing import Any
 
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
 MODULES_DIR = os.path.join(CFG_DIR, "modules")
-RESULTS_LOG = os.path.join(CFG_DIR, "tools", "evals", "eval_history.json")
-FAILURES_LOG = os.path.join(CFG_DIR, "tools", "evals", "last_failure_trace.log")
-TRACES_LOG = os.path.join(CFG_DIR, "tools", "evals", "eval_traces.json")
+EVALS_DIR = os.path.join(CFG_DIR, "tools", "evals")
+FAILURES_LOG = os.path.join(EVALS_DIR, "last_failure_trace.log")
 RUN_TRACES: list[dict[str, Any]] = []
 
 if MODULES_DIR not in sys.path:
@@ -829,11 +828,15 @@ def main():
         )
     )
 
-    # Atomic history logging with tempfile cleanup guard
-    tmp_log = None
+    # Save dedicated, uniquely named trace file per run
     try:
-        os.makedirs(os.path.dirname(RESULTS_LOG), exist_ok=True)
-        record = {
+        os.makedirs(EVALS_DIR, exist_ok=True)
+        safe_model = re.sub(r"[^a-zA-Z0-9_\-]", "_", model_name).strip("_")
+        safe_prof = re.sub(r"[^a-zA-Z0-9_\-]", "_", prof_name).strip("_")
+        ts_str = time.strftime("%Y%m%d_%H%M%S")
+        trace_file = os.path.join(EVALS_DIR, f"eval_trace_{safe_model}_{safe_prof}_{ts_str}.json")
+
+        run_payload = {
             "timestamp": int(time.time()),
             "model": model_name,
             "profile": prof_name,
@@ -845,47 +848,16 @@ def main():
             "total_time": total_time,
             "agent_index": agent_index,
             "grade": grade,
-        }
-        history = []
-        if os.path.isfile(RESULTS_LOG):
-            try:
-                with open(RESULTS_LOG, "r", encoding="utf-8") as rf:
-                    loaded = json.load(rf)
-                    if isinstance(loaded, list):
-                        history = loaded
-            except (json.JSONDecodeError, OSError):
-                history = []
-
-        history.append(record)
-        tmp_log = f"{RESULTS_LOG}.tmp.{os.getpid()}"
-        with open(tmp_log, "w", encoding="utf-8") as wf:
-            json.dump(history[-15:], wf, indent=2)
-        os.replace(tmp_log, RESULTS_LOG)
-        tmp_log = None
-
-        # Auto-pruned full turn traces (keeps last 5 evaluation runs)
-        trace_history = []
-        if os.path.isfile(TRACES_LOG):
-            with contextlib.suppress(Exception):
-                with open(TRACES_LOG, "r", encoding="utf-8") as trf:
-                    trace_history = json.load(trf)
-        trace_history.append({
-            "timestamp": int(time.time()),
-            "model": model_name,
-            "profile": prof_name,
-            "accuracy": accuracy,
             "traces": RUN_TRACES,
-        })
-        tmp_traces = f"{TRACES_LOG}.tmp.{os.getpid()}"
-        with open(tmp_traces, "w", encoding="utf-8") as twf:
-            json.dump(trace_history[-5:], twf, indent=2)
-        os.replace(tmp_traces, TRACES_LOG)
-    except Exception:
-        pass
-    finally:
-        if tmp_log and os.path.exists(tmp_log):
-            with contextlib.suppress(OSError):
-                os.remove(tmp_log)
+        }
+        tmp_trace = f"{trace_file}.tmp.{os.getpid()}"
+        with open(tmp_trace, "w", encoding="utf-8") as wf:
+            json.dump(run_payload, wf, indent=2)
+        os.replace(tmp_trace, trace_file)
+        console.print(f"\n[dim]Run trace saved: [cyan]{trace_file}[/cyan][/dim]\n")
+    except Exception as e:
+        if os.environ.get("AI_DEBUG") == "1":
+            console.print(f"[dim red]Failed to save trace: {e}[/dim red]")
 
 
 if __name__ == "__main__":

@@ -38,8 +38,9 @@ Switch CLI box styles using `/box [1-3]` (or `/box` to cycle). Persists in `~/.c
 | Box Style | Preset Name | Frame Style & Visual Geometry |
 | :---: | :--- | :--- |
 | **#1** | **Clean Rounded** *(Default)* | Symmetrical rounded frame with header node (`╭─ ○ ───╮` and `╰───╯`) |
-| **#2** | **Spaced Dots** | Minimalist airy spaced-dot perimeter (`· · ○ · ·`) |
-| **#3** | **Dot Slab** | Nothing-OS style 2D dot-matrix grid with text cutout and L→R density gradient |
+| **#2** | **Dot Slab** | Nothing-OS style 2D dot-matrix grid with text cutout and L→R density gradient |
+| **#3** | **Spaced Dots** | Minimalist airy spaced-dot perimeter (`· · ○ · ·`) |
+
 
 ---
 

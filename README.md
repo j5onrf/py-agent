@@ -5,7 +5,7 @@
   <h1>Py Agent</h1>
 
   <p>
-    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.60.svg?variant=secondary" alt="Version"></a>
+    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.61.svg?variant=secondary" alt="Version"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/Python.svg?variant=branded&brand=python" alt="Language"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/C%2B%2B.svg?variant=branded&brand=cplusplus" alt="C++"></a>
     <a href="https://github.com/j5onrf/py-agent/blob/main/LICENSE"><img src="https://shieldcn.dev/badge/license-MIT-green.svg" alt="License"></a>
@@ -63,17 +63,17 @@
 ```console
 ~ ❯ ai
 ╭─ ○ ────────────────────────────────────────╮
-│  big-pickle                                │
+│  Flint-40B-A2.5B                           │
 │  chat                                      │
 ╰────────────────────────────────────────────╯
 
 · · ○ · · · · · · · · · · · · · · · · · · · · ·
-·  big-pickle   · · · · · · · · · · · · · · · ·
-·  chat         · · · · · · · · · · · · · · · ·
+·  Flint-40B-A2.5B  · · · · · · · · · · · · · ·
+·  chat             · · · · · · · · · · · · · ·
 · · · · · · · · · · · · · · · · · · · · · · · ·
 
 · · ○ · · · · · · · · · · · · · · · · · · · ··
-·  big-pickle                                ·
+·  Flint-40B-A2.5B                           ·
 ·  chat                                      ·
 · · · · · · · · · · · · · · · · · · · · · · ··
 
@@ -135,12 +135,13 @@
 | Rank | Model | Par Eff | Agent Index |
 | :---: | :--- | :---: | :---: |
 | **1** | **Flint-40B-A2.5B** | **125.0%** | **100.0 (A+)** |
-| **2** | **Qwen3.8-35B-Distill** *(MTP)* | **136.4%** | **92.2 (A)** |
-| **3** | **KAT-Coder-V2.5-Dev** | **90.9%** | **89.8 (A)** |
-| **4** | **Ornith-1.5-35B-A3B** | **88.2%** | **89.3 (A)** |
-| **5** | **Tiel-Coder-35B-A3B** | **90.9%** | **87.6 (B)** |
-| **6** | **Occamy-1.0** | **90.9%** | **87.0 (B)** |
-| **7** | **Nex-N2.5-mini** | **88.2%** | **85.8 (B)** |
+| **2** | **Sage-A1.5-35B** | **111.1%** | **100.0 (A+)** |
+| **3** | **Qwen3.8-35B-Distill** *(MTP)* | **136.4%** | **92.2 (A)** |
+| **4** | **KAT-Coder-V2.5-Dev** | **90.9%** | **89.8 (A)** |
+| **5** | **Ornith-1.5-35B-A3B** | **88.2%** | **89.3 (A)** |
+| **6** | **Tiel-Coder-35B-A3B** | **90.9%** | **87.6 (B)** |
+| **7** | **Occamy-1.0** | **90.9%** | **87.0 (B)** |
+| **8** | **Nex-N2.5-mini** | **88.2%** | **85.8 (B)** |
 | **—** | **LFM2.5-24B-A2B** | **44.8%** | **83.3 (B)** |
 | **—** | **Ling-3.0-tiny** *(SLM)* | **104.0%** | **100.0 (A+)** |
 

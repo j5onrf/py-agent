@@ -930,6 +930,8 @@ def agentic_turn(
                         spinner.stop()
 
                     if not is_calm:
+                        if call_idx == 0 and "<think>" in ans_text:
+                            _console_err.print()
                         _console_err.print(
                             f"  [dim]∗ {verb} •[/dim] [cyan]{_escape_markup(fname)}[/cyan] [dim italic]{_escape_markup(brief)}[/dim italic]"
                         )

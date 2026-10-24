@@ -8,6 +8,7 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 
 # 1. Neutralize background subshell TTY signals safely
 for sig_name in ("SIGTTIN", "SIGTTOU"):
@@ -30,6 +31,7 @@ else:
 
 CFG_DIR = os.path.join(CFG_ROOT, "py-agent")
 PROJECTS_DIR = os.path.join(CFG_DIR, "projects")
+PROFILES_DIR = os.path.join(CFG_DIR, "skills", "profiles")
 CONTEXT_FILE = os.path.join(CFG_DIR, "ai-context.md")
 
 RE_SAFE_NAME = re.compile(r"[^a-zA-Z0-9_\-]")
@@ -50,8 +52,6 @@ def prompt_tty(msg: str) -> str:
         # Fallback to standard input if /dev/tty is unavailable (e.g. non-controlling tty)
         return input(msg).strip()
 
-
-import tempfile
 
 def add_to_context_file(slug: str, intents_str: str) -> tuple[bool, str]:
     """Inserts workspace shortcut under Section 2 (# --- Workspaces ---) in ai-context.md atomically."""
@@ -92,6 +92,38 @@ def add_to_context_file(slug: str, intents_str: str) -> tuple[bool, str]:
                 return True, "added"
             finally:
                 fcntl.flock(lf, fcntl.LOCK_UN)
+    except OSError as e:
+        return False, f"error: {e}"
+
+
+def create_profile_file(slug: str) -> tuple[bool, str]:
+    """Creates a basic universal agent profile file in skills/profiles if not present."""
+    profile_path = os.path.join(PROFILES_DIR, f"{slug}.md")
+    if os.path.exists(profile_path):
+        return False, "exists"
+
+    title = slug.replace("-", " ").title()
+    content = f"""---
+description: "{title} Workspace Profile"
+yolo: false
+map: false
+memory: false
+ipython: false
+adapters: false
+reasoning_budget: 0
+---
+ROLE: General Software Engineer & Workspace Assistant.
+
+DIRECTIVES:
+- Operate directly within the local workspace.
+- Deliver concise, high-signal answers and surgical code edits.
+- Verify tool outputs and syntax before concluding tasks.
+"""
+    try:
+        os.makedirs(PROFILES_DIR, exist_ok=True)
+        with open(profile_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        return True, "created"
     except OSError as e:
         return False, f"error: {e}"
 
@@ -181,7 +213,16 @@ def main() -> None:
     else:
         print(f"\033[1;31m[error] Could not register shortcut: {status}\033[0m")
 
-    # 5. Launch Instructions
+    # 5. Create Baseline Agent Profile
+    prof_ok, prof_status = create_profile_file(slug)
+    if prof_ok:
+        print(f"\033[1;32mCreated baseline profile:\033[0m \033[36m{os.path.join(PROFILES_DIR, f'{slug}.md')}\033[0m")
+    elif prof_status == "exists":
+        print(f"\033[2m[info] Profile already exists at: {os.path.join(PROFILES_DIR, f'{slug}.md')}\033[0m")
+    else:
+        print(f"\033[1;31m[error] Could not create profile: {prof_status}\033[0m")
+
+    # 6. Launch Instructions
     print(f"\n\033[2mLaunch workspace now:\033[0m \033[1;36mai init {target_dir}\033[0m")
     print(f"\033[2mLaunch via shortcut:\033[0m \033[1;32mtype '{primary_intent}' in terminal\033[0m\n")
 

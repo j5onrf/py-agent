@@ -39,6 +39,7 @@
 
 ```properties
 # --- Workspaces ---
+ai init ~/.config/py-agent/projects/sage ---> sage
 ai init ~/.config/py-agent/projects/flint ---> flint, flin
 ai init ~/.config/py-agent/projects/lfm2_24b ---> lfm2-24b, lfm
 ai init ~/.config/py-agent/projects/photocraft ---> photocraft
