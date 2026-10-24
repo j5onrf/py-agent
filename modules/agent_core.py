@@ -542,11 +542,15 @@ def agentic_turn(
 
             is_tool_incoming = has_tool_deltas or has_xml_tool_tag
             if is_tool_incoming and not is_calm and not is_sub:
+                had_streamer = bool(streamer)
                 if streamer:
                     streamer.stop()
                     streamer = None
                     first_chunk = True
                 if spinner and not spinner.active:
+                    if had_streamer and sys.stderr.isatty():
+                        sys.stderr.write("\n")
+                        sys.stderr.flush()
                     spinner.start("Drafting tool action...")
 
             chunk_to_stream, is_thinking, in_think_block = _process_stream_chunk(
@@ -930,12 +934,10 @@ def agentic_turn(
                         spinner.stop()
 
                     if not is_calm:
-                        if call_idx == 0 and "<think>" in ans_text:
-                            _console_err.print()
                         _console_err.print(
                             f"  [dim]∗ {verb} •[/dim] [cyan]{_escape_markup(fname)}[/cyan] [dim italic]{_escape_markup(brief)}[/dim italic]"
                         )
-                    if spinner and fname != "delegate_task" and not getattr(spinner, "active", False):
+                    if spinner and fname in ("run_command", "exec_python", "web_search") and not getattr(spinner, "active", False):
                         spinner.start(f"{verb.capitalize()}...")
 
                     t_start = time.time()
@@ -949,7 +951,6 @@ def agentic_turn(
                     else:
                         res_str = str(result) if result is not None else ""
 
-                    # Precision denial check preventing false positives from inspected file contents
                     stripped_res = res_str.strip()
                     is_denied = (
                         stripped_res.startswith(
