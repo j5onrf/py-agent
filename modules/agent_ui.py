@@ -460,16 +460,6 @@ BOX_SPECS = {
         "h_step": 1,
     },
     2: {
-        "name": "Spaced Dots",
-        "tl": ("·", ANSI_ACCENT),
-        "tr": ("·", ANSI_ACCENT),
-        "bl": ("·", ANSI_ACCENT),
-        "br": ("·", ANSI_ACCENT),
-        "h": ("·", ANSI_ACCENT),
-        "v": ("·", ANSI_ACCENT),
-        "h_step": 2,
-    },
-    3: {
         "name": "Dot Slab",
         "is_slab": True,
         "tl": ("·", _slab_shader(0)),
@@ -478,6 +468,16 @@ BOX_SPECS = {
         "br": ("·", _slab_shader(46)),
         "h": _slab_shader,
         "v": ("·", _slab_shader(0)),
+        "h_step": 2,
+    },
+    3: {
+        "name": "Spaced Dots",
+        "tl": ("·", ANSI_ACCENT),
+        "tr": ("·", ANSI_ACCENT),
+        "bl": ("·", ANSI_ACCENT),
+        "br": ("·", ANSI_ACCENT),
+        "h": ("·", ANSI_ACCENT),
+        "v": ("·", ANSI_ACCENT),
         "h_step": 2,
     },
 }
