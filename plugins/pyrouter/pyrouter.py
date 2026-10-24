@@ -20,7 +20,7 @@ import requests
 PORT = 20128
 CFG_DIR = os.path.expanduser("~/.config/py-agent")
 ENV_PATH = os.path.join(CFG_DIR, ".env")
-CACHE_PATH = os.path.join(CFG_DIR, ".openrouter_cache_v2.json")
+CACHE_PATH = os.path.join(CFG_DIR, "var", ".openrouter_cache_v2.json")
 
 _models_cache: Dict[str, Any] = {"ts": 0.0, "data": b""}
 

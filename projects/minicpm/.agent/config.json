@@ -1,0 +1,9 @@
+{
+  "profile": "custom/minicpm",
+  "yolo": true,
+  "map": false,
+  "py": false,
+  "memory": false,
+  "adapters": true,
+  "created_at": "2026-09-18 08:57"
+}

@@ -13,8 +13,9 @@ import threading
 from typing import Any
 
 CFG_DIR: str = os.path.expanduser("~/.config/py-agent")
-STATE_FILE: str = os.path.join(CFG_DIR, ".state.json")
-STATE_LOCK_FILE: str = os.path.join(CFG_DIR, ".state.lock")
+VAR_DIR: str = os.path.join(CFG_DIR, "var")
+STATE_FILE: str = os.path.join(VAR_DIR, ".state.json")
+STATE_LOCK_FILE: str = os.path.join(VAR_DIR, ".state.lock")
 
 DEFAULTS: dict[str, Any] = {
     "show_stats": True,
@@ -73,7 +74,7 @@ def get_state(key: str = "", default: Any = None) -> Any:
 def save_state(key: str, value: Any) -> None:
     global _state_cache, _state_mtime, _state_size, _state_ino
     with _state_lock:
-        os.makedirs(CFG_DIR, exist_ok=True)
+        os.makedirs(VAR_DIR, exist_ok=True)
         lock_fd = None
         tmp = f"{STATE_FILE}.tmp.{os.getpid()}.{threading.get_ident()}"
         try:

@@ -170,7 +170,7 @@ try:
     print_result("Workspace Path Resolution (Home Directory)", p3_d, f"Mapped to '{safe_h}'")
 
     # 5. Sub-Agent PID Lockfile (Stale numeric PID handling)
-    active_sessions_dir = os.path.join(CFG_DIR, ".active_sessions")
+    active_sessions_dir = getattr(sessions, "ACTIVE_DIR", os.path.join(CFG_DIR, "var", ".active_sessions"))
     os.makedirs(active_sessions_dir, exist_ok=True)
     fake_stale_file = os.path.join(active_sessions_dir, f"{test_ws}-2-99999999.session")
     with open(fake_stale_file, "w") as sf:

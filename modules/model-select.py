@@ -20,9 +20,9 @@ import urllib.request as urlreq
 
 ENV_PATH = os.path.expanduser("~/.config/py-agent/.env")
 ENV_EXAMPLE = os.path.expanduser("~/.config/py-agent/.env.example")
-CACHE_PATH = os.path.expanduser("~/.config/py-agent/.openrouter_cache_v2.json")
-CUSTOM_SPACES_FILE = os.path.expanduser("~/.config/py-agent/custom_spaces.json")
-LAST_KEY_FILE = os.path.expanduser("~/.config/py-agent/.last_cloud_key.txt")
+CACHE_PATH = os.path.expanduser("~/.config/py-agent/var/.openrouter_cache_v2.json")
+CUSTOM_SPACES_FILE = os.path.expanduser("~/.config/py-agent/var/custom_spaces.json")
+LAST_KEY_FILE = os.path.expanduser("~/.config/py-agent/var/.last_cloud_key.txt")
 LOCAL_DEFAULT_URL = "http://127.0.0.1:8080/v1/chat/completions"
 LOCAL_DEFAULT_MODEL = "local-model"
 PYROUTER_PATH = os.path.expanduser("~/.config/py-agent/plugins/pyrouter/pyrouter.py")

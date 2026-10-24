@@ -55,7 +55,7 @@ CONTEXT_FILE = os.path.join(CFG_DIR, "ai-context.md")
 SKILLS_DIR, SESSIONS_DIR = os.path.join(CFG_DIR, "skills"), os.path.join(CFG_DIR, "projects", ".database")
 LEFT_BAR, NO_BOX = Box("▌   \n" * 8), Box("    \n" * 8)
 
-TUI_STATE_FILE = os.path.join(CFG_DIR, ".tui_state.json")
+TUI_STATE_FILE = os.path.join(CFG_DIR, "var", ".tui_state.json")
 TUI_DEFAULTS: dict[str, Any] = {
     "compact_mode": 0,
     "sidebar_hidden": False,

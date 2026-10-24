@@ -1,43 +1,31 @@
 # Secrets & Credentials
 .env
 tools/email/.email
-server.pem
 
 # System Hardware
 skills/system/mysys.md
 
-# Ephemeral State, Caches & Logs
-.state.json
-.openrouter_cache_v2.json
-.pyrouter.log
-.pyrouter.pid
-.request_log
-.voice_pending.txt
+# Runtime Variables, State, Logs & Certs
+var/
+etc/
 .active_cd*
-.active_sessions/
 .auto-f
 .cache/
+.voice_pending.txt
 ai-history
-.agent/
-custom_spaces.json
-.last_cloud_key.txt
-tools/evals/eval_history.json
 
 # Databases & SQLite WAL
 projects/.database/*.db*
 *.db-wal
 *.db-shm
 
-# Python Bytecode
-__pycache__/
-*.pyc
-.ruff_cache
+# Evaluation Traces & Histories
 tools/evals/eval_history.json
 eval_history.json
 **/eval_history.json
-pyproject.toml
-pyrightconfig.json
-.tui_state.json
-.state.lock
-.opencodereview
 tools/evals/eval_traces.json
+
+# Python Bytecode & Linter Caches
+__pycache__/
+*.pyc
+.ruff_cache

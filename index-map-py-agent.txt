@@ -1,8 +1,9 @@
-# CODEBASE INDEX MAP | Generated: 2026-10-23 18:13 | Workspace: py-agent | Path: ~/.config/py-agent
+# CODEBASE INDEX MAP | Generated: 2026-10-24 12:04 | Workspace: py-agent | Path: ~/.config/py-agent
 # Active symbols and structural connections mapped in the local index.
 # -----------------------------------------------------------------------------------------
 # Codebase Modules & Active Architecture:
 #   ├── .gitignore               - Secrets & Credentials
+#   ├── .state.lock
 #   ├── CONTRIBUTING.md          - Contributing to Py-Agent
 #   ├── LICENSE                  - MODIFIED MIT LICENSE (NON-COMMERCIAL / NO BUSINESS USE)
 #   ├── README.md                - <br>
@@ -10,8 +11,8 @@
 #   ├── ai-agent.py              - Py Agent [v0.9.9.59] - Main CLI Runtime, Workspace Agent & Command Dispatcher [OCR 0.01]
 #   ├── ai-context.md            - Py-Agent Config
 #   ├── ai-hook.sh               - Production Py-Agent Shell Hook (Sub-Millisecond Startup)(OCR 0.01)
-#   ├── box-chat.txt             - ╭─ ∿ {sub_id}─────────────────────────────────────────╮
 #   ├── logo.svg                 - <svg xmlns="http://www.w3.org/2000/svg" viewBox="121 101 270 310">
+#   ├── migrate_clean_root.py    - Automated Root Cleanup & Path Relocation Script for Py-Agent.
 #   ├── modules/Readme.md        - Design & Privacy
 #   ├── modules/agent_adapters.py - Tool Format Adapters & Self-Healing Parser [OCR 0.01]
 #   ├── modules/agent_chat.py    - Unified Agentic Brainstorm, Thinking & Follow-up Recommendation Engine [Production Ready]
@@ -35,7 +36,9 @@
 #   ├── modules/agent_voice.py   - Local-AI Standalone Voice to Text Module [Production Ready]
 #   └── modules/model-select.py  - Streamlined TUI Model Selector with Dynamic CUSTOM<N> Discovery [OCR 0.01]
 # -----------------------------------------------------------------------------------------
+[session:.active_sessions/test_ws_1792861185-2-99999999.session] sum:2
 [file:.gitignore] sum:Secrets & Credentials
+[lock:.state.lock] sum:Empty file
 [markdown:CONTRIBUTING.md] title:Contributing to Py-Agent
 [file:LICENSE] sum:MODIFIED MIT LICENSE (NON-COMMERCIAL / NO BUSINESS USE)
 [markdown:README.md] title:1. Install dependencies (Arch/CachyOS or pip) | links:ai-context.md
@@ -43,8 +46,8 @@
 [python:ai-agent.py] imp:agent_commands,agent_context,agent_core,agent_memories,agent_sessions,agent_skills,agent_tts,agent_ui,agent_voice,contextlib,json,os,re,readline,shutil,sqlite3,subprocess,sys,tempfile,time | fn:load_env_file,_load_agent_modules,_show_transient_status,_clear_transient_status,workspace_db_counts,ensure_clean_agent_dir,_sweep_dead_session_locks,clean_exit,_launch_surface,resolve_default_profile,run_interactive_chat,run_direct_query,run_matching_search,main
 [markdown:ai-context.md] title:Py-Agent Config
 [shell:ai-hook.sh] sum:Production Py-Agent Shell Hook (Sub-Millisecond Startup)(OCR 0.01)
-[txt:box-chat.txt] sum:╭─ ∿ {sub_id}─────────────────────────────────────────╮
 [image/svg:logo.svg] dim:38x | size:1.4KB
+[python:migrate_clean_root.py] imp:os,py_compile,re,shutil,sys | fn:patch_file,main
 [markdown:modules/Readme.md] title:Design & Privacy
 [python:modules/agent_adapters.py] imp:agent_state,ast,json,os,re,time,typing | fn:_close_unterminated_quote,_strip_line_number_gutters,_extract_diff_hunk,deduplicate_tool_calls,normalize_params,_extract_balanced_json,_parse_heredoc,heal_tool_call,_safe_shell_write,heal_json_args,_extract_ast_python_calls,extract_fallback_tool_calls
 [python:modules/agent_chat.py] imp:agent_cloud,agent_ui,json,os,re,sys,urllib | fn:_build_option_placeholders
@@ -89,6 +92,7 @@
 [markdown:plugins/pyrouter/Readme.md] title:OpenCode + PyRouter Setup
 [shell:plugins/pyrouter/launch.sh] sum:==============================================================================
 [python:plugins/pyrouter/pyrouter.py] imp:http,json,os,random,re,requests,string,sys,time,typing,uuid | cls:RouterHandler,SilentServer | fn:make_canonical_session,load_active_env,resolve_active_upstream,anthropic_to_openai,log_message,_send_cors,do_OPTIONS,do_GET,do_POST,_handle_chat_completions,_handle_messages,_emit_sse,handle_error,main
+[markdown:plugins/webui/Readme.md] title:WebUI Gateway
 [shell:plugins/webui/launch.sh] sum:==============================================================================
 [python:plugins/webui/server.py] imp:agent_adapters,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tools,agent_tts,gzip,http,json,os,re,requests,socketserver,sys,urllib | cls:OfficialWebUIProxyHandler,ThreadedProxyServer | fn:detect_workspace_mode,make_confirm_gate,confirm_gate,assemble_system_prompt,_is_origin_allowed,_is_host_allowed,_check_auth,_set_cors_headers,do_OPTIONS,do_GET,do_POST,log_message
 [markdown:plugins/zed/Readme.md] title:Py-Agent Zed Integration
@@ -127,13 +131,8 @@
 [markdown:skills/on-demand/ponytail-py.md] title:[SKILL] Ponytail-Py ---> ponytail-py, senior python dev, yagni, minimal python, pythonic simplicity
 [markdown:skills/on-demand/ponytail.md] title:[SKILL] Ponytail ---> ponytail, lazy senior dev, yagni, minimal code, simplify code
 [markdown:skills/on-demand/pysmol.md] title:[SKILL] PySmol ---> pysmol, smol, smolagents, codeagent, python-loop, batch-code, in-memory-python, code-first
-[markdown:skills/profiles/archive/claude.md] title:claude
-[markdown:skills/profiles/archive/cloud-fast.md] title:cloud-fast
-[markdown:skills/profiles/archive/cloud-reasoning.md] title:cloud-reasoning
-[markdown:skills/profiles/archive/deepseek.md] title:deepseek
-[markdown:skills/profiles/archive/gemini.md] title:gemini
-[markdown:skills/profiles/archive/hermes.md] title:hermes
-[markdown:skills/profiles/archive/pi.md] title:pi
+[markdown:skills/profiles/archive/nexn25.md] title:nexn25
+[markdown:skills/profiles/archive/occamy.md] title:occamy
 [markdown:skills/profiles/cloud.md] title:cloud
 [markdown:skills/profiles/deepseek.md] title:deepseek
 [markdown:skills/profiles/flint.md] title:flint
@@ -142,8 +141,6 @@
 [markdown:skills/profiles/lfm2_24b.md] title:lfm2_24b
 [markdown:skills/profiles/lingtiny.md] title:lingtiny
 [markdown:skills/profiles/minicpm.md] title:minicpm
-[markdown:skills/profiles/nexn25.md] title:nexn25
-[markdown:skills/profiles/occamy.md] title:occamy
 [markdown:skills/profiles/ornith.md] title:ornith
 [markdown:skills/profiles/photocraft-gem.md] title:photocraft-gem
 [markdown:skills/profiles/photocraft-loc.md] title:photocraft-loc
@@ -151,6 +148,7 @@
 [markdown:skills/profiles/purebash-ling.md] title:purebash-ling
 [markdown:skills/profiles/q2bu.md] title:q2bu
 [markdown:skills/profiles/qwen38d.md] title:qwen38d
+[markdown:skills/profiles/sage.md] title:sage
 [markdown:skills/profiles/sysadmin.md] title:sysadmin
 [markdown:skills/profiles/tielcoder.md] title:tielcoder
 [markdown:skills/profiles/tini-cybersec.md] title:tini-cybersec
@@ -170,7 +168,7 @@
 [python:tools/index-map/index-map] imp:ast,fnmatch,json,os,re,sqlite3,struct,sys,time | cls:PythonGraphVisitor | fn:load_gitignore_patterns,should_ignore,is_binary,get_file_summary,__init__,visit_Import,visit_ImportFrom,visit_ClassDef,visit_FunctionDef,visit_AsyncFunctionDef,visit_any_func,parse_non_python_file,analyze_markdown_file,analyze_image_file,analyze_json_file,analyze_shell_file,analyze_generic_file,init_db,find_db_path,compile_ascii_tree,compile_flat_shorthand,run_indexing,search_symbols,extract_snippet,main
 [markdown:tools/loop/Readme.md] title:Autonomous Task Loop Engine (`loop.py`)
 [python:tools/loop/loop.py] imp:agent_core,agent_tools,agent_ui,argparse,os,re,sys,time,typing | fn:_read_spec_file,_log_task_turn,is_task_complete,_get_thinking_budget,run_task_loop,tracked_run_tool,main
-[python:tools/new-project] imp:contextlib,fcntl,os,re,signal,subprocess,sys,tempfile | fn:prompt_tty,add_to_context_file,main
+[python:tools/new-project] imp:contextlib,fcntl,os,re,signal,subprocess,sys,tempfile | fn:prompt_tty,add_to_context_file,create_profile_file,main
 [python:tools/omarchy] imp:contextlib,os,re,select,shutil,subprocess,sys,termios,tty,typing | fn:load_wordmark_banner,get_key_non_blocking,pause_terminal,draw_menu,run_skill,main
 [python:tools/subsec/apps/media/media.py] imp:math,os,random,re,select,shutil,signal,subprocess,sys,termios,time,tty,unicodedata | cls:VisualizerPhysics,SystemAudio,PlayerManager | fn:strip_ansi,char_display_width,str_display_width,truncate_str_display,fmt_time,__init__,update,render_peak_equalizer,render_braille_spectrogram,render_stereo_vu_deck,make_vu_bar,render_oscilloscope,render_symmetrical_wings,render_cyber_matrix,generate_visualizer_panel,__init__,query,adjust,toggle_mute,__init__,parse_time,find_best_player,update,toggle,next,previous,seek,toggle_shuffle,cycle_loop,get_key_non_blocking,format_row,run_tuiamp,cleanup
 [python:tools/subsec/apps/stopwatch/stopwatch.py] imp:math,os,re,select,shutil,signal,sys,termios,time,tty,unicodedata | fn:strip_ansi,char_display_width,str_display_width,truncate_str_display,fmt_time_high_res,fmt_delta,render_radar_sweep,render_chrono_pendulum,render_braille_wave,render_linear_pulse,render_matrix_stream,generate_visualizer_panel,get_key_non_blocking,format_row,run_stopwatch_tui,cleanup

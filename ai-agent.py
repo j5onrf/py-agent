@@ -196,7 +196,7 @@ def ensure_clean_agent_dir(workspace_path: str) -> None:
 
 def _sweep_dead_session_locks() -> None:
     """Removes .session lockfiles whose owning process is dead. Ignores alive processes."""
-    sess_dir = os.path.join(CFG_DIR, ".active_sessions")
+    sess_dir = os.path.join(CFG_DIR, "var", ".active_sessions")
     if not os.path.isdir(sess_dir):
         return
     try:

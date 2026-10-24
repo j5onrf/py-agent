@@ -5,7 +5,7 @@
   <h1>Py Agent</h1>
 
   <p>
-    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.61.svg?variant=secondary" alt="Version"></a>
+    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.62.svg?variant=secondary" alt="Version"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/Python.svg?variant=branded&brand=python" alt="Language"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/C%2B%2B.svg?variant=branded&brand=cplusplus" alt="C++"></a>
     <a href="https://github.com/j5onrf/py-agent/blob/main/LICENSE"><img src="https://shieldcn.dev/badge/license-MIT-green.svg" alt="License"></a>
@@ -266,18 +266,23 @@ cp ~/.config/py-agent/.env.example ~/.config/py-agent/.env
 # ── 1. Custom 1 / Hugging Face Router ─────────────────────────────────────────
 # CUSTOM_API_KEY="hugging-face-api-key"
 CUSTOM_URL="https://router.huggingface.co/v1/chat/completions"
-CUSTOM_MODEL="Qwen/Qwen3.8-27B"
+CUSTOM_MODEL="space"
 
 # ── 2. Custom 2 / Generic Endpoint (DeepSeek, OpenAI, TokenHarbor, etc.) ──────
 # CUSTOM2_API_KEY="sk-your-key-here"
 CUSTOM2_URL="https://tokenharbor.ai/v1/chat/completions"
-CUSTOM2_MODEL="qwen3.8-flash:free"
+CUSTOM2_MODEL="deepseek-v4.1-flash:free"
 
-# ── 3. Google Gemini (Free daily tier via Google AI Studio) ───────────────────
+# ── 3. Custom 3 / PyRouter OpenCode (Port 20128) ──────────────────────────────
+#CUSTOM3_API_KEY="not-needed"
+CUSTOM3_URL="http://127.0.0.1:20128/v1/chat/completions"
+CUSTOM3_MODEL="big-pickle"
+
+# ── 4. Google Gemini (Free daily tier via Google AI Studio) ───────────────────
 # GEMINI_API_KEY="AIzaSyYourGeminiApiKeyHere"
 GEMINI_MODEL="gemini-3.5-flash-lite"
 
-# ── 4. OpenRouter (Free community models & Universal paid gateway) ────────────
+# ── 5. OpenRouter (Free community models & Universal paid gateway) ────────────
 # OPENROUTER_API_KEY="sk-or-v1-YourOpenRouterKeyHere"
 OPENROUTER_MODEL="openrouter/free"
 
@@ -302,6 +307,7 @@ OPENROUTER_MODEL="openrouter/free"
 
 # ── Context Window Budget ─────────────────────────────────────────────────────
 AI_MAX_TOKENS="8192"
+AI_MAX_AGENT_ROUNDS="15"
 ```
 
 </details>

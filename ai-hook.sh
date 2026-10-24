@@ -4,6 +4,7 @@
 [[ $- == *i* && -f "$HOME/.config/py-agent/ai-agent.py" ]] || return 0 2>/dev/null || exit 0
 
 _AI_DIR="$HOME/.config/py-agent"
+export PYTHONPYCACHEPREFIX="${XDG_CACHE_HOME:-$HOME/.cache}/py-agent/pycache"
 _AI_PY="${_AI_PY:-/usr/bin/python3}"
 
 # 1. Atomic Shell Teleportation (Builtin only, first-draw screen hygiene)

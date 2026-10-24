@@ -5,8 +5,8 @@
 
 PORT=20128
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PID_FILE="$HOME/.config/py-agent/.pyrouter.pid"
-LOG_FILE="$HOME/.config/py-agent/.pyrouter.log"
+PID_FILE="$HOME/.config/py-agent/var/.pyrouter.pid"
+LOG_FILE="$HOME/.config/py-agent/var/.pyrouter.log"
 ROUTER_PY="$DIR/pyrouter.py"
 PYTHON_BIN="${_AI_PY:-/usr/bin/python3}"
 

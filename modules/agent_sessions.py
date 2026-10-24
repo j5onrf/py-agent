@@ -156,7 +156,7 @@ def connect_db(db_path: str) -> sqlite3.Connection:
 
 def cleanup_all_stale_locks() -> None:
     """Universal reaper: cleans orphaned .session and .active_cd.* files for dead processes."""
-    session_dir = os.path.join(CFG_DIR, ".active_sessions")
+    session_dir = os.path.join(CFG_DIR, "var", ".active_sessions")
     if os.path.isdir(session_dir):
         try:
             session_files = glob.glob(os.path.join(session_dir, "*.session"))
@@ -200,7 +200,7 @@ def cleanup_all_stale_locks() -> None:
 def get_sub_agent_id(workspace: str, target_pid: int | None = None) -> int:
     """Calculates active sub-agent index with exact anchored regex matching to prevent prefix collisions."""
     cleanup_all_stale_locks()
-    session_dir = os.path.join(CFG_DIR, ".active_sessions")
+    session_dir = os.path.join(CFG_DIR, "var", ".active_sessions")
     os.makedirs(session_dir, exist_ok=True)
     ws_clean = _sanitize_workspace(workspace)
     current_pid = target_pid or os.getpid()
@@ -255,7 +255,7 @@ def get_sub_agent_id(workspace: str, target_pid: int | None = None) -> int:
 
 def cleanup_sub_agent(workspace: str, target_pid: int | None = None) -> None:
     """Removes all session lockfiles associated with the exact target PID and workspace."""
-    session_dir = os.path.join(CFG_DIR, ".active_sessions")
+    session_dir = os.path.join(CFG_DIR, "var", ".active_sessions")
     if not os.path.isdir(session_dir):
         return
     ws_clean = _sanitize_workspace(workspace)
