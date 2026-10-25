@@ -288,16 +288,25 @@ def get_system_context(
 ) -> str:
     if not (q_tokens := context.tokenize(query, stop_words)) or "\n" in query.strip():
         return ""
+    q_clean = query.strip().lower()
     for entry in context.load_context_entries(context_file, stop_words):
-        ent_tokens = entry.get("tokens", [])
-        if any(q_tokens[i : i + len(ent_tokens)] == ent_tokens for i in range(len(q_tokens) - len(ent_tokens) + 1)):
+        ent_tokens = list(entry.get("tokens", []))
+        if not ent_tokens:
+            continue
+
+        matched = (
+            any(q_tokens[i : i + len(ent_tokens)] == ent_tokens for i in range(len(q_tokens) - len(ent_tokens) + 1))
+            or bool(entry.get("regex") and entry["regex"].search(q_clean))
+        )
+        if matched:
             tool = entry.get("cmd", "").replace("[TOOL]", "").strip()
             if tool.startswith("ai ") or "ai init" in tool or any(ex in tool for ex in EXCLUDED_CONTEXT_TOOLS):
                 continue
 
+            gate_on = os.environ.get("AI_CONFIRM_GATES", "1").strip().lower() not in ("0", "false", "no", "off", "")
             # Check confirmation gate BEFORE running any command
-            if " --s" not in tool and ui and not ui.confirm_tool(tool):
-                return ""
+            if " --s" not in tool and gate_on and ui and not ui.confirm_tool(tool):
+                return "__ABORT_TURN__"
 
             # Robust argv[0] interactive detection
             tool_tokens = [t.strip() for t in re.split(r"[;&|]+", tool) if t.strip()]

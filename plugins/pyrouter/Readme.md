@@ -34,5 +34,5 @@ CUSTOM3_MODEL="big-pickle"
 ### 4. Run
 Toggle PyRouter to `RUNNING` in `model select` (under Auxiliary Services), then launch:
 ```bash
-opencode
+workspace
 ```
