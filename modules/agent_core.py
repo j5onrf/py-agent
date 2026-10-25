@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [OCR 0.01]"""
+"""Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [OCR 0.02]"""
 
 import json
 import os
@@ -35,6 +35,7 @@ from agent_stream import (
     _escape_markup,
     _process_stream_chunk,
     get_cursor_up_count,
+    layout,
     prepare_markdown,
 )
 import agent_tools as tools
@@ -90,14 +91,12 @@ def _get_img_config(*args: Any, **kwargs: Any) -> Any:
 
 
 def prune_history(msg_list: list[dict[str, Any]], max_tokens: int | None = None) -> list[dict[str, Any]]:
-    """In-place history pruner ensuring caller reference aliasing is preserved."""
     pruned = context.prune_history(msg_list, max_tokens=max_tokens) if max_tokens else context.prune_history(msg_list)
     msg_list[:] = pruned
     return msg_list
 
 
 def _sanitize_tool_history(msg_list: list[dict[str, Any]]) -> None:
-    """Ensures tool-call and tool-result pairing integrity after history compaction."""
     valid_cids = set()
     cleaned = []
     for m in msg_list:
@@ -136,17 +135,11 @@ _orig_excepthook = sys.excepthook
 
 
 def _clean_sigint_handler(exctype, value, tb):
+    layout.reset()
     if isinstance(exctype, type) and issubclass(exctype, KeyboardInterrupt):
         raw_err = getattr(sys, "__stderr__", sys.stderr)
         try:
             raw_err.write("\r\033[0m\033[?25h\x1b[2K\033[1;33m[sys] Interrupted.\033[0m\n\n")
-            raw_err.flush()
-        except Exception:
-            pass
-        return
-        raw_err = getattr(sys, "__stderr__", sys.stderr)
-        try:
-            raw_err.write("\r\033[0m\033[?25h\x1b[2K\n\033[1;33m[sys] Interrupted.\033[0m\n\n")
             raw_err.flush()
         except Exception:
             pass
@@ -164,7 +157,6 @@ TOOL_VERBS: dict[str, str] = getattr(tools, "TOOL_VERBS", {})
 
 
 def _heal_tool_args(raw: Any) -> dict[str, Any]:
-    """Heals malformed JSON tool arguments via modular adapter or safe decode."""
     if isinstance(raw, dict):
         return raw
     if not raw or not isinstance(raw, (str, dict)):
@@ -243,7 +235,6 @@ def _log_turn_usage(
     server_tps: float | None = None,
     model_tag: str | None = None,
 ) -> None:
-    """Renders unified compact turn metrics in exact muted gray (\033[90m) with dialed-in single-space breathing room."""
     if not (show_stats and sys.stdout.isatty()):
         return
     try:
@@ -278,8 +269,10 @@ def _log_turn_usage(
             parts.append(model_tag)
 
         stat_line = " · ".join(parts)
+        layout.to("telemetry")
         sys.stdout.write(f"\033[2m  {stat_line}\033[0m\n\n")
         sys.stdout.flush()
+        layout.record_newlines(2)
     except Exception:
         pass
 
@@ -314,7 +307,6 @@ def _print_tool_output(spinner: Any, text: str) -> None:
             pass
         clean_lines = text.strip().splitlines()
 
-        # Collapse consecutive blank lines to keep terminal output compact
         collapsed = []
         prev_blank = False
         for line in clean_lines:
@@ -329,6 +321,7 @@ def _print_tool_output(spinner: Any, text: str) -> None:
             _console_err.print(f"    {line}", markup=False, highlight=False)
         if len(collapsed) > 15:
             _console_err.print(f"    ... ({len(collapsed) - 15} more lines)", style="dim")
+        layout.record_newlines(1)
 
 
 def _run_edit_tool(name: str, args: dict[str, Any], workspace: str, spinner: Any = None) -> str:
@@ -372,6 +365,7 @@ def agentic_turn(
     is_agent: bool = False,
     prefix: str | None = None,
 ) -> str | None:
+    layout.reset()
     if show_stats is None:
         show_stats = bool(get_state("show_stats", True))
 
@@ -395,7 +389,7 @@ def agentic_turn(
         total = 0
         for m in msg_list:
             total += get_accurate_token_count(m.get("content") or "")
-            for tc in m.get("tool_calls", []):
+            for tc in m.get("tool_calls") or []:
                 fn = tc.get("function") or {}
                 total += get_accurate_token_count(fn.get("name", ""))
                 total += get_accurate_token_count(fn.get("arguments", ""))
@@ -478,10 +472,8 @@ def agentic_turn(
             body_tools.pop("tools", None)
 
         if spinner and not getattr(spinner, "active", False):
-            if _round == 0 and sys.stderr.isatty():
-                sys.stderr.write("\n")
-                sys.stderr.flush()
             user_msg_count = len([m for m in messages if m.get("role") == "user"])
+            layout.to("spinner")
             spinner.start("Preloading..." if (_round == 0 and user_msg_count <= 1) else "Working...")
 
         captured_usage, captured_timings = None, None
@@ -495,7 +487,6 @@ def agentic_turn(
         gen_start_time = None
         max_turn_wall_clock = float(timeout * 2 if timeout > 0 else 600.0)
 
-        # Bounded read timeout that respects remaining turn wall-clock budget
         rem_clock = max(5.0, max_turn_wall_clock - (time.monotonic() - turn_start_time))
         read_timeout = max(10, min(max(timeout, 120), int(rem_clock)))
         timeout_tuple = (15, read_timeout)
@@ -542,15 +533,12 @@ def agentic_turn(
 
             is_tool_incoming = has_tool_deltas or has_xml_tool_tag
             if is_tool_incoming and not is_calm and not is_sub:
-                had_streamer = bool(streamer)
                 if streamer:
                     streamer.stop()
                     streamer = None
                     first_chunk = True
                 if spinner and not spinner.active:
-                    if had_streamer and sys.stderr.isatty():
-                        sys.stderr.write("\n")
-                        sys.stderr.flush()
+                    layout.to("spinner")
                     spinner.start("Drafting tool action...")
 
             chunk_to_stream, is_thinking, in_think_block = _process_stream_chunk(
@@ -630,7 +618,6 @@ def agentic_turn(
                     except Exception:
                         err_text = res.text[:200] if hasattr(res, "text") else ""
 
-                    # Sanitize server error text to prevent terminal control injection
                     err_text = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", err_text)
                     err_clean = "".join(c for c in err_text if c.isprintable() or c in " \t").strip()
 
@@ -697,7 +684,6 @@ def agentic_turn(
                         if os.environ.get("AI_DEBUG") == "1":
                             _console_err.print(f"[dim][debug] Stream chunk error: {_escape_markup(str(e))}[/dim]")
 
-                # Process any trailing buffered SSE payload including final delta/choices
                 if remaining := _flush_sse_event():
                     if remaining != "[DONE]":
                         try:
@@ -711,6 +697,7 @@ def agentic_turn(
                     streamer.stop(interrupted=True)
                 except Exception:
                     pass
+            layout.reset()
             raise
         except Exception as e:
             if spinner:
@@ -719,6 +706,7 @@ def agentic_turn(
                 except Exception:
                     pass
             sys.stderr.write(f"\r\033[90m[sys] Stream error: {e}\033[0m\r\n")
+            layout.reset()
             return None
 
         if streamer:
@@ -764,6 +752,7 @@ def agentic_turn(
             try:
                 if is_calm and ans_text:
                     if clean_reply:
+                        layout.to("answer")
                         clean_reply = prepare_markdown(clean_reply.strip())
                         if p_prefix:
                             _console.print(f"[{p_style}]{p_prefix}[/{p_style}] ", end="")
@@ -772,6 +761,7 @@ def agentic_turn(
                             _console.print(Markdown(clean_reply, code_theme=code_th, justify="default"))
                         else:
                             _console.print(clean_reply, markup=False, highlight=False)
+                        layout.record_newlines(1)
                 elif render_md and streamer and clean_reply and not is_sub:
                     tsize = shutil.get_terminal_size((80, 24))
                     cols, rows = tsize.columns, tsize.lines
@@ -796,7 +786,9 @@ def agentic_turn(
                         else:
                             _console.print(f"{p_header} ", end="")
                     _console.print(Markdown(clean_reply, code_theme=code_th, justify="default"))
+                    layout.record_newlines(1)
                 elif clean_reply and (not streamer or not getattr(streamer, "ans_started", False)) and not is_sub:
+                    layout.to("answer")
                     clean_reply = prepare_markdown(clean_reply.strip())
                     if p_prefix:
                         _console.print(f"[{p_style}]{p_prefix}[/{p_style}]", end=" ")
@@ -805,15 +797,13 @@ def agentic_turn(
                         _console.print(Markdown(clean_reply, code_theme=code_th, justify="default"))
                     else:
                         _console.print(clean_reply, markup=False, highlight=False)
+                    layout.record_newlines(1)
             except Exception as render_err:
                 if os.environ.get("AI_DEBUG") == "1":
                     sys.stderr.write(f"\r\n[debug] Markdown render fallback: {render_err}\r\n")
                 if clean_reply:
                     _console.print(clean_reply.strip(), markup=False, highlight=False)
-
-            # Ensure exactly one blank line before the stats bar across all output paths
-            sys.stdout.write("\n")
-            sys.stdout.flush()
+                    layout.record_newlines(1)
 
             cached_tok = 0
             if captured_usage and isinstance(captured_usage, dict):
@@ -928,15 +918,17 @@ def agentic_turn(
                     result = f"[tool error] Malformed tool arguments: {args.get('_parse_error')}"
                     res_str = result
                     is_denied = False
-                    consecutive_tool_failures += 1
                 else:
                     if not is_calm and not is_sub and spinner and getattr(spinner, "active", False):
                         spinner.stop()
 
                     if not is_calm:
+                        layout.to("tool")
                         _console_err.print(
                             f"  [dim]∗ {verb} •[/dim] [cyan]{_escape_markup(fname)}[/cyan] [dim italic]{_escape_markup(brief)}[/dim italic]"
                         )
+                        layout.record_newlines(1)
+
                     if spinner and fname in ("run_command", "exec_python", "web_search") and not getattr(spinner, "active", False):
                         spinner.start(f"{verb.capitalize()}...")
 
@@ -964,7 +956,8 @@ def agentic_turn(
 
                     if not is_calm:
                         elapsed = max(0.01, time.time() - t_start)
-                        _console_err.print(f"  [green]✓[/green] [dim]Done ({elapsed:.1f}s)[/dim]\n")
+                        _console_err.print(f"  [green]✓[/green] [dim]Done ({elapsed:.1f}s)[/dim]")
+                        layout.record_newlines(1)
 
                 res_tok_est = get_accurate_token_count(res_str)
                 max_tool_tokens = max(2000, int(max_ctx * 0.30))
@@ -1058,6 +1051,7 @@ def agentic_turn(
                     streamer.stop(interrupted=True)
                 except Exception:
                     pass
+            layout.reset()
             raise
         except Exception as e:
             _backfill_missing_tool_results(messages, healed_calls, f"[tool error] {e}")
@@ -1067,6 +1061,7 @@ def agentic_turn(
                 except Exception:
                     pass
             sys.stderr.write(f"\r\033[90m[sys] Tool execution error: {e}\033[0m\r\n")
+            layout.reset()
             return None
 
     if spinner:
@@ -1148,6 +1143,7 @@ def stream_response(
         )
         return ans
     except KeyboardInterrupt:
+        layout.reset()
         sys.stderr.write("\r\x1b[2K\033[1;33m[sys] Interrupted.\033[0m\n\n")
         return None
     finally:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Streaming SSE, ANSI Geometry & Terminal Rendering Engine [OCR .01]"""
+"""Streaming SSE, ANSI Geometry & Terminal Rendering Engine [OCR .02]"""
 
 import os
 import re
@@ -30,8 +30,68 @@ _cached_code_theme: str = ""
 _cached_code_theme_time: float = 0.0
 
 
+class TerminalLayout:
+    """Deterministic terminal whitespace & phase-transition sentinel [OCR 0.01].
+    Maintains vertical rhythm invariants and prevents AI-refactor regressions.
+    """
+    __slots__ = ("state", "newlines", "gutter_active")
+
+    def __init__(self) -> None:
+        self.state: str = "idle"
+        self.newlines: int = 1
+        self.gutter_active: bool = False
+
+    def gap(self, target_newlines: int, target_stream: Any = sys.stderr) -> None:
+        """Ensures exactly target_newlines separating previous block from next.
+        target_newlines=1 -> cursor on next line (0 blank lines).
+        target_newlines=2 -> exactly 1 blank line gap.
+        """
+        delta = target_newlines - self.newlines
+        if delta > 0:
+            try:
+                target_stream.write("\n" * delta)
+                target_stream.flush()
+            except OSError:
+                pass
+            self.newlines = target_newlines
+
+    def to(self, next_state: str) -> None:
+        """Transitions semantic visual states while guaranteeing exact blank-line spacing."""
+        prev = self.state
+        if prev == next_state and next_state != "tool":
+            return
+
+        if prev == "think" and self.gutter_active:
+            try:
+                sys.stderr.write("\n")
+                sys.stderr.flush()
+            except OSError:
+                pass
+            self.gutter_active = False
+            self.newlines = 1
+
+        out = sys.stdout if next_state in ("answer", "telemetry") else sys.stderr
+
+        needed = 1 if prev == "spinner" else 2
+
+        self.gap(needed, target_stream=out)
+        self.state = next_state
+
+    def record_newlines(self, count: int) -> None:
+        """Informs layout of physical newlines emitted by external printers."""
+        self.newlines = count
+
+    def reset(self) -> None:
+        """Resets layout state on turn boundary, clear, or signal interrupt."""
+        self.state = "idle"
+        self.newlines = 1
+        self.gutter_active = False
+
+
+layout = TerminalLayout()
+
+
 def _get_code_theme(max_age: float = 10.0) -> str:
-    """Caches resolved code theme for 10s to avoid threading lock and disk stat per code block."""
     global _cached_code_theme, _cached_code_theme_time
     now = time.monotonic()
     if _cached_code_theme and (now - _cached_code_theme_time < max_age):
@@ -93,7 +153,6 @@ def Markdown(*args: Any, **kwargs: Any) -> Any:
 
 
 def prepare_markdown(text: str) -> str:
-    """Repairs unclosed fences and wraps bare code blocks without false-positive triggers."""
     if not text:
         return ""
     if text.count("```") % 2 != 0:
@@ -108,7 +167,6 @@ def prepare_markdown(text: str) -> str:
 
 
 def get_cursor_up_count(text: str, width: int) -> int:
-    """Calculates visual terminal row height based on cell width and clamps to visible viewport."""
     if not text:
         return 0
     w = max(1, width)
@@ -192,9 +250,6 @@ class RichStreamer:
     def acc_ans(self) -> str:
         return "".join(self._acc_ans_parts)
 
-    def _get_think_borders(self) -> tuple[str, str]:
-        return "", ""
-
     def _stop_spinner(self, done_msg: str | None = None) -> None:
         if self.spinner:
             try:
@@ -217,13 +272,17 @@ class RichStreamer:
                 output_chars.append(f"\033[2m│ \033[0m{clean_w}")
                 self.think_col = cell_len(clean_w)
                 self.think_at_line_start = False
+                layout.gutter_active = True
+                layout.record_newlines(0)
             elif self.think_col + w_len > avail_width:
                 clean_w = word.lstrip(" ")
                 output_chars.append(f"\r\n\033[2m│ \033[0m{clean_w}")
                 self.think_col = cell_len(clean_w)
+                layout.record_newlines(0)
             else:
                 output_chars.append(word)
                 self.think_col += w_len
+                layout.record_newlines(0)
 
         for ch in token:
             if ch == "\r":
@@ -238,6 +297,7 @@ class RichStreamer:
                     output_chars.append("\r\n")
                 self.think_at_line_start = True
                 self.think_col = 0
+                layout.record_newlines(1)
             elif ch in (" ", "\t"):
                 self.think_word_buf += ch
                 flush_word(self.think_word_buf)
@@ -273,6 +333,8 @@ class RichStreamer:
                 sys.stderr.flush()
             except OSError:
                 pass
+            layout.gutter_active = False
+            layout.record_newlines(1)
             self.phase = "ANSWER"
 
     def start(self) -> None:
@@ -304,6 +366,9 @@ class RichStreamer:
                 self.phase = "ANSWER"
                 token = parts[1] if len(parts) > 1 else ""
 
+            if self.phase == "INIT":
+                self.phase = "ANSWER"
+
             if self.phase == "ANSWER" and token and not self.in_post_think:
                 self.ans_started = True
                 self._stop_spinner()
@@ -312,6 +377,7 @@ class RichStreamer:
                     sys.stdout.flush()
                 except OSError:
                     pass
+                layout.record_newlines(1 if token.endswith("\n") else 0)
             return
 
         if "<think>" in token:
@@ -338,7 +404,7 @@ class RichStreamer:
                 self.update(parts[1])
             return
 
-        # Intercept inline tool calls: close thinking rail cleanly and hide raw XML tags
+        # Intercept inline tool calls
         if self.in_tool_payload or any(m in token for m in TOOL_MARKERS):
             if not self.in_tool_payload:
                 self.in_tool_payload = True
@@ -351,6 +417,9 @@ class RichStreamer:
                 self._close_think_block()
                 self._stop_spinner()
                 self.ans_started = True
+
+            if any(end in token for end in ("<|tool_call_end|>", "</tool_call>")):
+                self.in_tool_payload = False
             return
 
         if self.in_post_think:
@@ -367,6 +436,7 @@ class RichStreamer:
             self._acc_think_parts.append(tok)
             if self.show_thinking and tok:
                 if not self.think_hdr_printed and tok.strip():
+                    layout.to("think")
                     self.think_hdr_printed = True
                     self.think_at_line_start = True
                     self.think_col = 0
@@ -383,14 +453,13 @@ class RichStreamer:
                     return
                 self._stop_spinner()
                 self.ans_started = True
+                layout.to("answer")
                 p_clean = self.prefix.strip()
                 p_str = (
                     f"{p_clean}\n\n"
                     if (p_clean and tok.startswith(("```", "#", "---")))
                     else (f"{p_clean} " if p_clean else "")
                 )
-                if self.think_hdr_printed or self.round_idx > 0 or p_clean:
-                    p_str = "\r\n" + p_str
                 p_style = "\033[1;32m" if "Agent" in p_clean else "\033[1;36m"
                 if p_str:
                     try:
@@ -407,8 +476,10 @@ class RichStreamer:
                     sys.stdout.flush()
                 except OSError:
                     pass
+                layout.record_newlines(1 if tok.endswith("\n") else 0)
 
     def stop(self, interrupted: bool = False) -> None:
+        self.in_tool_payload = False
         self._stop_spinner()
         if self.phase == "THINKING":
             self._close_think_block()
@@ -427,6 +498,7 @@ class RichStreamer:
                 sys.stdout.flush()
             except OSError:
                 pass
+            layout.record_newlines(1)
 
 
 def _process_stream_chunk(content: str, reasoning: str, in_think_block: Any = False) -> tuple[str, bool, Any]:

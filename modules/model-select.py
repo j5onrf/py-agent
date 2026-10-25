@@ -32,17 +32,19 @@ MAX_FILE_BYTES = 5 * 1024 * 1024  # 5 MB ceiling for local JSON & remote API bod
 ORIGINAL_TERMIOS = termios.tcgetattr(sys.stdin.fileno()) if sys.stdin.isatty() else None
 
 
-def cleanup_terminal():
+def cleanup_terminal(clear_screen: bool = True):
     if ORIGINAL_TERMIOS:
         try:
             termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, ORIGINAL_TERMIOS)
         except (termios.error, OSError):
             pass
-    sys.stdout.write("\x1b[H\x1b[2J\033[?25h\033[0m")
+    if clear_screen:
+        sys.stdout.write("\x1b[H\x1b[2J")
+    sys.stdout.write("\033[?25h\033[0m")
     sys.stdout.flush()
 
 
-atexit.register(cleanup_terminal)
+atexit.register(lambda: cleanup_terminal(clear_screen=False))
 
 # ── Color Palette ─────────────────────────────────────────────────────────────
 AMBER, GREEN, RED, RESET, BOLD, DIM = (
@@ -83,7 +85,13 @@ DEFAULTS = {
     },
     "custom_presets": {
         "vercel": ["stealth/pixel-canary"],
-        "tokenharbor": ["qwen3.8-flash:free", "deepseek-v4.1-flash:free", "claude-haiku-5.5:free"],
+        "tokenharbor": [
+            "deepseek-v4-flash:free",
+            "deepseek-v4.1-flash:free",
+            "qwen3.8-flash:free",
+            "claude-haiku-5.5:free",
+            "deepseek-v4-flash",
+        ],
         "deepseek": ["deepseek-chat", "deepseek-reasoner"],
         "x.ai": ["grok-2-latest", "grok-beta"],
         "anthropic": ["claude-3-7-sonnet-20250219", "claude-3-5-haiku-20241022"],
@@ -205,15 +213,21 @@ def load_env_vars():
             with open(ENV_PATH, "r", encoding="utf-8") as f:
                 for l in f:
                     s = l.strip()
-                    if m := re.match(r"^#?\s*([A-Z0-9_]+)\s*=\s*\"?([^\"]*)\"?$", s):
-                        k, val = m.groups()
-                        is_commented = s.startswith("#")
-                        if not is_commented:
-                            if k not in uncommented_seen:
+                    if not s or "=" not in s:
+                        continue
+                    is_commented = s.startswith("#")
+                    raw = s.lstrip("#").strip()
+                    if "=" in raw:
+                        k, v = raw.split("=", 1)
+                        k = k.strip()
+                        if re.match(r"^[A-Z0-9_]+$", k):
+                            val = v.split(" #")[0].strip().strip('"').strip("'")
+                            if not is_commented:
+                                if k not in uncommented_seen:
+                                    env[k] = val
+                                    uncommented_seen.add(k)
+                            elif k not in env:
                                 env[k] = val
-                                uncommented_seen.add(k)
-                        elif k not in env:
-                            env[k] = val
         except OSError:
             pass
     return env
@@ -256,7 +270,7 @@ def get_active_key_set() -> set[str]:
                     s = l.strip()
                     if s and not s.startswith("#") and "=" in s:
                         k, v = s.split("=", 1)
-                        val = v.strip().strip('"').strip("'")
+                        val = v.split(" #")[0].strip().strip('"').strip("'")
                         if val == "not-needed" or (
                             val
                             and len(val) >= 8
@@ -598,7 +612,7 @@ async def async_get_key():
 
 
 def prompt_user_input(prompt_text: str) -> str:
-    cleanup_terminal()
+    cleanup_terminal(clear_screen=True)
     try:
         return input(f"\n\033[1;36m{prompt_text}\033[0m: ").strip()
     except (EOFError, KeyboardInterrupt):
@@ -962,7 +976,18 @@ async def async_main():
                     is_pyrouter = "20128" in c_url_val or "pyrouter" in c_url_val
                     c_menu_items = [c_curr_m] if c_curr_m else []
 
-                    # Only query models if server is actually running to avoid connection hangs
+                    # 1. Populate matched presets for recognized providers
+                    presets_dict = DEFAULTS.get("custom_presets", {})
+                    matched_presets = []
+                    for pkey, plist in presets_dict.items():
+                        if pkey in c_url_val.lower() or pkey in c_name_val.lower():
+                            matched_presets.extend(plist)
+
+                    for pm in matched_presets:
+                        if pm not in c_menu_items:
+                            c_menu_items.append(pm)
+
+                    # 2. Only query models if server is actually running to avoid connection hangs
                     if not is_pyrouter or is_pyrouter_running():
                         models_url = re.sub(r"/chat/completions/?$", "/models", c_url_val)
                         if not models_url.endswith("/models"):
@@ -978,7 +1003,9 @@ async def async_main():
                                     m_data = json.loads(r.read(MAX_FILE_BYTES).decode("utf-8"))
                                     fetched = [m["id"] for m in m_data.get("data", []) if isinstance(m, dict) and "id" in m]
                                     if fetched:
-                                        c_menu_items = fetched
+                                        for f_id in fetched:
+                                            if f_id not in c_menu_items:
+                                                c_menu_items.append(f_id)
                         except Exception:
                             pass
 
@@ -1200,7 +1227,7 @@ async def async_main():
                 elif ttype == "exit":
                     break
     finally:
-        cleanup_terminal()
+        cleanup_terminal(clear_screen=True)
 
     print("\033[1;32m✓ Local-AI configuration saved.\033[0m")
 
