@@ -13,6 +13,7 @@ var/*
 .cache/
 .voice_pending.txt
 ai-history
+.agent/
 
 # Databases & SQLite WAL
 projects/.database/*.db*

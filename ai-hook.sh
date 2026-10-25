@@ -14,7 +14,7 @@ _ai_teleport() {
         printf '\x1b[H\x1b[2J'
     fi
 
-    local f="$_AI_DIR/.active_cd.$$"
+    local f="$_AI_DIR/var/.active_cd.$$"
     if [[ -f "$f" ]]; then
         local target=""
         IFS= read -r target < "$f" 2>/dev/null
@@ -133,10 +133,10 @@ ai() {
         local nullglob_set=0
         shopt -q nullglob && nullglob_set=1
         shopt -s nullglob
-        files=("$_AI_DIR"/.active_cd.*)
+        files=("$_AI_DIR"/var/.active_cd.*)
         [[ "$nullglob_set" -eq 0 ]] && shopt -u nullglob
     else
-        files=("$_AI_DIR"/.active_cd.*(N))
+        files=("$_AI_DIR"/var/.active_cd.*(N))
     fi
 
     for old in "${files[@]}"; do
@@ -187,7 +187,8 @@ ai() {
         fi
         ws_path=$(CDPATH= cd -- "$ws_path" 2>/dev/null && pwd -P) || return 1
 
-        local lockfile="$_AI_DIR/.active_cd.$$"
+        mkdir -p "$_AI_DIR/var" 2>/dev/null
+        local lockfile="$_AI_DIR/var/.active_cd.$$"
         local _saved_traps
         _saved_traps=$(trap -p INT TERM HUP 2>/dev/null)
         trap 'rm -f "'"$lockfile"'" 2>/dev/null' INT TERM HUP
