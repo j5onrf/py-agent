@@ -25,19 +25,17 @@ sudo pacman -S python-pykeepass python-pyotp python-textual wl-clipboard libnoti
    clipboard_timeout = 30
    ```
 
-2. **Hyprland Keybinding:**
-   Add this to your Hyprland configuration so **`SUPER + K`** opens PyKeep in a floating window:
+2. **Hyprland Keybinding:** Add this to your Hyprland configuration so **`SUPER + K`** opens PyKeep in a floating window:
    ```lua
-   
--- PyKeep
-hl.bind("SUPER + K", hl.dsp.exec_cmd("uwsm app -- kitty --class pykeep_modal python3 " .. home .. "/.config/py-agent/plugins/pykeep/pykeep/pykeep.py"))
+   -- PyKeep
+   hl.bind("SUPER + K", hl.dsp.exec_cmd("uwsm app -- kitty --class pykeep_modal python3 " .. home .. "/.config/py-agent/plugins/pykeep/pykeep/pykeep.py"))
 
-hl.window_rule({
-    match = { class = "pykeep_modal" },
-    float = true,
-    size = "1280 720",
-    center = true,
-})
+   hl.window_rule({
+       match = { class = "pykeep_modal" },
+       float = true,
+       size = "1280 720",
+       center = true,
+   })
 
    ```
 
