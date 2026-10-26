@@ -1,6 +1,6 @@
 # PyKeep
 
-Lightweight, zero-daemon KeePass (`.kdbx`) TUI and on-demand Chromium/Brave autofill extension.
+Lightweight, KeePass (`.kdbx`) TUI and on-demand Chromium/Brave autofill extension.
 
 ## Features
 - **TUI (`pykeep.py`):** Fast Textual interface with live TOTP ticking, password generation, entry editing/deletion, and manual backups (`b`).
@@ -62,7 +62,7 @@ sudo pacman -S python-pykeepass python-pyotp python-textual wl-clipboard libnoti
    {
      "name": "pykeep_host",
      "description": "PyKeep On-Demand Native Host",
-     "path": "/home/j5/.config/py-agent/plugins/pykeep/pykeep/native_host.py",
+     "path": "/home/user/.config/py-agent/plugins/pykeep/pykeep/native_host.py",
      "type": "stdio",
      "allowed_origins": [
        "chrome-extension://YOUR_EXTENSION_ID_HERE/"

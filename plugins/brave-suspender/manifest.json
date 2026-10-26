@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Tab Hibernate & Resume",
+  "version": "1.4",
+  "description": "Frees memory and resumes YouTube videos where you left off.",
+  "permissions": ["tabs", "alarms", "scripting", "contextMenus", "storage", "favicon"],
+  "host_permissions": ["*://*.youtube.com/*"],
+  "action": {
+    "default_title": "Suspend background tabs now"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
