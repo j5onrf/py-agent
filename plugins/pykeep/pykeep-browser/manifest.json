@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "PyKeep Autofill",
+  "version": "1.0",
+  "description": "On-demand, zero-storage password autofill",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "nativeMessaging"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "PyKeep Autofill"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+P"
+      },
+      "description": "Trigger PyKeep Autofill"
+    }
+  }
+}

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      width: 240px;
+      margin: 0;
+      padding: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #11121d;
+      color: #f4f4f5;
+    }
+    h3 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      color: #89b4fa;
+    }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      background: #161726;
+      border: 1px solid #27272a;
+      color: #fff;
+      padding: 7px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+    input:focus {
+      outline: none;
+      border-color: #89b4fa;
+    }
+    button {
+      width: 100%;
+      background: #89b4fa;
+      color: #11121d;
+      border: none;
+      border-radius: 6px;
+      padding: 7px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { background: #b4befe; }
+    #status {
+      font-size: 11px;
+      color: #a6adc8;
+      margin-top: 8px;
+      min-height: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h3>󰌾 PyKeep Autofill</h3>
+  <form id="unlock-form">
+    <input type="password" id="master-pwd" placeholder="Master Password..." autofocus autocomplete="off">
+    <button type="submit" id="btn-submit">Unlock & Fill</button>
+  </form>
+  <div id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>
