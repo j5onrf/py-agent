@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      width: 240px;
+      margin: 0;
+      padding: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #18181b;
+      color: #f4f4f5;
+    }
+    h3 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    #status {
+      font-size: 12px;
+      color: #a1a1aa;
+      margin-bottom: 10px;
+      line-height: 1.4;
+      min-height: 28px;
+    }
+    .btn-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    button {
+      background: #27272a;
+      color: #f4f4f5;
+      border: 1px solid #3f3f46;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: background 0.15s;
+    }
+    button:hover {
+      background: #3f3f46;
+    }
+    button.primary {
+      background: #2563eb;
+      border-color: #1d4ed8;
+      color: #fff;
+    }
+    button.primary:hover {
+      background: #1d4ed8;
+    }
+    .shortcut {
+      margin-top: 10px;
+      font-size: 11px;
+      color: #71717a;
+      text-align: center;
+    }
+    kbd {
+      background: #27272a;
+      border: 1px solid #3f3f46;
+      border-radius: 3px;
+      padding: 1px 4px;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <h3>📋 YT Transcript</h3>
+  <div id="status">Fetching transcript...</div>
+  <div class="btn-group">
+    <button id="btnClean" class="primary">Copy Clean Text</button>
+    <button id="btnTimed">Copy with Timestamps</button>
+  </div>
+  <div class="shortcut">HotKey: <kbd>Alt+Y</kbd></div>
+  <script src="popup.js"></script>
+</body>
+</html>

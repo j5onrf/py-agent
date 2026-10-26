@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "YT Transcript to Clipboard",
+  "version": "1.0",
+  "description": "Extracts YouTube transcripts straight into the Wayland clipboard.",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Copy YouTube Transcript"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Y"
+      },
+      "description": "Copy YouTube Transcript"
+    }
+  }
+}
