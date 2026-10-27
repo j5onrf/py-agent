@@ -71,7 +71,8 @@ ai init ~/.config/py-agent/projects/session-test ---> session test, projects ses
 ~/.config/py-agent/plugins/open-code-optimize/run-optimize ---> open code optimize, co
 # --- Model Context Protocol (MCP) ---
 ~/.config/py-agent/plugins/mcp/mcp_client.py list ---> mcp list, mcp tools, mcpl
-# --- PhotoCraft (MCP) ---
+# --- Burner Mail TUI ---
+~/.config/py-agent/plugins/burner_mail/burner_mail.py ---> burner mail, bmail
 ```
 
 ## 4. Apps (Tools & Utilities)
