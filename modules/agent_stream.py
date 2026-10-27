@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Streaming SSE, ANSI Geometry & Terminal Rendering Engine [OCR .02]"""
+"""Streaming SSE, ANSI Geometry & Terminal Rendering Engine [CR.02 CO.01]"""
 
 import os
 import re
@@ -335,7 +335,8 @@ class RichStreamer:
                 pass
             layout.gutter_active = False
             layout.record_newlines(1)
-            self.phase = "ANSWER"
+
+        self.phase = "ANSWER"
 
     def start(self) -> None:
         if self.active:
@@ -369,8 +370,11 @@ class RichStreamer:
             if self.phase == "INIT":
                 self.phase = "ANSWER"
 
-            if self.phase == "ANSWER" and token and not self.in_post_think:
+            if self.phase == "THINKING" and token:
+                self._acc_think_parts.append(token)
+            elif self.phase == "ANSWER" and token and not self.in_post_think:
                 self.ans_started = True
+                self._acc_ans_parts.append(token)
                 self._stop_spinner()
                 try:
                     sys.stdout.write(token.replace("\r\n", "\n").replace("\n", "\r\n"))
@@ -418,8 +422,13 @@ class RichStreamer:
                 self._stop_spinner()
                 self.ans_started = True
 
-            if any(end in token for end in ("<|tool_call_end|>", "</tool_call>")):
-                self.in_tool_payload = False
+            for end in ("<|tool_call_end|>", "</tool_call>"):
+                if end in token:
+                    self.in_tool_payload = False
+                    rem = token.split(end, 1)[1]
+                    if rem:
+                        self.update(rem)
+                    break
             return
 
         if self.in_post_think:
@@ -493,7 +502,7 @@ class RichStreamer:
                 pass
             return
 
-        render_md = bool(get_state("render_markdown", False))
+        render_md = bool(get_state("render_markdown"))
         if self.ans_started and not render_md:
             try:
                 sys.stdout.write("\r\n")
@@ -507,7 +516,7 @@ def _process_stream_chunk(content: str, reasoning: str, in_think_block: Any = Fa
     if content:
         if "Final Answer:" in content:
             content = RE_FINAL_ANSWER.sub("", content)
-        if any(marker in content for marker in TOOL_MARKERS):
+        if "<" in content and any(marker in content for marker in TOOL_MARKERS):
             content = RE_TOOL_CALL_BLOCK.sub("", content)
             if "<|tool_call_start|>" in content:
                 content = content.replace("<|tool_call_start|>", "")

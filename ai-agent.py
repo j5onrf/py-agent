@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Py Agent [v0.9.9.63] - Main CLI Runtime, Workspace Agent & Command Dispatcher [OCR 0.01]"""
+"""Py Agent [v0.9.9.64] - Main CLI Runtime, Workspace Agent & Command Dispatcher [CR.01 CO.01]"""
 
 import json
 import os
@@ -25,7 +25,7 @@ BASE_PROMPT_AGENT: str = "Active local workspace developer agent."
 # Precompiled hot-path regular expressions
 RE_THINK_TAGS: re.Pattern = re.compile(r"<think>[\s\S]*?(?:</think>|$)", re.DOTALL)
 RE_AUTO_RUN: re.Pattern = re.compile(
-    r"Run:\s*((?:trace symbol|blast radius|read function|find symbol)\s+\S+|architecture overview)"
+    r"Run:\s*((?:trace symbol|blast radius|read function|find symbol)\s+[a-zA-Z0-9_.:#/-]+|architecture overview)"
 )
 # Requires '/' prefix for single letters (a, b, f) so plain words are not swallowed
 RE_THINK_BIN: re.Pattern = re.compile(r"^(?:/(?:[fba]|tk)|/?tk)(?:\s+(\d+))?$", re.IGNORECASE)
@@ -289,9 +289,11 @@ def _launch_surface(
     else:
         env["AI_SESSION_HISTORY"] = hist_data
 
-    cmd = [sys.executable, script_path] if script_path.endswith(".py") else ["/bin/bash", script_path] + (args or [])
+    cmd = ([sys.executable, script_path] if script_path.endswith(".py") else ["/bin/bash", script_path]) + (args or [])
     try:
-        subprocess.run(cmd, env=env)
+        proc = subprocess.run(cmd, env=env)
+        if proc.returncode != 0 and proc.returncode != 130:
+            ui._console.print(f"[dim yellow][sys] Surface exited with rc={proc.returncode}.[/dim yellow]\n")
         st = core.get_state()
         os.environ["AI_SHOW_THINKING"] = "1" if st.get("show_thinking", True) else "0"
         ui._console.print("[green][sys] Resumed CLI session.[/green]\n")
@@ -380,7 +382,7 @@ def run_interactive_chat(args: list[str]) -> None:
             try:
                 with open(cfg_file, "r", encoding="utf-8") as cf:
                     d = json.load(cf)
-                    selected_profile = d.get("profile", resolve_default_profile(is_agent))
+                    selected_profile = d.get("profile") or resolve_default_profile(is_agent)
                     is_yolo = bool(d.get("yolo", False))
                     use_map = bool(d.get("map", False))
                     is_py = bool(d.get("py", False))
@@ -524,7 +526,7 @@ def run_interactive_chat(args: list[str]) -> None:
             os.environ["AI_WORKSPACE_PATH"] = workspace_path
         except OSError as e:
             ui._console.print(f"[red][sys] Sub-agent worktree setup failed: {e}[/red]")
-            clean_exit(safe_name, sub_id=sub_id)
+            clean_exit(safe_name, workspace_path=original_workspace_path, sub_id=sub_id)
 
     # Wake-on-Key Resonant Ribbon Box
     wake_key = ui.draw_session_box(
@@ -613,7 +615,14 @@ def run_interactive_chat(args: list[str]) -> None:
                 )
                 if think_bin:
                     try:
-                        subprocess.run([sys.executable, think_bin, query], input=json.dumps(chat_history), text=True)
+                        res = subprocess.run(
+                            [sys.executable, think_bin, query],
+                            input=json.dumps(chat_history),
+                            text=True,
+                            timeout=120,
+                        )
+                        if res.returncode != 0:
+                            sys.stderr.write(f"\033[1;31m[Warning] chat failed: rc={res.returncode}\033[0m\n")
                         continue
                     except Exception as e:
                         sys.stderr.write(f"\033[1;31m[Warning] chat failed: {e}\033[0m\n")

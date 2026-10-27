@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tool Format Adapters & Self-Healing Parser [OCR 0.01]"""
+"""Tool Format Adapters & Self-Healing Parser [CR.01 CO.01]"""
 
 import ast
 import json
@@ -29,6 +29,8 @@ RE_XML_TOOL_CALL = re.compile(r"<tool_call>\s*(?P<payload>[\s\S]*?)\s*</tool_cal
 RE_MD_JSON_WRAPPER = re.compile(r"^\s*```(?:json)?\s*\n([\s\S]*?)\n```\s*$", re.DOTALL)
 RE_MD_CODE_BLOCK = re.compile(r"^\s*```[a-zA-Z0-9_+-]*\s*\n([\s\S]*?)\n```\s*$", re.DOTALL)
 RE_MD_PY_WRAPPER = re.compile(r"```(?:python|py)\s*\n([\s\S]*?)\s*```", re.DOTALL)
+RE_MD_FENCE_START = re.compile(r"^```[a-zA-Z0-9_+-]*\s*")
+RE_MD_FENCE_END = re.compile(r"\s*```$")
 
 RE_LING_XML = re.compile(
     r"<tool_call>\s*(?P<name>[a-zA-Z_]\w*)\s*(?P<params>(?:<arg_key>[\s\S]*?)?)\s*</tool_call>",
@@ -84,6 +86,8 @@ RE_BOGUS_IMPORTS = re.compile(
 )
 
 RE_GUTTER_LINE = re.compile(r"^\s*(\d+)[:|│\t ]\s?")
+SAFE_ESCAPE_SENTINEL = "\U0010ffff"
+KNOWN_EXTLESS_FILES = frozenset({"makefile", "dockerfile", "gemfile", "license", "readme", "procfile"})
 
 
 def _close_unterminated_quote(cmd_str: str) -> str:
@@ -224,7 +228,7 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
                             clean_v = inner
                 clean_v = clean_v.strip()
 
-            if k not in ("pattern", "regex") and len(clean_v) > 2 and clean_v.startswith("^") and clean_v.endswith("$"):
+            if k in ("path", "symbol", "file", "target", "query") and len(clean_v) > 2 and clean_v.startswith("^") and clean_v.endswith("$"):
                 clean_v = clean_v[1:-1].strip()
 
             if k in ("pattern", "query") and "\n" in clean_v:
@@ -234,8 +238,8 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
                 if m := RE_MD_CODE_BLOCK.match(clean_v):
                     clean_v = m.group(1).rstrip()
                 elif clean_v.startswith("```") and clean_v.endswith("```") and len(clean_v) >= 6:
-                    clean_v = re.sub(r"^```[a-zA-Z0-9_+-]*\s*", "", clean_v)
-                    clean_v = re.sub(r"\s*```$", "", clean_v)
+                    clean_v = RE_MD_FENCE_START.sub("", clean_v)
+                    clean_v = RE_MD_FENCE_END.sub("", clean_v)
 
             if k in ("old_str", "new_str"):
                 clean_v = _strip_line_number_gutters(clean_v)
@@ -269,7 +273,7 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
 
         if m := re.search(r":(\d{1,6})(?::\d{1,6})?$", cleaned["path"]):
             stem = cleaned["path"][: m.start()]
-            if os.path.splitext(stem)[1] or os.path.exists(stem):
+            if os.path.splitext(stem)[1] or os.path.basename(stem).lower() in KNOWN_EXTLESS_FILES or os.path.exists(stem):
                 cleaned["path"] = stem.strip()
 
         # Reject path traversal tokens
@@ -325,9 +329,18 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
             "before",
             "original",
         ):
-            if alt in cleaned and not isinstance(cleaned[alt], bool):
-                cleaned["old_str"] = _strip_line_number_gutters(str(cleaned.pop(alt)))
-                break
+            if alt in cleaned:
+                val = cleaned.pop(alt)
+                if isinstance(val, bool):
+                    continue
+                if isinstance(val, (list, tuple)) and all(isinstance(x, str) for x in val):
+                    cleaned["old_str"] = _strip_line_number_gutters("\n".join(val))
+                    break
+                elif isinstance(val, (str, bytes)):
+                    s_val = val.decode("utf-8", errors="replace") if isinstance(val, bytes) else val
+                    if s_val.lower() not in ("true", "false", "1", "0", "yes", "no", "on", "off"):
+                        cleaned["old_str"] = _strip_line_number_gutters(s_val)
+                        break
 
     if "new_str" not in cleaned:
         for alt in (
@@ -343,13 +356,18 @@ def normalize_params(args: dict[str, Any]) -> dict[str, Any]:
             "unified_diff",
             "hunk",
         ):
-            if (
-                alt in cleaned
-                and not isinstance(cleaned[alt], bool)
-                and str(cleaned[alt]).lower() not in ("true", "1", "yes", "on")
-            ):
-                cleaned["new_str"] = _strip_line_number_gutters(str(cleaned.pop(alt)))
-                break
+            if alt in cleaned:
+                val = cleaned.pop(alt)
+                if isinstance(val, bool):
+                    continue
+                if isinstance(val, (list, tuple)) and all(isinstance(x, str) for x in val):
+                    cleaned["new_str"] = _strip_line_number_gutters("\n".join(val))
+                    break
+                elif isinstance(val, (str, bytes)):
+                    s_val = val.decode("utf-8", errors="replace") if isinstance(val, bytes) else val
+                    if s_val.lower() not in ("true", "false", "1", "0", "yes", "no", "on", "off"):
+                        cleaned["new_str"] = _strip_line_number_gutters(s_val)
+                        break
 
     # 7. Line Range Aliases & Numeric String Coercion
     if "line_start" not in cleaned:
@@ -660,14 +678,14 @@ def heal_tool_call(fname: str, raw_args: str | dict[str, Any]) -> tuple[str, dic
                 unescaped = raw_content.replace(r"'\''", "'")
             elif is_echo_e or cmd_type == "printf":
                 unescaped = (
-                    raw_content.replace("\\\\", "\x00")
+                    raw_content.replace("\\\\", SAFE_ESCAPE_SENTINEL)
                     .replace(r"\"", '"')
                     .replace(r"\n", "\n")
                     .replace(r"\t", "\t")
-                    .replace("\x00", "\\")
+                    .replace(SAFE_ESCAPE_SENTINEL, "\\")
                 )
             else:
-                unescaped = raw_content.replace("\\\\", "\x00").replace(r"\"", '"').replace("\x00", "\\")
+                unescaped = raw_content.replace("\\\\", SAFE_ESCAPE_SENTINEL).replace(r"\"", '"').replace(SAFE_ESCAPE_SENTINEL, "\\")
 
             norm = normalize_params({"path": clean_path, "content": unescaped})
             if append_nl and isinstance(norm.get("content"), str) and not norm["content"].endswith("\n"):

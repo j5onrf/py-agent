@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""UI Module - Spinners, session boxes, and interactive menus [OCR .01]"""
+"""UI Module - Spinners, session boxes, and interactive menus [CR.01 CO.01]"""
 
 import json
 import os
@@ -534,14 +534,6 @@ def draw_session_box(
     box_style: int = 1,
     wake_on_key: bool = True,
 ) -> str:
-    raw_path = str(workspace_path).strip().splitlines()[0].strip() if workspace_path else ""
-    clean_path = re.sub(r"^[󱞩\s]+", "", raw_path)
-    display_dir = (
-        clean_path.replace(home_dir, "~", 1)
-        if (home_dir and clean_path.startswith(home_dir))
-        else clean_path
-    )
-
     try:
         import agent_cloud
         configs = agent_cloud.get_active_configs([])
@@ -599,11 +591,10 @@ def draw_session_box(
 
     if is_tty and wake_on_key and _HAS_TERMIOS:
         old_term = termios.tcgetattr(sys.stdin)
-        tty.setcbreak(sys.stdin.fileno())
-        sys.stdout.write("\033[?25l")
-        sys.stdout.flush()
-
         try:
+            tty.setcbreak(sys.stdin.fileno())
+            sys.stdout.write("\033[?25l")
+            sys.stdout.flush()
             start_time = time.monotonic()
             first_frame = True
 
@@ -638,7 +629,8 @@ def draw_session_box(
                 time.sleep(0.016)
 
             resting_str = render_fade_frame(grid, 1.0, is_resting=True)
-            sys.stdout.write(f"\033[{num_lines}A\r{resting_str}\n\n")
+            rewind = "" if first_frame else f"\033[{num_lines}A\r"
+            sys.stdout.write(f"{rewind}{resting_str}\n\n")
             sys.stdout.flush()
         finally:
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_term)
@@ -679,10 +671,10 @@ def run_interactive_selection(
 
     options = matched_base.split("\n")
     num_opts, current_idx = len(options), 0
-    sys.stderr.write("\033[?25l")
-    sys.stderr.flush()
 
     try:
+        sys.stderr.write("\033[?25l")
+        sys.stderr.flush()
         while True:
             intent_part, sep, cmd_part = options[current_idx].partition("|||")
             current_intent = intent_part.strip() if sep else "run"
@@ -721,7 +713,7 @@ def run_interactive_selection(
                 sys.stderr.write("\r\x1b[2K\x1b[1A\r\x1b[2K\x1b[1A\r\x1b[2K")
                 sys.stderr.flush()
                 if key.lower() == "y":
-                    if "system" in cmd_to_show:
+                    if re.search(r"\bsystem\b", cmd_to_show):
                         ensure_mysys_exists_fn()
                     sys.stdout.write(cmd_to_show)
                     sys.stdout.flush()
@@ -731,7 +723,7 @@ def run_interactive_selection(
             if key in ("\r", "\n", "y", "Y"):
                 sys.stderr.write("\r\x1b[2K")
                 sys.stderr.flush()
-                if "system" in cmd_to_show:
+                if re.search(r"\bsystem\b", cmd_to_show):
                     ensure_mysys_exists_fn()
                 sys.stdout.write(cmd_to_show)
                 sys.stdout.flush()
@@ -871,7 +863,7 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
         sys.stderr.write(f"\033[1;33m[ai init]\033[0m No agent profiles found in {profiles_dir}. Using defaults.\n")
         return "chat", False, False, False, False, False
 
-    sys.stderr.write(f"\n\033[1;36m[ai init]\033[0m Select default Agent Profile for workspace \033[1;33m{workspace_name}\033[0m:\n\n\033[?25l")
+    sys.stderr.write(f"\n\033[1;36m[ai init]\033[0m Select default Agent Profile for workspace \033[1;33m{workspace_name}\033[0m:\n\n")
     sys.stderr.flush()
 
     current_idx, num_opts = 0, len(options)
@@ -915,6 +907,8 @@ def select_workspace_profile(workspace_name: str) -> tuple[str, bool, bool, bool
     last_rendered_lines = 0
 
     try:
+        sys.stderr.write("\033[?25l")
+        sys.stderr.flush()
         while True:
             cur_key = options[current_idx][0]
             cur_meta = profile_cache.get(cur_key, {})

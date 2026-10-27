@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [OCR 0.02]"""
+"""Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [CR.02 CO.01]"""
 
 import json
 import os
@@ -211,7 +211,12 @@ def run_mod(module_name: str, *args: str) -> str:
     for base in (os.path.join(CFG_DIR, "modules"), os.path.join(CFG_DIR, "tools"), CFG_DIR):
         base_real = os.path.realpath(base)
         target = os.path.realpath(os.path.join(base, clean_name))
-        if os.path.isfile(target) and os.path.commonpath([base_real, target]) == base_real:
+        try:
+            contained = os.path.commonpath([base_real, target]) == base_real
+        except ValueError:
+            contained = False
+
+        if os.path.isfile(target) and contained:
             try:
                 cmd = [sys.executable, target] + list(args) if target.endswith(".py") else [target] + list(args)
                 res = subprocess.run(cmd, capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL)
@@ -568,11 +573,22 @@ def agentic_turn(
             for tc in delta.get("tool_calls") or []:
                 if not isinstance(tc, dict):
                     continue
-                raw_idx = tc.get("index", 0)
-                try:
-                    idx = int(raw_idx)
-                except (TypeError, ValueError):
-                    idx = 0
+                raw_idx = tc.get("index")
+                if raw_idx is None:
+                    tc_id = tc.get("id")
+                    if tc_id:
+                        idx = next(
+                            (k for k, v in tool_calls_map.items() if v.get("id") == tc_id),
+                            max(tool_calls_map, default=-1) + 1,
+                        )
+                    else:
+                        idx = max(tool_calls_map, default=0)
+                else:
+                    try:
+                        idx = int(raw_idx)
+                    except (TypeError, ValueError):
+                        idx = 0
+
                 tc_entry = tool_calls_map.setdefault(
                     idx,
                     {
@@ -700,6 +716,11 @@ def agentic_turn(
             layout.reset()
             raise
         except Exception as e:
+            if streamer:
+                try:
+                    streamer.stop(interrupted=True)
+                except Exception:
+                    pass
             if spinner:
                 try:
                     spinner.stop(leave_on_screen=False)
@@ -745,7 +766,7 @@ def agentic_turn(
                 else:
                     clean_reply = raw_fallback.splitlines()[-1].strip() if raw_fallback else ""
 
-            render_md = bool(get_state("render_markdown", False))
+            render_md = bool(get_state("render_markdown"))
             p_prefix = prefix if prefix is not None else ""
             p_style = "bold green" if "Agent" in p_prefix else "bold cyan"
 
@@ -777,16 +798,16 @@ def agentic_turn(
                         except OSError:
                             pass
 
-                    clean_reply = prepare_markdown(clean_reply.strip())
-                    code_th = str(get_state("code_theme", "monokai"))
-                    if p_prefix:
-                        p_header = f"[{p_style}]{p_prefix.strip()}[/{p_style}]"
-                        if clean_reply.startswith(("```", "#", "---")):
-                            _console.print(f"{p_header}\n")
-                        else:
-                            _console.print(f"{p_header} ", end="")
-                    _console.print(Markdown(clean_reply, code_theme=code_th, justify="default"))
-                    layout.record_newlines(1)
+                        clean_reply = prepare_markdown(clean_reply.strip())
+                        code_th = str(get_state("code_theme", "monokai"))
+                        if p_prefix:
+                            p_header = f"[{p_style}]{p_prefix.strip()}[/{p_style}]"
+                            if clean_reply.startswith(("```", "#", "---")):
+                                _console.print(f"{p_header}\n")
+                            else:
+                                _console.print(f"{p_header} ", end="")
+                        _console.print(Markdown(clean_reply, code_theme=code_th, justify="default"))
+                        layout.record_newlines(1)
                 elif clean_reply and (not streamer or not getattr(streamer, "ans_started", False)) and not is_sub:
                     layout.to("answer")
                     clean_reply = prepare_markdown(clean_reply.strip())
@@ -813,7 +834,7 @@ def agentic_turn(
                     or captured_usage.get("prompt_cache_hit_tokens", 0)
                     or captured_usage.get("cached_tokens", 0)
                     or captured_usage.get("cache_read_input_tokens", 0)
-                    or captured_usage.get("usageMetadata", {}).get("cachedContentTokenCount", 0)
+                    or (captured_usage.get("usageMetadata") or {}).get("cachedContentTokenCount", 0)
                     or 0
                 )
             if not cached_tok and captured_timings and isinstance(captured_timings, dict):
