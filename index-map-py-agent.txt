@@ -1,4 +1,4 @@
-# CODEBASE INDEX MAP | Generated: 2026-10-25 14:03 | Workspace: py-agent | Path: ~/.config/py-agent
+# CODEBASE INDEX MAP | Generated: 2026-10-27 08:00 | Workspace: py-agent | Path: ~/.config/py-agent
 # Active symbols and structural connections mapped in the local index.
 # -----------------------------------------------------------------------------------------
 # Codebase Modules & Active Architecture:
@@ -7,7 +7,7 @@
 #   ├── LICENSE                  - MODIFIED MIT LICENSE (NON-COMMERCIAL / NO BUSINESS USE)
 #   ├── README.md                - <br>
 #   ├── SECURITY.md              - Security Policy
-#   ├── ai-agent.py              - Py Agent [v0.9.9.62] - Main CLI Runtime, Workspace Agent & Command Dispatcher [OCR 0.01]
+#   ├── ai-agent.py              - Py Agent [v0.9.9.63] - Main CLI Runtime, Workspace Agent & Command Dispatcher [OCR 0.01]
 #   ├── ai-context.md            - Py-Agent Config
 #   ├── ai-hook.sh               - Production Py-Agent Shell Hook (Sub-Millisecond Startup)(OCR 0.01)
 #   ├── logo.svg                 - <svg xmlns="http://www.w3.org/2000/svg" viewBox="121 101 270 310">
@@ -70,6 +70,11 @@
 [markdown:plugins/Readme.md] title:Plugins: `plugins/`
 [markdown:plugins/audio/Readme.md] title:Kokoro Neural Text-to-Speech & Selection Speaker Plugin
 [shell:plugins/audio/koko-speak.sh] sum:High-Performance Kokoro Selection Speaker (RAM-disk execution)
+[markdown:plugins/brave-suspender/Readme.md] title:Tab Hibernate & Resume (Brave Suspender)
+[js:plugins/brave-suspender/background.js]
+[json:plugins/brave-suspender/manifest.json] keys:manifest_version,name,version,description,permissions,host_permissions,action,background
+[html:plugins/brave-suspender/suspend.html] sum:<!DOCTYPE html>
+[js:plugins/brave-suspender/suspend.js]
 [markdown:plugins/dsh/Readme.md] title:DeepSeek Harness (DSH)
 [python:plugins/dsh/dsh-bridge.py] imp:agent_adapters,agent_cloud,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tools,agent_tts,json,os,requests,sys,threading,time,typing,uuid | fn:send_rpc_response,send_acp_chunk,validate_workspace,detect_workspace_mode,make_confirm_gate,confirm_gate,assemble_system_prompt,_prune_history,handle_acp_prompt,main
 [shell:plugins/dsh/run-dsh.sh] sum:==============================================================================
@@ -86,12 +91,23 @@
 [python:plugins/pycode/bridge.py] imp:agent_adapters,agent_cloud,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tools,agent_tts,json,os,requests,sys,threading,time,typing,uuid | fn:send_rpc_response,send_acp_chunk,validate_workspace,detect_workspace_mode,make_confirm_gate,confirm_gate,assemble_system_prompt,_prune_history,handle_acp_prompt,main
 [shell:plugins/pycode/launch.sh] sum:==============================================================================
 [shell:plugins/pycode/setup.sh] sum:==============================================================================
+[markdown:plugins/pykeep/Readme.md] title:PyKeep
+[json:plugins/pykeep/pykeep-browser/manifest.json] keys:manifest_version,name,version,description,permissions,action,commands
+[html:plugins/pykeep/pykeep-browser/popup.html] sum:<!DOCTYPE html>
+[js:plugins/pykeep/pykeep-browser/popup.js]
+[ini:plugins/pykeep/pykeep/config.ini] sum:[pykeep]
+[python:plugins/pykeep/pykeep/native_host.py] imp:configparser,json,os,pathlib,pykeepass,struct,sys,urllib | fn:get_db_path,read_message,send_message,find_matching_entry,main
+[python:plugins/pykeep/pykeep/pykeep.py] imp:configparser,datetime,json,os,pathlib,pykeepass,pyotp,secrets,shutil,string,subprocess,textual,time | cls:CachedItem,SetTotpModal,ConfirmDeleteModal,EditEntryModal,AddEntryModal,PyKeepApp | fn:get_pyotp,__init__,get_saved_theme,save_theme,safe_int,generate_password,create_db_backup,load_config,copy_to_clipboard,extract_totp,get_raw_totp_secret,__init__,compose,on_mount,action_cancel,action_save,__init__,compose,on_mount,action_cancel,action_delete,__init__,compose,on_mount,on_gen_click,action_gen_password,action_cancel,action_save,compose,on_mount,on_gen_click,action_gen_password,action_cancel,action_save,__init__,compose,on_mount,current_accent,unlock,rebuild_cache,refresh_table,filter_search,on_search_enter,row_selected,tick_live_totp,update_inspector,get_current_entry,action_add_entry,handle_entry_added,action_edit_entry,handle_entry_edited,action_delete_entry,handle_entry_deleted,action_set_totp,handle_totp_saved,action_create_backup,action_copy_password,action_copy_username,action_copy_totp,action_open_url,action_focus_search,action_handle_escape,action_cycle_theme
 [markdown:plugins/pyrouter/Readme.md] title:OpenCode + PyRouter Setup
 [shell:plugins/pyrouter/launch.sh] sum:==============================================================================
 [python:plugins/pyrouter/pyrouter.py] imp:http,json,os,random,re,requests,string,sys,time,typing,uuid | cls:RouterHandler,SilentServer | fn:make_canonical_session,load_active_env,resolve_active_upstream,anthropic_to_openai,log_message,_send_cors,do_OPTIONS,do_GET,do_POST,_handle_chat_completions,_handle_messages,_emit_sse,handle_error,main
 [markdown:plugins/webui/Readme.md] title:WebUI Gateway
 [shell:plugins/webui/launch.sh] sum:==============================================================================
 [python:plugins/webui/server.py] imp:agent_adapters,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tools,agent_tts,gzip,http,json,os,re,requests,socketserver,sys,urllib | cls:OfficialWebUIProxyHandler,ThreadedProxyServer | fn:detect_workspace_mode,make_confirm_gate,confirm_gate,assemble_system_prompt,_is_origin_allowed,_is_host_allowed,_check_auth,_set_cors_headers,do_OPTIONS,do_GET,do_POST,log_message
+[markdown:plugins/yt-transcript/Readme.md] title:YT Transcript to Clipboard
+[json:plugins/yt-transcript/manifest.json] keys:manifest_version,name,version,description,permissions,action,commands
+[html:plugins/yt-transcript/popup.html] sum:<!DOCTYPE html>
+[js:plugins/yt-transcript/popup.js]
 [markdown:plugins/zed/Readme.md] title:Py-Agent Zed Integration
 [python:plugins/zed/gpui-bridge.py] imp:agent_adapters,agent_cloud,agent_core,agent_memories,agent_skills,agent_tools,json,os,re,requests,sys,threading,time,typing,uuid | fn:log_debug,send_response,send_notification,send_session_update,emit_thought_chunk,emit_message_chunk,emit_tool_call,_request_client_permission,_build_session_context,handle_initialize,handle_session_new,handle_session_load,handle_session_cancel,handle_session_prompt,_worker,_execute_acp_turn,_confirm_gate,main
 [shell:setup/Ltiny.sh] sum:==============================================================================
@@ -181,7 +197,6 @@
 [file:tools/system/system-optimizer] sum:sysop - Dynamic Optimization & Hardware Profile Integrator
 [file:tools/system/update-inspector] sum:AI Update Inspector - Universal Arch Linux & CachyOS
 [python:tools/test-agent] imp:agent_adapters,agent_cloud,agent_context,agent_core,agent_ipython,agent_memories,agent_security,agent_sessions,agent_skills,agent_tools,agent_tts,agent_tui,agent_ui,agent_vision,ast,contextlib,glob,importlib,io,json,os,py_compile,re,shutil,subprocess,sys,tempfile,time | cls:ActiveMockSpinner | fn:print_result,mock_gate_deny,__init__,stop
-[session:var/.active_sessions/home-j5-.config-py-agent-projects-sage-447359.session] sum:0
 [file:var/.gitkeep] sum:Empty file
 [json:var/.openrouter_cache_v2.json] keys:free,paid,gemini,claude,openai,grok,custom
 [pid:var/.pyrouter.pid] sum:33943

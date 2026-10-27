@@ -483,6 +483,8 @@ class RichStreamer:
         self._stop_spinner()
         if self.phase == "THINKING":
             self._close_think_block()
+            if interrupted:
+                layout.gap(2, target_stream=sys.stderr)
         if interrupted:
             try:
                 sys.stdout.write("\033[?25h")
