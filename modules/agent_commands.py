@@ -461,6 +461,17 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
         )
         return True, None
 
+    if cmd in ("/tr", "/rail", "/thinkrail"):
+        ui._console.print("[dim yellow][sys] Suspending CLI. Launching ThinkRail...[/dim yellow]")
+        ctx.launch_surface_fn(
+            os.path.join(CFG_DIR, "plugins", "thinkrail", "launch.sh"),
+            ctx.is_agent,
+            ctx.workspace_path,
+            ctx.clean_name or "chat",
+            ctx.chat_history,
+        )
+        return True, None
+
     if cmd in ("/pycode", "/pyc"):
         is_web = len(parts) > 1 and parts[1].lower() in ("web", "--web", "browser")
         ui._console.print(

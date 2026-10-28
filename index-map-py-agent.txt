@@ -1,4 +1,4 @@
-# CODEBASE INDEX MAP | Generated: 2026-10-27 08:00 | Workspace: py-agent | Path: ~/.config/py-agent
+# CODEBASE INDEX MAP | Generated: 2026-10-28 16:35 | Workspace: py-agent | Path: ~/.config/py-agent
 # Active symbols and structural connections mapped in the local index.
 # -----------------------------------------------------------------------------------------
 # Codebase Modules & Active Architecture:
@@ -7,29 +7,29 @@
 #   ├── LICENSE                  - MODIFIED MIT LICENSE (NON-COMMERCIAL / NO BUSINESS USE)
 #   ├── README.md                - <br>
 #   ├── SECURITY.md              - Security Policy
-#   ├── ai-agent.py              - Py Agent [v0.9.9.63] - Main CLI Runtime, Workspace Agent & Command Dispatcher [OCR 0.01]
+#   ├── ai-agent.py              - Py Agent [v0.9.9.64] - Main CLI Runtime, Workspace Agent & Command Dispatcher [CR.01 CO.01]
 #   ├── ai-context.md            - Py-Agent Config
 #   ├── ai-hook.sh               - Production Py-Agent Shell Hook (Sub-Millisecond Startup)(OCR 0.01)
 #   ├── logo.svg                 - <svg xmlns="http://www.w3.org/2000/svg" viewBox="121 101 270 310">
 #   ├── modules/Readme.md        - Design & Privacy
-#   ├── modules/agent_adapters.py - Tool Format Adapters & Self-Healing Parser [OCR 0.01]
+#   ├── modules/agent_adapters.py - Tool Format Adapters & Self-Healing Parser [CR.01 CO.01]
 #   ├── modules/agent_chat.py    - Unified Agentic Brainstorm, Thinking & Follow-up Recommendation Engine [Production Ready]
 #   ├── modules/agent_cloud.py   - Dynamic Cloud Cascade Engine - Top-down .env & os.environ provider API priority with infinite CUSTOM
 #   ├── modules/agent_commands.py - Modular Command Dispatcher & Slash Action Registry for Py-Agent [OCR 0.01]
 #   ├── modules/agent_context.py - Context Search, Indexing & Compaction Engine [OC 0.01]
-#   ├── modules/agent_core.py    - Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [OCR 0.02]
+#   ├── modules/agent_core.py    - Core Module - Streaming SSE, dynamic tool execution, & Rich rendering [CR.02 CO.01]
 #   ├── modules/agent_ipython.py - Local-AI Standalone IPython Kernel & RLM Harness Module [OCR 0.01]
 #   ├── modules/agent_memories.py - Open Knowledge Format (OKF) Project Memory Manager [Production Ready]
 #   ├── modules/agent_security.py - Zero-Trust Security & Boundary Enforcement Kernel [OCR 0.01]
 #   ├── modules/agent_sessions.py - SQLite-backed session, checkpoint, and turn logger with sub-agent registry [OCR 0.01]
 #   ├── modules/agent_skills.py  - Unified library & executable for static, dynamic, universal YAML, and on-demand skills [OCR 0.01]
 #   ├── modules/agent_state.py   - State Persistence & Boundary Locking Engine [Hardened Production Ready]
-#   ├── modules/agent_stream.py  - Streaming SSE, ANSI Geometry & Terminal Rendering Engine [OCR .02]
+#   ├── modules/agent_stream.py  - Streaming SSE, ANSI Geometry & Terminal Rendering Engine [CR.02 CO.01]
 #   ├── modules/agent_tools.py   - Native Tool Engine - Handles file editing, search, commands, & graph intelligence [OCR 0.01]
 #   ├── modules/agent_tts.py     - Local-AI Kokoro Text-to-Speech Module [Production Ready]
 #   ├── modules/agent_tui.py     - Production Minimal Textual TUI for Py Agent Engine [Production Ready]
 #   ├── modules/agent_tui_async.py - Asynchronous uvloop background services for Local-AI Agent TUI [Production Ready]
-#   ├── modules/agent_ui.py      - UI Module - Spinners, session boxes, and interactive menus [OCR .01]
+#   ├── modules/agent_ui.py      - UI Module - Spinners, session boxes, and interactive menus [CR.01 CO.01]
 #   ├── modules/agent_vision.py  - Vision Module - Multimodal Pre-processing, OCR & Vision Bridge [Production Ready]
 #   ├── modules/agent_voice.py   - Local-AI Standalone Voice to Text Module [Production Ready]
 #   └── modules/model-select.py  - Streamlined TUI Model Selector with Dynamic CUSTOM<N> Discovery [OCR 0.01]
@@ -75,6 +75,7 @@
 [json:plugins/brave-suspender/manifest.json] keys:manifest_version,name,version,description,permissions,host_permissions,action,background
 [html:plugins/brave-suspender/suspend.html] sum:<!DOCTYPE html>
 [js:plugins/brave-suspender/suspend.js]
+[python:plugins/burner_mail/burner_mail.py] imp:json,os,pathlib,re,requests,subprocess,textual,time,uuid | cls:EmailItem,BurnerMailApp | fn:ensure_secure_storage,save_secure_session,load_secure_session,purge_secure_session,__init__,compose,__init__,compose,on_mount,action_new_email,action_purge_data,update_email_ui,reset_inbox_ui,action_copy_email,on_button_pressed,trigger_check,check_inbox_worker,add_email_to_list,on_list_view_selected,render_email
 [markdown:plugins/dsh/Readme.md] title:DeepSeek Harness (DSH)
 [python:plugins/dsh/dsh-bridge.py] imp:agent_adapters,agent_cloud,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tools,agent_tts,json,os,requests,sys,threading,time,typing,uuid | fn:send_rpc_response,send_acp_chunk,validate_workspace,detect_workspace_mode,make_confirm_gate,confirm_gate,assemble_system_prompt,_prune_history,handle_acp_prompt,main
 [shell:plugins/dsh/run-dsh.sh] sum:==============================================================================
@@ -88,6 +89,9 @@
 [markdown:plugins/open-code-review/codereview.md] title:Py-Agent Global Architectural Review Policy
 [json:plugins/open-code-review/rule.json] keys:rules
 [python:plugins/open-code-review/run-review] imp:glob,json,os,re,readline,rich,shutil,subprocess,sys,threading,time,typing | cls:TelemetrySpinner | fn:_init_path_completion,_complete_path,_init_budget_completion,_complete_budget,__init__,update,write_error,_spin,start,stop,load_env,get_active_profile_title,build_reasoning_payload,sync_ocr_config,parse_action,main
+[markdown:plugins/openbot/Readme.md] title:OpenBot Integration
+[shell:plugins/openbot/launch.sh] sum:==============================================================================
+[python:plugins/openbot/openbot_bridge.py] imp:agent_cloud,http,json,os,re,requests,sys,time | cls:OpenBotBridgeHandler | fn:load_pyagent_profile,scrub_payload,log_message,_send_cors,do_OPTIONS,do_POST,do_GET,main
 [python:plugins/pycode/bridge.py] imp:agent_adapters,agent_cloud,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tools,agent_tts,json,os,requests,sys,threading,time,typing,uuid | fn:send_rpc_response,send_acp_chunk,validate_workspace,detect_workspace_mode,make_confirm_gate,confirm_gate,assemble_system_prompt,_prune_history,handle_acp_prompt,main
 [shell:plugins/pycode/launch.sh] sum:==============================================================================
 [shell:plugins/pycode/setup.sh] sum:==============================================================================
@@ -202,4 +206,4 @@
 [pid:var/.pyrouter.pid] sum:33943
 [file:var/.request_log] sum:Empty file
 [lock:var/.state.lock] sum:Empty file
-[json:var/.tui_state.json] keys:compact_mode,sidebar_hidden,footer_hidden,tips_card_hidden,tui_theme,tui_borders_enabled
+[json:var/.tui_state.json] keys:compact_mode,sidebar_hidden,footer_hidden,tips_card_hidden,tui_theme,tui_borders_enabled,theme

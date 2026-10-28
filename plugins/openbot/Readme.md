@@ -1,6 +1,7 @@
 # OpenBot Integration
 
 Desktop GUI surface for Py-Agent.
+https://github.com/nightly-labs/openbot
 
 ---
 

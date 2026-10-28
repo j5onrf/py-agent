@@ -118,6 +118,7 @@ Workspace metadata is isolated inside `project/.agent/`.
 │   Shortcuts: Esc (Bypass)  |  Ctrl+C (Cancel)  |  q / exit (Quit)   │
 │                                                                     │
 │   Surfaces & Audio                                                  │
+│   /tr, /rail             - ThinkRail IDE (Desktop / Web)            │
 │   /bot                   - OpenBot Desktop GUI                      │
 │   /pyc, /pyc web         - PyCode IDE (Desktop / WebUI)             │
 │   /dsh                   - DeepSeek Harness (dsh)                   │
@@ -210,6 +211,7 @@ File ceilings dynamically adapt to `AI_MAX_TOKENS`:
 
 ## 7. Client Surfaces
 
+* **ThinkRail IDE (`/tr`, `/rail`):** Monaco agentic IDE with Git worktrees and Py-Agent profile bridge.
 * **PyCode Desktop IDE (`/pyc`, `/pyc web`):** React desktop interface using ACP stdio JSON-RPC 2.0 with token streaming and diff review.
 * **DeepSeek Harness (`/dsh`):** DSH web interface connected to the active workspace.
 * **llama.cpp WebAgent (`/webui`):** Tool reverse proxy for `llama-server` (`:8080`).

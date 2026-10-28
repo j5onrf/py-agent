@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Py-Agent Native OpenBot Multi-Threaded Bridge [Zero-Bloat Profile Injector]
+Py-Agent Native OpenBot Multi-Threaded Bridge [Profile Injector]
 Runs on http://127.0.0.1:8765/v1 for stock OpenBot integration.
 Handles concurrent background title generation and chat requests simultaneously.
 """
