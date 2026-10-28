@@ -874,19 +874,21 @@ async def async_main():
             sys.stdout.write(f"\x1b[H\x1b[2J\n   {BOLD}  LOCAL-AI CONFIGURATION{RESET}\n   {DIM}{'─' * 60}{RESET}\n\n")
 
             for i, itm in enumerate(items):
-                if itm["type"] == "pyrouter_srv" or (itm["type"] == "aux" and (i == 0 or items[i - 1]["type"] not in ("aux", "pyrouter_srv"))):
-                    sys.stdout.write(f"   {DIM}{'─' * 19}  Auxiliary Services  {'─' * 19}{RESET}\n\n")
+                if itm["type"] == "pyrouter_srv":
+                    sys.stdout.write(f"   {DIM}{'─' * 19}  Auxiliary Services  {'─' * 19}{RESET}\n")
+                elif itm["type"] == "aux" and (i == 0 or items[i - 1]["type"] not in ("aux", "pyrouter_srv")):
+                    sys.stdout.write(f"   {DIM}{'─' * 19}  Auxiliary Services  {'─' * 19}{RESET}\n")
                 elif itm["type"] == "tokens":
-                    sys.stdout.write(f"\n   {DIM}{'─' * 18}  Context & Loop Budget  {'─' * 17}{RESET}\n\n")
+                    sys.stdout.write(f"   {DIM}{'─' * 18}  Context & Loop Budget  {'─' * 17}{RESET}\n")
                 elif itm["type"] == "refresh":
-                    sys.stdout.write(f"\n   {DIM}{'─' * 60}{RESET}\n")
+                    sys.stdout.write(f"   {DIM}{'─' * 60}{RESET}\n")
 
                 cursor = f"   {AMBER}❯{RESET}  {BOLD}" if i == menu_idx else "      "
                 extra_nl = "\n" if itm["type"] in ("custom1", "custom_generic", "gemini", "or_free", "or_paid") else ""
                 sys.stdout.write(f"{cursor}{itm['render']}{RESET}\n{extra_nl}")
 
             sys.stdout.write(
-                f"\n   {DIM}{'─' * 60}{RESET}\n   {message or f'{DIM}▲/▼: Navigate | Space: Toggle | Enter: Select | Q: Quit{RESET}'}\n"
+                f"   {DIM}{'─' * 60}{RESET}\n   {message or f'{DIM}▲/▼: Navigate | Space: Toggle | Enter: Select | Q: Quit{RESET}'}\n"
             )
             sys.stdout.flush()
             message = ""

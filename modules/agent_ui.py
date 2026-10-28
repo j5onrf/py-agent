@@ -754,6 +754,7 @@ def show_help() -> None:
 
     cmds = [
         ("/h", "Help menu"),
+        ("/bot", "OpenBot Desktop GUI"),
         ("/pyc, /pyc web", "PyCode IDE (Desktop / Web)"),
         ("/dsh", "DeepSeek Harness (dsh)"),
         ("/webui, /web", "WebUI gateway (llama.cpp)"),

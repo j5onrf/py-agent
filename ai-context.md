@@ -29,8 +29,8 @@
 [TOOL] ~/.config/py-agent/tools/cheatsheet --cat ---> cheatsheet, cs
 # --- Eval Model & Profile (Agentic Tool Benchmark) ---
 ~/.config/py-agent/tools/evals/eval-stack --->  eval stack, eval-stack, eva
-# --- System Orchestrator TUI ---
-[TOOL] ~/.config/py-agent/tools/system-stack ---> system stack, sysstack, syscheck
+# --- System Stack Health Checkup ---
+[TOOL] ~/.config/py-agent/tools/system-stack ---> system stack, sysck
 # --- Omarchy Desktop Control Hub ---
 ~/.config/py-agent/tools/omarchy ---> omarchy hub, oma
 ```

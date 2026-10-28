@@ -118,6 +118,7 @@ Workspace metadata is isolated inside `project/.agent/`.
 │   Shortcuts: Esc (Bypass)  |  Ctrl+C (Cancel)  |  q / exit (Quit)   │
 │                                                                     │
 │   Surfaces & Audio                                                  │
+│   /bot                   - OpenBot Desktop GUI                      │
 │   /pyc, /pyc web         - PyCode IDE (Desktop / WebUI)             │
 │   /dsh                   - DeepSeek Harness (dsh)                   │
 │   /zed                   - Zed editor (ACP integration)             │
@@ -213,6 +214,7 @@ File ceilings dynamically adapt to `AI_MAX_TOKENS`:
 * **DeepSeek Harness (`/dsh`):** DSH web interface connected to the active workspace.
 * **llama.cpp WebAgent (`/webui`):** Tool reverse proxy for `llama-server` (`:8080`).
 * **Textual PyTUI (`/tui`):** Full-screen terminal dashboard built on Textual and `uvloop`.
+* **OpenBot Desktop (`/bot`, `/openbot`):** Stock Electron desktop interface with profile injection local streaming.
 
 ---
 
