@@ -103,8 +103,8 @@
 
 <p align="center">
   <sub><code>/yolo</code> gate &nbsp;•&nbsp; <code>/py</code> repl &nbsp;•&nbsp; <code>/adp</code> adapters &nbsp;•&nbsp; <code>/t</code> reasoning &nbsp;•&nbsp; <code>/task</code> loop goal &nbsp;•&nbsp; <code>/s</code> skills &nbsp;•&nbsp; <code>/a</code> all meta &nbsp;•&nbsp; <code>/md</code> markdown</sub><br>
-  <sub><code>/m</code> map &nbsp;•&nbsp; <code>file</code> load &nbsp;•&nbsp; <code>/mem</code> memory &nbsp;•&nbsp; <code>/com</code> compact &nbsp;•&nbsp; <code>/gnd</code> search &nbsp;•&nbsp; <code>/hs</code> hindsight &nbsp;•&nbsp; <code>/tok</code> tokens &nbsp;•&nbsp; <code>/sync</code> index-map</sub><br>
-  <sub><code>/tr</code> &nbsp;•&nbsp; <code>/bot</code> &nbsp;•&nbsp; <code>/tui</code> &nbsp;•&nbsp; <code>/pyc</code> &nbsp;•&nbsp; <code>/dsh</code> &nbsp;•&nbsp; <code>/zed</code> &nbsp;•&nbsp; <code>/webui</code> &nbsp;•&nbsp; <code>/calm</code> &nbsp;•&nbsp; <code>/v</code> &nbsp;•&nbsp; <code>/tts</code> &nbsp;•&nbsp; <code>/box</code> &nbsp;•&nbsp; <code>/stats</code> &nbsp;•&nbsp; <code>-save</code> / <code>-load</code> &nbsp;•&nbsp; <code>/c</code> &nbsp;•&nbsp; <code>/r</code></sub>
+  <sub><code>/m</code> map &nbsp;•&nbsp; <code>file</code> load &nbsp;•&nbsp; <code>/mem</code> memory &nbsp;•&nbsp; <code>/com</code> compact &nbsp;•&nbsp; <code>/gnd</code> search &nbsp;•&nbsp; <code>/hs</code> hindsight &nbsp;•&nbsp; <code>/tok</code> tokens &nbsp;•&nbsp; <code>/sync</code> index-map &nbsp;•&nbsp; <code>/stats</code> speed &nbsp;•&nbsp; <code>/box</code> theme</sub><br>
+  <sub><code>/tr</code> &nbsp;•&nbsp; <code>/bot</code> &nbsp;•&nbsp; <code>/tui</code> &nbsp;•&nbsp; <code>/pyc</code> &nbsp;•&nbsp; <code>/dsh</code> &nbsp;•&nbsp; <code>/zed</code> &nbsp;•&nbsp; <code>/webui</code> &nbsp;•&nbsp; <code>/calm</code> &nbsp;•&nbsp; <code>/v</code> &nbsp;•&nbsp; <code>/tts</code> &nbsp;•&nbsp; <code>-save</code> / <code>-load</code> &nbsp;•&nbsp; <code>/c</code> &nbsp;•&nbsp; <code>/r</code></sub>
 </p>
 
 <br>
@@ -213,7 +213,7 @@
   </table>
 
   <p>
-    <sub><code>/tr</code> thinkrail &nbsp;•&nbsp; <code>/bot</code> OpenBot &nbsp;•&nbsp; <code>/v</code> Voice-to-Text (<code>:9999</code>) &nbsp;•&nbsp; <code>/tts</code> Neural Kokoro Audio &nbsp;•&nbsp; <code>/dsh</code> DeepSeek Harness &nbsp;•&nbsp; <code>/zed</code> Editor</sub>
+    <sub><code>/tr</code> ThinkRail &nbsp;•&nbsp; <code>/bot</code> OpenBot &nbsp;•&nbsp; <code>/v</code> Voice-to-Text (<code>:9999</code>) &nbsp;•&nbsp; <code>/tts</code> Neural Kokoro Audio &nbsp;•&nbsp; <code>/dsh</code> DeepSeek Harness &nbsp;•&nbsp; <code>/zed</code> Editor</sub>
   </p>
 </div>
 
