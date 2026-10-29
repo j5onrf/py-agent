@@ -1,40 +1,48 @@
 # OpenBot Integration
 
-Desktop GUI surface for Py-Agent.
+Native ACP (Agent Client Protocol) Desktop GUI surface for Py-Agent.
 https://github.com/nightly-labs/openbot
+
+OpenBot connects directly to Py-Agent over standard I/O (JSON-RPC 2.0).
+No background HTTP servers or port bridges are required.
 
 ---
 
 ## One-Time Setup
 
 ### 1. Permissions
-Make the launch scripts and your OpenBot AppImage executable:
+Ensure the ACP adapter and OpenBot binary are executable:
 
 ```bash
-chmod +x ~/.config/py-agent/plugins/openbot/launch.sh
-chmod +x ~/.config/py-agent/plugins/openbot/openbot_bridge.py
-chmod +x ~/.local/share/openbot/openbot.AppImage 2>/dev/null || true
+chmod +x ~/.config/py-agent/plugins/openbot/pyagent_acp.py
+chmod +x ~/.local/bin/openbot
 ```
 
-### 2. Add Py-Agent in OpenBot
-1. Open OpenBot and click **Settings (Gear icon) → Providers → Add Provider**.
-2. Enter:
-   * **Provider Name / ID:** `py-agent`
-   * **Base URL:** `http://127.0.0.1:8765/v1`
-   * **Models:** `local-8080`, `gemini-3.5-flash-lite`
+### 2. Configure Py-Agent in OpenBot
+1. Launch OpenBot (`openbot`).
+2. Go to **Settings (Gear icon) → Providers**.
+3. Under **Other providers**, select **ACP (Custom Agent)**:
+   * **Name:** `py-agent`
+   * **Command:** `/home/j5/.config/py-agent/plugins/openbot/pyagent_acp.py`
+4. Click **Connect / Save**.
+5. Set **Default provider** at the top of the screen to **`py-agent`**.
 
 ---
 
 ## How to Use
 
-* **Inside a Py-Agent session (`ai` or `ai init`):**
+* **From an active CLI session (`ai` or `ai init`):**
   ```text
   /bot
   ```
 * **Directly from terminal:**
   ```bash
-  ~/.config/py-agent/plugins/openbot/launch.sh
+  openbot
   ```
 
-Select **`py-agent/local-8080`** from OpenBot's top-right model dropdown.
+---
 
+## Features
+* **Zero OpenCode Overhead:** Py-Agent is the native execution engine; tools run directly on your filesystem.
+* **Native OpenBot Formatting:** Thinking blocks render in the collapsible thought drawer; file edits and commands render as native step cards.
+* **Model Agnostic:** Driven entirely by your active Py-Agent configuration (`llama-server` or `.env` cloud providers).

@@ -451,7 +451,13 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
         return True, None
 
     if cmd in ("/bot", "/openbot"):
-        ui._console.print("[dim yellow][sys] Suspending CLI. Launching OpenBot...[/dim yellow]")
+        core.save_state("openbot_is_agent", ctx.is_agent)
+        core.save_state("openbot_mode", "agent" if ctx.is_agent else "chat")
+        core.save_state("openbot_workspace", ctx.workspace_path)
+        core.save_state("openbot_skill", ctx.clean_name or "chat")
+        ui._console.print(
+            f"[dim yellow][sys] Suspending CLI ({'agent' if ctx.is_agent else 'chat'} mode). Launching OpenBot...[/dim yellow]"
+        )
         ctx.launch_surface_fn(
             os.path.join(CFG_DIR, "plugins", "openbot", "launch.sh"),
             ctx.is_agent,

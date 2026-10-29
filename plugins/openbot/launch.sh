@@ -1,22 +1,15 @@
 #!/usr/bin/env bash
-# ==============================================================================
-# Py-Agent OpenBot Surface Launcher (Workspace & Mode Aware)
-# ==============================================================================
+set -e
 
-set -eo pipefail
+# Clear any lingering GPU crash locks
+rm -f "$HOME/.config/OpenBot/gpu-crash.json"
 
-PLUGIN_DIR="$HOME/.config/py-agent/plugins/openbot"
-BRIDGE_PY="$PLUGIN_DIR/openbot_bridge.py"
-WORKSPACE_DIR="${AI_WORKSPACE_PATH:-${1:-$HOME/workspace/openbot}}"
-
-mkdir -p "$WORKSPACE_DIR"
-
-# Ensure bridge is running on port 8765
-if ! pgrep -f "openbot_bridge.py" >/dev/null 2>&1; then
-    python3 "$BRIDGE_PY" &
-    sleep 0.3
+# Launch OpenBot with native Wayland/Ozone support
+if [ -f "$HOME/.local/share/openbot/openbot.AppImage" ]; then
+    exec env OPENBOT_DISABLE_GPU=0 "$HOME/.local/share/openbot/openbot.AppImage" --ozone-platform-hint=auto "$@"
+elif command -v openbot >/dev/null 2>&1; then
+    exec openbot "$@"
+else
+    echo "[error] OpenBot not found in ~/.local/share/openbot/ or PATH" >&2
+    exit 1
 fi
-
-cd "$WORKSPACE_DIR"
-OPENBOT_BIN="$(command -v openbot 2>/dev/null || echo "$HOME/.local/share/openbot/openbot.AppImage")"
-exec "$OPENBOT_BIN" "$@"
