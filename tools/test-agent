@@ -73,7 +73,7 @@ files_to_compile = [
     "tools/index-map/index-map",
     "tools/loop/loop.py",
     "plugins/webui/server.py",
-    "plugins/pycode/bridge.py",
+    "plugins/t3code/t3code-bridge.py",
 ]
 
 p1 = True

@@ -1,4 +1,4 @@
-# CODEBASE INDEX MAP | Generated: 2026-10-28 16:35 | Workspace: py-agent | Path: ~/.config/py-agent
+# CODEBASE INDEX MAP | Generated: 2026-10-29 14:22 | Workspace: py-agent | Path: ~/.config/py-agent
 # Active symbols and structural connections mapped in the local index.
 # -----------------------------------------------------------------------------------------
 # Codebase Modules & Active Architecture:
@@ -35,6 +35,7 @@
 #   └── modules/model-select.py  - Streamlined TUI Model Selector with Dynamic CUSTOM<N> Discovery [OCR 0.01]
 # -----------------------------------------------------------------------------------------
 [file:.gitignore] sum:Secrets & Credentials
+[file:.thinkrail/context/.gitignore] sum:*
 [markdown:CONTRIBUTING.md] title:Contributing to Py-Agent
 [file:LICENSE] sum:MODIFIED MIT LICENSE (NON-COMMERCIAL / NO BUSINESS USE)
 [markdown:README.md] title:1. Install dependencies (Arch/CachyOS or pip) | links:ai-context.md
@@ -90,8 +91,8 @@
 [json:plugins/open-code-review/rule.json] keys:rules
 [python:plugins/open-code-review/run-review] imp:glob,json,os,re,readline,rich,shutil,subprocess,sys,threading,time,typing | cls:TelemetrySpinner | fn:_init_path_completion,_complete_path,_init_budget_completion,_complete_budget,__init__,update,write_error,_spin,start,stop,load_env,get_active_profile_title,build_reasoning_payload,sync_ocr_config,parse_action,main
 [markdown:plugins/openbot/Readme.md] title:OpenBot Integration
-[shell:plugins/openbot/launch.sh] sum:==============================================================================
-[python:plugins/openbot/openbot_bridge.py] imp:agent_cloud,http,json,os,re,requests,sys,time | cls:OpenBotBridgeHandler | fn:load_pyagent_profile,scrub_payload,log_message,_send_cors,do_OPTIONS,do_POST,do_GET,main
+[shell:plugins/openbot/launch.sh] sum:set -e
+[python:plugins/openbot/pyagent_acp.py] imp:agent_cloud,agent_core,agent_tools,json,os,re,requests,subprocess,sys,uuid | fn:send_rpc,stream_thought,stream_chunk,emit_tool_start,emit_tool_done,parse_tool_calls,execute_tool,run_pyagent_turn,main
 [python:plugins/pycode/bridge.py] imp:agent_adapters,agent_cloud,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tools,agent_tts,json,os,requests,sys,threading,time,typing,uuid | fn:send_rpc_response,send_acp_chunk,validate_workspace,detect_workspace_mode,make_confirm_gate,confirm_gate,assemble_system_prompt,_prune_history,handle_acp_prompt,main
 [shell:plugins/pycode/launch.sh] sum:==============================================================================
 [shell:plugins/pycode/setup.sh] sum:==============================================================================
@@ -105,6 +106,9 @@
 [markdown:plugins/pyrouter/Readme.md] title:OpenCode + PyRouter Setup
 [shell:plugins/pyrouter/launch.sh] sum:==============================================================================
 [python:plugins/pyrouter/pyrouter.py] imp:http,json,os,random,re,requests,string,sys,time,typing,uuid | cls:RouterHandler,SilentServer | fn:make_canonical_session,load_active_env,resolve_active_upstream,anthropic_to_openai,log_message,_send_cors,do_OPTIONS,do_GET,do_POST,_handle_chat_completions,_handle_messages,_emit_sse,handle_error,main
+[markdown:plugins/thinkrail/Readme.md] title:ThinkRail Integration
+[shell:plugins/thinkrail/launch.sh] sum:==============================================================================
+[python:plugins/thinkrail/thinkrail_bridge.py] imp:agent_cloud,http,json,os,re,requests,sys,time | cls:ThinkRailBridgeHandler | fn:load_pyagent_profile,scrub_payload,log_message,_send_cors,do_OPTIONS,do_POST,do_GET,main
 [markdown:plugins/webui/Readme.md] title:WebUI Gateway
 [shell:plugins/webui/launch.sh] sum:==============================================================================
 [python:plugins/webui/server.py] imp:agent_adapters,agent_core,agent_ipython,agent_memories,agent_sessions,agent_skills,agent_tools,agent_tts,gzip,http,json,os,re,requests,socketserver,sys,urllib | cls:OfficialWebUIProxyHandler,ThreadedProxyServer | fn:detect_workspace_mode,make_confirm_gate,confirm_gate,assemble_system_prompt,_is_origin_allowed,_is_host_allowed,_check_auth,_set_cors_headers,do_OPTIONS,do_GET,do_POST,log_message
@@ -201,6 +205,7 @@
 [file:tools/system/system-optimizer] sum:sysop - Dynamic Optimization & Hardware Profile Integrator
 [file:tools/system/update-inspector] sum:AI Update Inspector - Universal Arch Linux & CachyOS
 [python:tools/test-agent] imp:agent_adapters,agent_cloud,agent_context,agent_core,agent_ipython,agent_memories,agent_security,agent_sessions,agent_skills,agent_tools,agent_tts,agent_tui,agent_ui,agent_vision,ast,contextlib,glob,importlib,io,json,os,py_compile,re,shutil,subprocess,sys,tempfile,time | cls:ActiveMockSpinner | fn:print_result,mock_gate_deny,__init__,stop
+[session:var/.active_sessions/home-j5-.config-py-agent-projects-ling-tiny-1247644.session] sum:0
 [file:var/.gitkeep] sum:Empty file
 [json:var/.openrouter_cache_v2.json] keys:free,paid,gemini,claude,openai,grok,custom
 [pid:var/.pyrouter.pid] sum:33943

@@ -5,7 +5,7 @@
   <h1>Py Agent</h1>
  
   <p>
-    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.66.svg?variant=secondary" alt="Version"></a>
+    <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.67.svg?variant=secondary" alt="Version"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/Python.svg?variant=branded&brand=python" alt="Language"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/C%2B%2B.svg?variant=branded&brand=cplusplus" alt="C++"></a>
     <a href="https://github.com/j5onrf/py-agent/blob/main/LICENSE"><img src="https://shieldcn.dev/badge/license-MIT-green.svg" alt="License"></a>
@@ -104,7 +104,7 @@
 <p align="center">
   <sub><code>/yolo</code> gate &nbsp;•&nbsp; <code>/py</code> repl &nbsp;•&nbsp; <code>/adp</code> adapters &nbsp;•&nbsp; <code>/t</code> reasoning &nbsp;•&nbsp; <code>/task</code> loop goal &nbsp;•&nbsp; <code>/s</code> skills &nbsp;•&nbsp; <code>/a</code> all meta &nbsp;•&nbsp; <code>/md</code> markdown &nbsp;•&nbsp; <code>/calm</code> zen</sub><br>
   <sub><code>/m</code> map &nbsp;•&nbsp; <code>file</code> load &nbsp;•&nbsp; <code>/mem</code> memory &nbsp;•&nbsp; <code>/com</code> compact &nbsp;•&nbsp; <code>/gnd</code> search &nbsp;•&nbsp; <code>/hs</code> hindsight &nbsp;•&nbsp; <code>/tok</code> tokens &nbsp;•&nbsp; <code>/sync</code> index-map &nbsp;•&nbsp; <code>/stats</code> speed</sub><br>
-  <sub><code>/tr</code> &nbsp;•&nbsp; <code>/bot</code> &nbsp;•&nbsp; <code>/tui</code> &nbsp;•&nbsp; <code>/pyc</code> &nbsp;•&nbsp; <code>/dsh</code> &nbsp;•&nbsp; <code>/zed</code> &nbsp;•&nbsp; <code>/webui</code> &nbsp;•&nbsp; <code>/v</code> &nbsp;•&nbsp; <code>/tts</code> &nbsp;•&nbsp; <code>/box</code> &nbsp;•&nbsp; <code>-save</code> / <code>-load</code> &nbsp;•&nbsp; <code>/c</code> clear &nbsp;•&nbsp; <code>/r</code> reset</sub>
+  <sub><code>/tr</code> &nbsp;•&nbsp; <code>/bot</code> &nbsp;•&nbsp; <code>/tui</code> &nbsp;•&nbsp; <code>/t3</code> &nbsp;•&nbsp; <code>/dsh</code> &nbsp;•&nbsp; <code>/zed</code> &nbsp;•&nbsp; <code>/webui</code> &nbsp;•&nbsp; <code>/v</code> &nbsp;•&nbsp; <code>/tts</code> &nbsp;•&nbsp; <code>/box</code> &nbsp;•&nbsp; <code>-save</code> / <code>-load</code> &nbsp;•&nbsp; <code>/c</code> clear &nbsp;•&nbsp; <code>/r</code> reset</sub>
 </p>
 
 <br>
@@ -190,9 +190,9 @@
     <tr>
       <td align="center" width="210" valign="top">
         <br>
-        <h3><a href="https://github.com/j5onrf/pycode">PyCode IDE</a></h3>
-        <p><code>/pyc</code> · <code>/pyc web</code></p>
-        <sub>React desktop workspace using ACP JSON-RPC 2.0.</sub>
+        <h3><a href="https://t3.codes">T3 Code IDE</a></h3>
+        <p><code>/t3</code> · <code>/t3 web</code></p>
+        <sub>Desktop control plane using ACP JSON-RPC 2.0.</sub>
         <br><br>
       </td>
       <td align="center" width="210" valign="top">

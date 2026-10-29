@@ -756,7 +756,7 @@ def show_help() -> None:
         ("/h", "Help menu"),
         ("/bot", "OpenBot Desktop GUI"),
         ("/tr, /rail", "ThinkRail IDE surface"),
-        ("/pyc, /pyc web", "PyCode IDE (Desktop / Web)"),
+        ("/t3, /t3 web", "T3 Code IDE (Desktop / Web)"),
         ("/dsh", "DeepSeek Harness (dsh)"),
         ("/webui, /web", "WebUI gateway (llama.cpp)"),
         ("/tui", "Terminal UI (PyTUI)"),

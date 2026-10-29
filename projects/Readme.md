@@ -120,7 +120,7 @@ Workspace metadata is isolated inside `project/.agent/`.
 │   Surfaces & Audio                                                  │
 │   /tr, /rail             - ThinkRail IDE (Desktop / Web)            │
 │   /bot                   - OpenBot Desktop GUI                      │
-│   /pyc, /pyc web         - PyCode IDE (Desktop / WebUI)             │
+│   /t3, /t3 web           - T3 Code IDE (Desktop / Web)              │
 │   /dsh                   - DeepSeek Harness (dsh)                   │
 │   /zed                   - Zed editor (ACP integration)             │
 │   /webui, /web           - WebUI gateway (llama.cpp)                │
@@ -212,7 +212,7 @@ File ceilings dynamically adapt to `AI_MAX_TOKENS`:
 ## 7. Client Surfaces
 
 * **ThinkRail IDE (`/tr`, `/rail`):** Monaco agentic IDE with Git worktrees and Py-Agent profile bridge.
-* **PyCode Desktop IDE (`/pyc`, `/pyc web`):** React desktop interface using ACP stdio JSON-RPC 2.0 with token streaming and diff review.
+* **T3 Code IDE (`/t3`, `/t3 web`):** Desktop control plane using ACP stdio JSON-RPC 2.0 with token streaming and diff review.
 * **DeepSeek Harness (`/dsh`):** DSH web interface connected to the active workspace.
 * **llama.cpp WebAgent (`/webui`):** Tool reverse proxy for `llama-server` (`:8080`).
 * **Textual PyTUI (`/tui`):** Full-screen terminal dashboard built on Textual and `uvloop`.

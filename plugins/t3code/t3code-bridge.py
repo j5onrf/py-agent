@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""ACP (Agent Client Protocol) stdio Bridge for PyCode / T3 Code WebApp [Hardened Production Ready]
-Connects PyCode GUI directly to py-agent engine and local llama.cpp server with full multimodal vision, OKF memory, and adapters.
+"""ACP (Agent Client Protocol) stdio Bridge for T3 Code [CR .01]
+Universal Py-Agent execution interface without model-specific branches.
 """
 
+import atexit
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -38,9 +40,8 @@ BASE_PROMPT_AGENT = "Active local workspace developer agent."
 
 MAX_HISTORY_MESSAGES = 40
 MAX_TRACKED_SESSIONS = 50
-MAX_MAP_FILE_BYTES = 64 * 1024  # 64 KiB cap
+MAX_MAP_FILE_BYTES = 64 * 1024
 
-# Thread synchronization
 STDOUT_LOCK = threading.Lock()
 STATE_LOCK = threading.Lock()
 
@@ -51,26 +52,26 @@ SESSION_CANCEL_EVENTS: dict[str, threading.Event] = {}
 ACTIVE_RESPONSES: dict[str, requests.Response] = {}
 
 FORBIDDEN_ROOTS = {
-    "/",
-    "/root",
-    "/bin",
-    "/sbin",
-    "/usr",
-    "/usr/bin",
-    "/usr/sbin",
-    "/etc",
-    "/dev",
-    "/proc",
-    "/sys",
-    "/var",
+    "/", "/root", "/bin", "/sbin", "/usr", "/usr/bin", "/usr/sbin", "/etc", "/dev", "/proc", "/sys", "/var"
 }
 FORBIDDEN_USER_SUBDIRS = {
-    ".ssh",
-    ".gnupg",
-    ".aws",
-    ".config/py-agent",
-    ".local/share",
+    ".ssh", ".gnupg", ".aws", ".config/py-agent", ".local/share"
 }
+
+
+def cleanup_all():
+    with STATE_LOCK:
+        for resp in ACTIVE_RESPONSES.values():
+            try:
+                resp.close()
+            except Exception:
+                pass
+        ACTIVE_RESPONSES.clear()
+        for evt in SESSION_CANCEL_EVENTS.values():
+            evt.set()
+
+
+atexit.register(cleanup_all)
 
 
 def send_rpc_response(req_id: Any, result: Any = None, error: Any = None) -> None:
@@ -116,21 +117,22 @@ def validate_workspace(cwd_candidate: str | None, default_workspace: str) -> str
     if not os.path.isdir(target):
         return default_workspace
 
-    if target in FORBIDDEN_ROOTS:
-        sys.stderr.write(f"[pycode security] Blocked forbidden root workspace: {target}\n")
-        return default_workspace
+    for root in FORBIDDEN_ROOTS:
+        if target == root or (root != "/" and target.startswith(root.rstrip(os.sep) + os.sep)):
+            sys.stderr.write(f"[t3code security] Blocked forbidden root workspace: {target}\n")
+            return default_workspace
 
     home = os.path.realpath(os.path.expanduser("~"))
     for sensitive in FORBIDDEN_USER_SUBDIRS:
         bad_path = os.path.join(home, sensitive)
         if target == bad_path or target.startswith(bad_path + os.sep):
-            sys.stderr.write(f"[pycode security] Blocked sensitive user directory: {target}\n")
+            sys.stderr.write(f"[t3code security] Blocked sensitive user directory: {target}\n")
             return default_workspace
 
     return target
 
 
-def detect_workspace_mode(workspace: str) -> tuple[bool, str, bool]:
+def detect_workspace_mode(workspace: str) -> tuple[bool, str, bool, bool]:
     home = os.path.realpath(os.path.expanduser("~"))
     ws_real = os.path.realpath(workspace)
     cfg_file = os.path.join(ws_real, ".agent", "config.json")
@@ -138,32 +140,34 @@ def detect_workspace_mode(workspace: str) -> tuple[bool, str, bool]:
     env_yolo = os.environ.get("AI_YOLO") == "1"
 
     if ws_real == home or not os.path.exists(os.path.join(ws_real, ".agent")):
-        return False, (inherited_skill or "chat"), env_yolo
+        return False, (inherited_skill or "chat"), env_yolo, False
 
     selected_profile = inherited_skill or "pi/pro"
     is_yolo = env_yolo
+    adapters_active = True
     if os.path.exists(cfg_file):
         try:
             with open(cfg_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 selected_profile = inherited_skill or data.get("profile", "pi/pro")
                 is_yolo = is_yolo or data.get("yolo", False)
+                adapters_active = bool(data.get("adapters", data.get("adp", True)))
         except Exception as e:
-            sys.stderr.write(f"[pycode bridge] warning: failed reading config {cfg_file}: {e}\n")
+            sys.stderr.write(f"[t3code bridge] warning: failed reading config {cfg_file}: {e}\n")
 
-    return True, selected_profile, is_yolo
+    return True, selected_profile, is_yolo, adapters_active
 
 
 def make_confirm_gate(workspace: str, is_yolo: bool):
-    """Scoped confirmation gate for non-interactive ACP bridge requests."""
+    """Scoped fail-closed confirmation gate for non-interactive ACP stdio bridge."""
 
     def confirm_gate(prompt_or_reason: str) -> bool:
         if not is_yolo:
-            sys.stderr.write(f"[pycode security] Action rejected (supervised/plan mode): {prompt_or_reason}\n")
+            sys.stderr.write(f"[t3code security] Action rejected (supervised/plan mode): {prompt_or_reason}\n")
             return False
-        # In YOLO/build mode, standard in-bounds edits pass.
-        # Boundary violations (out-of-bounds or destructive system commands) must fail-closed.
-        sys.stderr.write(f"[pycode security] Zero-trust boundary violation rejected: {prompt_or_reason}\n")
+        # In YOLO/build mode, standard in-bounds edits pass via AI_CONFIRM_GATES="0".
+        # Any call reaching this gate is a zero-trust boundary violation and must fail-closed.
+        sys.stderr.write(f"[t3code security] Zero-trust boundary violation rejected: {prompt_or_reason}\n")
         return False
 
     return confirm_gate
@@ -177,10 +181,7 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
         skill_content = skills.load_skill_content(clean_name, SKILLS_DIR, CFG_DIR)
         prompt = skill_content or BASE_PROMPT_CHAT
         if use_gnd:
-            prompt += (
-                "\n\nCRITICAL GROUNDING DIRECTIVE: You have access to live Google Search via the 'web_search' tool. "
-                "Always call web_search for real-time facts, current dates, or documentation. Base your answer strictly on verified live tool data."
-            )
+            prompt += "\n\nCRITICAL GROUNDING DIRECTIVE: You have access to live Google Search via 'web_search'."
         return prompt
 
     clean_name = profile_name if profile_name != "init" else "pi/pro"
@@ -197,7 +198,6 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
 
     agent_dir = os.path.join(workspace, ".agent")
     real_agent_dir = os.path.realpath(agent_dir)
-    # Prevent traversal or symlink escapes outside the workspace root
     if not real_agent_dir.startswith(workspace):
         return sys_prompt
 
@@ -208,7 +208,7 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
             with open(cfg_path, "r", encoding="utf-8") as cf:
                 use_map = json.load(cf).get("map", use_map)
         except Exception as e:
-            sys.stderr.write(f"[pycode bridge] warning: failed reading config {cfg_path}: {e}\n")
+            sys.stderr.write(f"[t3code bridge] warning: failed reading config {cfg_path}: {e}\n")
 
     if use_map and os.path.isdir(agent_dir):
         try:
@@ -223,35 +223,27 @@ def assemble_system_prompt(workspace: str, is_agent: bool, profile_name: str) ->
                     except OSError:
                         pass
         except OSError as e:
-            sys.stderr.write(f"[pycode bridge] warning: failed reading map dir {agent_dir}: {e}\n")
+            sys.stderr.write(f"[t3code bridge] warning: failed reading map dir {agent_dir}: {e}\n")
 
-    # Open Knowledge Format (OKF) Git-native memory injection
     if core.get_state("memory_active", False):
         try:
             mem_ctx = memories.get_memory_context(workspace)
             if mem_ctx:
                 sys_prompt += f"\n{mem_ctx}\n"
         except Exception as e:
-            sys.stderr.write(f"[pycode bridge] warning: memory injection error: {e}\n")
+            sys.stderr.write(f"[t3code bridge] warning: memory injection error: {e}\n")
 
     return sys_prompt
 
 
 def _prune_history(messages: list[dict[str, Any]], max_messages: int = MAX_HISTORY_MESSAGES) -> None:
-    """Safely bound history size without severing assistant-tool call/response pairs."""
     if len(messages) <= max_messages:
         return
-
     system_msg = messages[0] if (messages and messages[0].get("role") == "system") else None
-    start_idx = 1 if system_msg else 0
-    tail = messages[-(max_messages - 1 if system_msg else max_messages) :]
-
-    # Don't orphan a tool response without its matching assistant tool_calls message
+    tail = messages[-(max_messages - 1 if system_msg else max_messages):]
     while tail and tail[0].get("role") == "tool":
         tail = tail[1:]
-
-    new_history = ([system_msg] if system_msg else []) + tail
-    messages[:] = new_history
+    messages[:] = ([system_msg] if system_msg else []) + tail
 
 
 def handle_acp_prompt(
@@ -269,7 +261,6 @@ def handle_acp_prompt(
         SESSION_CANCEL_EVENTS[session_id] = cancel_evt
         SESSION_LAST_ACCESSED[session_id] = time.time()
 
-        # Enforce LRU session limits to prevent unbounded memory growth
         if len(SESSION_HISTORIES) > MAX_TRACKED_SESSIONS:
             oldest_sid = min(SESSION_LAST_ACCESSED, key=SESSION_LAST_ACCESSED.get)
             if oldest_sid != session_id:
@@ -278,7 +269,7 @@ def handle_acp_prompt(
                 SESSION_LAST_ACCESSED.pop(oldest_sid, None)
 
     safe_name = core.workspace_safe_name(workspace)
-    is_agent, profile_name, is_yolo = detect_workspace_mode(workspace)
+    is_agent, profile_name, is_yolo, ws_adapters = detect_workspace_mode(workspace)
 
     raw_mode = (params or {}).get("runtimeMode", "")
     opt_mode = next((opt.get("value") for opt in (params or {}).get("options", []) if opt.get("id") == "mode"), None)
@@ -288,9 +279,11 @@ def handle_acp_prompt(
     elif opt_mode == "plan" or raw_mode == "supervised":
         is_yolo = False
 
+    os.environ["AI_CONFIRM_GATES"] = "0" if is_yolo else "1"
+
     st = core.get_state()
     use_gnd = st.get("grounding_active", False)
-    adapters_on = st.get("adapters_active", False)
+    adapters_on = ws_adapters or st.get("adapters_active", True)
     reasoning_active = st.get("reasoning_active", False)
     reasoning_budget = st.get("reasoning_budget", 500) if reasoning_active else 0
     enable_think = reasoning_active and reasoning_budget > 0
@@ -313,7 +306,6 @@ def handle_acp_prompt(
                 SESSION_HISTORIES[session_id][0]["content"] = sys_context
         messages = SESSION_HISTORIES[session_id]
 
-    # Convert ACP prompt_items into standard multimodal payload
     multimodal_content = []
     text_chunks = []
 
@@ -330,26 +322,12 @@ def handle_acp_prompt(
             data = item.get("data") or item.get("image") or ""
             mime = item.get("mimeType") or item.get("mime_type") or "image/png"
             url = item.get("image_url", {}).get("url") if isinstance(item.get("image_url"), dict) else item.get("url")
-
             if not url and data:
                 url = f"data:{mime};base64,{data}" if not data.startswith("data:") else data
-
             if url:
                 multimodal_content.append({"type": "image_url", "image_url": {"url": url}})
 
     user_text = " ".join(text_chunks).strip() or "Describe this image."
-
-    # Intercept /gnd slash command directly in PyCode GUI
-    if user_text.lower().strip() in ("/gnd", "/ground", "/web"):
-        cur_gnd = not core.get_state("grounding_active", False)
-        core.save_state("grounding_active", cur_gnd)
-        status_msg = f"\n*Google Search grounding via Gemini {'enabled' if cur_gnd else 'disabled'}.*\n"
-        send_acp_chunk(session_id, status_msg)
-        with STATE_LOCK:
-            messages.append({"role": "user", "content": user_text})
-            messages.append({"role": "assistant", "content": status_msg})
-        send_rpc_response(req_id, result={"stopReason": "end_turn"})
-        return
 
     has_images = any(i.get("type") == "image_url" for i in multimodal_content)
     turn_content = multimodal_content if has_images else user_text
@@ -358,9 +336,10 @@ def handle_acp_prompt(
         messages.append({"role": "user", "content": turn_content})
         _prune_history(messages)
 
-    # Preprocess multimodal messages through fallback vision bridge if available
     if hasattr(core, "preprocess_multimodal_messages"):
-        messages = core.preprocess_multimodal_messages(messages)
+        processed = core.preprocess_multimodal_messages(messages)
+        with STATE_LOCK:
+            messages[:] = processed
 
     configs = agent_cloud.get_active_configs(messages) if hasattr(agent_cloud, "get_active_configs") else []
     if not configs:
@@ -375,6 +354,7 @@ def handle_acp_prompt(
 
     accumulated_ans = ""
     in_think_block = False
+    in_tool_block = False
     max_rounds = 10 if (is_agent or use_gnd) else 1
     confirm_gate = make_confirm_gate(workspace, is_yolo)
 
@@ -385,6 +365,7 @@ def handle_acp_prompt(
 
             tool_calls_map = {}
             round_text = ""
+            in_tool_block = False
 
             url, headers, base_body, timeout = configs[0]
             is_local = "localhost" in url or "127.0.0.1" in url or base_body.get("model") == "local-model"
@@ -405,7 +386,6 @@ def handle_acp_prompt(
 
             res = None
             try:
-                # Use thread-local session from agent_core, falling back to requests.Session()
                 http_client = core._get_session() if hasattr(core, "_get_session") else requests.Session()
                 res = http_client.post(
                     url,
@@ -449,7 +429,7 @@ def handle_acp_prompt(
                             if enable_think:
                                 if not in_think_block:
                                     in_think_block = True
-                                    send_acp_chunk(session_id, "> *Thinking...* ")
+                                    send_acp_chunk(session_id, "> ")
                                 send_acp_chunk(session_id, thinking_chunk.replace("\n", "\n> "))
 
                         elif text_chunk:
@@ -462,7 +442,7 @@ def handle_acp_prompt(
                                 in_think_block = True
                                 text_chunk = text_chunk.replace("<think>", "")
                                 if show_thinking:
-                                    send_acp_chunk(session_id, "> *Thinking...* ")
+                                    send_acp_chunk(session_id, "> ")
 
                             if "</think>" in text_chunk:
                                 parts = text_chunk.split("</think>", 1)
@@ -480,7 +460,13 @@ def handle_acp_prompt(
                             else:
                                 accumulated_ans += text_chunk
                                 round_text += text_chunk
-                                send_acp_chunk(session_id, text_chunk, is_thought=False)
+
+                                # Universal suppression: do not stream raw tool markup to chat UI
+                                if any(tag in text_chunk for tag in ("<tool_call", "<function=", "<|tool_call|>")):
+                                    in_tool_block = True
+
+                                if not in_tool_block:
+                                    send_acp_chunk(session_id, text_chunk, is_thought=False)
 
                         if is_agent or use_gnd:
                             for tc in delta.get("tool_calls", []):
@@ -503,8 +489,8 @@ def handle_acp_prompt(
                                     tc_entry["function"]["name"] = tc["function"]["name"]
                                 tc_entry["function"]["arguments"] += tc.get("function", {}).get("arguments") or ""
 
-                    except (json.JSONDecodeError, KeyError, IndexError) as err:
-                        sys.stderr.write(f"[pycode bridge] warning: SSE parse error on chunk: {err}\n")
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        pass
 
             except Exception as e:
                 if not cancel_evt.is_set():
@@ -519,7 +505,6 @@ def handle_acp_prompt(
                 with STATE_LOCK:
                     ACTIVE_RESPONSES.pop(session_id, None)
 
-            # Ensure GUI quote block closes cleanly
             if in_think_block:
                 send_acp_chunk(session_id, "\n\n")
                 in_think_block = False
@@ -530,30 +515,45 @@ def handle_acp_prompt(
 
             calls = [val for _, val in sorted(tool_calls_map.items())] if tool_calls_map else None
 
-            # Self-healing fallback tool extraction for small models in GUI
-            if not calls and round_text and is_agent and adapters_on:
+            # Universal self-healing adapters for tool extraction
+            if not calls and round_text and adapters_on:
                 try:
                     calls = adapters.extract_fallback_tool_calls(round_text) or None
                 except Exception as e:
-                    sys.stderr.write(f"[pycode bridge] warning: fallback adapter error: {e}\n")
+                    sys.stderr.write(f"[t3code bridge] adapter extraction error: {e}\n")
 
             has_web_call = use_gnd and any(c.get("function", {}).get("name") == "web_search" for c in (calls or []))
 
             if not calls or (not is_agent and not has_web_call):
+                clean_final = re.sub(r"<tool_call>[\s\S]*?(?:</tool_call>|$)", "", round_text).strip()
                 with STATE_LOCK:
-                    messages.append({"role": "assistant", "content": round_text})
+                    messages.append({"role": "assistant", "content": clean_final or round_text})
                 break
 
             for idx, tc in enumerate(calls):
                 if not tc.get("id"):
                     tc["id"] = f"call_{_round}_{idx}"
 
+            clean_assistant_text = re.sub(r"<tool_call>[\s\S]*?(?:</tool_call>|$)", "", round_text).strip()
             with STATE_LOCK:
-                messages.append({"role": "assistant", "content": round_text or None, "tool_calls": calls})
+                messages.append({"role": "assistant", "content": clean_assistant_text or None, "tool_calls": calls})
 
-            for tc in calls:
+            for idx, tc in enumerate(calls):
                 if cancel_evt.is_set():
+                    for remaining_tc in calls[idx:]:
+                        rem_id = remaining_tc.get("id") or f"call_{_round}_{idx}"
+                        rem_name = (remaining_tc.get("function") or {}).get("name", "tool")
+                        with STATE_LOCK:
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": rem_id,
+                                    "name": rem_name,
+                                    "content": "[cancelled: operation aborted by user]",
+                                }
+                            )
                     break
+
                 fname = tc.get("function", {}).get("name", "")
                 raw_args = tc.get("function", {}).get("arguments") or ""
                 cid = tc.get("id") or f"call_{_round}_0"
@@ -561,8 +561,7 @@ def handle_acp_prompt(
                 if adapters_on:
                     try:
                         fname, args = adapters.heal_tool_call(fname, raw_args)
-                    except Exception as e:
-                        sys.stderr.write(f"[pycode bridge] warning: adapter healing error: {e}\n")
+                    except Exception:
                         try:
                             args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
                         except Exception:
@@ -607,18 +606,19 @@ def handle_acp_prompt(
         if is_agent and user_text and accumulated_ans and not cancel_evt.is_set():
             try:
                 sessions.log_turn(safe_name, user_text, accumulated_ans)
-            except Exception as e:
-                sys.stderr.write(f"[pycode bridge] warning: session log error: {e}\n")
+            except Exception:
+                pass
 
         if tts.is_tts_enabled() and accumulated_ans and not cancel_evt.is_set():
             try:
                 tts.speak_response(accumulated_ans)
-            except Exception as e:
-                sys.stderr.write(f"[pycode bridge] warning: TTS error: {e}\n")
+            except Exception:
+                pass
 
     finally:
         with STATE_LOCK:
-            SESSION_CANCEL_EVENTS.pop(session_id, None)
+            if SESSION_CANCEL_EVENTS.get(session_id) is cancel_evt:
+                SESSION_CANCEL_EVENTS.pop(session_id, None)
         stop_reason = "cancelled" if cancel_evt.is_set() else "end_turn"
         send_rpc_response(req_id, result={"stopReason": stop_reason})
 
@@ -627,86 +627,90 @@ def main():
     default_workspace = os.environ.get("AI_WORKSPACE_PATH", os.getcwd())
     active_session_id = f"pyagent-{uuid.uuid4().hex[:8]}"
 
-    for raw_line in sys.stdin:
-        line = raw_line.strip()
-        if not line:
-            continue
+    try:
+        for raw_line in sys.stdin:
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                req = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(req, dict):
+                continue
 
-        try:
-            req = json.loads(line)
-        except json.JSONDecodeError:
-            continue
+            req_id = req.get("id")
+            method = req.get("method")
+            params = req.get("params", {})
+            if not isinstance(params, dict):
+                params = {}
 
-        if not isinstance(req, dict):
-            continue
-
-        req_id = req.get("id")
-        method = req.get("method")
-        params = req.get("params", {})
-        if not isinstance(params, dict):
-            params = {}
-
-        if method == "initialize":
-            send_rpc_response(
-                req_id,
-                result={
-                    "protocolVersion": 1,
-                    "agentCapabilities": {
-                        "sessionCapabilities": {
-                            "list": {},
+            if method == "initialize":
+                send_rpc_response(
+                    req_id,
+                    result={
+                        "protocolVersion": 1,
+                        "agentCapabilities": {
+                            "sessionCapabilities": {
+                                "list": {},
+                            },
+                        },
+                        "agentInfo": {
+                            "name": "py-agent",
+                            "version": "1.0.0",
                         },
                     },
-                    "agentInfo": {
-                        "name": "py-agent",
-                        "version": "1.0.0",
-                    },
-                },
-            )
-        elif method == "authenticate":
-            send_rpc_response(req_id, result={})
-        elif method in ("session/new", "createSession", "session/create"):
-            active_session_id = params.get("sessionId") or f"pyagent-{uuid.uuid4().hex[:8]}"
-            session_cwd = validate_workspace(params.get("cwd"), default_workspace)
-            with STATE_LOCK:
-                SESSION_WORKSPACES[active_session_id] = session_cwd
-                SESSION_LAST_ACCESSED[active_session_id] = time.time()
-            send_rpc_response(req_id, result={"sessionId": active_session_id})
-        elif method in ("session/list", "listSessions"):
-            with STATE_LOCK:
-                active_cwd = SESSION_WORKSPACES.get(active_session_id, default_workspace)
-            send_rpc_response(req_id, result={"sessions": [{"sessionId": active_session_id, "cwd": active_cwd}]})
-        elif method in ("session/prompt", "prompt"):
-            req_session_id = params.get("sessionId") or active_session_id
-            with STATE_LOCK:
-                active_cwd = SESSION_WORKSPACES.get(req_session_id, default_workspace)
-            prompt_items = params.get("prompt", [])
-            threading.Thread(
-                target=handle_acp_prompt,
-                args=(req_id, req_session_id, prompt_items, active_cwd, params),
-                daemon=True,
-            ).start()
-        elif method in ("session/cancel", "cancel"):
-            req_session_id = params.get("sessionId") or active_session_id
-            with STATE_LOCK:
-                if evt := SESSION_CANCEL_EVENTS.get(req_session_id):
-                    evt.set()
-                resp = ACTIVE_RESPONSES.get(req_session_id)
-            if resp:
-                try:
-                    resp.close()
-                except Exception:
-                    pass
-            send_rpc_response(req_id, result={})
-        elif method == "tools/list":
-            t_list = list(tools.EDIT_TOOLS)
-            if core.get_state("grounding_active", False) and hasattr(tools, "WEB_TOOL"):
-                t_list.append(tools.WEB_TOOL)
-            send_rpc_response(req_id, result={"tools": t_list})
-        elif method == "shutdown":
-            send_rpc_response(req_id, result={"status": "ok"})
-            break
-        else:
-            send_rpc_response(req_id, result={})
+                )
+            elif method == "authenticate":
+                send_rpc_response(req_id, result={})
+            elif method in ("session/new", "createSession", "session/create"):
+                active_session_id = params.get("sessionId") or f"pyagent-{uuid.uuid4().hex[:8]}"
+                session_cwd = validate_workspace(params.get("cwd"), default_workspace)
+                with STATE_LOCK:
+                    SESSION_WORKSPACES[active_session_id] = session_cwd
+                    SESSION_LAST_ACCESSED[active_session_id] = time.time()
+                send_rpc_response(req_id, result={"sessionId": active_session_id})
+            elif method in ("session/list", "listSessions"):
+                with STATE_LOCK:
+                    active_cwd = SESSION_WORKSPACES.get(active_session_id, default_workspace)
+                send_rpc_response(req_id, result={"sessions": [{"sessionId": active_session_id, "cwd": active_cwd}]})
+            elif method in ("session/prompt", "prompt"):
+                req_session_id = params.get("sessionId") or active_session_id
+                with STATE_LOCK:
+                    active_cwd = SESSION_WORKSPACES.get(req_session_id, default_workspace)
+                prompt_items = params.get("prompt", [])
+                threading.Thread(
+                    target=handle_acp_prompt,
+                    args=(req_id, req_session_id, prompt_items, active_cwd, params),
+                    daemon=True,
+                ).start()
+            elif method in ("session/cancel", "cancel"):
+                req_session_id = params.get("sessionId") or active_session_id
+                with STATE_LOCK:
+                    if evt := SESSION_CANCEL_EVENTS.get(req_session_id):
+                        evt.set()
+                    resp = ACTIVE_RESPONSES.get(req_session_id)
+                if resp:
+                    try:
+                        resp.close()
+                    except Exception:
+                        pass
+                send_rpc_response(req_id, result={})
+            elif method == "tools/list":
+                t_list = list(tools.EDIT_TOOLS)
+                if core.get_state("grounding_active", False) and hasattr(tools, "WEB_TOOL"):
+                    t_list.append(tools.WEB_TOOL)
+                send_rpc_response(req_id, result={"tools": t_list})
+            elif method == "shutdown":
+                send_rpc_response(req_id, result={"status": "ok"})
+                break
+            else:
+                send_rpc_response(req_id, result={})
+    except (KeyboardInterrupt, BrokenPipeError):
+        pass
+    finally:
+        cleanup_all()
+        sys.exit(0)
 
 
 if __name__ == "__main__":

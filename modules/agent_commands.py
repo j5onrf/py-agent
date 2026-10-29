@@ -478,13 +478,16 @@ def dispatch_command(query: str, ctx: SessionContext) -> tuple[bool, str | None]
         )
         return True, None
 
-    if cmd in ("/pycode", "/pyc"):
+    if cmd in ("/t3", "/t3code", "/pyc", "/pycode"):
         is_web = len(parts) > 1 and parts[1].lower() in ("web", "--web", "browser")
         ui._console.print(
-            f"[dim yellow][sys] Suspending CLI. Launching PyCode {'Browser WebUI' if is_web else 'Desktop App'}...[/dim yellow]"
+            f"[dim yellow][sys] Suspending CLI. Launching T3 Code {'Browser WebUI' if is_web else 'Desktop App'}...[/dim yellow]"
         )
+        launch_script = os.path.join(CFG_DIR, "plugins", "t3code", "launch.sh")
+        if not os.path.isfile(launch_script):
+            launch_script = os.path.join(CFG_DIR, "plugins", "pycode", "launch.sh")
         ctx.launch_surface_fn(
-            os.path.join(CFG_DIR, "plugins", "pycode", "launch.sh"),
+            launch_script,
             ctx.is_agent,
             ctx.workspace_path,
             ctx.clean_name or "chat",
