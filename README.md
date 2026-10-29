@@ -3,7 +3,7 @@
 <div align="center">
   <img alt="py-agent" src="logo.svg" height="130" />
   <h1>Py Agent</h1>
-
+ 
   <p>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/version-v0.9.9.66.svg?variant=secondary" alt="Version"></a>
     <a href="https://github.com/j5onrf/py-agent"><img src="https://shieldcn.dev/badge/Python.svg?variant=branded&brand=python" alt="Language"></a>
@@ -28,7 +28,7 @@
       <td align="center" width="50%" valign="top">
         <h3>Sub-27B (SLM)</h3>
         <p><sub>Tool calling, shell triage, and single-turn code edits</sub></p>
-        <code>Ling-3.0-tiny*</code> &nbsp;•&nbsp; <code>LFM2.5-8B</code><br>
+        <code>Ling-3.0-tiny*</code> &nbsp;•&nbsp; <code>LFM3-1.7B</code><br>
         <code>MiniCPM5-2B</code> &nbsp;•&nbsp; <code>Qwen3.5-2B+</code><br>
         <code>MiniCPM-V-4.7-1B</code> &nbsp;•&nbsp; <code>LFM2.5-24B-A2B</code>
       </td>
