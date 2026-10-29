@@ -653,6 +653,8 @@ def main():
                         "agentCapabilities": {
                             "sessionCapabilities": {
                                 "list": {},
+                                "load": {},
+                                "resume": {},
                             },
                         },
                         "agentInfo": {
@@ -663,12 +665,16 @@ def main():
                 )
             elif method == "authenticate":
                 send_rpc_response(req_id, result={})
-            elif method in ("session/new", "createSession", "session/create"):
+            elif method in ("session/new", "createSession", "session/create", "session/load", "session/resume"):
                 active_session_id = params.get("sessionId") or f"pyagent-{uuid.uuid4().hex[:8]}"
                 session_cwd = validate_workspace(params.get("cwd"), default_workspace)
                 with STATE_LOCK:
                     SESSION_WORKSPACES[active_session_id] = session_cwd
                     SESSION_LAST_ACCESSED[active_session_id] = time.time()
+                    if active_session_id not in SESSION_HISTORIES:
+                        is_agent, profile_name, _, _ = detect_workspace_mode(session_cwd)
+                        sys_ctx = assemble_system_prompt(session_cwd, is_agent, profile_name)
+                        SESSION_HISTORIES[active_session_id] = [{"role": "system", "content": sys_ctx}]
                 send_rpc_response(req_id, result={"sessionId": active_session_id})
             elif method in ("session/list", "listSessions"):
                 with STATE_LOCK:

@@ -24,7 +24,7 @@ Add the provider block directly to configure without using the GUI:
       "driver": "acp",
       "name": "Py-Agent",
       "command": "/usr/bin/python3",
-      "args": ["/home/j5/.config/py-agent/plugins/t3code/t3code-bridge.py"],
+      "args": ["/home/user/.config/py-agent/plugins/t3code/t3code-bridge.py"],
       "enabled": true
     }
   }
@@ -39,7 +39,7 @@ Add the provider block directly to configure without using the GUI:
 
 Inside Py-Agent:
 ```console
-~ ❯ ling
+~ ❯ workspace
 ❯ /t3        # Launch Desktop UI
 ❯ /t3 web    # Launch Browser UI
 ```

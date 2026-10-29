@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# T3 Code Launcher (Auto Project Handover & Workspace Sync) CR 0.1
+# T3 Code Launcher (Auto Project Handover & Workspace Sync) [CR.01]
 # ==============================================================================
 
 set -eo pipefail
@@ -17,10 +17,27 @@ if [[ -z "$T3_BIN" ]]; then
     exit 1
 fi
 
-# ── 1. Resolve Target Workspace ───────────────────────────────────────────────
-RAW_WORKSPACE="${1:-${AI_WORKSPACE_PATH:-$PWD}}"
+# ── 1. Parse Arguments (Separate Mode Flags from Workspace Path) ──────────────
+MODE="desktop"
+WORKSPACE_ARG=""
+
+for arg in "$@"; do
+    case "$arg" in
+        web|--web|--browser)
+            MODE="web"
+            ;;
+        *)
+            if [[ -z "$WORKSPACE_ARG" ]]; then
+                WORKSPACE_ARG="$arg"
+            fi
+            ;;
+    esac
+done
+
+# ── 2. Resolve Target Workspace ───────────────────────────────────────────────
+RAW_WORKSPACE="${WORKSPACE_ARG:-${AI_WORKSPACE_PATH:-$PWD}}"
 if ! TARGET_WORKSPACE=$(cd "$RAW_WORKSPACE" 2>/dev/null && pwd -P); then
-    if [[ -n "${1:-}" ]]; then
+    if [[ -n "$WORKSPACE_ARG" ]]; then
         echo -e "\033[1;31m[t3code]\033[0m Error: workspace '$RAW_WORKSPACE' is not a valid directory." >&2
         exit 1
     fi
@@ -34,14 +51,24 @@ else
     echo -e "\033[1;33m[t3code]\033[0m Warning: bridge script '$BRIDGE_PY' missing, symlinked, or unowned." >&2
 fi
 
-# ── 2. Environment Setup ──────────────────────────────────────────────────────
+# ── 3. Environment Setup ──────────────────────────────────────────────────────
 export AI_WORKSPACE_PATH="$TARGET_WORKSPACE"
 export PYAGENT_BRIDGE="$BRIDGE_PY"
 export T3CODE_HOME="${T3CODE_HOME:-$HOME/.t3}"
 
 cd "$TARGET_WORKSPACE"
 
-# ── 3. Check if T3 Code is Already Running (Exact Process Match) ──────────────
+# ── 4. Dispatch Web Mode or Desktop App ───────────────────────────────────────
+if [[ "$MODE" == "web" ]]; then
+    # In web mode, run the headless server and open browser
+    if [[ -x "$T3_CLI" ]]; then
+        exec "$T3_CLI" "$TARGET_WORKSPACE"
+    else
+        exec "$T3_BIN" --web "$TARGET_WORKSPACE"
+    fi
+fi
+
+# ── 5. Desktop Mode: Check if T3 Code is Already Running ──────────────────────
 T3_NAME="$(basename "$T3_BIN")"
 if [[ -x "$T3_CLI" ]] && pgrep -x "$T3_NAME" &>/dev/null; then
     if "$T3_CLI" app "$TARGET_WORKSPACE" &>/dev/null; then
@@ -50,7 +77,7 @@ if [[ -x "$T3_CLI" ]] && pgrep -x "$T3_NAME" &>/dev/null; then
     fi
 fi
 
-# ── 4. Fresh Launch with Managed Handover & Scoped Lifecycle ──────────────────
+# ── 6. Fresh Desktop Launch with Managed Handover & Scoped Lifecycle ──────────
 T3_PID=""
 HANDOVER_PID=""
 _CLEANED=0
@@ -59,7 +86,6 @@ cleanup() {
     [[ "$_CLEANED" -eq 1 ]] && return 0
     _CLEANED=1
 
-    # Kill only the handover subshell and the T3 instance started by THIS script
     [[ -n "$HANDOVER_PID" ]] && kill -TERM "$HANDOVER_PID" 2>/dev/null || true
     if [[ -n "$T3_PID" ]] && kill -0 "$T3_PID" 2>/dev/null; then
         kill -TERM "$T3_PID" 2>/dev/null || true
