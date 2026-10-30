@@ -1,9 +1,0 @@
-{
-  "profile": "custom/tini-cybersec",
-  "yolo": true,
-  "map": false,
-  "py": false,
-  "memory": false,
-  "adapters": true,
-  "created_at": "2026-09-18 17:08"
-}
