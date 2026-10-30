@@ -28,13 +28,14 @@
       <td align="center" width="50%" valign="top">
         <h3>Sub-27B (SLM)</h3>
         <p><sub>Tool calling, shell triage, and single-turn code edits</sub></p>
-        <code>Ling-3.0-tiny*</code> &nbsp;•&nbsp; <code>LFM3-1.7B</code><br>
+        <code>LFM3-1.7B*</code> &nbsp;•&nbsp; <code>Ling-3.0-tiny</code><br>
         <code>MiniCPM5-2B</code> &nbsp;•&nbsp; <code>Qwen3.5-2B+</code><br>
         <code>MiniCPM-V-4.7-1B</code> &nbsp;•&nbsp; <code>LFM2.5-24B-A2B</code>
       </td>
       <td align="center" width="50%" valign="top">
         <h3>27B+ (LLM)</h3>
         <p><sub>Reasoning, multi-file refactoring, and sub-agents</sub></p>
+        <code>Clover-35B-A3B</code> &nbsp;•&nbsp; <code></code><br>
         <code>Sage-A1.5-35B</code> &nbsp;•&nbsp; <code>Flint-40B-A2.5B*</code><br>
         <code>Qwen3.8-35B-D</code> &nbsp;•&nbsp; <code>Ornith-1.5</code><br>
         <code>KAT-Coder-V2.5</code> &nbsp;•&nbsp; <code>Tiel-Coder-35B</code><br>
@@ -142,8 +143,9 @@
 | **6** | **Tiel-Coder-35B-A3B** | **90.9%** | **87.6 (B)** |
 | **7** | **Occamy-1.0** | **90.9%** | **87.0 (B)** |
 | **8** | **Nex-N2.5-mini** | **88.2%** | **85.8 (B)** |
-| **—** | **LFM2.5-24B-A2B** | **44.8%** | **83.3 (B)** |
+| **—** | **LFM3-1.7B** *(SLM)* | **123.8%** | **100.0 (A+)** |
 | **—** | **Ling-3.0-tiny** *(SLM)* | **104.0%** | **100.0 (A+)** |
+| **—** | **LFM2.5-24B-A2B** | **44.8%** | **83.3 (B)** |
 
 <br>
 

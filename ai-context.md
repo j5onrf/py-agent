@@ -39,6 +39,8 @@
 
 ```properties
 # --- Workspaces ---
+ai init ~/.config/py-agent/projects/lfm3 ---> lfm3
+ai init ~/.config/py-agent/projects/clover ---> clover
 ai init ~/.config/py-agent/projects/sage ---> sage
 ai init ~/.config/py-agent/projects/flint ---> flint, flin
 ai init ~/.config/py-agent/projects/lfm2_24b ---> lfm2-24b, lfm
